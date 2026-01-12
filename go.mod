@@ -1,3 +1,3 @@
 module github.com/devlongs/gean
 
-go 1.25.3
+go 1.23.0
