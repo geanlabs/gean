@@ -1,5 +1,7 @@
 package types
 
+//go:generate sszgen --path=. --objs=Checkpoint
+
 type Slot uint64
 type ValidatorIndex uint64
 type Epoch uint64
@@ -27,4 +29,11 @@ func TimeToSlot(time, genesisTime uint64) Slot {
 		return 0
 	}
 	return Slot((time - genesisTime) / SecondsPerSlot)
+}
+
+// Checkpoint represents a point in the chain used for justification and finalization.
+// It pairs a block root with its slot number.
+type Checkpoint struct {
+	Root Root `ssz-size:"32"`
+	Slot Slot `ssz-size:"8"`
 }
