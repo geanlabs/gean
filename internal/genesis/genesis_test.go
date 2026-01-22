@@ -2,13 +2,32 @@ package genesis
 
 import (
 	"bytes"
-	"encoding/hex"
 	"testing"
 
 	"github.com/devylongs/gean/types"
 )
 
-func TestLoadFromJSON(t *testing.T) {
+func TestLoadFromJSON_WithValidatorCount(t *testing.T) {
+	jsonData := []byte(`{
+		"GENESIS_TIME": 1704085200,
+		"VALIDATOR_COUNT": 100
+	}`)
+
+	config, err := LoadFromJSON(jsonData)
+	if err != nil {
+		t.Fatalf("LoadFromJSON failed: %v", err)
+	}
+
+	if config.GenesisTime != 1704085200 {
+		t.Errorf("GenesisTime = %d, want 1704085200", config.GenesisTime)
+	}
+
+	if config.ValidatorCount != 100 {
+		t.Errorf("ValidatorCount = %d, want 100", config.ValidatorCount)
+	}
+}
+
+func TestLoadFromJSON_WithGenesisValidators(t *testing.T) {
 	// 52 bytes = 104 hex chars
 	jsonData := []byte(`{
 		"GENESIS_TIME": 1704085200,
@@ -27,105 +46,55 @@ func TestLoadFromJSON(t *testing.T) {
 		t.Errorf("GenesisTime = %d, want 1704085200", config.GenesisTime)
 	}
 
-	if len(config.GenesisValidators) != 2 {
-		t.Errorf("len(GenesisValidators) = %d, want 2", len(config.GenesisValidators))
+	// ValidatorCount should be derived from GENESIS_VALIDATORS length
+	if config.ValidatorCount != 2 {
+		t.Errorf("ValidatorCount = %d, want 2", config.ValidatorCount)
 	}
 }
 
-func TestLoadFromJSON_InvalidHex(t *testing.T) {
+func TestLoadFromJSON_ValidatorCountPrecedence(t *testing.T) {
+	// When both VALIDATOR_COUNT and GENESIS_VALIDATORS are provided,
+	// VALIDATOR_COUNT takes precedence
 	jsonData := []byte(`{
 		"GENESIS_TIME": 1704085200,
-		"GENESIS_VALIDATORS": ["invalid-hex"]
+		"VALIDATOR_COUNT": 10,
+		"GENESIS_VALIDATORS": [
+			"0xe2a03c1689769ae5f5762222b170b4a925f3f8e89340ed1cd31d31c134b0abc2e2a03c1689769ae5f5762222b170000000000000"
+		]
 	}`)
 
-	_, err := LoadFromJSON(jsonData)
-	if err == nil {
-		t.Error("expected error for invalid hex, got nil")
-	}
-}
-
-func TestLoadFromJSON_WrongLength(t *testing.T) {
-	jsonData := []byte(`{
-		"GENESIS_TIME": 1704085200,
-		"GENESIS_VALIDATORS": ["0x1234"]
-	}`)
-
-	_, err := LoadFromJSON(jsonData)
-	if err == nil {
-		t.Error("expected error for wrong length pubkey, got nil")
-	}
-}
-
-func TestToValidators(t *testing.T) {
-	var pubkey1, pubkey2 types.Bytes52
-	hex.Decode(pubkey1[:], []byte("e2a03c1689769ae5f5762222b170b4a925f3f8e89340ed1cd31d31c134b0abc2e2a03c1689769ae5f5762222b17000"))
-	hex.Decode(pubkey2[:], []byte("0767e659c1b61d30f65eadb7a309c4183d5d4c0f99e935737b89ce95dd1c45680767e659c1b61d30f65eadb7a30900"))
-
-	config := &GenesisConfig{
-		GenesisTime:       1704085200,
-		GenesisValidators: []types.Bytes52{pubkey1, pubkey2},
+	config, err := LoadFromJSON(jsonData)
+	if err != nil {
+		t.Fatalf("LoadFromJSON failed: %v", err)
 	}
 
-	validators := config.ToValidators()
-
-	if len(validators) != 2 {
-		t.Fatalf("len(validators) = %d, want 2", len(validators))
-	}
-
-	if validators[0].Index != 0 {
-		t.Errorf("validators[0].Index = %d, want 0", validators[0].Index)
-	}
-	if validators[1].Index != 1 {
-		t.Errorf("validators[1].Index = %d, want 1", validators[1].Index)
-	}
-
-	if validators[0].Pubkey != pubkey1 {
-		t.Error("validators[0].Pubkey does not match")
+	if config.ValidatorCount != 10 {
+		t.Errorf("ValidatorCount = %d, want 10 (should use VALIDATOR_COUNT, not len(GENESIS_VALIDATORS))", config.ValidatorCount)
 	}
 }
 
 func TestGenerateGenesis_Slot(t *testing.T) {
-	validators := []types.Validator{
-		{Pubkey: types.Bytes52{}, Index: 0},
-	}
-
-	state := GenerateGenesis(1704085200, validators)
+	state := GenerateGenesis(1704085200, 4)
 
 	if state.Slot != 0 {
 		t.Errorf("Slot = %d, want 0", state.Slot)
 	}
 }
 
-func TestGenerateGenesis_Validators(t *testing.T) {
-	var pubkey types.Bytes52
-	pubkey[0] = 0xAB
-
-	validators := []types.Validator{
-		{Pubkey: pubkey, Index: 0},
-		{Pubkey: types.Bytes52{}, Index: 1},
-	}
-
-	state := GenerateGenesis(1704085200, validators)
-
-	if len(state.Validators) != 2 {
-		t.Fatalf("len(Validators) = %d, want 2", len(state.Validators))
-	}
-
-	if state.Validators[0].Pubkey[0] != 0xAB {
-		t.Error("validator pubkey not preserved")
-	}
-}
-
 func TestGenerateGenesis_Config(t *testing.T) {
-	state := GenerateGenesis(1704085200, nil)
+	state := GenerateGenesis(1704085200, 4)
 
 	if state.Config.GenesisTime != 1704085200 {
 		t.Errorf("Config.GenesisTime = %d, want 1704085200", state.Config.GenesisTime)
 	}
+
+	if state.Config.NumValidators != 4 {
+		t.Errorf("Config.NumValidators = %d, want 4", state.Config.NumValidators)
+	}
 }
 
 func TestGenerateGenesis_Checkpoints(t *testing.T) {
-	state := GenerateGenesis(1704085200, nil)
+	state := GenerateGenesis(1704085200, 4)
 
 	// Default checkpoints should be at slot 0 with zero root
 	if state.LatestJustified.Slot != 0 {
@@ -144,7 +113,7 @@ func TestGenerateGenesis_Checkpoints(t *testing.T) {
 }
 
 func TestGenerateGenesis_BlockHeader(t *testing.T) {
-	state := GenerateGenesis(1704085200, nil)
+	state := GenerateGenesis(1704085200, 4)
 
 	header := state.LatestBlockHeader
 
@@ -167,22 +136,18 @@ func TestGenerateGenesis_BlockHeader(t *testing.T) {
 }
 
 func TestGenerateGenesis_EmptyLists(t *testing.T) {
-	state := GenerateGenesis(1704085200, nil)
+	state := GenerateGenesis(1704085200, 4)
 
-	if len(state.HistoricalRoots) != 0 {
-		t.Errorf("len(HistoricalRoots) = %d, want 0", len(state.HistoricalRoots))
+	if len(state.HistoricalBlockHashes) != 0 {
+		t.Errorf("len(HistoricalBlockHashes) = %d, want 0", len(state.HistoricalBlockHashes))
 	}
-	if len(state.JustificationRoots) != 0 {
-		t.Errorf("len(JustificationRoots) = %d, want 0", len(state.JustificationRoots))
+	if len(state.JustificationsRoots) != 0 {
+		t.Errorf("len(JustificationsRoots) = %d, want 0", len(state.JustificationsRoots))
 	}
 }
 
 func TestGenerateGenesis_SSZRoundTrip(t *testing.T) {
-	validators := []types.Validator{
-		{Pubkey: types.Bytes52{0x01}, Index: 0},
-	}
-
-	state := GenerateGenesis(1704085200, validators)
+	state := GenerateGenesis(1704085200, 4)
 
 	// Marshal
 	encoded, err := state.MarshalSSZ()
@@ -203,17 +168,13 @@ func TestGenerateGenesis_SSZRoundTrip(t *testing.T) {
 	if decoded.Config.GenesisTime != state.Config.GenesisTime {
 		t.Errorf("decoded.Config.GenesisTime = %d, want %d", decoded.Config.GenesisTime, state.Config.GenesisTime)
 	}
-	if len(decoded.Validators) != len(state.Validators) {
-		t.Errorf("len(decoded.Validators) = %d, want %d", len(decoded.Validators), len(state.Validators))
+	if decoded.Config.NumValidators != state.Config.NumValidators {
+		t.Errorf("decoded.Config.NumValidators = %d, want %d", decoded.Config.NumValidators, state.Config.NumValidators)
 	}
 }
 
 func TestGenerateGenesis_HashTreeRoot(t *testing.T) {
-	validators := []types.Validator{
-		{Pubkey: types.Bytes52{0x01}, Index: 0},
-	}
-
-	state := GenerateGenesis(1704085200, validators)
+	state := GenerateGenesis(1704085200, 4)
 
 	root1, err := state.HashTreeRoot()
 	if err != nil {
@@ -237,12 +198,9 @@ func TestGenerateGenesis_HashTreeRoot(t *testing.T) {
 }
 
 func TestCreateState(t *testing.T) {
-	// 52 bytes = 104 hex chars
 	jsonData := []byte(`{
 		"GENESIS_TIME": 1704085200,
-		"GENESIS_VALIDATORS": [
-			"0xe2a03c1689769ae5f5762222b170b4a925f3f8e89340ed1cd31d31c134b0abc2e2a03c1689769ae5f5762222b170000000000000"
-		]
+		"VALIDATOR_COUNT": 4
 	}`)
 
 	config, err := LoadFromJSON(jsonData)
@@ -258,8 +216,8 @@ func TestCreateState(t *testing.T) {
 	if state.Slot != 0 {
 		t.Errorf("Slot = %d, want 0", state.Slot)
 	}
-	if len(state.Validators) != 1 {
-		t.Errorf("len(Validators) = %d, want 1", len(state.Validators))
+	if state.Config.NumValidators != 4 {
+		t.Errorf("Config.NumValidators = %d, want 4", state.Config.NumValidators)
 	}
 	if state.Config.GenesisTime != 1704085200 {
 		t.Errorf("Config.GenesisTime = %d, want 1704085200", state.Config.GenesisTime)

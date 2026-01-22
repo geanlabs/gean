@@ -2,24 +2,24 @@
 package genesis
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/devylongs/gean/types"
 )
 
 // GenesisConfig holds the parameters needed to create a genesis state.
 type GenesisConfig struct {
-	GenesisTime       uint64          `json:"GENESIS_TIME"`
-	GenesisValidators []types.Bytes52 `json:"GENESIS_VALIDATORS"`
+	GenesisTime    uint64 `json:"GENESIS_TIME"`
+	ValidatorCount uint64 `json:"VALIDATOR_COUNT"`
 }
 
 // configJSON is the intermediate struct for JSON unmarshaling.
+// Supports both VALIDATOR_COUNT and deriving count from GENESIS_VALIDATORS.
 type configJSON struct {
 	GenesisTime       uint64   `json:"GENESIS_TIME"`
+	ValidatorCount    uint64   `json:"VALIDATOR_COUNT"`
 	GenesisValidators []string `json:"GENESIS_VALIDATORS"`
 }
 
@@ -39,54 +39,22 @@ func LoadFromJSON(data []byte) (*GenesisConfig, error) {
 		return nil, fmt.Errorf("parsing genesis JSON: %w", err)
 	}
 
-	config := &GenesisConfig{
-		GenesisTime:       raw.GenesisTime,
-		GenesisValidators: make([]types.Bytes52, len(raw.GenesisValidators)),
+	// Use VALIDATOR_COUNT if specified, otherwise derive from GENESIS_VALIDATORS length
+	validatorCount := raw.ValidatorCount
+	if validatorCount == 0 && len(raw.GenesisValidators) > 0 {
+		validatorCount = uint64(len(raw.GenesisValidators))
 	}
 
-	for i, hexStr := range raw.GenesisValidators {
-		pubkey, err := parseHexPubkey(hexStr)
-		if err != nil {
-			return nil, fmt.Errorf("parsing validator %d pubkey: %w", i, err)
-		}
-		config.GenesisValidators[i] = pubkey
+	config := &GenesisConfig{
+		GenesisTime:    raw.GenesisTime,
+		ValidatorCount: validatorCount,
 	}
 
 	return config, nil
 }
 
-// parseHexPubkey converts a hex string (with or without 0x prefix) to Bytes52.
-func parseHexPubkey(s string) (types.Bytes52, error) {
-	s = strings.TrimPrefix(s, "0x")
-	if len(s) != 104 { // 52 bytes = 104 hex chars
-		return types.Bytes52{}, fmt.Errorf("invalid pubkey length: got %d hex chars, want 104", len(s))
-	}
-
-	decoded, err := hex.DecodeString(s)
-	if err != nil {
-		return types.Bytes52{}, fmt.Errorf("decoding hex: %w", err)
-	}
-
-	var pubkey types.Bytes52
-	copy(pubkey[:], decoded)
-	return pubkey, nil
-}
-
-// ToValidators converts genesis pubkeys to Validator structs with indices.
-func (c *GenesisConfig) ToValidators() []types.Validator {
-	validators := make([]types.Validator, len(c.GenesisValidators))
-	for i, pk := range c.GenesisValidators {
-		validators[i] = types.Validator{
-			Pubkey: pk,
-			Index:  uint64(i),
-		}
-	}
-	return validators
-}
-
 // CreateState generates the complete genesis state from this configuration.
 func (c *GenesisConfig) CreateState() (*types.State, error) {
-	validators := c.ToValidators()
-	state := GenerateGenesis(c.GenesisTime, validators)
+	state := GenerateGenesis(c.GenesisTime, c.ValidatorCount)
 	return state, nil
 }

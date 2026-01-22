@@ -1,17 +1,12 @@
 package types
 
-//go:generate sszgen --path=. --objs=Checkpoint,Config,Validator,AttestationData,Attestation,AggregatedAttestation,BlockHeader,BlockBody,Block,State
+//go:generate sszgen --path=. --objs=Checkpoint,Config,Vote,SignedVote,BlockHeader,BlockBody,Block,SignedBlock,State
 
 type Slot uint64
 type ValidatorIndex uint64
-type Epoch uint64
 type Root [32]byte
-
-type Bytes4 [4]byte
-type Bytes20 [20]byte
 type Bytes32 = Root
 type Bytes48 [48]byte
-type Bytes52 [52]byte
 type Bytes96 [96]byte
 
 const (
@@ -37,6 +32,7 @@ func TimeToSlot(time, genesisTime uint64) Slot {
 	return Slot((time - genesisTime) / SecondsPerSlot)
 }
 
+// Checkpoint represents a justified or finalized checkpoint.
 type Checkpoint struct {
 	Root Root `ssz-size:"32"`
 	Slot Slot `ssz-size:"8"`
@@ -44,33 +40,23 @@ type Checkpoint struct {
 
 // Config holds chain configuration parameters.
 type Config struct {
-	GenesisTime uint64 `ssz-size:"8"`
+	NumValidators uint64 `ssz-size:"8"`
+	GenesisTime   uint64 `ssz-size:"8"`
 }
 
-// Validator represents a validator's metadata.
-type Validator struct {
-	Pubkey Bytes52 `ssz-size:"52"`
-	Index  uint64  `ssz-size:"8"`
-}
-
-// AttestationData describes a validator's view of the chain.
-type AttestationData struct {
-	Slot   Slot `ssz-size:"8"`
-	Head   Checkpoint
-	Target Checkpoint
-	Source Checkpoint
-}
-
-// Attestation is a single validator's attestation.
-type Attestation struct {
+// Vote represents a validator's vote for chain head.
+type Vote struct {
 	ValidatorID uint64 `ssz-size:"8"`
-	Data        AttestationData
+	Slot        Slot   `ssz-size:"8"`
+	Head        Checkpoint
+	Target      Checkpoint
+	Source      Checkpoint
 }
 
-// AggregatedAttestation combines multiple validators' attestations.
-type AggregatedAttestation struct {
-	AggregationBits []byte `ssz-max:"4096" ssz:"bitlist"` // ValidatorRegistryLimit
-	Data            AttestationData
+// SignedVote is a vote with its signature.
+type SignedVote struct {
+	Data      Vote
+	Signature Bytes32 `ssz-size:"32"`
 }
 
 // BlockHeader summarizes a block without the body.
@@ -84,7 +70,7 @@ type BlockHeader struct {
 
 // BlockBody contains the block's payload.
 type BlockBody struct {
-	Attestations []AggregatedAttestation `ssz-max:"4096"` // ValidatorRegistryLimit
+	Attestations []SignedVote `ssz-max:"4096"` // ValidatorRegistryLimit
 }
 
 // Block is a complete block including header fields and body.
@@ -96,16 +82,21 @@ type Block struct {
 	Body          BlockBody
 }
 
+// SignedBlock is a block with its proposer signature.
+type SignedBlock struct {
+	Message   Block
+	Signature Bytes32 `ssz-size:"32"` // Placeholder; actual signature is larger
+}
+
 // State is the beacon state.
 type State struct {
-	Config             Config
-	Slot               Slot `ssz-size:"8"`
-	LatestBlockHeader  BlockHeader
-	LatestJustified    Checkpoint
-	LatestFinalized    Checkpoint
-	HistoricalRoots    []Root      `ssz-max:"262144"`                    // HistoricalRootsLimit
-	JustifiedSlots     []byte      `ssz-max:"262144" ssz:"bitlist"`      // HistoricalRootsLimit
-	Validators         []Validator `ssz-max:"4096"`                      // ValidatorRegistryLimit
-	JustificationRoots []Root      `ssz-max:"262144"`                    // HistoricalRootsLimit
-	JustificationVotes []byte      `ssz-max:"1073741824" ssz:"bitlist"` // 2^30 (262144 × 4096)
+	Config                   Config
+	Slot                     Slot        `ssz-size:"8"`
+	LatestBlockHeader        BlockHeader
+	LatestJustified          Checkpoint
+	LatestFinalized          Checkpoint
+	HistoricalBlockHashes    []Root `ssz-max:"262144"`                   // HistoricalRootsLimit
+	JustifiedSlots           []byte `ssz-max:"262144" ssz:"bitlist"`     // HistoricalRootsLimit
+	JustificationsRoots      []Root `ssz-max:"262144"`                   // HistoricalRootsLimit
+	JustificationsValidators []byte `ssz-max:"1073741824" ssz:"bitlist"` // 2^30 (262144 × 4096)
 }
