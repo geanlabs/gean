@@ -6,18 +6,19 @@ import "github.com/devylongs/gean/types"
 //
 // The genesis state has:
 //   - slot = 0
-//   - Empty historical data (roots, justified slots, justification tracking)
+//   - Empty historical data (block hashes, justified slots, justification tracking)
 //   - Genesis block header with zeroed state/parent roots
 //   - Default checkpoints at slot 0 with zero root
-func GenerateGenesis(genesisTime uint64, validators []types.Validator) *types.State {
-	// Create config with genesis time
+func GenerateGenesis(genesisTime uint64, numValidators uint64) *types.State {
+	// Create config with genesis time and number of validators
 	config := types.Config{
-		GenesisTime: genesisTime,
+		NumValidators: numValidators,
+		GenesisTime:   genesisTime,
 	}
 
 	// Calculate the body root for an empty block body
 	emptyBody := types.BlockBody{
-		Attestations: []types.AggregatedAttestation{},
+		Attestations: []types.SignedVote{},
 	}
 	bodyRoot, err := emptyBody.HashTreeRoot()
 	if err != nil {
@@ -42,19 +43,18 @@ func GenerateGenesis(genesisTime uint64, validators []types.Validator) *types.St
 
 	// Bitlists need a sentinel byte (0x01) to be valid non-empty
 	justifiedSlots := []byte{0x01}
-	justificationVotes := []byte{0x01}
+	justificationsValidators := []byte{0x01}
 
 	// Assemble and return the full genesis state
 	return &types.State{
-		Config:             config,
-		Slot:               0,
-		LatestBlockHeader:  genesisHeader,
-		LatestJustified:    defaultCheckpoint,
-		LatestFinalized:    defaultCheckpoint,
-		HistoricalRoots:    []types.Root{},
-		JustifiedSlots:     justifiedSlots,
-		Validators:         validators,
-		JustificationRoots: []types.Root{},
-		JustificationVotes: justificationVotes,
+		Config:                   config,
+		Slot:                     0,
+		LatestBlockHeader:        genesisHeader,
+		LatestJustified:          defaultCheckpoint,
+		LatestFinalized:          defaultCheckpoint,
+		HistoricalBlockHashes:    []types.Root{},
+		JustifiedSlots:           justifiedSlots,
+		JustificationsRoots:      []types.Root{},
+		JustificationsValidators: justificationsValidators,
 	}
 }

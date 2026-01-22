@@ -103,76 +103,95 @@ func TestCheckpointHashTreeRoot(t *testing.T) {
 }
 
 func TestConfigSSZRoundTrip(t *testing.T) {
-	original := &Config{GenesisTime: 1700000000}
+	original := &Config{
+		NumValidators: 100,
+		GenesisTime:   1700000000,
+	}
 
 	data, err := original.MarshalSSZ()
 	if err != nil {
 		t.Fatalf("MarshalSSZ failed: %v", err)
 	}
-	if len(data) != 8 {
-		t.Errorf("expected 8 bytes, got %d", len(data))
+	// 8 bytes for NumValidators + 8 bytes for GenesisTime = 16 bytes
+	if len(data) != 16 {
+		t.Errorf("expected 16 bytes, got %d", len(data))
 	}
 
 	decoded := &Config{}
 	if err := decoded.UnmarshalSSZ(data); err != nil {
 		t.Fatalf("UnmarshalSSZ failed: %v", err)
 	}
+	if decoded.NumValidators != original.NumValidators {
+		t.Errorf("NumValidators mismatch: got %d, want %d", decoded.NumValidators, original.NumValidators)
+	}
 	if decoded.GenesisTime != original.GenesisTime {
-		t.Errorf("GenesisTime mismatch")
+		t.Errorf("GenesisTime mismatch: got %d, want %d", decoded.GenesisTime, original.GenesisTime)
 	}
 }
 
-func TestValidatorSSZRoundTrip(t *testing.T) {
-	original := &Validator{
-		Pubkey: Bytes52{0x01, 0x02, 0x03},
-		Index:  42,
+func TestVoteSSZRoundTrip(t *testing.T) {
+	original := &Vote{
+		ValidatorID: 42,
+		Slot:        100,
+		Head:        Checkpoint{Root: Root{0x01}, Slot: 99},
+		Target:      Checkpoint{Root: Root{0x02}, Slot: 98},
+		Source:      Checkpoint{Root: Root{0x03}, Slot: 97},
 	}
 
 	data, err := original.MarshalSSZ()
 	if err != nil {
 		t.Fatalf("MarshalSSZ failed: %v", err)
 	}
-	if len(data) != 60 {
-		t.Errorf("expected 60 bytes, got %d", len(data))
+	// 8 (ValidatorID) + 8 (Slot) + 40*3 (Head, Target, Source) = 136 bytes
+	if len(data) != 136 {
+		t.Errorf("expected 136 bytes, got %d", len(data))
 	}
 
-	decoded := &Validator{}
+	decoded := &Vote{}
 	if err := decoded.UnmarshalSSZ(data); err != nil {
 		t.Fatalf("UnmarshalSSZ failed: %v", err)
 	}
-	if !bytes.Equal(decoded.Pubkey[:], original.Pubkey[:]) {
-		t.Errorf("Pubkey mismatch")
-	}
-	if decoded.Index != original.Index {
-		t.Errorf("Index mismatch")
-	}
-}
-
-func TestAttestationDataSSZRoundTrip(t *testing.T) {
-	original := &AttestationData{
-		Slot:   100,
-		Head:   Checkpoint{Root: Root{0x01}, Slot: 99},
-		Target: Checkpoint{Root: Root{0x02}, Slot: 98},
-		Source: Checkpoint{Root: Root{0x03}, Slot: 97},
-	}
-
-	data, err := original.MarshalSSZ()
-	if err != nil {
-		t.Fatalf("MarshalSSZ failed: %v", err)
-	}
-	if len(data) != 128 {
-		t.Errorf("expected 128 bytes, got %d", len(data))
-	}
-
-	decoded := &AttestationData{}
-	if err := decoded.UnmarshalSSZ(data); err != nil {
-		t.Fatalf("UnmarshalSSZ failed: %v", err)
+	if decoded.ValidatorID != original.ValidatorID {
+		t.Errorf("ValidatorID mismatch: got %d, want %d", decoded.ValidatorID, original.ValidatorID)
 	}
 	if decoded.Slot != original.Slot {
-		t.Errorf("Slot mismatch")
+		t.Errorf("Slot mismatch: got %d, want %d", decoded.Slot, original.Slot)
 	}
 	if decoded.Head.Slot != original.Head.Slot {
-		t.Errorf("Head.Slot mismatch")
+		t.Errorf("Head.Slot mismatch: got %d, want %d", decoded.Head.Slot, original.Head.Slot)
+	}
+}
+
+func TestSignedVoteSSZRoundTrip(t *testing.T) {
+	original := &SignedVote{
+		Data: Vote{
+			ValidatorID: 42,
+			Slot:        100,
+			Head:        Checkpoint{Root: Root{0x01}, Slot: 99},
+			Target:      Checkpoint{Root: Root{0x02}, Slot: 98},
+			Source:      Checkpoint{Root: Root{0x03}, Slot: 97},
+		},
+		Signature: Bytes32{0xaa, 0xbb, 0xcc},
+	}
+
+	data, err := original.MarshalSSZ()
+	if err != nil {
+		t.Fatalf("MarshalSSZ failed: %v", err)
+	}
+	// 136 (Vote) + 32 (Signature) = 168 bytes
+	if len(data) != 168 {
+		t.Errorf("expected 168 bytes, got %d", len(data))
+	}
+
+	decoded := &SignedVote{}
+	if err := decoded.UnmarshalSSZ(data); err != nil {
+		t.Fatalf("UnmarshalSSZ failed: %v", err)
+	}
+	if decoded.Data.ValidatorID != original.Data.ValidatorID {
+		t.Errorf("Data.ValidatorID mismatch")
+	}
+	if !bytes.Equal(decoded.Signature[:], original.Signature[:]) {
+		t.Errorf("Signature mismatch")
 	}
 }
 
@@ -183,7 +202,7 @@ func TestBlockSSZRoundTrip(t *testing.T) {
 		ParentRoot:    Root{0xaa},
 		StateRoot:     Root{0xbb},
 		Body: BlockBody{
-			Attestations: []AggregatedAttestation{},
+			Attestations: []SignedVote{},
 		},
 	}
 
@@ -201,6 +220,37 @@ func TestBlockSSZRoundTrip(t *testing.T) {
 	}
 	if decoded.ProposerIndex != original.ProposerIndex {
 		t.Errorf("ProposerIndex mismatch")
+	}
+}
+
+func TestSignedBlockSSZRoundTrip(t *testing.T) {
+	original := &SignedBlock{
+		Message: Block{
+			Slot:          100,
+			ProposerIndex: 5,
+			ParentRoot:    Root{0xaa},
+			StateRoot:     Root{0xbb},
+			Body: BlockBody{
+				Attestations: []SignedVote{},
+			},
+		},
+		Signature: Bytes32{0xdd, 0xee, 0xff},
+	}
+
+	data, err := original.MarshalSSZ()
+	if err != nil {
+		t.Fatalf("MarshalSSZ failed: %v", err)
+	}
+
+	decoded := &SignedBlock{}
+	if err := decoded.UnmarshalSSZ(data); err != nil {
+		t.Fatalf("UnmarshalSSZ failed: %v", err)
+	}
+	if decoded.Message.Slot != original.Message.Slot {
+		t.Errorf("Message.Slot mismatch")
+	}
+	if !bytes.Equal(decoded.Signature[:], original.Signature[:]) {
+		t.Errorf("Signature mismatch")
 	}
 }
 
