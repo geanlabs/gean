@@ -52,21 +52,18 @@ func GetForkChoiceHead(blocks map[Root]*Block, root Root, latestVotes map[Valida
 			return current
 		}
 
-		// Choose best child: most votes, then highest slot, then highest hash
+		// Choose best child: most votes, then lexicographically highest hash
 		best := children[0]
 		bestWeight := voteWeights[best]
-		bestSlot := blocks[best].Slot
 
 		for _, child := range children[1:] {
 			weight := voteWeights[child]
-			slot := blocks[child].Slot
 
+			// Tie-break: most votes, then lexicographically highest hash
 			if weight > bestWeight ||
-				(weight == bestWeight && slot > bestSlot) ||
-				(weight == bestWeight && slot == bestSlot && compareRoots(child, best) > 0) {
+				(weight == bestWeight && compareRoots(child, best) > 0) {
 				best = child
 				bestWeight = weight
-				bestSlot = slot
 			}
 		}
 
