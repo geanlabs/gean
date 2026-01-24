@@ -13,10 +13,10 @@ import (
 
 // Node is the main consensus client that orchestrates all components.
 type Node struct {
-	config  *Config
-	store   *consensus.Store
-	p2p     *p2p.Service
-	logger  *slog.Logger
+	config *Config
+	store  *consensus.Store
+	p2p    *p2p.Service
+	logger *slog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -270,12 +270,16 @@ func (n *Node) proposeBlock(slot consensus.Slot) {
 // produceVote creates and publishes a vote.
 func (n *Node) produceVote(slot consensus.Slot) {
 	target := n.store.GetVoteTarget()
+	head := n.store.Head
+	headBlock := n.store.Blocks[head]
 
 	vote := &consensus.SignedVote{
 		Data: consensus.Vote{
 			Slot:        slot,
 			ValidatorID: *n.config.ValidatorIndex,
+			Head:        consensus.Checkpoint{Root: head, Slot: headBlock.Slot},
 			Target:      target,
+			Source:      n.store.LatestJustified,
 		},
 		Signature: consensus.Root{}, // Placeholder signature
 	}
