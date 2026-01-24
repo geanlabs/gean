@@ -5,7 +5,24 @@ A Go implementation of the Lean Ethereum consensus protocol that is simple enoug
 ## Getting started
 
 ```sh
-make run
+# Build
+make build
+
+# Run standalone (requires genesis directory from lean-quickstart)
+./bin/gean /path/to/genesis --node-id gean_0
+```
+
+## Running in a devnet
+
+To run a local devnet with multiple clients using [lean-quickstart](https://github.com/blockblaz/lean-quickstart):
+
+```sh
+# Clone lean-quickstart
+git clone https://github.com/blockblaz/lean-quickstart.git
+
+# Generate genesis and start devnet
+cd lean-quickstart
+NETWORK_DIR=local-devnet ./spin-node.sh --node gean_0 --generateGenesis
 ```
 
 ## Philosophy
@@ -23,18 +40,18 @@ Our goal is to build a consensus client that is simple and readable yet elegant 
 
 Target: [leanSpec devnet 0](https://github.com/leanEthereum/leanSpec/tree/4b750f2748a3718fe3e1e9cdb3c65e3a7ddabff5)
 
-The client implements:
+### Implemented
 
-- **Types** — SSZ containers aligned with leanSpec (Block, State, Vote, Checkpoint)
-- **Consensus helpers** — 3SF-mini justification rules, round-robin proposer selection
+- **Types** — SSZ containers via fastssz (Block, State, Vote, Checkpoint, Config)
+- **Consensus** — 3SF-mini justification rules, round-robin proposer selection
 - **State transition** — slot processing, block header validation, attestation handling
+- **Fork choice** — LMD-GHOST head selection, Store container
+- **Networking** — libp2p host, gossipsub (block and attestation topics)
+- **Node** — slot ticker, block and attestation production
 
-## Incoming features
+### Remaining for Devnet 0
 
-- Fork choice (LMD-GHOST head selection, Store container)
-- Networking (libp2p, gossipsub, status protocol)
-- Validator duties (block and attestation production)
-- Devnet integration (lean-quickstart support)
+- Request-Response protocol (Status, BlocksByRoot)
 
 ## License
 
