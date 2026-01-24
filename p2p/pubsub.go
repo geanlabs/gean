@@ -26,18 +26,20 @@ var (
 func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
 	params := DefaultGossipsubParams()
 
+	// Start with default gossipsub params and override what we need
+	gsParams := pubsub.DefaultGossipSubParams()
+	gsParams.D = params.D
+	gsParams.Dlo = params.DLow
+	gsParams.Dhi = params.DHigh
+	gsParams.Dlazy = params.DLazy
+	gsParams.HeartbeatInterval = time.Duration(params.HeartbeatInterval * float64(time.Second))
+	gsParams.FanoutTTL = time.Duration(params.FanoutTTL) * time.Second
+	gsParams.HistoryLength = params.MCacheLen
+	gsParams.HistoryGossip = params.MCacheGossip
+
 	opts := []pubsub.Option{
 		pubsub.WithMessageIdFn(computePubsubMessageID),
-		pubsub.WithGossipSubParams(pubsub.GossipSubParams{
-			D:                 params.D,
-			Dlo:               params.DLow,
-			Dhi:               params.DHigh,
-			Dlazy:             params.DLazy,
-			HeartbeatInterval: time.Duration(params.HeartbeatInterval * float64(time.Second)),
-			FanoutTTL:         time.Duration(params.FanoutTTL) * time.Second,
-			HistoryLength:     params.MCacheLen,
-			HistoryGossip:     params.MCacheGossip,
-		}),
+		pubsub.WithGossipSubParams(gsParams),
 		pubsub.WithSeenMessagesTTL(time.Duration(params.SeenTTL) * time.Second),
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
 		pubsub.WithFloodPublish(false),

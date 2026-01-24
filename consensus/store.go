@@ -89,6 +89,11 @@ func (s *Store) ProcessBlock(block *Block) error {
 	return nil
 }
 
+// ProcessAttestation handles a new attestation vote from network gossip.
+func (s *Store) ProcessAttestation(signedVote *SignedVote) {
+	s.processAttestation(signedVote, false)
+}
+
 // processAttestation handles a new attestation vote.
 func (s *Store) processAttestation(signedVote *SignedVote, isFromBlock bool) {
 	vote := signedVote.Data
