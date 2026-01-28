@@ -21,8 +21,8 @@ type Service struct {
 
 	blockTopic *pubsub.Topic
 	blockSub   *pubsub.Subscription
-	attTopic   *pubsub.Topic
-	attSub     *pubsub.Subscription
+	voteTopic  *pubsub.Topic
+	voteSub    *pubsub.Subscription
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -60,10 +60,10 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		return nil, fmt.Errorf("join block topic: %w", err)
 	}
 
-	attTopic, err := ps.Join(AttestationTopic)
+	voteTopic, err := ps.Join(VoteTopic)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("join attestation topic: %w", err)
+		return nil, fmt.Errorf("join vote topic: %w", err)
 	}
 
 	// Subscribe to topics
@@ -73,10 +73,10 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		return nil, fmt.Errorf("subscribe block topic: %w", err)
 	}
 
-	attSub, err := attTopic.Subscribe()
+	voteSub, err := voteTopic.Subscribe()
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("subscribe attestation topic: %w", err)
+		return nil, fmt.Errorf("subscribe vote topic: %w", err)
 	}
 
 	svc := &Service{
@@ -86,8 +86,8 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		logger:     logger,
 		blockTopic: blockTopic,
 		blockSub:   blockSub,
-		attTopic:   attTopic,
-		attSub:     attSub,
+		voteTopic:  voteTopic,
+		voteSub:    voteSub,
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -111,7 +111,7 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 func (s *Service) Start() {
 	s.wg.Add(2)
 	go s.processBlocks()
-	go s.processAttestations()
+	go s.processVotes()
 	s.logger.Info("p2p service started",
 		"peer_id", s.host.ID(),
 		"addrs", s.host.Addrs(),
@@ -122,7 +122,7 @@ func (s *Service) Start() {
 func (s *Service) Stop() {
 	s.cancel()
 	s.blockSub.Cancel()
-	s.attSub.Cancel()
+	s.voteSub.Cancel()
 	s.wg.Wait()
 	s.host.Close()
 	s.logger.Info("p2p service stopped")
@@ -138,14 +138,14 @@ func (s *Service) PublishBlock(ctx context.Context, block *types.SignedBlock) er
 	return s.blockTopic.Publish(ctx, compressed)
 }
 
-// PublishAttestation publishes a signed vote to the network.
-func (s *Service) PublishAttestation(ctx context.Context, vote *types.SignedVote) error {
+// PublishVote publishes a signed vote to the network.
+func (s *Service) PublishVote(ctx context.Context, vote *types.SignedVote) error {
 	data, err := vote.MarshalSSZ()
 	if err != nil {
-		return fmt.Errorf("marshal attestation: %w", err)
+		return fmt.Errorf("marshal vote: %w", err)
 	}
 	compressed := CompressMessage(data)
-	return s.attTopic.Publish(ctx, compressed)
+	return s.voteTopic.Publish(ctx, compressed)
 }
 
 // PeerCount returns the number of connected peers.
@@ -180,17 +180,17 @@ func (s *Service) processBlocks() {
 	}
 }
 
-// processAttestations handles incoming attestation messages.
-func (s *Service) processAttestations() {
+// processVotes handles incoming vote messages.
+func (s *Service) processVotes() {
 	defer s.wg.Done()
 
 	for {
-		msg, err := s.attSub.Next(s.ctx)
+		msg, err := s.voteSub.Next(s.ctx)
 		if err != nil {
 			if s.ctx.Err() != nil {
 				return // context cancelled
 			}
-			s.logger.Error("attestation subscription error", "error", err)
+			s.logger.Error("vote subscription error", "error", err)
 			continue
 		}
 
@@ -200,8 +200,8 @@ func (s *Service) processAttestations() {
 		}
 
 		if s.handlers != nil {
-			if err := s.handlers.HandleAttestationMessage(s.ctx, msg.Data); err != nil {
-				s.logger.Error("handle attestation error", "error", err)
+			if err := s.handlers.HandleVoteMessage(s.ctx, msg.Data); err != nil {
+				s.logger.Error("handle vote error", "error", err)
 			}
 		}
 	}

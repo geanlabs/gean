@@ -55,18 +55,22 @@ func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes ma
 			return current
 		}
 
-		// Choose best child: most votes, then lexicographically highest hash
+		// Choose best child: most votes, then highest slot, then highest hash
 		best := children[0]
 		bestWeight := voteWeights[best]
+		bestSlot := blocks[best].Slot
 
 		for _, child := range children[1:] {
 			weight := voteWeights[child]
+			childSlot := blocks[child].Slot
 
-			// Tie-break: most votes, then lexicographically highest hash
+			// Tie-break: most votes, then highest slot, then lexicographically highest hash
 			if weight > bestWeight ||
-				(weight == bestWeight && compareRoots(child, best) > 0) {
+				(weight == bestWeight && childSlot > bestSlot) ||
+				(weight == bestWeight && childSlot == bestSlot && compareRoots(child, best) > 0) {
 				best = child
 				bestWeight = weight
+				bestSlot = childSlot
 			}
 		}
 
