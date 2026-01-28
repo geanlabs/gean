@@ -103,9 +103,9 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 
 	// Create p2p service with handlers
 	handlers := &p2p.MessageHandlers{
-		OnBlock:       node.handleBlock,
-		OnAttestation: node.handleAttestation,
-		Logger:        logger,
+		OnBlock: node.handleBlock,
+		OnVote:  node.handleVote,
+		Logger:  logger,
 	}
 
 	p2pSvc, err := p2p.NewService(ctx, p2p.ServiceConfig{
@@ -185,8 +185,8 @@ func (n *Node) onTick() {
 		}
 	}
 
-	// Interval 2: Validators vote
-	if interval == 2 && n.config.ValidatorIndex != nil {
+	// Interval 1: Validators vote (per spec: "at the start of second interval")
+	if interval == 1 && n.config.ValidatorIndex != nil {
 		n.produceVote(slot)
 	}
 }
@@ -209,58 +209,34 @@ func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock) 
 	return nil
 }
 
-// handleAttestation processes an incoming attestation from the network.
-func (n *Node) handleAttestation(ctx context.Context, vote *types.SignedVote) error {
+// handleVote processes an incoming vote from the network.
+func (n *Node) handleVote(ctx context.Context, vote *types.SignedVote) error {
 	if err := n.store.ProcessAttestation(vote); err != nil {
-		return fmt.Errorf("validate attestation: %w", err)
+		return fmt.Errorf("process vote: %w", err)
 	}
-	n.logger.Debug("processed attestation",
+	n.logger.Debug("processed vote",
 		"slot", vote.Data.Slot,
 		"validator", vote.Data.ValidatorID,
 	)
 	return nil
 }
 
-// proposeBlock creates and publishes a new block.
+// proposeBlock creates and publishes a new block using Store.ProduceBlock
+// which iteratively collects valid attestations per the spec.
 func (n *Node) proposeBlock(slot types.Slot) {
-	parentRoot := n.store.GetProposalHead(slot)
-	parentState := n.store.States[parentRoot]
-	if parentState == nil {
-		n.logger.Warn("parent state not found", "slot", slot)
-		return
-	}
+	validatorIndex := types.ValidatorIndex(*n.config.ValidatorIndex)
 
-	// Process slots to current
-	newState, err := chain.ProcessSlots(parentState, slot)
+	// ProduceBlock iteratively collects attestations and computes state root
+	block, err := n.store.ProduceBlock(slot, validatorIndex)
 	if err != nil {
-		n.logger.Warn("process slots failed", "slot", slot, "error", err)
+		n.logger.Warn("produce block failed", "slot", slot, "error", err)
 		return
 	}
 
-	// Create block
-	body := types.BlockBody{Attestations: []types.SignedVote{}}
-
-	block := &types.Block{
-		Slot:          slot,
-		ProposerIndex: *n.config.ValidatorIndex,
-		ParentRoot:    parentRoot,
-		StateRoot:     types.Root{}, // Will be updated
-		Body:          body,
-	}
-
-	// Apply block to get state root
-	postState, err := chain.ProcessBlock(newState, block)
-	if err != nil {
-		n.logger.Warn("process block failed", "slot", slot, "error", err)
-		return
-	}
-	stateRoot, _ := postState.HashTreeRoot()
-	block.StateRoot = stateRoot
-
-	// Create signed block (signature is placeholder)
+	// Create signed block (signature is placeholder for Devnet 0)
 	signedBlock := &types.SignedBlock{
 		Message:   *block,
-		Signature: types.Root{}, // Placeholder signature
+		Signature: types.Root{},
 	}
 
 	if err := n.p2p.PublishBlock(n.ctx, signedBlock); err != nil {
@@ -268,13 +244,7 @@ func (n *Node) proposeBlock(slot types.Slot) {
 		return
 	}
 
-	// Process our own block
-	if err := n.store.ProcessBlock(block); err != nil {
-		n.logger.Error("failed to process own block", "slot", slot, "error", err)
-		return
-	}
-
-	n.logger.Info("proposed block", "slot", slot)
+	n.logger.Info("proposed block", "slot", slot, "attestations", len(block.Body.Attestations))
 }
 
 // produceVote creates and publishes a vote.
@@ -294,7 +264,7 @@ func (n *Node) produceVote(slot types.Slot) {
 		Signature: types.Root{}, // Placeholder signature
 	}
 
-	if err := n.p2p.PublishAttestation(n.ctx, vote); err != nil {
+	if err := n.p2p.PublishVote(n.ctx, vote); err != nil {
 		n.logger.Error("failed to publish vote", "slot", slot, "error", err)
 		return
 	}

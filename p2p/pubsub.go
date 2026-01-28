@@ -17,10 +17,10 @@ const (
 	NetworkName = "devnet0"
 )
 
-// Topic names
+// Topic names (per networking spec: block and vote)
 var (
-	BlockTopic       = "/leanconsensus/" + NetworkName + "/block/ssz_snappy"
-	AttestationTopic = "/leanconsensus/" + NetworkName + "/attestation/ssz_snappy"
+	BlockTopic = "/leanconsensus/" + NetworkName + "/block/ssz_snappy"
+	VoteTopic  = "/leanconsensus/" + NetworkName + "/vote/ssz_snappy"
 )
 
 // NewGossipSub creates a new gossipsub instance with lean consensus parameters.
