@@ -11,14 +11,14 @@ import (
 // BlockHandler processes incoming blocks from gossipsub.
 type BlockHandler func(ctx context.Context, block *types.SignedBlock) error
 
-// AttestationHandler processes incoming attestations from gossipsub.
-type AttestationHandler func(ctx context.Context, vote *types.SignedVote) error
+// VoteHandler processes incoming votes from gossipsub.
+type VoteHandler func(ctx context.Context, vote *types.SignedVote) error
 
 // MessageHandlers holds handlers for different message types.
 type MessageHandlers struct {
-	OnBlock       BlockHandler
-	OnAttestation AttestationHandler
-	Logger        *slog.Logger
+	OnBlock BlockHandler
+	OnVote  VoteHandler
+	Logger  *slog.Logger
 }
 
 // HandleBlockMessage decodes and processes an incoming block message.
@@ -49,29 +49,29 @@ func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte) e
 	return nil
 }
 
-// HandleAttestationMessage decodes and processes an incoming attestation.
-func (h *MessageHandlers) HandleAttestationMessage(ctx context.Context, data []byte) error {
+// HandleVoteMessage decodes and processes an incoming vote.
+func (h *MessageHandlers) HandleVoteMessage(ctx context.Context, data []byte) error {
 	// Decompress
 	decoded, err := DecompressMessage(data)
 	if err != nil {
-		return fmt.Errorf("decompress attestation: %w", err)
+		return fmt.Errorf("decompress vote: %w", err)
 	}
 
 	// Decode SSZ
 	var vote types.SignedVote
 	if err := vote.UnmarshalSSZ(decoded); err != nil {
-		return fmt.Errorf("unmarshal attestation: %w", err)
+		return fmt.Errorf("unmarshal vote: %w", err)
 	}
 
 	if h.Logger != nil {
-		h.Logger.Info("received attestation",
+		h.Logger.Info("received vote",
 			"slot", vote.Data.Slot,
 			"validator", vote.Data.ValidatorID,
 		)
 	}
 
-	if h.OnAttestation != nil {
-		return h.OnAttestation(ctx, &vote)
+	if h.OnVote != nil {
+		return h.OnVote(ctx, &vote)
 	}
 
 	return nil
