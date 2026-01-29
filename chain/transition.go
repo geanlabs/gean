@@ -4,6 +4,7 @@ package chain
 import (
 	"fmt"
 
+	"github.com/OffchainLabs/go-bitfield"
 	"github.com/devylongs/gean/types"
 )
 
@@ -211,35 +212,50 @@ func Copy(s *types.State) *types.State {
 	return &cp
 }
 
-// Bitlist helpers
+// SSZ Bitlist helpers using go-bitfield library.
+// The library handles SSZ Bitlist format (data bits + delimiter bit) automatically.
 
-// appendBitAt sets a bit at the given index, extending the slice if needed.
-func appendBitAt(bits []byte, index int, val bool) []byte {
-	byteIndex := index / 8
-	for byteIndex >= len(bits) {
-		bits = append(bits, 0)
-	}
-	if val {
-		bits[byteIndex] |= 1 << (index % 8)
-	}
-	return bits
+// newBitlist creates a new SSZ bitlist with the given capacity.
+func newBitlist(capacity uint64) bitfield.Bitlist {
+	return bitfield.NewBitlist(capacity)
 }
 
+// getBit returns the value of a bit at the given index.
+// Returns false if index is out of bounds.
 func getBit(bits []byte, index int) bool {
-	if index/8 >= len(bits) {
+	bl := bitfield.Bitlist(bits)
+	if uint64(index) >= bl.Len() {
 		return false
 	}
-	return bits[index/8]&(1<<(index%8)) != 0
+	return bl.BitAt(uint64(index))
 }
 
+// setBit sets a bit at the given index.
+// If the bitlist needs to grow, it creates a new one with sufficient capacity.
 func setBit(bits []byte, index int, val bool) []byte {
-	for index/8 >= len(bits) {
-		bits = append(bits, 0)
+	bl := bitfield.Bitlist(bits)
+	idx := uint64(index)
+
+	// If we need more capacity, create a larger bitlist
+	if idx >= bl.Len() {
+		newBl := bitfield.NewBitlist(idx + 1)
+		// Copy existing bits
+		for i := uint64(0); i < bl.Len(); i++ {
+			if bl.BitAt(i) {
+				newBl.SetBitAt(i, true)
+			}
+		}
+		bl = newBl
 	}
-	if val {
-		bits[index/8] |= 1 << (index % 8)
-	} else {
-		bits[index/8] &^= 1 << (index % 8)
+
+	bl.SetBitAt(idx, val)
+	return bl
+}
+
+// appendBitAt appends a bit at the given index, extending the bitlist if needed.
+func appendBitAt(bits []byte, index int, val bool) []byte {
+	if len(bits) == 0 {
+		bits = bitfield.NewBitlist(uint64(index) + 1)
 	}
-	return bits
+	return setBit(bits, index, val)
 }

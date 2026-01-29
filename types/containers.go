@@ -64,9 +64,9 @@ type State struct {
 	LatestFinalized Checkpoint
 
 	HistoricalBlockHashes []Root `ssz-max:"262144" ssz-size:"?,32"`
-	JustifiedSlots        []byte `ssz-max:"32768"`
+	JustifiedSlots        []byte `ssz:"bitlist" ssz-max:"262144"` // Bitlist[HISTORICAL_ROOTS_LIMIT]
 
 	// Justification tracking (unused in Devnet 0 but required for SSZ compatibility)
 	JustificationRoots      []Root `ssz-max:"262144" ssz-size:"?,32"`
-	JustificationValidators []byte `ssz-max:"134217728"` // 262144 * 4096 / 8 = 134217728
+	JustificationValidators []byte `ssz:"bitlist" ssz-max:"1073741824"` // Bitlist[HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT]
 }
