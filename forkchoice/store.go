@@ -41,13 +41,18 @@ func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
 		return nil, fmt.Errorf("hash anchor block: %w", err)
 	}
 
+	// Initialize justified/finalized checkpoints with anchor block root
+	// This ensures votes can reference the genesis as their source
+	latestJustified := types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot}
+	latestFinalized := types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot}
+
 	return &Store{
 		Time:             uint64(anchorBlock.Slot) * types.IntervalsPerSlot,
 		Config:           state.Config,
 		Head:             anchorRoot,
 		SafeTarget:       anchorRoot,
-		LatestJustified:  state.LatestJustified,
-		LatestFinalized:  state.LatestFinalized,
+		LatestJustified:  latestJustified,
+		LatestFinalized:  latestFinalized,
 		Blocks:           map[types.Root]*types.Block{anchorRoot: anchorBlock},
 		States:           map[types.Root]*types.State{anchorRoot: state},
 		LatestKnownVotes: make(map[types.ValidatorIndex]types.Checkpoint),
@@ -189,13 +194,20 @@ func (s *Store) UpdateHead() {
 // updateHeadLocked updates head. Caller must hold lock.
 func (s *Store) updateHeadLocked() {
 	if latest := GetLatestJustified(s.States); latest != nil {
-		s.LatestJustified = *latest
+		// Only update LatestJustified if we have the block in our store
+		// This prevents referencing blocks we haven't received yet
+		if _, exists := s.Blocks[latest.Root]; exists {
+			s.LatestJustified = *latest
+		}
 	}
 
 	s.Head = GetHead(s.Blocks, s.LatestJustified.Root, s.LatestKnownVotes, 0)
 
 	if state, exists := s.States[s.Head]; exists {
-		s.LatestFinalized = state.LatestFinalized
+		// Only update LatestFinalized if we have the block in our store
+		if _, exists := s.Blocks[state.LatestFinalized.Root]; exists {
+			s.LatestFinalized = state.LatestFinalized
+		}
 	}
 }
 
