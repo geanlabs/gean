@@ -1,6 +1,9 @@
 package chain
 
-import "github.com/devylongs/gean/types"
+import (
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/devylongs/gean/types"
+)
 
 // GenerateGenesis creates a genesis state with the given parameters.
 func GenerateGenesis(genesisTime, numValidators uint64) *types.State {
@@ -25,9 +28,9 @@ func GenerateGenesis(genesisTime, numValidators uint64) *types.State {
 		LatestJustified:         types.Checkpoint{Root: types.Root{}, Slot: 0},
 		LatestFinalized:         types.Checkpoint{Root: types.Root{}, Slot: 0},
 		HistoricalBlockHashes:   []types.Root{},
-		JustifiedSlots:          []byte{},
+		JustifiedSlots:          bitfield.NewBitlist(1), // Empty SSZ Bitlist with delimiter
 		JustificationRoots:      []types.Root{},
-		JustificationValidators: []byte{},
+		JustificationValidators: bitfield.NewBitlist(1), // Empty SSZ Bitlist with delimiter
 	}
 }
 
