@@ -13,27 +13,19 @@ const (
 	MaxRequestBlocks       = 1024 // 2^10
 )
 
-// Status is the handshake message exchanged upon connection.
-// It allows nodes to verify compatibility and chain state.
-type Status struct {
-	Finalized types.Checkpoint
-	Head      types.Checkpoint
-}
-
-// BlocksByRootRequest is a request for blocks by their root hashes.
-type BlocksByRootRequest struct {
-	Roots []types.Root
-}
-
 // BlocksByRootResponse is the response containing requested signed blocks.
+// Note: Status and BlocksByRootRequest are defined in types package with SSZ encoding.
 type BlocksByRootResponse struct {
 	Blocks []*types.SignedBlock
 }
 
 // NewStatus creates a Status message from the current store state.
-func NewStatus(store *forkchoice.Store) *Status {
+func NewStatus(store *forkchoice.Store) *types.Status {
+	store.RLock()
+	defer store.RUnlock()
+
 	headBlock := store.Blocks[store.Head]
-	return &Status{
+	return &types.Status{
 		Finalized: store.LatestFinalized,
 		Head: types.Checkpoint{
 			Root: store.Head,
@@ -54,13 +46,16 @@ func NewHandler(store *forkchoice.Store) *Handler {
 
 // HandleStatus processes an incoming Status request.
 // Returns our current status for the handshake.
-func (h *Handler) HandleStatus(peerStatus *Status) *Status {
+func (h *Handler) HandleStatus(peerStatus *types.Status) *types.Status {
 	return NewStatus(h.store)
 }
 
 // HandleBlocksByRoot processes a BlocksByRoot request.
 // Returns the requested blocks that we have available.
-func (h *Handler) HandleBlocksByRoot(request *BlocksByRootRequest) *BlocksByRootResponse {
+func (h *Handler) HandleBlocksByRoot(request *types.BlocksByRootRequest) *BlocksByRootResponse {
+	h.store.RLock()
+	defer h.store.RUnlock()
+
 	var blocks []*types.SignedBlock
 
 	for _, root := range request.Roots {
@@ -83,7 +78,10 @@ func (h *Handler) HandleBlocksByRoot(request *BlocksByRootRequest) *BlocksByRoot
 
 // ValidatePeerStatus validates an incoming peer's status.
 // Returns an error if the peer is on a different chain or too far behind.
-func (h *Handler) ValidatePeerStatus(peerStatus *Status) error {
+func (h *Handler) ValidatePeerStatus(peerStatus *types.Status) error {
+	h.store.RLock()
+	defer h.store.RUnlock()
+
 	// For Devnet 0, basic validation:
 	// - Peer's finalized checkpoint should not conflict with ours
 	// - If we have a finalized block at peer's finalized slot, roots should match

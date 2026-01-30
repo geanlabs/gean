@@ -25,6 +25,16 @@ type Store struct {
 	LatestNewVotes   map[types.ValidatorIndex]types.Checkpoint
 }
 
+// RLock acquires a read lock on the store.
+func (s *Store) RLock() {
+	s.mu.RLock()
+}
+
+// RUnlock releases a read lock on the store.
+func (s *Store) RUnlock() {
+	s.mu.RUnlock()
+}
+
 // NewStore initializes a fork choice store from an anchor state and block.
 func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
 	stateRoot, err := state.HashTreeRoot()
@@ -270,6 +280,11 @@ func (s *Store) tickIntervalLocked(hasProposal bool) {
 func (s *Store) AdvanceTime(time uint64, hasProposal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Don't advance time if we're before genesis
+	if time < s.Config.GenesisTime {
+		return
+	}
 
 	tickIntervalTime := (time - s.Config.GenesisTime) / types.SecondsPerInterval
 

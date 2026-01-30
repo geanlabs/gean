@@ -54,7 +54,7 @@ func TestHandleStatus(t *testing.T) {
 	store := setupTestStore(t)
 	handler := NewHandler(store)
 
-	peerStatus := &Status{
+	peerStatus := &types.Status{
 		Finalized: types.Checkpoint{Root: types.Root{}, Slot: 0},
 		Head:      types.Checkpoint{Root: types.Root{}, Slot: 0},
 	}
@@ -77,7 +77,7 @@ func TestHandleBlocksByRoot(t *testing.T) {
 	// Request the genesis block
 	genesisRoot := store.Head
 
-	request := &BlocksByRootRequest{
+	request := &types.BlocksByRootRequest{
 		Roots: []types.Root{genesisRoot},
 	}
 
@@ -103,7 +103,7 @@ func TestHandleBlocksByRootUnknown(t *testing.T) {
 	// Request an unknown block
 	unknownRoot := types.Root{1, 2, 3}
 
-	request := &BlocksByRootRequest{
+	request := &types.BlocksByRootRequest{
 		Roots: []types.Root{unknownRoot},
 	}
 
@@ -123,7 +123,7 @@ func TestValidatePeerStatus(t *testing.T) {
 	handler := NewHandler(store)
 
 	// Valid status (genesis)
-	validStatus := &Status{
+	validStatus := &types.Status{
 		Finalized: types.Checkpoint{Root: types.Root{}, Slot: 0},
 		Head:      types.Checkpoint{Root: store.Head, Slot: 0},
 	}
