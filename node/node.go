@@ -4,13 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/devylongs/gean/chain"
 	"github.com/devylongs/gean/forkchoice"
 	"github.com/devylongs/gean/p2p"
+	"github.com/devylongs/gean/p2p/reqresp"
+	psync "github.com/devylongs/gean/p2p/sync"
 	"github.com/devylongs/gean/types"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Node is the main consensus client that orchestrates all components.
@@ -18,11 +22,13 @@ type Node struct {
 	config *Config
 	store  *forkchoice.Store
 	p2p    *p2p.Service
+	syncer *psync.Syncer
 	logger *slog.Logger
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	lastProposedSlot types.Slot // Track last slot we proposed/saw a block for
 }
 
 // Config holds node configuration.
@@ -122,12 +128,30 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 
 	node.p2p = p2pSvc
 
+	// Create request/response handler
+	reqrespHandler := reqresp.NewHandler(store)
+
+	// Create stream handler and register protocols
+	streamHandler := reqresp.NewStreamHandler(host, reqrespHandler)
+	streamHandler.RegisterProtocols()
+
+	// Create syncer for chain synchronization
+	syncer := psync.NewSyncer(ctx, psync.Config{
+		Host:           host,
+		Store:          store,
+		StreamHandler:  streamHandler,
+		ReqRespHandler: reqrespHandler,
+		Logger:         logger,
+	})
+	node.syncer = syncer
+
 	return node, nil
 }
 
 // Start begins node operation.
 func (n *Node) Start() {
 	n.p2p.Start()
+	n.syncer.Start()
 
 	n.wg.Add(1)
 	go n.slotTicker()
@@ -142,6 +166,7 @@ func (n *Node) Start() {
 func (n *Node) Stop() {
 	n.cancel()
 	n.wg.Wait()
+	n.syncer.Stop()
 	n.p2p.Stop()
 	n.logger.Info("node stopped")
 }
@@ -166,6 +191,12 @@ func (n *Node) slotTicker() {
 // onTick is called every second to advance time and check duties.
 func (n *Node) onTick() {
 	currentTime := uint64(time.Now().Unix())
+
+	// Don't do anything before genesis
+	if currentTime < n.config.GenesisTime {
+		return
+	}
+
 	n.store.AdvanceTime(currentTime, false)
 
 	slot := n.store.CurrentSlot()
@@ -176,17 +207,22 @@ func (n *Node) onTick() {
 		n.logger.Debug("slot", "slot", slot, "head", n.store.Head[:4], "peers", n.PeerCount())
 	}
 
-	// Interval 0: Proposer produces block
-	if interval == 0 && n.config.ValidatorIndex != nil {
+	// Interval 0: Proposer produces block (skip slot 0 - that's genesis)
+	if interval == 0 && slot > 0 && n.config.ValidatorIndex != nil {
+		// Skip if we already proposed or received a block for this slot
+		if slot <= n.lastProposedSlot {
+			return
+		}
 		// Check if we're the proposer for the current slot (round-robin)
 		proposerIndex := uint64(slot) % n.config.ValidatorCount
 		if proposerIndex == *n.config.ValidatorIndex {
+			n.lastProposedSlot = slot
 			n.proposeBlock(slot)
 		}
 	}
 
-	// Interval 1: Validators vote (per spec: "at the start of second interval")
-	if interval == 1 && n.config.ValidatorIndex != nil {
+	// Interval 1: Validators vote (skip slot 0 - no block to vote on yet)
+	if interval == 1 && slot > 0 && n.config.ValidatorIndex != nil {
 		n.produceVote(slot)
 	}
 }
@@ -197,11 +233,28 @@ func (n *Node) currentInterval() uint64 {
 }
 
 // handleBlock processes an incoming block from the network.
-func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock) error {
+func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock, from peer.ID) error {
 	block := &signedBlock.Message
+
+	// First, check if we need to request missing parent blocks
+	if err := n.syncer.OnBlockReceived(signedBlock, from); err != nil {
+		n.logger.Warn("failed to request parent blocks", "error", err)
+	}
+
+	// Try to process the block
 	if err := n.store.ProcessBlock(block); err != nil {
+		// If parent state not found, it might be due to missing parent blocks
+		if strings.Contains(err.Error(), "parent") {
+			return fmt.Errorf("process block: %w (parent sync may be in progress)", err)
+		}
 		return fmt.Errorf("process block: %w", err)
 	}
+
+	// Track that we've seen a block for this slot to prevent proposing for same slot
+	if block.Slot > n.lastProposedSlot {
+		n.lastProposedSlot = block.Slot
+	}
+
 	n.logger.Info("processed block",
 		"slot", block.Slot,
 		"proposer", block.ProposerIndex,

@@ -6,10 +6,11 @@ import (
 	"log/slog"
 
 	"github.com/devylongs/gean/types"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // BlockHandler processes incoming blocks from gossipsub.
-type BlockHandler func(ctx context.Context, block *types.SignedBlock) error
+type BlockHandler func(ctx context.Context, block *types.SignedBlock, from peer.ID) error
 
 // VoteHandler processes incoming votes from gossipsub.
 type VoteHandler func(ctx context.Context, vote *types.SignedVote) error
@@ -22,7 +23,7 @@ type MessageHandlers struct {
 }
 
 // HandleBlockMessage decodes and processes an incoming block message.
-func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte) error {
+func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte, from peer.ID) error {
 	// Decompress
 	decoded, err := DecompressMessage(data)
 	if err != nil {
@@ -43,7 +44,7 @@ func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte) e
 	}
 
 	if h.OnBlock != nil {
-		return h.OnBlock(ctx, &block)
+		return h.OnBlock(ctx, &block, from)
 	}
 
 	return nil

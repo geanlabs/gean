@@ -153,6 +153,11 @@ func (s *Service) PeerCount() int {
 	return len(s.host.Network().Peers())
 }
 
+// Host returns the underlying libp2p host.
+func (s *Service) Host() host.Host {
+	return s.host
+}
+
 // processBlocks handles incoming block messages.
 func (s *Service) processBlocks() {
 	defer s.wg.Done()
@@ -173,7 +178,7 @@ func (s *Service) processBlocks() {
 		}
 
 		if s.handlers != nil {
-			if err := s.handlers.HandleBlockMessage(s.ctx, msg.Data); err != nil {
+			if err := s.handlers.HandleBlockMessage(s.ctx, msg.Data, msg.ReceivedFrom); err != nil {
 				s.logger.Error("handle block error", "error", err)
 			}
 		}
