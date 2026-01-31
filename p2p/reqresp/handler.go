@@ -6,10 +6,10 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// Protocol IDs for request/response messages
+// Protocol IDs for request/response messages (per devnet0 spec)
 const (
-	StatusProtocolV1       = "/leanconsensus/req/status/1/ssz_snappy"
-	BlocksByRootProtocolV1 = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+	StatusProtocolV1       = "/leanconsensus/req/status/1/"
+	BlocksByRootProtocolV1 = "/leanconsensus/req/blocks_by_root/1/"
 	MaxRequestBlocks       = 1024 // 2^10
 )
 

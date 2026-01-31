@@ -302,18 +302,13 @@ func (n *Node) proposeBlock(slot types.Slot) {
 
 // produceVote creates and publishes a vote.
 func (n *Node) produceVote(slot types.Slot) {
-	target := n.store.GetVoteTarget()
-	head := n.store.Head
-	headBlock := n.store.Blocks[head]
+	validatorIndex := types.ValidatorIndex(*n.config.ValidatorIndex)
+
+	// Use ProduceAttestationVote which handles locking correctly
+	voteData := n.store.ProduceAttestationVote(slot, validatorIndex)
 
 	vote := &types.SignedVote{
-		Data: types.Vote{
-			Slot:        slot,
-			ValidatorID: *n.config.ValidatorIndex,
-			Head:        types.Checkpoint{Root: head, Slot: headBlock.Slot},
-			Target:      target,
-			Source:      n.store.LatestJustified,
-		},
+		Data:      *voteData,
 		Signature: types.Root{}, // Placeholder signature
 	}
 
