@@ -2,9 +2,6 @@
 package gossipsub
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
-
 	"github.com/devylongs/gean/types"
 )
 
@@ -50,30 +47,3 @@ func DefaultParams() Params {
 	}
 }
 
-// MessageID is a 20-byte gossipsub message identifier.
-type MessageID [20]byte
-
-// ComputeMessageID computes the message ID for a gossipsub message.
-// ID = SHA256(domain + uint64_le(len(topic)) + topic + data)[:20]
-func ComputeMessageID(topic []byte, data []byte, snappyValid bool) MessageID {
-	var domain [4]byte
-	if snappyValid {
-		domain = MessageDomainValidSnappy
-	} else {
-		domain = MessageDomainInvalidSnappy
-	}
-
-	// Build hash input: domain + topic_len (8 bytes LE) + topic + data
-	topicLen := make([]byte, 8)
-	binary.LittleEndian.PutUint64(topicLen, uint64(len(topic)))
-
-	h := sha256.New()
-	h.Write(domain[:])
-	h.Write(topicLen)
-	h.Write(topic)
-	h.Write(data)
-
-	var id MessageID
-	copy(id[:], h.Sum(nil)[:20])
-	return id
-}

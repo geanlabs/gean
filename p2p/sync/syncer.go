@@ -117,7 +117,7 @@ func (s *Syncer) Stop() {
 
 // InitiateStatusExchange sends our status and processes peer's response.
 func (s *Syncer) InitiateStatusExchange(ctx context.Context, peerID peer.ID) error {
-	ourStatus := reqresp.NewStatus(s.store)
+	ourStatus := s.reqrespHandler.GetStatus()
 
 	s.logger.Debug("sending status to peer",
 		"peer", peerID,
@@ -161,7 +161,7 @@ func (s *Syncer) processPeerStatus(peerID peer.ID, peerStatus *types.Status) err
 	s.mu.Unlock()
 
 	// Check if we need to sync
-	ourStatus := reqresp.NewStatus(s.store)
+	ourStatus := s.reqrespHandler.GetStatus()
 	if peerStatus.Head.Slot > ourStatus.Head.Slot {
 		s.logger.Info("peer ahead, initiating sync",
 			"peer", peerID,
@@ -334,7 +334,7 @@ func (s *Syncer) syncLoop() {
 
 // checkSyncStatus compares our status with known peers.
 func (s *Syncer) checkSyncStatus() {
-	ourStatus := reqresp.NewStatus(s.store)
+	ourStatus := s.reqrespHandler.GetStatus()
 
 	s.mu.RLock()
 	var bestPeer peer.ID
@@ -372,16 +372,9 @@ func (s *Syncer) OnBlockReceived(block *types.SignedBlock, fromPeer peer.ID) err
 	return nil
 }
 
-// GetSyncState returns the current sync state.
-func (s *Syncer) GetSyncState() SyncState {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.state
-}
-
 // IsSynced returns true if we believe we are synced with the network.
 func (s *Syncer) IsSynced() bool {
-	ourStatus := reqresp.NewStatus(s.store)
+	ourStatus := s.reqrespHandler.GetStatus()
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()

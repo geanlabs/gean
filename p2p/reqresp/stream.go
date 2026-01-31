@@ -72,8 +72,8 @@ func (s *StreamHandler) handleStatusStream(stream network.Stream) {
 		return
 	}
 
-	// Process and generate response
-	ourStatus := s.handler.HandleStatus(&peerStatus)
+	// Generate our status response
+	ourStatus := s.handler.GetStatus()
 
 	// Marshal response
 	respData, err := ourStatus.MarshalSSZ()
@@ -113,11 +113,11 @@ func (s *StreamHandler) handleBlocksByRootStream(stream network.Stream) {
 	}
 
 	// Process request using the handler
-	response := s.handler.HandleBlocksByRoot(&request)
+	blocks := s.handler.HandleBlocksByRoot(&request)
 
 	// Write each block as a separate response chunk
 	_ = stream.SetWriteDeadline(time.Now().Add(WriteTimeout))
-	for _, block := range response.Blocks {
+	for _, block := range blocks {
 		blockData, err := block.MarshalSSZ()
 		if err != nil {
 			continue

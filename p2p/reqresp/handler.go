@@ -2,6 +2,8 @@
 package reqresp
 
 import (
+	"errors"
+
 	"github.com/devylongs/gean/forkchoice"
 	"github.com/devylongs/gean/types"
 )
@@ -13,27 +15,6 @@ const (
 	MaxRequestBlocks       = 1024 // 2^10
 )
 
-// BlocksByRootResponse is the response containing requested signed blocks.
-// Note: Status and BlocksByRootRequest are defined in types package with SSZ encoding.
-type BlocksByRootResponse struct {
-	Blocks []*types.SignedBlock
-}
-
-// NewStatus creates a Status message from the current store state.
-func NewStatus(store *forkchoice.Store) *types.Status {
-	store.RLock()
-	defer store.RUnlock()
-
-	headBlock := store.Blocks[store.Head]
-	return &types.Status{
-		Finalized: store.LatestFinalized,
-		Head: types.Checkpoint{
-			Root: store.Head,
-			Slot: headBlock.Slot,
-		},
-	}
-}
-
 // Handler handles request/response protocol messages.
 type Handler struct {
 	store *forkchoice.Store
@@ -44,15 +25,24 @@ func NewHandler(store *forkchoice.Store) *Handler {
 	return &Handler{store: store}
 }
 
-// HandleStatus processes an incoming Status request.
-// Returns our current status for the handshake.
-func (h *Handler) HandleStatus(peerStatus *types.Status) *types.Status {
-	return NewStatus(h.store)
+// GetStatus returns our current status.
+func (h *Handler) GetStatus() *types.Status {
+	h.store.RLock()
+	defer h.store.RUnlock()
+
+	headBlock := h.store.Blocks[h.store.Head]
+	return &types.Status{
+		Finalized: h.store.LatestFinalized,
+		Head: types.Checkpoint{
+			Root: h.store.Head,
+			Slot: headBlock.Slot,
+		},
+	}
 }
 
 // HandleBlocksByRoot processes a BlocksByRoot request.
 // Returns the requested blocks that we have available.
-func (h *Handler) HandleBlocksByRoot(request *types.BlocksByRootRequest) *BlocksByRootResponse {
+func (h *Handler) HandleBlocksByRoot(request *types.BlocksByRootRequest) []*types.SignedBlock {
 	h.store.RLock()
 	defer h.store.RUnlock()
 
@@ -73,21 +63,22 @@ func (h *Handler) HandleBlocksByRoot(request *types.BlocksByRootRequest) *Blocks
 		}
 	}
 
-	return &BlocksByRootResponse{Blocks: blocks}
+	return blocks
 }
 
+// Errors for req/resp handling
+var (
+	ErrInvalidStatus = errors.New("invalid peer status")
+)
+
 // ValidatePeerStatus validates an incoming peer's status.
-// Returns an error if the peer is on a different chain or too far behind.
+// Returns an error if the peer is on a different chain.
 func (h *Handler) ValidatePeerStatus(peerStatus *types.Status) error {
 	h.store.RLock()
 	defer h.store.RUnlock()
 
-	// For Devnet 0, basic validation:
-	// - Peer's finalized checkpoint should not conflict with ours
-	// - If we have a finalized block at peer's finalized slot, roots should match
-
+	// If we have the peer's finalized block, verify slot matches
 	if peerStatus.Finalized.Slot > 0 {
-		// Check if we have this slot in our history
 		if block, exists := h.store.Blocks[peerStatus.Finalized.Root]; exists {
 			if block.Slot != peerStatus.Finalized.Slot {
 				return ErrInvalidStatus
@@ -96,18 +87,4 @@ func (h *Handler) ValidatePeerStatus(peerStatus *types.Status) error {
 	}
 
 	return nil
-}
-
-// Errors for req/resp handling
-var (
-	ErrInvalidStatus = &Error{Message: "invalid peer status"}
-)
-
-// Error represents a request/response protocol error.
-type Error struct {
-	Message string
-}
-
-func (e *Error) Error() string {
-	return e.Message
 }

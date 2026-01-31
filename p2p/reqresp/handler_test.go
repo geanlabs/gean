@@ -30,13 +30,14 @@ func setupTestStore(t *testing.T) *forkchoice.Store {
 	return store
 }
 
-func TestNewStatus(t *testing.T) {
+func TestGetStatus(t *testing.T) {
 	store := setupTestStore(t)
+	handler := NewHandler(store)
 
-	status := NewStatus(store)
+	status := handler.GetStatus()
 
 	if status == nil {
-		t.Fatal("NewStatus returned nil")
+		t.Fatal("GetStatus returned nil")
 	}
 
 	// Genesis state should have zero finalized slot
@@ -47,26 +48,6 @@ func TestNewStatus(t *testing.T) {
 	// Head should match store head
 	if status.Head.Root != store.Head {
 		t.Error("Head.Root does not match store head")
-	}
-}
-
-func TestHandleStatus(t *testing.T) {
-	store := setupTestStore(t)
-	handler := NewHandler(store)
-
-	peerStatus := &types.Status{
-		Finalized: types.Checkpoint{Root: types.Root{}, Slot: 0},
-		Head:      types.Checkpoint{Root: types.Root{}, Slot: 0},
-	}
-
-	response := handler.HandleStatus(peerStatus)
-
-	if response == nil {
-		t.Fatal("HandleStatus returned nil")
-	}
-
-	if response.Head.Root != store.Head {
-		t.Error("Response head does not match store head")
 	}
 }
 
@@ -81,18 +62,14 @@ func TestHandleBlocksByRoot(t *testing.T) {
 		Roots: []types.Root{genesisRoot},
 	}
 
-	response := handler.HandleBlocksByRoot(request)
+	blocks := handler.HandleBlocksByRoot(request)
 
-	if response == nil {
-		t.Fatal("HandleBlocksByRoot returned nil")
+	if len(blocks) != 1 {
+		t.Errorf("Expected 1 block, got %d", len(blocks))
 	}
 
-	if len(response.Blocks) != 1 {
-		t.Errorf("Expected 1 block, got %d", len(response.Blocks))
-	}
-
-	if response.Blocks[0].Message.Slot != 0 {
-		t.Errorf("Block slot = %d, want 0", response.Blocks[0].Message.Slot)
+	if blocks[0].Message.Slot != 0 {
+		t.Errorf("Block slot = %d, want 0", blocks[0].Message.Slot)
 	}
 }
 
@@ -107,14 +84,10 @@ func TestHandleBlocksByRootUnknown(t *testing.T) {
 		Roots: []types.Root{unknownRoot},
 	}
 
-	response := handler.HandleBlocksByRoot(request)
+	blocks := handler.HandleBlocksByRoot(request)
 
-	if response == nil {
-		t.Fatal("HandleBlocksByRoot returned nil")
-	}
-
-	if len(response.Blocks) != 0 {
-		t.Errorf("Expected 0 blocks for unknown root, got %d", len(response.Blocks))
+	if len(blocks) != 0 {
+		t.Errorf("Expected 0 blocks for unknown root, got %d", len(blocks))
 	}
 }
 
