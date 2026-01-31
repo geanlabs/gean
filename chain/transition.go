@@ -8,7 +8,6 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-var ZeroHash = types.Root{}
 
 // ProcessSlot performs per-slot maintenance.
 // If the latest block header has an empty state_root, fill it with the current state root.
@@ -90,7 +89,7 @@ func ProcessBlockHeader(s *types.State, block *types.Block) (*types.State, error
 	// Fill empty slots with zero hashes
 	emptySlots := int(block.Slot - s.LatestBlockHeader.Slot - 1)
 	for i := 0; i < emptySlots; i++ {
-		newState.HistoricalBlockHashes = append(newState.HistoricalBlockHashes, ZeroHash)
+		newState.HistoricalBlockHashes = append(newState.HistoricalBlockHashes, types.Root{})
 		emptySlot := parentSlot + 1 + i
 		newState.JustifiedSlots = appendBitAt(newState.JustifiedSlots, emptySlot, false)
 	}
@@ -210,14 +209,6 @@ func Copy(s *types.State) *types.State {
 	cp.JustificationRoots = append([]types.Root{}, s.JustificationRoots...)
 	cp.JustificationValidators = append([]byte{}, s.JustificationValidators...)
 	return &cp
-}
-
-// SSZ Bitlist helpers using go-bitfield library.
-// The library handles SSZ Bitlist format (data bits + delimiter bit) automatically.
-
-// newBitlist creates a new SSZ bitlist with the given capacity.
-func newBitlist(capacity uint64) bitfield.Bitlist {
-	return bitfield.NewBitlist(capacity)
 }
 
 // getBit returns the value of a bit at the given index.

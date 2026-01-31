@@ -7,7 +7,6 @@ import (
 
 // Params holds the canonical gossipsub parameters.
 type Params struct {
-	ProtocolID        string
 	D                 int     // Target mesh peers
 	DLow              int     // Low watermark
 	DHigh             int     // High watermark
@@ -17,7 +16,6 @@ type Params struct {
 	MCacheLen         int     // Message cache windows
 	MCacheGossip      int     // Gossip windows
 	SeenTTL           int     // Seen message TTL (seconds)
-	ValidationMode    string
 }
 
 // Domain types for message ID isolation (per networking spec)
@@ -33,7 +31,6 @@ func DefaultParams() Params {
 	seenTTL := int(types.SecondsPerSlot) * int(types.JustificationLookbackSlots) * 2
 
 	return Params{
-		ProtocolID:        "/meshsub/1.0.0",
 		D:                 8,
 		DLow:              6,
 		DHigh:             12,
@@ -43,7 +40,6 @@ func DefaultParams() Params {
 		MCacheLen:         6,
 		MCacheGossip:      3,
 		SeenTTL:           seenTTL,
-		ValidationMode:    "strict_no_sign",
 	}
 }
 

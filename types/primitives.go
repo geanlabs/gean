@@ -38,34 +38,10 @@ func (s Slot) IsJustifiableAfter(finalizedSlot Slot) bool {
 	return false
 }
 
-// Constants
-
 const (
 	SecondsPerSlot             uint64 = 4
 	IntervalsPerSlot           uint64 = 4
 	SecondsPerInterval         uint64 = SecondsPerSlot / IntervalsPerSlot
 	JustificationLookbackSlots uint64 = 3
-	HistoricalRootsLimit       uint64 = 1 << 18 // 262144
-	ValidatorRegistryLimit     uint64 = 1 << 12 // 4096
+	NoValidator                uint64 = ^uint64(0) // MaxUint64 sentinel for non-validator
 )
-
-// Time Helpers
-
-func (s Slot) Time(genesisTime uint64) uint64 {
-	return genesisTime + uint64(s)*SecondsPerSlot
-}
-
-func SlotAt(time, genesisTime uint64) Slot {
-	if time < genesisTime {
-		return 0
-	}
-	return Slot((time - genesisTime) / SecondsPerSlot)
-}
-
-func IntervalAt(time, genesisTime uint64) uint64 {
-	if time < genesisTime {
-		return 0
-	}
-	offset := (time - genesisTime) % SecondsPerSlot
-	return offset / SecondsPerInterval
-}

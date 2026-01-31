@@ -12,7 +12,6 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-// Service manages p2p networking for the consensus client.
 type Service struct {
 	host     host.Host
 	pubsub   *pubsub.PubSub
@@ -107,7 +106,6 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	return svc, nil
 }
 
-// Start begins processing incoming messages.
 func (s *Service) Start() {
 	s.wg.Add(2)
 	go s.processBlocks()
@@ -151,11 +149,6 @@ func (s *Service) PublishVote(ctx context.Context, vote *types.SignedVote) error
 // PeerCount returns the number of connected peers.
 func (s *Service) PeerCount() int {
 	return len(s.host.Network().Peers())
-}
-
-// Host returns the underlying libp2p host.
-func (s *Service) Host() host.Host {
-	return s.host
 }
 
 // processBlocks handles incoming block messages.

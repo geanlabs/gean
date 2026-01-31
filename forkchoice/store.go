@@ -8,7 +8,6 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// Store tracks all information required for the LMD GHOST fork choice algorithm.
 type Store struct {
 	mu sync.RWMutex
 
@@ -21,21 +20,35 @@ type Store struct {
 
 	Blocks           map[types.Root]*types.Block
 	States           map[types.Root]*types.State
-	LatestKnownVotes map[types.ValidatorIndex]types.Checkpoint
-	LatestNewVotes   map[types.ValidatorIndex]types.Checkpoint
+	LatestKnownVotes []types.Checkpoint // indexed by ValidatorIndex
+	LatestNewVotes   []types.Checkpoint // indexed by ValidatorIndex
 }
 
-// RLock acquires a read lock on the store.
-func (s *Store) RLock() {
+func (s *Store) HasBlock(root types.Root) bool {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.Blocks[root]
+	return exists
 }
 
-// RUnlock releases a read lock on the store.
-func (s *Store) RUnlock() {
-	s.mu.RUnlock()
+func (s *Store) GetBlock(root types.Root) (*types.Block, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	block, exists := s.Blocks[root]
+	return block, exists
 }
 
-// NewStore initializes a fork choice store from an anchor state and block.
+func (s *Store) GetHead() types.Root {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Head
+}
+
+func (s *Store) GetLatestFinalized() types.Checkpoint {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.LatestFinalized
+}
 func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
 	stateRoot, err := state.HashTreeRoot()
 	if err != nil {
@@ -51,8 +64,6 @@ func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
 		return nil, fmt.Errorf("hash anchor block: %w", err)
 	}
 
-	// Initialize justified/finalized checkpoints with anchor block root
-	// This ensures votes can reference the genesis as their source
 	latestJustified := types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot}
 	latestFinalized := types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot}
 
@@ -65,8 +76,8 @@ func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
 		LatestFinalized:  latestFinalized,
 		Blocks:           map[types.Root]*types.Block{anchorRoot: anchorBlock},
 		States:           map[types.Root]*types.State{anchorRoot: state},
-		LatestKnownVotes: make(map[types.ValidatorIndex]types.Checkpoint),
-		LatestNewVotes:   make(map[types.ValidatorIndex]types.Checkpoint),
+		LatestKnownVotes: make([]types.Checkpoint, state.Config.NumValidators),
+		LatestNewVotes:   make([]types.Checkpoint, state.Config.NumValidators),
 	}, nil
 }
 
@@ -173,35 +184,27 @@ func (s *Store) ProcessAttestation(signedVote *types.SignedVote) error {
 	return nil
 }
 
-// processAttestationLocked handles a new attestation vote. Caller must hold lock.
 func (s *Store) processAttestationLocked(signedVote *types.SignedVote, isFromBlock bool) {
 	vote := signedVote.Data
-	validatorID := types.ValidatorIndex(vote.ValidatorID)
+	idx := vote.ValidatorID
 
 	if isFromBlock {
-		// On-chain attestation
-		if known, exists := s.LatestKnownVotes[validatorID]; !exists || known.Slot < vote.Slot {
-			s.LatestKnownVotes[validatorID] = vote.Target
+		known := s.LatestKnownVotes[idx]
+		if known.Root.IsZero() || known.Slot < vote.Slot {
+			s.LatestKnownVotes[idx] = vote.Target
 		}
-		if newVote, exists := s.LatestNewVotes[validatorID]; exists && newVote.Slot <= vote.Target.Slot {
-			delete(s.LatestNewVotes, validatorID)
+		newVote := s.LatestNewVotes[idx]
+		if !newVote.Root.IsZero() && newVote.Slot <= vote.Target.Slot {
+			s.LatestNewVotes[idx] = types.Checkpoint{}
 		}
 	} else {
-		// Network gossip attestation
-		if newVote, exists := s.LatestNewVotes[validatorID]; !exists || newVote.Slot < vote.Target.Slot {
-			s.LatestNewVotes[validatorID] = vote.Target
+		newVote := s.LatestNewVotes[idx]
+		if newVote.Root.IsZero() || newVote.Slot < vote.Target.Slot {
+			s.LatestNewVotes[idx] = vote.Target
 		}
 	}
 }
 
-// UpdateHead updates the store's head based on latest justified checkpoint and votes.
-func (s *Store) UpdateHead() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.updateHeadLocked()
-}
-
-// updateHeadLocked updates head. Caller must hold lock.
 func (s *Store) updateHeadLocked() {
 	if latest := GetLatestJustified(s.States); latest != nil {
 		// Only update LatestJustified if we have the block in our store
@@ -221,33 +224,29 @@ func (s *Store) updateHeadLocked() {
 	}
 }
 
-// AcceptNewVotes moves pending votes to known votes and updates head.
-func (s *Store) AcceptNewVotes() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.acceptNewVotesLocked()
-}
-
-// acceptNewVotesLocked moves pending votes. Caller must hold lock.
 func (s *Store) acceptNewVotesLocked() {
-	for validatorID, vote := range s.LatestNewVotes {
-		s.LatestKnownVotes[validatorID] = vote
+	for i, vote := range s.LatestNewVotes {
+		if !vote.Root.IsZero() {
+			s.LatestKnownVotes[i] = vote
+			s.LatestNewVotes[i] = types.Checkpoint{}
+		}
 	}
-	s.LatestNewVotes = make(map[types.ValidatorIndex]types.Checkpoint)
 	s.updateHeadLocked()
 }
 
-// UpdateSafeTarget calculates the safe target with 2/3 majority threshold.
-func (s *Store) UpdateSafeTarget() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.updateSafeTargetLocked()
-}
-
-// updateSafeTargetLocked calculates safe target. Caller must hold lock.
 func (s *Store) updateSafeTargetLocked() {
 	minScore := int((s.Config.NumValidators*2 + 2) / 3) // ceiling division
 	s.SafeTarget = GetHead(s.Blocks, s.LatestJustified.Root, s.LatestNewVotes, minScore)
+}
+
+func (s *Store) advanceToSlotLocked(slot types.Slot) {
+	slotTime := s.Config.GenesisTime + uint64(slot)*types.SecondsPerSlot
+	tickIntervalTime := (slotTime - s.Config.GenesisTime) / types.SecondsPerInterval
+	for s.Time < tickIntervalTime {
+		shouldSignal := (s.Time + 1) == tickIntervalTime
+		s.tickIntervalLocked(shouldSignal)
+	}
+	s.acceptNewVotesLocked()
 }
 
 // TickInterval advances store time by one interval.
@@ -257,7 +256,6 @@ func (s *Store) TickInterval(hasProposal bool) {
 	s.tickIntervalLocked(hasProposal)
 }
 
-// tickIntervalLocked advances time. Caller must hold lock.
 func (s *Store) tickIntervalLocked(hasProposal bool) {
 	s.Time++
 	currentInterval := s.Time % types.IntervalsPerSlot
@@ -294,21 +292,6 @@ func (s *Store) AdvanceTime(time uint64, hasProposal bool) {
 	}
 }
 
-// GetProposalHead returns the head for block proposal at the given slot.
-func (s *Store) GetProposalHead(slot types.Slot) types.Root {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	slotTime := s.Config.GenesisTime + uint64(slot)*types.SecondsPerSlot
-	tickIntervalTime := (slotTime - s.Config.GenesisTime) / types.SecondsPerInterval
-	for s.Time < tickIntervalTime {
-		shouldSignal := (s.Time + 1) == tickIntervalTime
-		s.tickIntervalLocked(shouldSignal)
-	}
-	s.acceptNewVotesLocked()
-	return s.Head
-}
-
 // GetVoteTarget calculates the target checkpoint for validator votes.
 func (s *Store) GetVoteTarget() types.Checkpoint {
 	s.mu.RLock()
@@ -333,11 +316,16 @@ func (s *Store) GetVoteTarget() types.Checkpoint {
 	return types.Checkpoint{Root: blockRoot, Slot: block.Slot}
 }
 
-// CurrentSlot returns the current slot based on store time.
 func (s *Store) CurrentSlot() types.Slot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return types.Slot(s.Time / types.IntervalsPerSlot)
+}
+
+func (s *Store) CurrentInterval() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Time % types.IntervalsPerSlot
 }
 
 // ProduceBlock creates a new block for the given slot and validator.
@@ -353,14 +341,7 @@ func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorInde
 			validatorIndex, slot, expectedProposer)
 	}
 
-	// Get parent block and state (inline GetProposalHead logic to avoid deadlock)
-	slotTime := s.Config.GenesisTime + uint64(slot)*types.SecondsPerSlot
-	tickIntervalTime := (slotTime - s.Config.GenesisTime) / types.SecondsPerInterval
-	for s.Time < tickIntervalTime {
-		shouldSignal := (s.Time + 1) == tickIntervalTime
-		s.tickIntervalLocked(shouldSignal)
-	}
-	s.acceptNewVotesLocked()
+	s.advanceToSlotLocked(slot)
 	headRoot := s.Head
 
 	headState, exists := s.States[headRoot]
@@ -391,15 +372,15 @@ func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorInde
 			return nil, fmt.Errorf("process block: %w", err)
 		}
 
-		// Find new valid attestations
 		var newAttestations []types.SignedVote
 		for validatorID, checkpoint := range s.LatestKnownVotes {
-			// Skip if target block unknown
+			if checkpoint.Root.IsZero() {
+				continue
+			}
 			if _, exists := s.Blocks[checkpoint.Root]; !exists {
 				continue
 			}
 
-			// Create attestation with post-state's latest justified as source
 			vote := types.Vote{
 				ValidatorID: uint64(validatorID),
 				Slot:        checkpoint.Slot,
@@ -409,7 +390,6 @@ func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorInde
 			}
 			signedVote := types.SignedVote{Data: vote, Signature: types.Root{}}
 
-			// Check if already in attestation set
 			found := false
 			for _, existing := range attestations {
 				if existing.Data.ValidatorID == signedVote.Data.ValidatorID &&
@@ -472,14 +452,7 @@ func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorInde
 func (s *Store) ProduceAttestationVote(slot types.Slot, validatorIndex types.ValidatorIndex) *types.Vote {
 	s.mu.Lock()
 
-	// Get the head block for this slot (inline GetProposalHead logic)
-	slotTime := s.Config.GenesisTime + uint64(slot)*types.SecondsPerSlot
-	tickIntervalTime := (slotTime - s.Config.GenesisTime) / types.SecondsPerInterval
-	for s.Time < tickIntervalTime {
-		shouldSignal := (s.Time + 1) == tickIntervalTime
-		s.tickIntervalLocked(shouldSignal)
-	}
-	s.acceptNewVotesLocked()
+	s.advanceToSlotLocked(slot)
 	headRoot := s.Head
 	headBlock := s.Blocks[headRoot]
 

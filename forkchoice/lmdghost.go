@@ -3,10 +3,7 @@ package forkchoice
 
 import "github.com/devylongs/gean/types"
 
-// GetHead uses LMD GHOST to find the head block from a given root.
-// It walks down the tree, at each fork choosing the child with the most votes.
-func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes map[types.ValidatorIndex]types.Checkpoint, minScore int) types.Root {
-	// Start at genesis if root is zero
+func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes []types.Checkpoint, minScore int) types.Root {
 	if root.IsZero() {
 		var minSlot types.Slot = ^types.Slot(0)
 		for hash, block := range blocks {
@@ -17,26 +14,25 @@ func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes ma
 		}
 	}
 
-	// No votes means return starting root
-	if len(latestVotes) == 0 {
-		return root
-	}
-
-	// Count votes for each block (votes for descendants count for ancestors)
 	voteWeights := make(map[types.Root]int)
 	rootSlot := blocks[root].Slot
 
 	for _, vote := range latestVotes {
+		if vote.Root.IsZero() {
+			continue
+		}
 		if _, exists := blocks[vote.Root]; !exists {
 			continue
 		}
-
-		// Walk up from vote target, incrementing ancestor weights
 		blockHash := vote.Root
 		for blocks[blockHash].Slot > rootSlot {
 			voteWeights[blockHash]++
 			blockHash = blocks[blockHash].ParentRoot
 		}
+	}
+
+	if len(voteWeights) == 0 {
+		return root
 	}
 
 	// Build children mapping for blocks above min score

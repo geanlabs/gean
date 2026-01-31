@@ -15,22 +15,13 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// SyncState represents the current synchronization state.
 type SyncState int
 
 const (
 	SyncStateIdle SyncState = iota
 	SyncStateSyncing
-	SyncStateSynced
 )
 
-// PeerStatus holds a peer's last known status.
-type PeerStatus struct {
-	Status    *types.Status
-	UpdatedAt time.Time
-}
-
-// Syncer manages synchronization with peers.
 type Syncer struct {
 	host          host.Host
 	store         *forkchoice.Store
@@ -38,11 +29,10 @@ type Syncer struct {
 	reqrespHandler *reqresp.Handler
 	logger        *slog.Logger
 
-	mu          sync.RWMutex
-	peerStatus  map[peer.ID]*PeerStatus
-	state       SyncState
+	mu         sync.RWMutex
+	peerStatus map[peer.ID]*types.Status
+	state      SyncState
 
-	// Pending parent requests to avoid duplicate requests
 	pendingParents   map[types.Root]struct{}
 	pendingParentsMu sync.Mutex
 
@@ -74,7 +64,7 @@ func NewSyncer(ctx context.Context, cfg Config) *Syncer {
 		streamHandler:  cfg.StreamHandler,
 		reqrespHandler: cfg.ReqRespHandler,
 		logger:         logger,
-		peerStatus:     make(map[peer.ID]*PeerStatus),
+		peerStatus:     make(map[peer.ID]*types.Status),
 		pendingParents: make(map[types.Root]struct{}),
 		state:          SyncStateIdle,
 		ctx:            ctx,
@@ -154,10 +144,7 @@ func (s *Syncer) processPeerStatus(peerID peer.ID, peerStatus *types.Status) err
 
 	// Store peer status
 	s.mu.Lock()
-	s.peerStatus[peerID] = &PeerStatus{
-		Status:    peerStatus,
-		UpdatedAt: time.Now(),
-	}
+	s.peerStatus[peerID] = peerStatus
 	s.mu.Unlock()
 
 	// Check if we need to sync
@@ -236,22 +223,12 @@ func (s *Syncer) processReceivedBlock(block *types.SignedBlock, fromPeer peer.ID
 		return fmt.Errorf("hash block: %w", err)
 	}
 
-	s.store.RLock()
-	_, exists := s.store.Blocks[blockRoot]
-	s.store.RUnlock()
-
-	if exists {
-		return nil // Already have this block
+	if s.store.HasBlock(blockRoot) {
+		return nil
 	}
 
-	// Check if parent exists
 	parentRoot := block.Message.ParentRoot
-
-	s.store.RLock()
-	_, parentExists := s.store.Blocks[parentRoot]
-	s.store.RUnlock()
-
-	if !parentExists {
+	if !s.store.HasBlock(parentRoot) {
 		// Parent unknown - request parent chain
 		if err := s.requestParentChain(parentRoot, fromPeer); err != nil {
 			return fmt.Errorf("request parent chain: %w", err)
@@ -342,10 +319,10 @@ func (s *Syncer) checkSyncStatus() {
 	var bestStatus *types.Status
 
 	for peerID, ps := range s.peerStatus {
-		if ps.Status.Head.Slot > bestSlot && ps.Status.Head.Slot > ourStatus.Head.Slot {
+		if ps.Head.Slot > bestSlot && ps.Head.Slot > ourStatus.Head.Slot {
 			bestPeer = peerID
-			bestSlot = ps.Status.Head.Slot
-			bestStatus = ps.Status
+			bestSlot = ps.Head.Slot
+			bestStatus = ps
 		}
 	}
 	s.mu.RUnlock()
@@ -355,35 +332,10 @@ func (s *Syncer) checkSyncStatus() {
 	}
 }
 
-// OnBlockReceived is called when a block is received via gossip.
-// Checks for unknown parent and triggers parent request if needed.
 func (s *Syncer) OnBlockReceived(block *types.SignedBlock, fromPeer peer.ID) error {
 	parentRoot := block.Message.ParentRoot
-
-	s.store.RLock()
-	_, exists := s.store.Blocks[parentRoot]
-	s.store.RUnlock()
-
-	if !exists {
-		// Unknown parent - request it
+	if !s.store.HasBlock(parentRoot) {
 		return s.requestParentChain(parentRoot, fromPeer)
 	}
-
 	return nil
-}
-
-// IsSynced returns true if we believe we are synced with the network.
-func (s *Syncer) IsSynced() bool {
-	ourStatus := s.reqrespHandler.GetStatus()
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, ps := range s.peerStatus {
-		if ps.Status.Head.Slot > ourStatus.Head.Slot+1 {
-			return false
-		}
-	}
-
-	return true
 }

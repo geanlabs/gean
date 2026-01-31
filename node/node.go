@@ -17,7 +17,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// Node is the main consensus client that orchestrates all components.
 type Node struct {
 	config *Config
 	store  *forkchoice.Store
@@ -31,11 +30,10 @@ type Node struct {
 	lastProposedSlot types.Slot // Track last slot we proposed/saw a block for
 }
 
-// Config holds node configuration.
 type Config struct {
 	GenesisTime    uint64
 	ValidatorCount uint64
-	ValidatorIndex *uint64 // nil if not a validator
+	ValidatorIndex uint64 // types.NoValidator if not a validator
 	ListenAddrs    []string
 	Bootnodes      []string
 	Logger         *slog.Logger
@@ -171,7 +169,6 @@ func (n *Node) Stop() {
 	n.logger.Info("node stopped")
 }
 
-// slotTicker runs the slot-based event loop.
 func (n *Node) slotTicker() {
 	defer n.wg.Done()
 
@@ -188,7 +185,6 @@ func (n *Node) slotTicker() {
 	}
 }
 
-// onTick is called every second to advance time and check duties.
 func (n *Node) onTick() {
 	currentTime := uint64(time.Now().Unix())
 
@@ -200,39 +196,35 @@ func (n *Node) onTick() {
 	n.store.AdvanceTime(currentTime, false)
 
 	slot := n.store.CurrentSlot()
-	interval := n.currentInterval()
+	interval := n.store.CurrentInterval()
 
 	// Log slot progression at start of each slot
 	if interval == 0 {
 		n.logger.Debug("slot", "slot", slot, "head", n.store.Head[:4], "peers", n.PeerCount())
 	}
 
+	if n.config.ValidatorIndex == types.NoValidator {
+		return
+	}
+
 	// Interval 0: Proposer produces block (skip slot 0 - that's genesis)
-	if interval == 0 && slot > 0 && n.config.ValidatorIndex != nil {
-		// Skip if we already proposed or received a block for this slot
+	if interval == 0 && slot > 0 {
 		if slot <= n.lastProposedSlot {
 			return
 		}
-		// Check if we're the proposer for the current slot (round-robin)
 		proposerIndex := uint64(slot) % n.config.ValidatorCount
-		if proposerIndex == *n.config.ValidatorIndex {
+		if proposerIndex == n.config.ValidatorIndex {
 			n.lastProposedSlot = slot
 			n.proposeBlock(slot)
 		}
 	}
 
 	// Interval 1: Validators vote (skip slot 0 - no block to vote on yet)
-	if interval == 1 && slot > 0 && n.config.ValidatorIndex != nil {
+	if interval == 1 && slot > 0 {
 		n.produceVote(slot)
 	}
 }
 
-// currentInterval returns the current interval within the slot (0-3).
-func (n *Node) currentInterval() uint64 {
-	return n.store.Time % types.IntervalsPerSlot
-}
-
-// handleBlock processes an incoming block from the network.
 func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock, from peer.ID) error {
 	block := &signedBlock.Message
 
@@ -274,10 +266,8 @@ func (n *Node) handleVote(ctx context.Context, vote *types.SignedVote) error {
 	return nil
 }
 
-// proposeBlock creates and publishes a new block using Store.ProduceBlock
-// which iteratively collects valid attestations per the spec.
 func (n *Node) proposeBlock(slot types.Slot) {
-	validatorIndex := types.ValidatorIndex(*n.config.ValidatorIndex)
+	validatorIndex := types.ValidatorIndex(n.config.ValidatorIndex)
 
 	// ProduceBlock iteratively collects attestations and computes state root
 	block, err := n.store.ProduceBlock(slot, validatorIndex)
@@ -300,9 +290,8 @@ func (n *Node) proposeBlock(slot types.Slot) {
 	n.logger.Info("proposed block", "slot", slot, "attestations", len(block.Body.Attestations))
 }
 
-// produceVote creates and publishes a vote.
 func (n *Node) produceVote(slot types.Slot) {
-	validatorIndex := types.ValidatorIndex(*n.config.ValidatorIndex)
+	validatorIndex := types.ValidatorIndex(n.config.ValidatorIndex)
 
 	// Use ProduceAttestationVote which handles locking correctly
 	voteData := n.store.ProduceAttestationVote(slot, validatorIndex)
@@ -329,11 +318,6 @@ func (n *Node) produceVote(slot types.Slot) {
 // CurrentSlot returns the current slot.
 func (n *Node) CurrentSlot() types.Slot {
 	return n.store.CurrentSlot()
-}
-
-// Head returns the current head root.
-func (n *Node) Head() types.Root {
-	return n.store.Head
 }
 
 // PeerCount returns the number of connected peers.
