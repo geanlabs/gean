@@ -1,21 +1,11 @@
 package forkchoice
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/devylongs/gean/consensus"
 	"github.com/devylongs/gean/types"
-)
-
-// Fork choice errors
-var (
-	ErrParentNotFound = errors.New("parent not found")
-	ErrSourceNotFound = errors.New("source root not found")
-	ErrTargetNotFound = errors.New("target root not found")
-	ErrSlotMismatch   = errors.New("slot mismatch")
-	ErrFutureVote     = errors.New("vote too far in future")
 )
 
 // Store maintains fork choice state including blocks, states, and votes.

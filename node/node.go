@@ -17,9 +17,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// Node errors
-var ErrSyncInProgress = errors.New("sync in progress")
-
 type Node struct {
 	config *Config
 	store  *forkchoice.Store

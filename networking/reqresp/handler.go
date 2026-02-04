@@ -2,8 +2,6 @@
 package reqresp
 
 import (
-	"errors"
-
 	"github.com/devylongs/gean/forkchoice"
 	"github.com/devylongs/gean/types"
 )
@@ -56,8 +54,6 @@ func (h *Handler) HandleBlocksByRoot(request *BlocksByRootRequest) []*types.Sign
 
 	return blocks
 }
-
-var ErrInvalidStatus = errors.New("invalid peer status")
 
 func (h *Handler) ValidatePeerStatus(peerStatus *Status) error {
 	if peerStatus.Finalized.Slot > 0 {
