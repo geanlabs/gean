@@ -12,17 +12,21 @@ import (
 	"time"
 
 	"github.com/devylongs/gean/node"
-	"github.com/devylongs/gean/types"
 )
 
 func main() {
 	genesisTime := flag.Uint64("genesis-time", 0, "Genesis time (Unix timestamp). Defaults to 10 seconds from now.")
 	validators := flag.Uint64("validators", 8, "Number of validators in the network")
-	validatorIndex := flag.Int64("validator-index", -1, "Validator index to run as (-1 for non-validator)")
+	validatorIndex := flag.Uint64("validator-index", 0, "Validator index to run as (required)")
 	listen := flag.String("listen", "/ip4/0.0.0.0/udp/9000/quic-v1", "Listen multiaddr (QUIC)")
 	bootnodes := flag.String("bootnodes", "", "Comma-separated bootnode multiaddrs")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
+
+	if *validatorIndex >= *validators {
+		fmt.Fprintf(os.Stderr, "error: validator-index (%d) must be less than validators (%d)\n", *validatorIndex, *validators)
+		os.Exit(1)
+	}
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ gean ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -43,11 +47,7 @@ func main() {
 		logger.Info("genesis time not set, using now + 10 seconds", "genesis_time", genesis)
 	}
 
-	valIdx := types.NoValidator
-	if *validatorIndex >= 0 {
-		valIdx = uint64(*validatorIndex)
-		logger.Info("running as validator", "index", valIdx)
-	}
+	logger.Info("running as validator", "index", *validatorIndex)
 
 	var bootnodesSlice []string
 	if *bootnodes != "" {
@@ -57,7 +57,7 @@ func main() {
 	nodeCfg := &node.Config{
 		GenesisTime:    genesis,
 		ValidatorCount: *validators,
-		ValidatorIndex: valIdx,
+		ValidatorIndex: *validatorIndex,
 		ListenAddrs:    []string{*listen},
 		Bootnodes:      bootnodesSlice,
 		Logger:         logger,

@@ -1,0 +1,13 @@
+# Binaries
+bin/
+gean
+*.exe
+
+# Test artifacts
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
