@@ -1,5 +1,7 @@
 package types
 
+import "fmt"
+
 // Primitive Types
 
 type Slot uint64
@@ -7,6 +9,25 @@ type ValidatorIndex uint64
 type Root [32]byte
 
 func (r Root) IsZero() bool { return r == Root{} }
+
+// Short returns a short hex representation of the root (first 4 bytes).
+func (r Root) Short() string {
+	return fmt.Sprintf("%x", r[:4])
+}
+
+// Compare compares two roots lexicographically.
+// Returns 1 if r > other, -1 if r < other, 0 if equal.
+func (r Root) Compare(other Root) int {
+	for i := 0; i < 32; i++ {
+		if r[i] > other[i] {
+			return 1
+		}
+		if r[i] < other[i] {
+			return -1
+		}
+	}
+	return 0
+}
 
 // IsJustifiableAfter checks if this slot is a valid candidate for justification
 // after the given finalized slot. Per 3SF-mini spec:
@@ -43,5 +64,4 @@ const (
 	IntervalsPerSlot           uint64 = 4
 	SecondsPerInterval         uint64 = SecondsPerSlot / IntervalsPerSlot
 	JustificationLookbackSlots uint64 = 3
-	NoValidator                uint64 = ^uint64(0) // MaxUint64 sentinel for non-validator
 )

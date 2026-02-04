@@ -31,14 +31,14 @@ func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes []
 		}
 	}
 
-	if len(voteWeights) == 0 {
-		return root
-	}
-
 	// Build children mapping for blocks above min score
+	// When minScore is 0, include all children (even those without votes)
 	childrenMap := make(map[types.Root][]types.Root)
 	for blockHash, block := range blocks {
-		if !block.ParentRoot.IsZero() && voteWeights[blockHash] >= minScore {
+		if block.ParentRoot.IsZero() {
+			continue
+		}
+		if minScore == 0 || voteWeights[blockHash] >= minScore {
 			childrenMap[block.ParentRoot] = append(childrenMap[block.ParentRoot], blockHash)
 		}
 	}
@@ -63,7 +63,7 @@ func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes []
 			// Tie-break: most votes, then highest slot, then lexicographically highest hash
 			if weight > bestWeight ||
 				(weight == bestWeight && childSlot > bestSlot) ||
-				(weight == bestWeight && childSlot == bestSlot && compareRoots(child, best) > 0) {
+				(weight == bestWeight && childSlot == bestSlot && child.Compare(best) > 0) {
 				best = child
 				bestWeight = weight
 				bestSlot = childSlot
@@ -94,15 +94,3 @@ func GetLatestJustified(states map[types.Root]*types.State) *types.Checkpoint {
 	return latest
 }
 
-// compareRoots compares two roots lexicographically.
-func compareRoots(a, b types.Root) int {
-	for i := 0; i < 32; i++ {
-		if a[i] > b[i] {
-			return 1
-		}
-		if a[i] < b[i] {
-			return -1
-		}
-	}
-	return 0
-}
