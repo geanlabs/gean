@@ -2,26 +2,29 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/devylongs/gean/chain"
+	"github.com/devylongs/gean/consensus"
 	"github.com/devylongs/gean/forkchoice"
-	"github.com/devylongs/gean/p2p"
-	"github.com/devylongs/gean/p2p/reqresp"
-	psync "github.com/devylongs/gean/p2p/sync"
+	"github.com/devylongs/gean/networking"
+	"github.com/devylongs/gean/networking/chainsync"
+	"github.com/devylongs/gean/networking/reqresp"
 	"github.com/devylongs/gean/types"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+// Node errors
+var ErrSyncInProgress = errors.New("sync in progress")
+
 type Node struct {
 	config *Config
 	store  *forkchoice.Store
-	p2p    *p2p.Service
-	syncer *psync.Syncer
+	net    *networking.Service
+	syncer *chainsync.Syncer
 	logger *slog.Logger
 
 	ctx             context.Context
@@ -33,7 +36,7 @@ type Node struct {
 type Config struct {
 	GenesisTime    uint64
 	ValidatorCount uint64
-	ValidatorIndex uint64 // types.NoValidator if not a validator
+	ValidatorIndex uint64
 	ListenAddrs    []string
 	Bootnodes      []string
 	Logger         *slog.Logger
@@ -48,30 +51,8 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 		logger = slog.Default()
 	}
 
-	// Generate genesis state
-	genesisState := chain.GenerateGenesis(cfg.GenesisTime, cfg.ValidatorCount)
-
-	// Create genesis block
-	emptyBody := types.BlockBody{Attestations: []types.SignedVote{}}
-	bodyRoot, _ := emptyBody.HashTreeRoot()
-	stateRoot, _ := genesisState.HashTreeRoot()
-
-	genesisBlock := &types.Block{
-		Slot:          0,
-		ProposerIndex: 0,
-		ParentRoot:    types.Root{},
-		StateRoot:     stateRoot,
-		Body:          emptyBody,
-	}
-
-	// Update state with correct block header
-	genesisState.LatestBlockHeader = types.BlockHeader{
-		Slot:          0,
-		ProposerIndex: 0,
-		ParentRoot:    types.Root{},
-		StateRoot:     types.Root{}, // Empty for genesis
-		BodyRoot:      bodyRoot,
-	}
+	// Generate genesis state and block
+	genesisState, genesisBlock := consensus.GenerateGenesis(cfg.GenesisTime, cfg.ValidatorCount)
 
 	// Create fork choice store
 	store, err := forkchoice.NewStore(genesisState, genesisBlock)
@@ -81,7 +62,7 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	// Create libp2p host
-	host, err := p2p.NewHost(ctx, p2p.HostConfig{
+	host, err := networking.NewHost(ctx, networking.HostConfig{
 		ListenAddrs: cfg.ListenAddrs,
 	})
 	if err != nil {
@@ -98,21 +79,20 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	// Parse bootnodes
-	bootnodes, err := p2p.ParseBootnodes(cfg.Bootnodes)
+	bootnodes, err := networking.ParseBootnodes(cfg.Bootnodes)
 	if err != nil {
 		cancel()
 		host.Close()
 		return nil, fmt.Errorf("parse bootnodes: %w", err)
 	}
 
-	// Create p2p service with handlers
-	handlers := &p2p.MessageHandlers{
+	// Create networking service with handlers
+	handlers := &networking.MessageHandlers{
 		OnBlock: node.handleBlock,
 		OnVote:  node.handleVote,
-		Logger:  logger,
 	}
 
-	p2pSvc, err := p2p.NewService(ctx, p2p.ServiceConfig{
+	netSvc, err := networking.NewService(ctx, networking.ServiceConfig{
 		Host:      host,
 		Handlers:  handlers,
 		Bootnodes: bootnodes,
@@ -121,10 +101,10 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 	if err != nil {
 		cancel()
 		host.Close()
-		return nil, fmt.Errorf("create p2p service: %w", err)
+		return nil, fmt.Errorf("create networking service: %w", err)
 	}
 
-	node.p2p = p2pSvc
+	node.net = netSvc
 
 	// Create request/response handler
 	reqrespHandler := reqresp.NewHandler(store)
@@ -134,7 +114,7 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 	streamHandler.RegisterProtocols()
 
 	// Create syncer for chain synchronization
-	syncer := psync.NewSyncer(ctx, psync.Config{
+	syncer := chainsync.NewSyncer(ctx, chainsync.Config{
 		Host:           host,
 		Store:          store,
 		StreamHandler:  streamHandler,
@@ -148,7 +128,7 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 
 // Start begins node operation.
 func (n *Node) Start() {
-	n.p2p.Start()
+	n.net.Start()
 	n.syncer.Start()
 
 	n.wg.Add(1)
@@ -165,7 +145,7 @@ func (n *Node) Stop() {
 	n.cancel()
 	n.wg.Wait()
 	n.syncer.Stop()
-	n.p2p.Stop()
+	n.net.Stop()
 	n.logger.Info("node stopped")
 }
 
@@ -200,11 +180,7 @@ func (n *Node) onTick() {
 
 	// Log slot progression at start of each slot
 	if interval == 0 {
-		n.logger.Debug("slot", "slot", slot, "head", n.store.Head[:4], "peers", n.PeerCount())
-	}
-
-	if n.config.ValidatorIndex == types.NoValidator {
-		return
+		n.logger.Debug("slot", "slot", slot, "head", n.store.Head.Short(), "peers", n.PeerCount())
 	}
 
 	// Interval 0: Proposer produces block (skip slot 0 - that's genesis)
@@ -235,9 +211,9 @@ func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock, 
 
 	// Try to process the block
 	if err := n.store.ProcessBlock(block); err != nil {
-		// If parent state not found, it might be due to missing parent blocks
-		if strings.Contains(err.Error(), "parent") {
-			return fmt.Errorf("process block: %w (parent sync may be in progress)", err)
+		// If parent not found, it might be due to missing parent blocks (sync in progress)
+		if errors.Is(err, forkchoice.ErrParentNotFound) {
+			return fmt.Errorf("%w: %v", ErrSyncInProgress, err)
 		}
 		return fmt.Errorf("process block: %w", err)
 	}
@@ -260,8 +236,8 @@ func (n *Node) handleVote(ctx context.Context, vote *types.SignedVote) error {
 		return fmt.Errorf("process vote: %w", err)
 	}
 	n.logger.Debug("processed vote",
-		"slot", vote.Data.Slot,
-		"validator", vote.Data.ValidatorID,
+		"slot", vote.Message.Slot,
+		"validator", vote.ValidatorID,
 	)
 	return nil
 }
@@ -279,10 +255,10 @@ func (n *Node) proposeBlock(slot types.Slot) {
 	// Create signed block (signature is placeholder for Devnet 0)
 	signedBlock := &types.SignedBlock{
 		Message:   *block,
-		Signature: types.Root{},
+		Signature: [4000]byte{},
 	}
 
-	if err := n.p2p.PublishBlock(n.ctx, signedBlock); err != nil {
+	if err := n.net.PublishBlock(n.ctx, signedBlock); err != nil {
 		n.logger.Error("failed to publish block", "slot", slot, "error", err)
 		return
 	}
@@ -294,14 +270,15 @@ func (n *Node) produceVote(slot types.Slot) {
 	validatorIndex := types.ValidatorIndex(n.config.ValidatorIndex)
 
 	// Use ProduceAttestationVote which handles locking correctly
-	voteData := n.store.ProduceAttestationVote(slot, validatorIndex)
+	voteData := n.store.ProduceAttestationVote(slot)
 
 	vote := &types.SignedVote{
-		Data:      *voteData,
-		Signature: types.Root{}, // Placeholder signature
+		ValidatorID: uint64(validatorIndex),
+		Message:     *voteData,
+		Signature:   [4000]byte{}, // Placeholder signature for Devnet 0
 	}
 
-	if err := n.p2p.PublishVote(n.ctx, vote); err != nil {
+	if err := n.net.PublishVote(n.ctx, vote); err != nil {
 		n.logger.Error("failed to publish vote", "slot", slot, "error", err)
 		return
 	}
@@ -322,5 +299,5 @@ func (n *Node) CurrentSlot() types.Slot {
 
 // PeerCount returns the number of connected peers.
 func (n *Node) PeerCount() int {
-	return n.p2p.PeerCount()
+	return n.net.PeerCount()
 }

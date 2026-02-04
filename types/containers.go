@@ -1,6 +1,6 @@
 package types
 
-//go:generate go run github.com/ferranbt/fastssz/sszgen --path=. --objs=Checkpoint,Config,Vote,SignedVote,BlockHeader,BlockBody,Block,SignedBlock,State,Status,BlocksByRootRequest
+//go:generate go run github.com/ferranbt/fastssz/sszgen --path=. --objs=Checkpoint,Config,Vote,SignedVote,BlockHeader,BlockBody,Block,SignedBlock,State
 
 // SSZ Containers
 
@@ -15,18 +15,21 @@ type Config struct {
 	GenesisTime   uint64
 }
 
-// Vote is a validator's attestation for head, target, and source.
+// Vote is the attestation data that can be aggregated.
+// Per leanSpec containers.md - does NOT contain validator_id.
 type Vote struct {
-	ValidatorID uint64
-	Slot        Slot
-	Head        Checkpoint
-	Target      Checkpoint
-	Source      Checkpoint
+	Slot   Slot
+	Head   Checkpoint
+	Target Checkpoint
+	Source Checkpoint
 }
 
+// SignedVote is a signed attestation vote.
+// Per leanSpec containers.md: validator_id is at top level, signature is 4000 bytes.
 type SignedVote struct {
-	Data      Vote
-	Signature Root `ssz-size:"32"`
+	ValidatorID uint64
+	Message     Vote
+	Signature   [4000]byte `ssz-size:"4000"`
 }
 
 type BlockHeader struct {
@@ -49,9 +52,11 @@ type Block struct {
 	Body          BlockBody
 }
 
+// SignedBlock is a signed block.
+// Per leanSpec containers.md: signature is 4000 bytes.
 type SignedBlock struct {
 	Message   Block
-	Signature Root `ssz-size:"32"`
+	Signature [4000]byte `ssz-size:"4000"`
 }
 
 // State is the main consensus state object.

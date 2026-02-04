@@ -1,47 +1,73 @@
 # Gean
 
-A Go implementation of the Lean Ethereum consensus protocol that is simple enough to last.
+A Go implementation of the Lean Ethereum consensus protocol.
 
-## Getting started
+## Quick Start
 
-```sh
+```bash
 # Build
 make build
 
-# Run as validator 0 (genesis auto-generated 10s in future)
-./bin/gean --validators 8 --validator-index 0
+# Run a single validator node
+./bin/gean --validators=2 --validator-index=0
 
-# Run with explicit genesis time
-./bin/gean --genesis-time 1769271115 --validators 8 --validator-index 0
+# Run a two-node network (use the same genesis time for both)
+GENESIS=$(date -d '+30 seconds' +%s)
+
+# Terminal 1
+./bin/gean --validators=2 --validator-index=0 \
+  --listen=/ip4/127.0.0.1/udp/9000/quic-v1 \
+  --genesis-time=$GENESIS
+
+# Terminal 2 (copy peer_id from Terminal 1 output)
+./bin/gean --validators=2 --validator-index=1 \
+  --listen=/ip4/127.0.0.1/udp/9001/quic-v1 \
+  --bootnodes=/ip4/127.0.0.1/udp/9000/quic-v1/p2p/<PEER_ID> \
+  --genesis-time=$GENESIS
 ```
+
+## Command Line Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--validators` | Total number of validators in the network | 8 |
+| `--validator-index` | This node's validator index (omit for observer mode) | - |
+| `--genesis-time` | Unix timestamp for genesis | now + 10s |
+| `--listen` | libp2p listen address | /ip4/0.0.0.0/udp/9000/quic-v1 |
+| `--bootnodes` | Comma-separated bootnode multiaddrs | - |
+| `--log-level` | Log level (debug, info, warn, error) | info |
+
+## Development
+
+```bash
+make test       # Run tests
+make lint       # Run linters
+make fmt        # Format code
+make clean      # Remove build artifacts
+```
+
+## Status
+
+**Target:** [leanSpec devnet0](https://github.com/leanEthereum/leanSpec)
+
+Implements:
+- 3SF-mini consensus (2/3 supermajority justification)
+- LMD-GHOST fork choice
+- SSZ serialization (fastssz)
+- libp2p networking (QUIC, gossipsub)
+- Round-robin block proposer
+- Slot-based vote production
 
 ## Philosophy
 
-> *"Even if a protocol is super decentralized with hundreds of thousands of nodes... if the protocol is an unwieldy mess of hundreds of thousands of lines of code, ultimately that protocol fails."* — Vitalik Buterin
+> *"Even if a protocol is super decentralized... if the protocol is an unwieldy mess of hundreds of thousands of lines of code, ultimately that protocol fails."* — Vitalik Buterin
 
-Our goal is to build a consensus client that is simple and readable yet elegant and resilient; code that anyone can read, understand, and maintain for decades to come. A codebase developers actually enjoy contributing to. It's why we chose Go.
+Simple, readable code that anyone can understand and maintain.
 
 ## Acknowledgements
 
 - [leanSpec](https://github.com/leanEthereum/leanSpec) — Python reference specification
-- [ethlambda](https://github.com/lambdaclass/ethlambda) — Rust implementation by LambdaClass
-
-## Current status
-
-Target: [leanSpec devnet 0](https://github.com/leanEthereum/leanSpec/tree/4b750f2748a3718fe3e1e9cdb3c65e3a7ddabff5)
-
-### Implemented
-
-- **Types** — SSZ containers via fastssz (Block, State, Vote, Checkpoint, Config)
-- **Consensus** — 3SF-mini justification (2/3 supermajority), round-robin proposer
-- **State transition** — slot processing, block header, attestations with vote tracking
-- **Fork choice** — LMD-GHOST head selection, Store container
-- **Networking** — libp2p host (QUIC), gossipsub (block and attestation topics)
-- **Node** — slot ticker, block and attestation production
-
-### Next
-
-- [pq-devnet-1](https://github.com/leanEthereum/pm/blob/main/breakout-rooms/leanConsensus/pq-interop/pq-devnet-1.md) — PQ signatures, lean-quickstart integration
+- [ethlambda](https://github.com/lambdaclass/ethlambda) — Rust implementation
 
 ## License
 
