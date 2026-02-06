@@ -9,22 +9,50 @@ A Go implementation of the Lean Ethereum consensus protocol that is simple enoug
 make build
 
 # Run a single validator node
-./bin/gean --validators=2 --validator-index=0
+./bin/gean --validators=4 --validator-index=0 --log-level=debug
+```
 
-# Run a two-node network (use the same genesis time for both)
+### Multi-node local devnet
+
+Set a shared genesis time and start each validator in its own terminal:
+
+```bash
 GENESIS=$(date -d '+30 seconds' +%s)
 
-# Terminal 1
-./bin/gean --validators=2 --validator-index=0 \
+# Terminal 1 — Validator 0
+./bin/gean --validators=4 --validator-index=0 \
   --listen=/ip4/127.0.0.1/udp/9000/quic-v1 \
-  --genesis-time=$GENESIS
+  --genesis-time=$GENESIS --log-level=debug
 
-# Terminal 2 (copy peer_id from Terminal 1 output)
-./bin/gean --validators=2 --validator-index=1 \
+# Terminal 2 — Validator 1 (copy PEER_ID from Terminal 1 output)
+./bin/gean --validators=4 --validator-index=1 \
   --listen=/ip4/127.0.0.1/udp/9001/quic-v1 \
   --bootnodes=/ip4/127.0.0.1/udp/9000/quic-v1/p2p/<PEER_ID> \
-  --genesis-time=$GENESIS
+  --genesis-time=$GENESIS --log-level=debug
+
+# Terminal 3 — Validator 2
+./bin/gean --validators=4 --validator-index=2 \
+  --listen=/ip4/127.0.0.1/udp/9002/quic-v1 \
+  --bootnodes=/ip4/127.0.0.1/udp/9000/quic-v1/p2p/<PEER_ID> \
+  --genesis-time=$GENESIS --log-level=debug
+
+# Terminal 4 — Validator 3
+./bin/gean --validators=4 --validator-index=3 \
+  --listen=/ip4/127.0.0.1/udp/9003/quic-v1 \
+  --bootnodes=/ip4/127.0.0.1/udp/9000/quic-v1/p2p/<PEER_ID> \
+  --genesis-time=$GENESIS --log-level=debug
 ```
+
+### CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--genesis-time` | now + 10s | Unix timestamp for genesis |
+| `--validators` | `8` | Total number of validators |
+| `--validator-index` | `0` | Index of this node's validator |
+| `--listen` | `/ip4/0.0.0.0/udp/9000/quic-v1` | QUIC listen address |
+| `--bootnodes` | (none) | Comma-separated bootnode multiaddrs |
+| `--log-level` | `info` | Log level: debug, info, warn, error |
 
 ## Philosophy
 
@@ -39,16 +67,19 @@ Our goal is to build a consensus client that is simple and readable yet elegant 
 
 ## Current status
 
-Target: [leanSpec devnet 0](https://github.com/leanEthereum/leanSpec/tree/4b750f2748a3718fe3e1e9cdb3c65e3a7ddabff5)
+Target: [leanSpec Devnet 0](https://github.com/leanEthereum/leanSpec/tree/4b750f2748a3718fe3e1e9cdb3c65e3a7ddabff5)
 
 ### Implemented
 
-- 3SF-mini consensus (2/3 supermajority justification)
-- LMD-GHOST fork choice
-- SSZ serialization (fastssz)
-- libp2p networking (QUIC,Implements:: gossipsub)
+- 3SF-mini consensus (per-attestation justification, consecutive-slot finalization)
+- LMD-GHOST fork choice with safe-target tracking
+- SSZ serialization via [fastssz](https://github.com/ferranbt/fastssz)
+- libp2p networking (QUIC transport, gossipsub)
+- Snappy-compressed block and vote gossip
 - Round-robin block proposer
-- Slot-based vote production
+- 4-interval slot timing (propose, vote, safe-target update, accept)
+- Chain sync via req/resp protocol
+- State root validation on received blocks
 
 ### Next
 
