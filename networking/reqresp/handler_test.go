@@ -3,49 +3,61 @@ package reqresp
 import (
 	"testing"
 
-	"github.com/devylongs/gean/consensus"
-	"github.com/devylongs/gean/forkchoice"
 	"github.com/devylongs/gean/types"
 )
 
-func setupTestStore(t *testing.T) *forkchoice.Store {
-	genesisState, genesisBlock := consensus.GenerateGenesis(1000, 4)
+// mockBlockReader satisfies BlockReader for testing without importing forkchoice.
+type mockBlockReader struct {
+	head      types.Root
+	blocks    map[types.Root]*types.Block
+	finalized types.Checkpoint
+}
 
-	store, err := forkchoice.NewStore(genesisState, genesisBlock)
-	if err != nil {
-		t.Fatalf("NewStore failed: %v", err)
+func (m *mockBlockReader) GetHead() types.Root                            { return m.head }
+func (m *mockBlockReader) GetBlock(root types.Root) (*types.Block, bool)  { b, ok := m.blocks[root]; return b, ok }
+func (m *mockBlockReader) GetLatestFinalized() types.Checkpoint           { return m.finalized }
+
+func newMockStore() (*mockBlockReader, types.Root) {
+	genesisBlock := &types.Block{
+		Slot:          0,
+		ProposerIndex: 0,
+		ParentRoot:    types.Root{},
+		StateRoot:     types.Root{},
+		Body:          types.BlockBody{},
 	}
 
-	return store
+	root, _ := genesisBlock.HashTreeRoot()
+
+	mock := &mockBlockReader{
+		head:      root,
+		blocks:    map[types.Root]*types.Block{root: genesisBlock},
+		finalized: types.Checkpoint{Root: types.Root{}, Slot: 0},
+	}
+
+	return mock, root
 }
 
 func TestGetStatus(t *testing.T) {
-	store := setupTestStore(t)
-	handler := NewHandler(store)
+	mock, genesisRoot := newMockStore()
+	handler := NewHandler(mock)
 
 	status := handler.GetStatus()
-
 	if status == nil {
 		t.Fatal("GetStatus returned nil")
 	}
 
-	// Genesis state should have zero finalized slot
 	if status.Finalized.Slot != 0 {
 		t.Errorf("Finalized.Slot = %d, want 0", status.Finalized.Slot)
 	}
 
-	// Head should match store head
-	if status.Head.Root != store.Head {
-		t.Error("Head.Root does not match store head")
+	if status.Head.Root != genesisRoot {
+		t.Error("Head.Root does not match genesis root")
 	}
 }
 
 func TestHandleBlocksByRoot(t *testing.T) {
-	store := setupTestStore(t)
-	handler := NewHandler(store)
-
-	// Request the genesis block
-	genesisRoot := store.Head
+	mock, genesisRoot := newMockStore()
+	handler := NewHandler(mock)
 
 	request := &BlocksByRootRequest{
 		Roots: []types.Root{genesisRoot},
@@ -63,14 +75,11 @@ func TestHandleBlocksByRoot(t *testing.T) {
 }
 
 func TestHandleBlocksByRootUnknown(t *testing.T) {
-	store := setupTestStore(t)
-	handler := NewHandler(store)
-
-	// Request an unknown block
-	unknownRoot := types.Root{1, 2, 3}
+	mock, _ := newMockStore()
+	handler := NewHandler(mock)
 
 	request := &BlocksByRootRequest{
-		Roots: []types.Root{unknownRoot},
+		Roots: []types.Root{{1, 2, 3}},
 	}
 
 	blocks := handler.HandleBlocksByRoot(request)
@@ -81,13 +90,12 @@ func TestHandleBlocksByRootUnknown(t *testing.T) {
 }
 
 func TestValidatePeerStatus(t *testing.T) {
-	store := setupTestStore(t)
-	handler := NewHandler(store)
+	mock, genesisRoot := newMockStore()
+	handler := NewHandler(mock)
 
-	// Valid status (genesis)
 	validStatus := &Status{
 		Finalized: types.Checkpoint{Root: types.Root{}, Slot: 0},
-		Head:      types.Checkpoint{Root: store.Head, Slot: 0},
+		Head:      types.Checkpoint{Root: genesisRoot, Slot: 0},
 	}
 
 	err := handler.ValidatePeerStatus(validStatus)

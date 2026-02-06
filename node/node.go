@@ -51,8 +51,8 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 	// Generate genesis state and block
 	genesisState, genesisBlock := consensus.GenerateGenesis(cfg.GenesisTime, cfg.ValidatorCount)
 
-	// Create fork choice store
-	store, err := forkchoice.NewStore(genesisState, genesisBlock)
+	// Create fork choice store with injected state transition functions
+	store, err := forkchoice.NewStore(genesisState, genesisBlock, consensus.ProcessSlots, consensus.ProcessBlock)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create store: %w", err)

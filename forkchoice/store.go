@@ -4,15 +4,21 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/devylongs/gean/consensus"
+	"github.com/devylongs/gean/clock"
 	"github.com/devylongs/gean/types"
 )
+
+// ProcessSlotsFunc applies per-slot processing up to a target slot.
+type ProcessSlotsFunc func(state *types.State, targetSlot types.Slot) (*types.State, error)
+
+// ProcessBlockFunc applies block processing to a state.
+type ProcessBlockFunc func(state *types.State, block *types.Block) (*types.State, error)
 
 // Store maintains fork choice state including blocks, states, and votes.
 type Store struct {
 	mu sync.RWMutex
 
-	Time            uint64
+	Clock           *clock.SlotClock
 	Config          types.Config
 	Head            types.Root
 	SafeTarget      types.Root
@@ -23,10 +29,20 @@ type Store struct {
 	States           map[types.Root]*types.State
 	LatestKnownVotes []types.Checkpoint // indexed by ValidatorIndex
 	LatestNewVotes   []types.Checkpoint // indexed by ValidatorIndex
+
+	// Injected state transition functions (from consensus package).
+	processSlots ProcessSlotsFunc
+	processBlock ProcessBlockFunc
 }
 
-// NewStore creates a new fork choice store with the given genesis state and anchor block.
-func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
+// NewStore creates a new fork choice store with the given genesis state, anchor block,
+// and injected state transition functions.
+func NewStore(
+	state *types.State,
+	anchorBlock *types.Block,
+	processSlots ProcessSlotsFunc,
+	processBlock ProcessBlockFunc,
+) (*Store, error) {
 	stateRoot, err := state.HashTreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("hash state: %w", err)
@@ -46,7 +62,7 @@ func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
 	latestFinalized := state.LatestFinalized
 
 	return &Store{
-		Time:             uint64(anchorBlock.Slot) * types.IntervalsPerSlot,
+		Clock:            clock.New(state.Config.GenesisTime, anchorBlock.Slot),
 		Config:           state.Config,
 		Head:             anchorRoot,
 		SafeTarget:       anchorRoot,
@@ -56,6 +72,8 @@ func NewStore(state *types.State, anchorBlock *types.Block) (*Store, error) {
 		States:           map[types.Root]*types.State{anchorRoot: state},
 		LatestKnownVotes: make([]types.Checkpoint, state.Config.NumValidators),
 		LatestNewVotes:   make([]types.Checkpoint, state.Config.NumValidators),
+		processSlots:     processSlots,
+		processBlock:     processBlock,
 	}, nil
 }
 
@@ -110,12 +128,12 @@ func (s *Store) ProcessBlock(block *types.Block) error {
 		return fmt.Errorf("%w: parent root %x", ErrParentNotFound, block.ParentRoot[:8])
 	}
 
-	// Apply state transition
-	newState, err := consensus.ProcessSlots(parentState, block.Slot)
+	// Apply state transition (via injected functions)
+	newState, err := s.processSlots(parentState, block.Slot)
 	if err != nil {
 		return fmt.Errorf("process slots: %w", err)
 	}
-	newState, err = consensus.ProcessBlock(newState, block)
+	newState, err = s.processBlock(newState, block)
 	if err != nil {
 		return fmt.Errorf("process block: %w", err)
 	}

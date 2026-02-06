@@ -6,28 +6,26 @@ import "github.com/devylongs/gean/types"
 func (s *Store) CurrentSlot() types.Slot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return types.Slot(s.Time / types.IntervalsPerSlot)
+	return s.Clock.CurrentSlot()
 }
 
 // CurrentInterval returns the current interval within the slot.
 func (s *Store) CurrentInterval() uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.Time % types.IntervalsPerSlot
+	return s.Clock.CurrentInterval()
 }
 
 // TickInterval advances store time by one interval.
 func (s *Store) TickInterval(hasProposal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.tickIntervalLocked(hasProposal)
+	interval := s.Clock.Tick()
+	s.onIntervalLocked(interval, hasProposal)
 }
 
-func (s *Store) tickIntervalLocked(hasProposal bool) {
-	s.Time++
-	currentInterval := s.Time % types.IntervalsPerSlot
-
-	switch currentInterval {
+func (s *Store) onIntervalLocked(interval uint64, hasProposal bool) {
+	switch interval {
 	case 0:
 		if hasProposal {
 			s.acceptNewVotesLocked()
@@ -41,30 +39,25 @@ func (s *Store) tickIntervalLocked(hasProposal bool) {
 	}
 }
 
-// AdvanceTime ticks the store forward to the given time.
-func (s *Store) AdvanceTime(time uint64, hasProposal bool) {
+// AdvanceTime ticks the store forward to the given unix time.
+func (s *Store) AdvanceTime(unixTime uint64, hasProposal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Don't advance time if we're before genesis
-	if time < s.Config.GenesisTime {
-		return
-	}
-
-	tickIntervalTime := (time - s.Config.GenesisTime) / types.SecondsPerInterval
-
-	for s.Time < tickIntervalTime {
-		shouldSignal := hasProposal && (s.Time+1) == tickIntervalTime
-		s.tickIntervalLocked(shouldSignal)
+	target := s.Clock.TargetIntervals(unixTime)
+	for s.Clock.Intervals() < target {
+		isLast := s.Clock.Intervals()+1 == target
+		interval := s.Clock.Tick()
+		s.onIntervalLocked(interval, hasProposal && isLast)
 	}
 }
 
 func (s *Store) advanceToSlotLocked(slot types.Slot) {
-	slotTime := s.Config.GenesisTime + uint64(slot)*types.SecondsPerSlot
-	tickIntervalTime := (slotTime - s.Config.GenesisTime) / types.SecondsPerInterval
-	for s.Time < tickIntervalTime {
-		shouldSignal := (s.Time + 1) == tickIntervalTime
-		s.tickIntervalLocked(shouldSignal)
+	targetIntervals := uint64(slot) * types.IntervalsPerSlot
+	for s.Clock.Intervals() < targetIntervals {
+		isLast := s.Clock.Intervals()+1 == targetIntervals
+		interval := s.Clock.Tick()
+		s.onIntervalLocked(interval, isLast)
 	}
 	s.acceptNewVotesLocked()
 }

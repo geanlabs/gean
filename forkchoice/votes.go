@@ -60,7 +60,7 @@ func (s *Store) validateAttestationLocked(signedVote *types.SignedVote) error {
 	}
 
 	// Validate attestation is not too far in future
-	currentSlot := types.Slot(s.Time / types.IntervalsPerSlot)
+	currentSlot := s.Clock.CurrentSlot()
 	if vote.Slot > currentSlot+1 {
 		return fmt.Errorf("%w: vote slot %d too far ahead (current: %d)",
 			ErrFutureVote, vote.Slot, currentSlot)

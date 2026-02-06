@@ -1,10 +1,7 @@
 // Package reqresp implements request/response protocols for the Lean protocol.
 package reqresp
 
-import (
-	"github.com/devylongs/gean/forkchoice"
-	"github.com/devylongs/gean/types"
-)
+import "github.com/devylongs/gean/types"
 
 // Protocol IDs for request/response messages (per devnet0 spec)
 const (
@@ -13,13 +10,21 @@ const (
 	MaxRequestBlocks       = 1024 // 2^10
 )
 
+// BlockReader provides read access to the block store.
+// Satisfied by forkchoice.Store without modification.
+type BlockReader interface {
+	GetHead() types.Root
+	GetBlock(root types.Root) (*types.Block, bool)
+	GetLatestFinalized() types.Checkpoint
+}
+
 // Handler handles request/response protocol messages.
 type Handler struct {
-	store *forkchoice.Store
+	store BlockReader
 }
 
 // NewHandler creates a new request/response handler.
-func NewHandler(store *forkchoice.Store) *Handler {
+func NewHandler(store BlockReader) *Handler {
 	return &Handler{store: store}
 }
 

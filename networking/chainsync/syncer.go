@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devylongs/gean/forkchoice"
 	"github.com/devylongs/gean/networking/reqresp"
 	"github.com/devylongs/gean/types"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -16,6 +15,14 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
+
+// ChainStore provides access to the block store for chain synchronization.
+// Satisfied by forkchoice.Store without modification.
+type ChainStore interface {
+	HasBlock(root types.Root) bool
+	ProcessBlock(block *types.Block) error
+	AdvanceTime(unixTime uint64, hasProposal bool)
+}
 
 const reqrespTimeout = 30 * time.Second
 
@@ -28,7 +35,7 @@ const (
 
 type Syncer struct {
 	host           host.Host
-	store          *forkchoice.Store
+	store          ChainStore
 	streamHandler  *reqresp.StreamHandler
 	reqrespHandler *reqresp.Handler
 	logger         *slog.Logger
@@ -47,7 +54,7 @@ type Syncer struct {
 // Config holds syncer configuration.
 type Config struct {
 	Host           host.Host
-	Store          *forkchoice.Store
+	Store          ChainStore
 	StreamHandler  *reqresp.StreamHandler
 	ReqRespHandler *reqresp.Handler
 	Logger         *slog.Logger
