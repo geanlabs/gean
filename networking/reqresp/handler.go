@@ -46,7 +46,7 @@ func (h *Handler) HandleBlocksByRoot(request *BlocksByRootRequest) []*types.Sign
 		if block, exists := h.store.GetBlock(root); exists {
 			signedBlock := &types.SignedBlock{
 				Message:   *block,
-				Signature: [4000]byte{}, // Empty signature for Devnet 0
+				Signature: types.Root{}, // Empty signature for Devnet 0
 			}
 			blocks = append(blocks, signedBlock)
 		}

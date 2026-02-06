@@ -8,7 +8,6 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-
 // ProcessSlot performs per-slot maintenance.
 // If the latest block header has an empty state_root, fill it with the current state root.
 func ProcessSlot(s *types.State) (*types.State, error) {
@@ -112,100 +111,78 @@ func ProcessBlockHeader(s *types.State, block *types.Block) (*types.State, error
 
 // ProcessAttestations processes attestation votes per leanSpec Devnet 0.
 //
-// Per leanSpec chain.md process_attestations:
-// 1. Get justifications map from state
-// 2. For each vote, validate and track per-validator votes
-// 3. Justify when 2/3 supermajority (3*count >= 2*num_validators)
-// 4. Finalize when no intermediate justifiable slots between source and target
-// 5. Persist justifications back to state
+// Per leanSpec state.py process_attestations:
+// 1. For each vote, validate source < target
+// 2. If source is justified and target already justified: check finalization
+// 3. If source is justified and target not justified: justify target
+// 4. No supermajority counting — each valid attestation individually justifies
 func ProcessAttestations(s *types.State, attestations []types.SignedVote) (*types.State, error) {
 	newState := Copy(s)
 
-	// Get the justifications map from flattened state
-	justifications := GetJustifications(newState)
+	bl := bitfield.Bitlist(newState.JustifiedSlots)
+	justifiedSlots := make([]bool, bl.Len())
+	for i := uint64(0); i < bl.Len(); i++ {
+		justifiedSlots[i] = bl.BitAt(i)
+	}
+
+	latestJustified := newState.LatestJustified
+	latestFinalized := newState.LatestFinalized
 
 	for _, signedVote := range attestations {
-		vote := signedVote.Message
+		vote := signedVote.Data
+		source := vote.Source
+		target := vote.Target
 
-		sourceSlot := int(vote.Source.Slot)
-		targetSlot := int(vote.Target.Slot)
-		validatorID := int(signedVote.ValidatorID)
+		sourceSlot := int(source.Slot)
+		targetSlot := int(target.Slot)
 
-		// Validation 1: Source must be justified
-		if !getBit(newState.JustifiedSlots, sourceSlot) {
+		// Validate source comes before target
+		if source.Slot >= target.Slot {
 			continue
 		}
 
-		// Validation 2: Target must NOT already be justified
-		// (per spec: we don't want to re-introduce the target for remaining votes
-		// if the slot is already justified and its tracking already cleared)
-		if getBit(newState.JustifiedSlots, targetSlot) {
+		// Check if source is justified
+		if sourceSlot >= len(justifiedSlots) {
 			continue
 		}
+		sourceIsJustified := justifiedSlots[sourceSlot]
 
-		// Validation 3: Source root must match historical block hash at that slot
-		if sourceSlot >= len(newState.HistoricalBlockHashes) ||
-			vote.Source.Root != newState.HistoricalBlockHashes[sourceSlot] {
-			continue
-		}
-
-		// Validation 4: Target root must match historical block hash at that slot
-		if targetSlot >= len(newState.HistoricalBlockHashes) ||
-			vote.Target.Root != newState.HistoricalBlockHashes[targetSlot] {
-			continue
-		}
-
-		// Validation 5: Target slot must be greater than source slot
-		if vote.Target.Slot <= vote.Source.Slot {
-			continue
-		}
-
-		// Validation 6: Target must be a justifiable slot after finalized
-		if !vote.Target.Slot.IsJustifiableAfter(newState.LatestFinalized.Slot) {
-			continue
-		}
-
-		// Track the vote in justifications map
-		if _, exists := justifications[vote.Target.Root]; !exists {
-			justifications[vote.Target.Root] = make([]bool, newState.Config.NumValidators)
-		}
-
-		// Only count if validator hasn't already voted for this target
-		if !justifications[vote.Target.Root][validatorID] {
-			justifications[vote.Target.Root][validatorID] = true
-		}
-
-		// Count votes for this target
-		count := CountVotes(justifications[vote.Target.Root])
-
-		// Check for 2/3 supermajority: 3*count >= 2*num_validators
-		// (spec uses this form to avoid integer division issues)
-		if 3*count >= 2*int(newState.Config.NumValidators) {
-			// Justify the target
-			newState.LatestJustified = vote.Target
-			newState.JustifiedSlots = setBit(newState.JustifiedSlots, targetSlot, true)
-
-			// Remove from justifications map (no longer under voting consideration)
-			delete(justifications, vote.Target.Root)
-
-			// Finalization check: target is the next valid justifiable slot after source
-			// (no intermediate justifiable slots between source and target)
-			canFinalize := true
-			for slot := vote.Source.Slot + 1; slot < vote.Target.Slot; slot++ {
-				if slot.IsJustifiableAfter(newState.LatestFinalized.Slot) {
-					canFinalize = false
-					break
-				}
+		if sourceIsJustified && targetSlot < len(justifiedSlots) && justifiedSlots[targetSlot] {
+			// Target already justified — check for finalization
+			// Consecutive justified slots finalize the source
+			if int(source.Slot)+1 == int(target.Slot) &&
+				int(latestJustified.Slot) < int(target.Slot) {
+				latestFinalized = source
+				latestJustified = target
 			}
+		} else if sourceIsJustified {
+			// Source is justified, target is not — justify the target
+			for len(justifiedSlots) <= targetSlot {
+				justifiedSlots = append(justifiedSlots, false)
+			}
+			justifiedSlots[targetSlot] = true
 
-			if canFinalize {
-				newState.LatestFinalized = vote.Source
+			// Update latest_justified if target is newer
+			if target.Slot > latestJustified.Slot {
+				latestJustified = target
 			}
 		}
 	}
 
-	// Persist the justifications map back to state
-	newState = SetJustifications(newState, justifications)
+	// Write justifiedSlots back to bitlist
+	maxIdx := len(justifiedSlots)
+	if maxIdx == 0 {
+		maxIdx = 1
+	}
+	newBl := bitfield.NewBitlist(uint64(maxIdx))
+	for i, v := range justifiedSlots {
+		if v {
+			newBl.SetBitAt(uint64(i), true)
+		}
+	}
+	newState.JustifiedSlots = newBl
+	newState.LatestJustified = latestJustified
+	newState.LatestFinalized = latestFinalized
 
 	return newState, nil
 }

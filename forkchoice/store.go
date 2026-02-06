@@ -120,6 +120,16 @@ func (s *Store) ProcessBlock(block *types.Block) error {
 		return fmt.Errorf("process block: %w", err)
 	}
 
+	// Validate state root matches the block's declared state root
+	computedStateRoot, err := newState.HashTreeRoot()
+	if err != nil {
+		return fmt.Errorf("hash post-state: %w", err)
+	}
+	if block.StateRoot != computedStateRoot {
+		return fmt.Errorf("invalid block state root: got %x, computed %x",
+			block.StateRoot[:8], computedStateRoot[:8])
+	}
+
 	// Store block and state
 	s.Blocks[blockHash] = block
 	s.States[blockHash] = newState

@@ -60,14 +60,14 @@ func (s *Store) collectAttestations(headState *types.State) []types.SignedVote {
 		}
 
 		signedVote := types.SignedVote{
-			ValidatorID: uint64(validatorID),
-			Message: types.Vote{
-				Slot:   checkpoint.Slot,
-				Head:   checkpoint,
-				Target: checkpoint,
-				Source: headState.LatestJustified,
+			Data: types.Vote{
+				ValidatorID: uint64(validatorID),
+				Slot:        checkpoint.Slot,
+				Head:        checkpoint,
+				Target:      checkpoint,
+				Source:       headState.LatestJustified,
 			},
-			Signature: [4000]byte{},
+			Signature: types.Root{},
 		}
 		attestations = append(attestations, signedVote)
 	}
@@ -114,9 +114,8 @@ func (s *Store) buildBlock(slot types.Slot, validatorIndex types.ValidatorIndex,
 	return block, nil
 }
 
-// ProduceAttestationVote creates an attestation vote for the given slot.
-// The caller is responsible for wrapping this in SignedVote with ValidatorID.
-func (s *Store) ProduceAttestationVote(slot types.Slot) *types.Vote {
+// ProduceAttestationVote creates an attestation vote for the given slot and validator.
+func (s *Store) ProduceAttestationVote(slot types.Slot, validatorIndex types.ValidatorIndex) *types.Vote {
 	s.mu.Lock()
 
 	s.advanceToSlotLocked(slot)
@@ -134,9 +133,10 @@ func (s *Store) ProduceAttestationVote(slot types.Slot) *types.Vote {
 	s.mu.Unlock()
 
 	return &types.Vote{
-		Slot:   slot,
-		Head:   headCheckpoint,
-		Target: targetCheckpoint,
-		Source: latestJustified,
+		ValidatorID: uint64(validatorIndex),
+		Slot:        slot,
+		Head:        headCheckpoint,
+		Target:      targetCheckpoint,
+		Source:       latestJustified,
 	}
 }

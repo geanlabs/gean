@@ -1,6 +1,9 @@
 package types
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // Primitive Types
 
@@ -29,6 +32,22 @@ func (r Root) Compare(other Root) int {
 	return 0
 }
 
+// isqrt returns the integer square root of n.
+func isqrt(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	x := int(math.Sqrt(float64(n)))
+	// Adjust for float imprecision
+	if (x+1)*(x+1) <= n {
+		x++
+	}
+	if x*x > n {
+		x--
+	}
+	return x
+}
+
 // IsJustifiableAfter checks if this slot is a valid candidate for justification
 // after the given finalized slot. Per 3SF-mini spec:
 // - delta <= 5 (immediate)
@@ -42,21 +61,15 @@ func (s Slot) IsJustifiableAfter(finalizedSlot Slot) bool {
 	if delta <= 5 {
 		return true
 	}
-	// Check perfect square
-	sqrt := int(float64(delta) + 0.5)
-	for sqrt*sqrt > delta {
-		sqrt--
-	}
-	if sqrt*sqrt == delta {
+	// Check perfect square: isqrt(delta)^2 == delta
+	sq := isqrt(delta)
+	if sq*sq == delta {
 		return true
 	}
-	// Check pronic (x^2 + x = x*(x+1))
-	for x := 1; x*(x+1) <= delta; x++ {
-		if x*(x+1) == delta {
-			return true
-		}
-	}
-	return false
+	// Check pronic number: 4*delta+1 is an odd perfect square
+	v := 4*delta + 1
+	sqv := isqrt(v)
+	return sqv*sqv == v && sqv%2 == 1
 }
 
 const (

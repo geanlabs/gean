@@ -146,20 +146,23 @@ func (v *Vote) MarshalSSZ() ([]byte, error) {
 func (v *Vote) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
-	// Field (0) 'Slot'
+	// Field (0) 'ValidatorID'
+	dst = ssz.MarshalUint64(dst, v.ValidatorID)
+
+	// Field (1) 'Slot'
 	dst = ssz.MarshalUint64(dst, uint64(v.Slot))
 
-	// Field (1) 'Head'
+	// Field (2) 'Head'
 	if dst, err = v.Head.MarshalSSZTo(dst); err != nil {
 		return
 	}
 
-	// Field (2) 'Target'
+	// Field (3) 'Target'
 	if dst, err = v.Target.MarshalSSZTo(dst); err != nil {
 		return
 	}
 
-	// Field (3) 'Source'
+	// Field (4) 'Source'
 	if dst, err = v.Source.MarshalSSZTo(dst); err != nil {
 		return
 	}
@@ -171,25 +174,28 @@ func (v *Vote) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 func (v *Vote) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size != 128 {
+	if size != 136 {
 		return ssz.ErrSize
 	}
 
-	// Field (0) 'Slot'
-	v.Slot = Slot(ssz.UnmarshallUint64(buf[0:8]))
+	// Field (0) 'ValidatorID'
+	v.ValidatorID = ssz.UnmarshallUint64(buf[0:8])
 
-	// Field (1) 'Head'
-	if err = v.Head.UnmarshalSSZ(buf[8:48]); err != nil {
+	// Field (1) 'Slot'
+	v.Slot = Slot(ssz.UnmarshallUint64(buf[8:16]))
+
+	// Field (2) 'Head'
+	if err = v.Head.UnmarshalSSZ(buf[16:56]); err != nil {
 		return err
 	}
 
-	// Field (2) 'Target'
-	if err = v.Target.UnmarshalSSZ(buf[48:88]); err != nil {
+	// Field (3) 'Target'
+	if err = v.Target.UnmarshalSSZ(buf[56:96]); err != nil {
 		return err
 	}
 
-	// Field (3) 'Source'
-	if err = v.Source.UnmarshalSSZ(buf[88:128]); err != nil {
+	// Field (4) 'Source'
+	if err = v.Source.UnmarshalSSZ(buf[96:136]); err != nil {
 		return err
 	}
 
@@ -198,7 +204,7 @@ func (v *Vote) UnmarshalSSZ(buf []byte) error {
 
 // SizeSSZ returns the ssz encoded size in bytes for the Vote object
 func (v *Vote) SizeSSZ() (size int) {
-	size = 128
+	size = 136
 	return
 }
 
@@ -211,20 +217,23 @@ func (v *Vote) HashTreeRoot() ([32]byte, error) {
 func (v *Vote) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
-	// Field (0) 'Slot'
+	// Field (0) 'ValidatorID'
+	hh.PutUint64(v.ValidatorID)
+
+	// Field (1) 'Slot'
 	hh.PutUint64(uint64(v.Slot))
 
-	// Field (1) 'Head'
+	// Field (2) 'Head'
 	if err = v.Head.HashTreeRootWith(hh); err != nil {
 		return
 	}
 
-	// Field (2) 'Target'
+	// Field (3) 'Target'
 	if err = v.Target.HashTreeRootWith(hh); err != nil {
 		return
 	}
 
-	// Field (3) 'Source'
+	// Field (4) 'Source'
 	if err = v.Source.HashTreeRootWith(hh); err != nil {
 		return
 	}
@@ -247,15 +256,12 @@ func (s *SignedVote) MarshalSSZ() ([]byte, error) {
 func (s *SignedVote) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
-	// Field (0) 'ValidatorID'
-	dst = ssz.MarshalUint64(dst, s.ValidatorID)
-
-	// Field (1) 'Message'
-	if dst, err = s.Message.MarshalSSZTo(dst); err != nil {
+	// Field (0) 'Data'
+	if dst, err = s.Data.MarshalSSZTo(dst); err != nil {
 		return
 	}
 
-	// Field (2) 'Signature'
+	// Field (1) 'Signature'
 	dst = append(dst, s.Signature[:]...)
 
 	return
@@ -265,27 +271,24 @@ func (s *SignedVote) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 func (s *SignedVote) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size != 4136 {
+	if size != 168 {
 		return ssz.ErrSize
 	}
 
-	// Field (0) 'ValidatorID'
-	s.ValidatorID = ssz.UnmarshallUint64(buf[0:8])
-
-	// Field (1) 'Message'
-	if err = s.Message.UnmarshalSSZ(buf[8:136]); err != nil {
+	// Field (0) 'Data'
+	if err = s.Data.UnmarshalSSZ(buf[0:136]); err != nil {
 		return err
 	}
 
-	// Field (2) 'Signature'
-	copy(s.Signature[:], buf[136:4136])
+	// Field (1) 'Signature'
+	copy(s.Signature[:], buf[136:168])
 
 	return err
 }
 
 // SizeSSZ returns the ssz encoded size in bytes for the SignedVote object
 func (s *SignedVote) SizeSSZ() (size int) {
-	size = 4136
+	size = 168
 	return
 }
 
@@ -298,15 +301,12 @@ func (s *SignedVote) HashTreeRoot() ([32]byte, error) {
 func (s *SignedVote) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
-	// Field (0) 'ValidatorID'
-	hh.PutUint64(s.ValidatorID)
-
-	// Field (1) 'Message'
-	if err = s.Message.HashTreeRootWith(hh); err != nil {
+	// Field (0) 'Data'
+	if err = s.Data.HashTreeRootWith(hh); err != nil {
 		return
 	}
 
-	// Field (2) 'Signature'
+	// Field (1) 'Signature'
 	hh.PutBytes(s.Signature[:])
 
 	hh.Merkleize(indx)
@@ -460,13 +460,13 @@ func (b *BlockBody) UnmarshalSSZ(buf []byte) error {
 	// Field (0) 'Attestations'
 	{
 		buf = tail[o0:]
-		num, err := ssz.DivideInt2(len(buf), 4136, 4096)
+		num, err := ssz.DivideInt2(len(buf), 168, 4096)
 		if err != nil {
 			return err
 		}
 		b.Attestations = make([]SignedVote, num)
 		for ii := 0; ii < num; ii++ {
-			if err = b.Attestations[ii].UnmarshalSSZ(buf[ii*4136 : (ii+1)*4136]); err != nil {
+			if err = b.Attestations[ii].UnmarshalSSZ(buf[ii*168 : (ii+1)*168]); err != nil {
 				return err
 			}
 		}
@@ -479,7 +479,7 @@ func (b *BlockBody) SizeSSZ() (size int) {
 	size = 4
 
 	// Field (0) 'Attestations'
-	size += len(b.Attestations) * 4136
+	size += len(b.Attestations) * 168
 
 	return
 }
@@ -646,7 +646,7 @@ func (s *SignedBlock) MarshalSSZ() ([]byte, error) {
 // MarshalSSZTo ssz marshals the SignedBlock object to a target array
 func (s *SignedBlock) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
-	offset := int(4004)
+	offset := int(36)
 
 	// Offset (0) 'Message'
 	dst = ssz.WriteOffset(dst, offset)
@@ -666,7 +666,7 @@ func (s *SignedBlock) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 func (s *SignedBlock) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size < 4004 {
+	if size < 36 {
 		return ssz.ErrSize
 	}
 
@@ -678,12 +678,12 @@ func (s *SignedBlock) UnmarshalSSZ(buf []byte) error {
 		return ssz.ErrOffset
 	}
 
-	if o0 != 4004 {
+	if o0 != 36 {
 		return ssz.ErrInvalidVariableOffset
 	}
 
 	// Field (1) 'Signature'
-	copy(s.Signature[:], buf[4:4004])
+	copy(s.Signature[:], buf[4:36])
 
 	// Field (0) 'Message'
 	{
@@ -697,7 +697,7 @@ func (s *SignedBlock) UnmarshalSSZ(buf []byte) error {
 
 // SizeSSZ returns the ssz encoded size in bytes for the SignedBlock object
 func (s *SignedBlock) SizeSSZ() (size int) {
-	size = 4004
+	size = 36
 
 	// Field (0) 'Message'
 	size += s.Message.SizeSSZ()
