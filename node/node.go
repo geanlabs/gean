@@ -233,8 +233,8 @@ func (n *Node) handleVote(ctx context.Context, vote *types.SignedVote) error {
 		return fmt.Errorf("process vote: %w", err)
 	}
 	n.logger.Debug("processed vote",
-		"slot", vote.Message.Slot,
-		"validator", vote.ValidatorID,
+		"slot", vote.Data.Slot,
+		"validator", vote.Data.ValidatorID,
 	)
 	return nil
 }
@@ -252,7 +252,7 @@ func (n *Node) proposeBlock(slot types.Slot) {
 	// Create signed block (signature is placeholder for Devnet 0)
 	signedBlock := &types.SignedBlock{
 		Message:   *block,
-		Signature: [4000]byte{},
+		Signature: types.Root{},
 	}
 
 	if err := n.net.PublishBlock(n.ctx, signedBlock); err != nil {
@@ -267,12 +267,11 @@ func (n *Node) produceVote(slot types.Slot) {
 	validatorIndex := types.ValidatorIndex(n.config.ValidatorIndex)
 
 	// Use ProduceAttestationVote which handles locking correctly
-	voteData := n.store.ProduceAttestationVote(slot)
+	voteData := n.store.ProduceAttestationVote(slot, validatorIndex)
 
 	vote := &types.SignedVote{
-		ValidatorID: uint64(validatorIndex),
-		Message:     *voteData,
-		Signature:   [4000]byte{}, // Placeholder signature for Devnet 0
+		Data:      *voteData,
+		Signature: types.Root{}, // Placeholder signature for Devnet 0
 	}
 
 	if err := n.net.PublishVote(n.ctx, vote); err != nil {

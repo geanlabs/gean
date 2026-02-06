@@ -14,7 +14,7 @@ func (s *Store) ValidateAttestation(signedVote *types.SignedVote) error {
 }
 
 func (s *Store) validateAttestationLocked(signedVote *types.SignedVote) error {
-	vote := signedVote.Message
+	vote := signedVote.Data
 
 	// Validate target exists in store
 	if _, exists := s.Blocks[vote.Target.Root]; !exists {
@@ -82,8 +82,8 @@ func (s *Store) ProcessAttestation(signedVote *types.SignedVote) error {
 }
 
 func (s *Store) processAttestationLocked(signedVote *types.SignedVote, isFromBlock bool) {
-	vote := signedVote.Message
-	idx := signedVote.ValidatorID
+	vote := signedVote.Data
+	idx := vote.ValidatorID
 
 	if isFromBlock {
 		known := s.LatestKnownVotes[idx]

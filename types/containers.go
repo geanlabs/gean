@@ -16,20 +16,20 @@ type Config struct {
 }
 
 // Vote is the attestation data that can be aggregated.
-// Per leanSpec containers.md - does NOT contain validator_id.
+// Per leanSpec vote.py: validator_id is the first field inside Vote.
 type Vote struct {
-	Slot   Slot
-	Head   Checkpoint
-	Target Checkpoint
-	Source Checkpoint
+	ValidatorID uint64
+	Slot        Slot
+	Head        Checkpoint
+	Target      Checkpoint
+	Source      Checkpoint
 }
 
 // SignedVote is a signed attestation vote.
-// Per leanSpec containers.md: validator_id is at top level, signature is 4000 bytes.
+// Per leanSpec vote.py: contains data (Vote) and signature (Bytes32).
 type SignedVote struct {
-	ValidatorID uint64
-	Message     Vote
-	Signature   [4000]byte `ssz-size:"4000"`
+	Data      Vote
+	Signature Root `ssz-size:"32"`
 }
 
 type BlockHeader struct {
@@ -53,10 +53,10 @@ type Block struct {
 }
 
 // SignedBlock is a signed block.
-// Per leanSpec containers.md: signature is 4000 bytes.
+// Per leanSpec block.py: signature is Bytes32 (placeholder).
 type SignedBlock struct {
 	Message   Block
-	Signature [4000]byte `ssz-size:"4000"`
+	Signature Root `ssz-size:"32"`
 }
 
 // State is the main consensus state object.
@@ -71,7 +71,7 @@ type State struct {
 	HistoricalBlockHashes []Root `ssz-max:"262144" ssz-size:"?,32"`
 	JustifiedSlots        []byte `ssz:"bitlist" ssz-max:"262144"` // Bitlist[HISTORICAL_ROOTS_LIMIT]
 
-	// Justification tracking (unused in Devnet 0 but required for SSZ compatibility)
+	// Justification tracking
 	JustificationRoots      []Root `ssz-max:"262144" ssz-size:"?,32"`
 	JustificationValidators []byte `ssz:"bitlist" ssz-max:"1073741824"` // Bitlist[HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT]
 }
