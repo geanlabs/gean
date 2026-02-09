@@ -2,19 +2,31 @@ package forkchoice
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/devylongs/gean/clock"
 	"github.com/devylongs/gean/types"
 )
 
+// StoreOption configures optional Store parameters.
+type StoreOption func(*Store)
+
+// WithLogger sets the logger for consensus event logging.
+func WithLogger(logger *slog.Logger) StoreOption {
+	return func(s *Store) { s.logger = logger }
+}
+
 // ProcessSlotsFunc applies per-slot processing up to a target slot.
+// Injected from the consensus package to avoid circular imports.
 type ProcessSlotsFunc func(state *types.State, targetSlot types.Slot) (*types.State, error)
 
 // ProcessBlockFunc applies block processing to a state.
+// Injected from the consensus package to avoid circular imports.
 type ProcessBlockFunc func(state *types.State, block *types.Block) (*types.State, error)
 
-// Store maintains fork choice state including blocks, states, and votes.
+// Store maintains fork choice state: blocks, states, votes, and checkpoints.
+// Votes are split into "known" (accepted) and "new" (pending) for safe head calculation.
 type Store struct {
 	mu sync.RWMutex
 
@@ -33,15 +45,17 @@ type Store struct {
 	// Injected state transition functions (from consensus package).
 	processSlots ProcessSlotsFunc
 	processBlock ProcessBlockFunc
+
+	logger *slog.Logger
 }
 
-// NewStore creates a new fork choice store with the given genesis state, anchor block,
-// and injected state transition functions.
+// NewStore creates a new fork choice store from an anchor state and block.
 func NewStore(
 	state *types.State,
 	anchorBlock *types.Block,
 	processSlots ProcessSlotsFunc,
 	processBlock ProcessBlockFunc,
+	opts ...StoreOption,
 ) (*Store, error) {
 	stateRoot, err := state.HashTreeRoot()
 	if err != nil {
@@ -57,11 +71,11 @@ func NewStore(
 		return nil, fmt.Errorf("hash anchor block: %w", err)
 	}
 
-	// Per leanSpec get_forkchoice_store: use state's checkpoints, not anchor block
+	// Use state's checkpoints, not anchor block's
 	latestJustified := state.LatestJustified
 	latestFinalized := state.LatestFinalized
 
-	return &Store{
+	store := &Store{
 		Clock:            clock.New(state.Config.GenesisTime, anchorBlock.Slot),
 		Config:           state.Config,
 		Head:             anchorRoot,
@@ -74,7 +88,14 @@ func NewStore(
 		LatestNewVotes:   make([]types.Checkpoint, state.Config.NumValidators),
 		processSlots:     processSlots,
 		processBlock:     processBlock,
-	}, nil
+		logger:           slog.Default(),
+	}
+
+	for _, opt := range opts {
+		opt(store)
+	}
+
+	return store, nil
 }
 
 // HasBlock checks if a block exists in the store.
@@ -107,7 +128,16 @@ func (s *Store) GetLatestFinalized() types.Checkpoint {
 	return s.LatestFinalized
 }
 
-// ProcessBlock adds a new block and updates fork choice state.
+// GetLatestJustified returns the latest justified checkpoint.
+func (s *Store) GetLatestJustified() types.Checkpoint {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.LatestJustified
+}
+
+// ProcessBlock validates and adds a new block to the store, then updates fork choice.
+// Note: the spec's store.process_block omits process_slots before process_block,
+// which appears to be a spec bug — we correctly advance slots first.
 func (s *Store) ProcessBlock(block *types.Block) error {
 	blockHash, err := block.HashTreeRoot()
 	if err != nil {
@@ -162,7 +192,12 @@ func (s *Store) ProcessBlock(block *types.Block) error {
 	return nil
 }
 
+// updateHeadLocked recalculates the canonical head and updates justified/finalized checkpoints.
 func (s *Store) updateHeadLocked() {
+	prevHead := s.Head
+	prevJustified := s.LatestJustified
+	prevFinalized := s.LatestFinalized
+
 	if latest := GetLatestJustified(s.States); latest != nil {
 		// Only update LatestJustified if we have the block in our store
 		if _, exists := s.Blocks[latest.Root]; exists {
@@ -178,8 +213,29 @@ func (s *Store) updateHeadLocked() {
 			s.LatestFinalized = state.LatestFinalized
 		}
 	}
+
+	// Log consensus events
+	if s.Head != prevHead {
+		s.logger.Info("head updated",
+			"root", s.Head.Short(),
+			"slot", s.Blocks[s.Head].Slot,
+		)
+	}
+	if s.LatestJustified.Slot > prevJustified.Slot {
+		s.logger.Info("justified checkpoint advanced",
+			"slot", s.LatestJustified.Slot,
+			"root", s.LatestJustified.Root.Short(),
+		)
+	}
+	if s.LatestFinalized.Slot > prevFinalized.Slot {
+		s.logger.Info("finalized checkpoint advanced",
+			"slot", s.LatestFinalized.Slot,
+			"root", s.LatestFinalized.Root.Short(),
+		)
+	}
 }
 
+// updateSafeTargetLocked recalculates the safe target using 2/3 supermajority on new votes.
 func (s *Store) updateSafeTargetLocked() {
 	minScore := int((s.Config.NumValidators*2 + 2) / 3) // ceiling division
 	s.SafeTarget = GetHead(s.Blocks, s.LatestJustified.Root, s.LatestNewVotes, minScore)

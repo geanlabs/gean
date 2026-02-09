@@ -2,7 +2,7 @@ package forkchoice
 
 import "github.com/devylongs/gean/types"
 
-// CurrentSlot returns the current slot based on store time.
+// CurrentSlot returns the current slot.
 func (s *Store) CurrentSlot() types.Slot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -17,6 +17,7 @@ func (s *Store) CurrentInterval() uint64 {
 }
 
 // TickInterval advances store time by one interval.
+// Intervals: 0=accept votes (if proposal), 1=voting, 2=safe target, 3=accept votes.
 func (s *Store) TickInterval(hasProposal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -39,7 +40,7 @@ func (s *Store) onIntervalLocked(interval uint64, hasProposal bool) {
 	}
 }
 
-// AdvanceTime ticks the store forward to the given unix time.
+// AdvanceTime ticks the store forward to the given unix timestamp.
 func (s *Store) AdvanceTime(unixTime uint64, hasProposal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -52,6 +53,7 @@ func (s *Store) AdvanceTime(unixTime uint64, hasProposal bool) {
 	}
 }
 
+// advanceToSlotLocked advances the store clock to the start of the given slot.
 func (s *Store) advanceToSlotLocked(slot types.Slot) {
 	targetIntervals := uint64(slot) * types.IntervalsPerSlot
 	for s.Clock.Intervals() < targetIntervals {

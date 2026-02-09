@@ -6,13 +6,15 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// ValidateAttestation validates an attestation according to Devnet 0 spec.
+// ValidateAttestation validates an attestation against the current store state.
 func (s *Store) ValidateAttestation(signedVote *types.SignedVote) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.validateAttestationLocked(signedVote)
 }
 
+// validateAttestationLocked validates an attestation's structural correctness.
+// Note: the spec checks future votes using intervals; we use slots (+1 tolerance).
 func (s *Store) validateAttestationLocked(signedVote *types.SignedVote) error {
 	vote := signedVote.Data
 
@@ -69,7 +71,7 @@ func (s *Store) validateAttestationLocked(signedVote *types.SignedVote) error {
 	return nil
 }
 
-// ProcessAttestation handles a new attestation vote from network gossip.
+// ProcessAttestation validates and processes a gossipsub attestation as a "new" vote.
 func (s *Store) ProcessAttestation(signedVote *types.SignedVote) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -81,6 +83,8 @@ func (s *Store) ProcessAttestation(signedVote *types.SignedVote) error {
 	return nil
 }
 
+// processAttestationLocked stores a vote. Block attestations go to LatestKnownVotes
+// directly; gossip attestations go to LatestNewVotes (promoted later by acceptNewVotes).
 func (s *Store) processAttestationLocked(signedVote *types.SignedVote, isFromBlock bool) {
 	vote := signedVote.Data
 	idx := vote.ValidatorID
@@ -102,6 +106,7 @@ func (s *Store) processAttestationLocked(signedVote *types.SignedVote, isFromBlo
 	}
 }
 
+// acceptNewVotesLocked promotes pending new votes to known and recalculates head.
 func (s *Store) acceptNewVotesLocked() {
 	for i, vote := range s.LatestNewVotes {
 		if !vote.Root.IsZero() {
@@ -112,6 +117,8 @@ func (s *Store) acceptNewVotesLocked() {
 	s.updateHeadLocked()
 }
 
+// getVoteTargetLocked walks back from head to find a safe, justifiable attestation target.
+// Walks back up to 3 steps toward safe target, then further to a justifiable slot.
 func (s *Store) getVoteTargetLocked() types.Checkpoint {
 	targetRoot := s.Head
 

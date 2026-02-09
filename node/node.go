@@ -1,3 +1,15 @@
+// Package node implements the top-level Lean Ethereum consensus node.
+//
+// The node orchestrates all subsystems:
+//   - consensus: state transition functions (injected into the store)
+//   - forkchoice: block tree, vote tracking, LMD-GHOST head selection
+//   - networking: gossipsub for blocks/votes, req/resp for chain sync
+//   - validator: block production and vote creation
+//
+// The node runs a 1-second ticker that drives slot progression. At each tick:
+//   - Interval 0: proposer produces a block (if assigned)
+//   - Interval 1: all validators produce attestation votes
+//   - Interval 2-3: handled internally by the store (safe target, vote acceptance)
 package node
 
 import (
@@ -17,6 +29,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+// Node is the top-level consensus client that connects all subsystems.
 type Node struct {
 	config *Config
 	store  *forkchoice.Store
@@ -52,7 +65,7 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 	genesisState, genesisBlock := consensus.GenerateGenesis(cfg.GenesisTime, cfg.ValidatorCount)
 
 	// Create fork choice store with injected state transition functions
-	store, err := forkchoice.NewStore(genesisState, genesisBlock, consensus.ProcessSlots, consensus.ProcessBlock)
+	store, err := forkchoice.NewStore(genesisState, genesisBlock, consensus.ProcessSlots, consensus.ProcessBlock, forkchoice.WithLogger(logger))
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create store: %w", err)
@@ -162,6 +175,7 @@ func (n *Node) slotTicker() {
 	}
 }
 
+// onTick is called every second to drive the slot pipeline.
 func (n *Node) onTick() {
 	currentTime := uint64(time.Now().Unix())
 
@@ -177,7 +191,14 @@ func (n *Node) onTick() {
 
 	// Log slot progression at start of each slot
 	if interval == 0 {
-		n.logger.Debug("slot", "slot", slot, "head", n.store.Head.Short(), "peers", n.PeerCount())
+		finalized := n.store.GetLatestFinalized()
+		n.logger.Debug("slot",
+			"slot", slot,
+			"head", n.store.GetHead().Short(),
+			"justified", n.store.GetLatestJustified().Slot,
+			"finalized", finalized.Slot,
+			"peers", n.PeerCount(),
+		)
 	}
 
 	// Interval 0: Proposer produces block (skip slot 0 - that's genesis)
@@ -239,6 +260,8 @@ func (n *Node) handleVote(ctx context.Context, vote *types.SignedVote) error {
 	return nil
 }
 
+// proposeBlock produces and publishes a block for the given slot.
+// Uses the iterative attestation collection algorithm (see forkchoice.Store.ProduceBlock).
 func (n *Node) proposeBlock(slot types.Slot) {
 	validatorIndex := types.ValidatorIndex(n.config.ValidatorIndex)
 
@@ -263,6 +286,7 @@ func (n *Node) proposeBlock(slot types.Slot) {
 	n.logger.Info("proposed block", "slot", slot, "attestations", len(block.Body.Attestations))
 }
 
+// produceVote creates and publishes an attestation vote, then processes it locally.
 func (n *Node) produceVote(slot types.Slot) {
 	validatorIndex := types.ValidatorIndex(n.config.ValidatorIndex)
 

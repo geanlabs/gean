@@ -19,6 +19,8 @@ type HostConfig struct {
 }
 
 // NewHost creates a new libp2p host with the given configuration.
+// If no private key is provided, a new secp256k1 key is generated.
+// Default listen address is QUIC on UDP port 9000.
 func NewHost(ctx context.Context, cfg HostConfig) (host.Host, error) {
 	var privKey crypto.PrivKey
 	var err error

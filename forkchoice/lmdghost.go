@@ -1,8 +1,12 @@
-// Package forkchoice implements the LMD GHOST fork choice algorithm.
+// Package forkchoice implements the LMD-GHOST fork choice algorithm and store.
 package forkchoice
 
 import "github.com/devylongs/gean/types"
 
+// GetHead uses LMD-GHOST to find the head block from a given root.
+// Propagates vote weights upward through ancestors, builds a children map
+// (filtered by minScore for safe target), then walks down choosing the
+// heaviest child. Tiebreak: votes > slot > hash.
 func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes []types.Checkpoint, minScore int) types.Root {
 	if root.IsZero() {
 		var minSlot types.Slot = ^types.Slot(0)
@@ -74,7 +78,7 @@ func GetHead(blocks map[types.Root]*types.Block, root types.Root, latestVotes []
 	}
 }
 
-// GetLatestJustified finds the justified checkpoint with the highest slot.
+// GetLatestJustified finds the highest justified checkpoint across all states.
 func GetLatestJustified(states map[types.Root]*types.State) *types.Checkpoint {
 	if len(states) == 0 {
 		return nil

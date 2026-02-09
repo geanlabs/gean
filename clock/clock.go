@@ -1,7 +1,5 @@
-// Package clock provides consensus time tracking for the Lean protocol.
-//
-// SlotClock is not thread-safe. The caller (typically forkchoice.Store)
-// must provide synchronization when accessing the clock from multiple goroutines.
+// Package clock provides consensus time tracking.
+// 4 intervals per slot, 1 second per interval. Not thread-safe; caller must synchronize.
 package clock
 
 import "github.com/devylongs/gean/types"

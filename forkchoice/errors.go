@@ -2,11 +2,12 @@ package forkchoice
 
 import "errors"
 
-// Sentinel errors for fork choice. Callers may use errors.Is to check for them.
+// Sentinel errors for fork choice validation.
+// Callers may use errors.Is to check for specific failure types.
 var (
-	ErrParentNotFound = errors.New("parent not found")
-	ErrSourceNotFound = errors.New("source root not found")
-	ErrTargetNotFound = errors.New("target root not found")
-	ErrSlotMismatch   = errors.New("slot mismatch")
-	ErrFutureVote     = errors.New("vote too far in future")
+	ErrParentNotFound = errors.New("parent not found")  // block's parent root not in store
+	ErrSourceNotFound = errors.New("source root not found") // attestation source root not in store
+	ErrTargetNotFound = errors.New("target root not found") // attestation target root not in store
+	ErrSlotMismatch   = errors.New("slot mismatch")         // checkpoint slot doesn't match block slot
+	ErrFutureVote     = errors.New("vote too far in future") // vote.Slot > currentSlot + 1
 )

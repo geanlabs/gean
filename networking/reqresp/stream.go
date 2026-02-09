@@ -22,7 +22,6 @@ const (
 	MaxMsgSize   = 10 * 1024 * 1024 // 10MB
 )
 
-// Response codes per spec
 const (
 	RespCodeSuccess     byte = 0x00
 	RespCodeInvalidReq  byte = 0x01
@@ -223,8 +222,8 @@ func (s *StreamHandler) RequestBlocksByRoot(ctx context.Context, peerID peer.ID,
 	return blocks, nil
 }
 
-// Helper functions for framed message I/O
-// Per spec: varint length prefix + snappy frame compressed SSZ
+// Helper functions for framed message I/O.
+// Wire format: varint length prefix (uncompressed size) + Snappy-compressed SSZ data.
 
 // readMessage reads a varint-prefixed, snappy-framed message from the stream.
 func readMessage(r io.Reader) ([]byte, error) {

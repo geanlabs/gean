@@ -1,8 +1,5 @@
 // Package validator implements block and vote production for the Lean protocol.
-//
-// Functions in this package are pure: they take inputs, produce outputs, and
-// do not manage locks or mutable state. The caller (typically forkchoice.Store)
-// is responsible for providing the correct inputs and storing results.
+// Functions are pure — the caller (forkchoice.Store) manages state and locking.
 package validator
 
 import (
@@ -12,7 +9,7 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// ValidateProposer checks whether the given validator is the proposer for the slot.
+// ValidateProposer checks round-robin proposer assignment: slot % num_validators.
 func ValidateProposer(slot types.Slot, validatorIndex types.ValidatorIndex, numValidators uint64) error {
 	expectedProposer := uint64(slot) % numValidators
 	if uint64(validatorIndex) != expectedProposer {
@@ -22,20 +19,30 @@ func ValidateProposer(slot types.Slot, validatorIndex types.ValidatorIndex, numV
 	return nil
 }
 
-// CollectAttestations gathers votes from known validators for block inclusion.
-// blockExists should return true if the block with the given root is known to the store.
-func CollectAttestations(
+// CollectNewAttestations gathers votes from known validators for block inclusion,
+// filtering out attestations already in the existing set.
+func CollectNewAttestations(
 	knownVotes []types.Checkpoint,
 	blockExists func(types.Root) bool,
 	latestJustified types.Checkpoint,
+	existing []types.SignedVote,
 ) []types.SignedVote {
-	var attestations []types.SignedVote
+	// Build a set of existing attestation validator IDs for fast lookup.
+	seen := make(map[uint64]bool, len(existing))
+	for _, sv := range existing {
+		seen[sv.Data.ValidatorID] = true
+	}
+
+	var newAttestations []types.SignedVote
 
 	for validatorID, checkpoint := range knownVotes {
 		if checkpoint.Root.IsZero() {
 			continue
 		}
 		if !blockExists(checkpoint.Root) {
+			continue
+		}
+		if seen[uint64(validatorID)] {
 			continue
 		}
 
@@ -49,14 +56,13 @@ func CollectAttestations(
 			},
 			Signature: types.Root{},
 		}
-		attestations = append(attestations, signedVote)
+		newAttestations = append(newAttestations, signedVote)
 	}
 
-	return attestations
+	return newAttestations
 }
 
-// BuildBlock creates a new block by processing slots up to the target and applying the block body.
-// Returns the block (with state root filled) and the post-state.
+// BuildBlock creates a block, applies state transition, and fills the state root.
 func BuildBlock(
 	slot types.Slot,
 	validatorIndex types.ValidatorIndex,

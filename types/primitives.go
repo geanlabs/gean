@@ -1,3 +1,4 @@
+// Package types defines the primitive and composite types for Lean Ethereum consensus.
 package types
 
 import (
@@ -5,8 +6,7 @@ import (
 	"math"
 )
 
-// Primitive Types
-
+// Primitive types.
 type Slot uint64
 type ValidatorIndex uint64
 type Root [32]byte
@@ -48,11 +48,10 @@ func isqrt(n int) int {
 	return x
 }
 
-// IsJustifiableAfter checks if this slot is a valid candidate for justification
-// after the given finalized slot. Per 3SF-mini spec:
-// - delta <= 5 (immediate)
-// - delta is a perfect square (x^2)
-// - delta is a pronic number (x^2 + x)
+// IsJustifiableAfter checks if this slot is a valid justification candidate
+// after the given finalized slot. A slot is justifiable if its distance (delta)
+// from the finalized slot is <= 5, a perfect square, or a pronic number (x*(x+1)).
+// Unjustifiable slots funnel votes toward fewer targets to help reach finalization.
 func (s Slot) IsJustifiableAfter(finalizedSlot Slot) bool {
 	if s < finalizedSlot {
 		return false
@@ -61,20 +60,21 @@ func (s Slot) IsJustifiableAfter(finalizedSlot Slot) bool {
 	if delta <= 5 {
 		return true
 	}
-	// Check perfect square: isqrt(delta)^2 == delta
+	// Rule 2: perfect square check
 	sq := isqrt(delta)
 	if sq*sq == delta {
 		return true
 	}
-	// Check pronic number: 4*delta+1 is an odd perfect square
+	// Rule 3: pronic number check — 4*delta+1 must be an odd perfect square
 	v := 4*delta + 1
 	sqv := isqrt(v)
 	return sqv*sqv == v && sqv%2 == 1
 }
 
+// Protocol constants (Devnet 0).
 const (
-	SecondsPerSlot             uint64 = 4
-	IntervalsPerSlot           uint64 = 4
+	SecondsPerSlot             uint64 = 4 // SECONDS_PER_SLOT: 4-second block times
+	IntervalsPerSlot           uint64 = 4 // INTERVALS_PER_SLOT: 4 intervals per slot (propose, vote, safe target, accept)
 	SecondsPerInterval         uint64 = SecondsPerSlot / IntervalsPerSlot
-	JustificationLookbackSlots uint64 = 3
+	JustificationLookbackSlots uint64 = 3 // JUSTIFICATION_LOOKBACK_SLOTS: used for seen_ttl calculation
 )

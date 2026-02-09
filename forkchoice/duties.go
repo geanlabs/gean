@@ -7,7 +7,11 @@ import (
 	"github.com/devylongs/gean/validator"
 )
 
-// ProduceBlock creates a new block for the given slot and validator.
+// ProduceBlock creates a block using iterative (fixed-point) attestation collection.
+// Iterates: build block -> apply state transition -> collect new attestations using
+// post-state's LatestJustified as source -> repeat until no new attestations.
+// Processing attestations may justify new checkpoints, making additional attestations
+// valid. Typically converges in 1-2 iterations.
 func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorIndex) (*types.Block, error) {
 	if err := validator.ValidateProposer(slot, validatorIndex, s.Config.NumValidators); err != nil {
 		return nil, err
@@ -18,32 +22,44 @@ func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorInde
 
 	s.advanceToSlotLocked(slot)
 
-	headState, exists := s.States[s.Head]
+	headRoot := s.Head
+	headState, exists := s.States[headRoot]
 	if !exists {
 		return nil, fmt.Errorf("head state not found")
 	}
 
-	attestations := validator.CollectAttestations(
-		s.LatestKnownVotes,
-		func(root types.Root) bool { _, ok := s.Blocks[root]; return ok },
-		headState.LatestJustified,
-	)
+	blockExists := func(root types.Root) bool { _, ok := s.Blocks[root]; return ok }
 
-	block, postState, err := validator.BuildBlock(slot, validatorIndex, s.Head, headState, attestations)
-	if err != nil {
-		return nil, err
+	// Iteratively collect attestations using fixed-point algorithm.
+	var attestations []types.SignedVote
+	for {
+		block, postState, err := validator.BuildBlock(slot, validatorIndex, headRoot, headState, attestations)
+		if err != nil {
+			return nil, err
+		}
+
+		// Find new attestations using the post-state's latest justified as source.
+		newAttestations := validator.CollectNewAttestations(
+			s.LatestKnownVotes,
+			blockExists,
+			postState.LatestJustified,
+			attestations,
+		)
+
+		// Fixed point reached: no new attestations found.
+		if len(newAttestations) == 0 {
+			blockHash, err := block.HashTreeRoot()
+			if err != nil {
+				return nil, fmt.Errorf("hash block: %w", err)
+			}
+			s.Blocks[blockHash] = block
+			s.States[blockHash] = postState
+			s.updateHeadLocked()
+			return block, nil
+		}
+
+		attestations = append(attestations, newAttestations...)
 	}
-
-	blockHash, err := block.HashTreeRoot()
-	if err != nil {
-		return nil, fmt.Errorf("hash block: %w", err)
-	}
-
-	s.Blocks[blockHash] = block
-	s.States[blockHash] = postState
-	s.updateHeadLocked()
-
-	return block, nil
 }
 
 // ProduceAttestationVote creates an attestation vote for the given slot and validator.

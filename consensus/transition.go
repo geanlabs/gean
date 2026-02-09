@@ -1,4 +1,7 @@
-// Package consensus implements the Lean Ethereum state transition function.
+// Package consensus implements the state transition function.
+//
+// Pipeline: process_slots → process_slot (cache state root)
+//           process_block → process_block_header + process_attestations
 package consensus
 
 import (
@@ -8,8 +11,9 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// ProcessSlot performs per-slot maintenance.
-// If the latest block header has an empty state_root, fill it with the current state root.
+// ProcessSlot caches the state root into the latest block header if empty.
+// Deferred caching avoids a circular dependency: the header is part of the state,
+// so we can't include the post-block state root at block creation time.
 func ProcessSlot(s *types.State) (*types.State, error) {
 	if s.LatestBlockHeader.StateRoot.IsZero() {
 		stateRoot, err := s.HashTreeRoot()
@@ -43,7 +47,7 @@ func ProcessSlots(s *types.State, targetSlot types.Slot) (*types.State, error) {
 	return state, nil
 }
 
-// ProcessBlockHeader validates and applies a block header.
+// ProcessBlockHeader validates and applies a block header to the state.
 func ProcessBlockHeader(s *types.State, block *types.Block) (*types.State, error) {
 	// Validate slot matches
 	if block.Slot != s.Slot {
@@ -109,13 +113,9 @@ func ProcessBlockHeader(s *types.State, block *types.Block) (*types.State, error
 	return newState, nil
 }
 
-// ProcessAttestations processes attestation votes per leanSpec Devnet 0.
-//
-// Per leanSpec state.py process_attestations:
-// 1. For each vote, validate source < target
-// 2. If source is justified and target already justified: check finalization
-// 3. If source is justified and target not justified: justify target
-// 4. No supermajority counting — each valid attestation individually justifies
+// ProcessAttestations processes votes and updates justification/finalization (3SF-mini).
+// Each valid attestation individually justifies its target (no supermajority counting).
+// Finalization: if slots N and N+1 are both justified, slot N becomes finalized.
 func ProcessAttestations(s *types.State, attestations []types.SignedVote) (*types.State, error) {
 	newState := Copy(s)
 
@@ -127,6 +127,8 @@ func ProcessAttestations(s *types.State, attestations []types.SignedVote) (*type
 
 	latestJustified := newState.LatestJustified
 	latestFinalized := newState.LatestFinalized
+	// Original finalized slot used for gap checks (immutable during this call).
+	originalFinalizedSlot := newState.LatestFinalized.Slot
 
 	for _, signedVote := range attestations {
 		vote := signedVote.Data
@@ -145,36 +147,39 @@ func ProcessAttestations(s *types.State, attestations []types.SignedVote) (*type
 		if sourceSlot >= len(justifiedSlots) {
 			continue
 		}
-		sourceIsJustified := justifiedSlots[sourceSlot]
+		if !justifiedSlots[sourceSlot] {
+			continue
+		}
 
-		if sourceIsJustified && targetSlot < len(justifiedSlots) && justifiedSlots[targetSlot] {
-			// Target already justified — check for finalization
-			// Consecutive justified slots finalize the source
-			if int(source.Slot)+1 == int(target.Slot) &&
-				int(latestJustified.Slot) < int(target.Slot) {
-				latestFinalized = source
-				latestJustified = target
-			}
-		} else if sourceIsJustified {
-			// Source is justified, target is not — justify the target
+		// Justify target if not already justified
+		alreadyJustified := targetSlot < len(justifiedSlots) && justifiedSlots[targetSlot]
+		if !alreadyJustified {
 			for len(justifiedSlots) <= targetSlot {
 				justifiedSlots = append(justifiedSlots, false)
 			}
 			justifiedSlots[targetSlot] = true
 
-			// Update latest_justified if target is newer
 			if target.Slot > latestJustified.Slot {
 				latestJustified = target
 			}
 		}
+
+		// Finalize source if there are no justifiable slots between source and target.
+		// No justifiable gap means the chain of trust is unbroken.
+		noGap := true
+		for s := int(source.Slot) + 1; s < int(target.Slot); s++ {
+			if types.Slot(s).IsJustifiableAfter(originalFinalizedSlot) {
+				noGap = false
+				break
+			}
+		}
+		if noGap && source.Slot >= latestFinalized.Slot {
+			latestFinalized = source
+		}
 	}
 
 	// Write justifiedSlots back to bitlist
-	maxIdx := len(justifiedSlots)
-	if maxIdx == 0 {
-		maxIdx = 1
-	}
-	newBl := bitfield.NewBitlist(uint64(maxIdx))
+	newBl := bitfield.NewBitlist(uint64(len(justifiedSlots)))
 	for i, v := range justifiedSlots {
 		if v {
 			newBl.SetBitAt(uint64(i), true)
@@ -187,7 +192,7 @@ func ProcessAttestations(s *types.State, attestations []types.SignedVote) (*type
 	return newState, nil
 }
 
-// ProcessBlock applies full block processing.
+// ProcessBlock applies process_block_header then process_attestations.
 func ProcessBlock(s *types.State, block *types.Block) (*types.State, error) {
 	state, err := ProcessBlockHeader(s, block)
 	if err != nil {
@@ -204,16 +209,6 @@ func Copy(s *types.State) *types.State {
 	cp.JustificationRoots = append([]types.Root{}, s.JustificationRoots...)
 	cp.JustificationValidators = append([]byte{}, s.JustificationValidators...)
 	return &cp
-}
-
-// getBit returns the value of a bit at the given index.
-// Returns false if index is out of bounds.
-func getBit(bits []byte, index int) bool {
-	bl := bitfield.Bitlist(bits)
-	if uint64(index) >= bl.Len() {
-		return false
-	}
-	return bl.BitAt(uint64(index))
 }
 
 // setBit sets a bit at the given index.

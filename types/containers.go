@@ -2,21 +2,23 @@ package types
 
 //go:generate go run github.com/ferranbt/fastssz/sszgen --path=. --objs=Checkpoint,Config,Vote,SignedVote,BlockHeader,BlockBody,Block,SignedBlock,State
 
-// SSZ Containers
+// SSZ containers for the Lean Ethereum consensus protocol.
+// Field order is critical for SSZ serialization and must match the spec exactly.
 
-// Checkpoint is a (root, slot) pair identifying a block in the chain.
+// Checkpoint identifies a block at a specific slot in the chain.
+// Used for justification and finalization tracking.
 type Checkpoint struct {
 	Root Root `ssz-size:"32"`
 	Slot Slot
 }
 
+// Config holds immutable chain configuration parameters.
 type Config struct {
 	NumValidators uint64
 	GenesisTime   uint64
 }
 
-// Vote is the attestation data that can be aggregated.
-// Per leanSpec vote.py: validator_id is the first field inside Vote.
+// Vote is the attestation data describing a validator's observed chain view.
 type Vote struct {
 	ValidatorID uint64
 	Slot        Slot
@@ -25,13 +27,15 @@ type Vote struct {
 	Source      Checkpoint
 }
 
-// SignedVote is a signed attestation vote.
-// Per leanSpec vote.py: contains data (Vote) and signature (Bytes32).
+// SignedVote wraps a Vote with a signature.
+// Devnet 0 uses placeholder signatures (zero bytes).
 type SignedVote struct {
 	Data      Vote
 	Signature Root `ssz-size:"32"`
 }
 
+// BlockHeader is the fixed-size portion of a block, used for parent chain linking.
+// The StateRoot is initially zero and filled by the next ProcessSlot call.
 type BlockHeader struct {
 	Slot          Slot
 	ProposerIndex uint64
@@ -40,10 +44,13 @@ type BlockHeader struct {
 	BodyRoot      Root `ssz-size:"32"`
 }
 
+// BlockBody contains the variable-length block contents.
+// Attestations are capped at VALIDATOR_REGISTRY_LIMIT (4096).
 type BlockBody struct {
 	Attestations []SignedVote `ssz-max:"4096"`
 }
 
+// Block is a consensus block containing header fields and a body.
 type Block struct {
 	Slot          Slot
 	ProposerIndex uint64
@@ -52,14 +59,15 @@ type Block struct {
 	Body          BlockBody
 }
 
-// SignedBlock is a signed block.
-// Per leanSpec block.py: signature is Bytes32 (placeholder).
+// SignedBlock wraps a Block with a signature.
+// Devnet 0 uses placeholder signatures (zero bytes).
 type SignedBlock struct {
 	Message   Block
 	Signature Root `ssz-size:"32"`
 }
 
-// State is the main consensus state object.
+// State is the full consensus state object.
+// Field order must match the spec exactly for correct SSZ serialization.
 type State struct {
 	Config            Config
 	Slot              Slot
@@ -68,10 +76,8 @@ type State struct {
 	LatestJustified Checkpoint
 	LatestFinalized Checkpoint
 
-	HistoricalBlockHashes []Root `ssz-max:"262144" ssz-size:"?,32"`
-	JustifiedSlots        []byte `ssz:"bitlist" ssz-max:"262144"` // Bitlist[HISTORICAL_ROOTS_LIMIT]
-
-	// Justification tracking
-	JustificationRoots      []Root `ssz-max:"262144" ssz-size:"?,32"`
-	JustificationValidators []byte `ssz:"bitlist" ssz-max:"1073741824"` // Bitlist[HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT]
+	HistoricalBlockHashes []Root `ssz-max:"262144" ssz-size:"?,32"`         // List[Bytes32, HISTORICAL_ROOTS_LIMIT]
+	JustifiedSlots        []byte `ssz:"bitlist" ssz-max:"262144"`           // Bitlist[HISTORICAL_ROOTS_LIMIT]
+	JustificationRoots      []Root `ssz-max:"262144" ssz-size:"?,32"`       // List[Bytes32, HISTORICAL_ROOTS_LIMIT]
+	JustificationValidators []byte `ssz:"bitlist" ssz-max:"1073741824"`     // Bitlist[HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT]
 }

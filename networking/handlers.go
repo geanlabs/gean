@@ -38,7 +38,7 @@ func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte, f
 	return nil
 }
 
-// HandleVoteMessage decodes and processes an incoming vote.
+// HandleVoteMessage decodes and processes an incoming vote message.
 func (h *MessageHandlers) HandleVoteMessage(ctx context.Context, data []byte) error {
 	decoded, err := DecompressMessage(data)
 	if err != nil {

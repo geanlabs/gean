@@ -1,13 +1,12 @@
-// Package reqresp implements request/response protocols for the Lean protocol.
+// Package reqresp implements request/response protocols (Status, BlocksByRoot).
 package reqresp
 
 import "github.com/devylongs/gean/types"
 
-// Protocol IDs for request/response messages (per devnet0 spec)
 const (
 	StatusProtocolV1       = "/leanconsensus/req/status/1/"
 	BlocksByRootProtocolV1 = "/leanconsensus/req/blocks_by_root/1/"
-	MaxRequestBlocks       = 1024 // 2^10
+	MaxRequestBlocks       = 1024
 )
 
 // BlockReader provides read access to the block store.
@@ -28,18 +27,23 @@ func NewHandler(store BlockReader) *Handler {
 	return &Handler{store: store}
 }
 
+// GetStatus returns the node's current status for the handshake protocol.
 func (h *Handler) GetStatus() *Status {
 	headRoot := h.store.GetHead()
-	headBlock, _ := h.store.GetBlock(headRoot)
+	var headSlot types.Slot
+	if headBlock, exists := h.store.GetBlock(headRoot); exists {
+		headSlot = headBlock.Slot
+	}
 	return &Status{
 		Finalized: h.store.GetLatestFinalized(),
 		Head: types.Checkpoint{
 			Root: headRoot,
-			Slot: headBlock.Slot,
+			Slot: headSlot,
 		},
 	}
 }
 
+// HandleBlocksByRoot responds to a BlocksByRoot request with matching blocks.
 func (h *Handler) HandleBlocksByRoot(request *BlocksByRootRequest) []*types.SignedBlock {
 	var blocks []*types.SignedBlock
 
@@ -60,6 +64,8 @@ func (h *Handler) HandleBlocksByRoot(request *BlocksByRootRequest) []*types.Sign
 	return blocks
 }
 
+// ValidatePeerStatus checks that a peer's status is consistent with our block store.
+// If we have the peer's finalized block, its slot must match the claimed finalized slot.
 func (h *Handler) ValidatePeerStatus(peerStatus *Status) error {
 	if peerStatus.Finalized.Slot > 0 {
 		if block, exists := h.store.GetBlock(peerStatus.Finalized.Root); exists {

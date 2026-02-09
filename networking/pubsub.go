@@ -15,34 +15,33 @@ import (
 
 const NetworkName = "devnet0"
 
-// Topic names (per networking spec: block and vote)
+// Topic format: /leanconsensus/<network>/<type>/ssz_snappy
 var (
 	BlockTopic = "/leanconsensus/" + NetworkName + "/block/ssz_snappy"
 	VoteTopic  = "/leanconsensus/" + NetworkName + "/vote/ssz_snappy"
 )
 
-// Domain types for message ID isolation (per networking spec)
+// Message domains for gossipsub message ID computation.
 var (
 	messageDomainInvalidSnappy = [4]byte{0x00, 0x00, 0x00, 0x00}
 	messageDomainValidSnappy   = [4]byte{0x01, 0x00, 0x00, 0x00}
 )
 
-// NewGossipSub creates a new gossipsub instance with lean consensus parameters.
+// NewGossipSub creates a gossipsub instance with Lean consensus parameters.
 func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
 	// SeenTTL = SECONDS_PER_SLOT * JUSTIFICATION_LOOKBACK_SLOTS * 2
 	// For Devnet 0: 4 * 3 * 2 = 24 seconds
 	seenTTL := int(types.SecondsPerSlot) * int(types.JustificationLookbackSlots) * 2
 
-	// Start with default gossipsub params and override what we need
 	gsParams := pubsub.DefaultGossipSubParams()
-	gsParams.D = 8      // Target mesh peers
-	gsParams.Dlo = 6    // Low watermark
-	gsParams.Dhi = 12   // High watermark
-	gsParams.Dlazy = 6  // Gossip-only peers
-	gsParams.HeartbeatInterval = time.Duration(0.7 * float64(time.Second))
-	gsParams.FanoutTTL = 60 * time.Second
-	gsParams.HistoryLength = 6 // MCacheLen
-	gsParams.HistoryGossip = 3 // MCacheGossip
+	gsParams.D = 8                                                    // d: target mesh peers
+	gsParams.Dlo = 6                                                  // d_low: low watermark (prune below)
+	gsParams.Dhi = 12                                                 // d_high: high watermark (graft above)
+	gsParams.Dlazy = 6                                                // d_lazy: gossip-only peers
+	gsParams.HeartbeatInterval = time.Duration(0.7 * float64(time.Second)) // heartbeat_interval_secs
+	gsParams.FanoutTTL = 60 * time.Second                             // fanout_ttl_secs
+	gsParams.HistoryLength = 6                                        // mcache_len
+	gsParams.HistoryGossip = 3                                        // mcache_gossip
 
 	opts := []pubsub.Option{
 		pubsub.WithMessageIdFn(computePubsubMessageID),
@@ -55,8 +54,8 @@ func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
 	return pubsub.NewGossipSub(ctx, h, opts...)
 }
 
-// computePubsubMessageID computes the message ID for gossipsub.
-// ID = SHA256(domain + uint64_le(len(topic)) + topic + data)[:20]
+// computePubsubMessageID computes the 20-byte message ID for gossipsub deduplication.
+// ID = SHA256(domain + len(topic) + topic + data)[:20]
 func computePubsubMessageID(msg *pb.Message) string {
 	var domain [4]byte
 	var data []byte

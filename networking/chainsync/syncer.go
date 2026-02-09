@@ -1,4 +1,11 @@
-// Package chainsync implements the synchronization protocol for the Lean consensus client.
+// Package chainsync implements the chain synchronization protocol for the Lean consensus client.
+//
+// When a node discovers a peer with a higher head slot (via the Status handshake),
+// it requests missing blocks via the BlocksByRoot req/resp protocol and processes
+// them in parent-first order. Missing parents are fetched recursively.
+//
+// Sync requests use exponential backoff retry (1s, 2s, 4s, max 3 retries) to
+// handle transient stream failures gracefully.
 package chainsync
 
 import (
@@ -24,7 +31,11 @@ type ChainStore interface {
 	AdvanceTime(unixTime uint64, hasProposal bool)
 }
 
-const reqrespTimeout = 30 * time.Second
+const (
+	reqrespTimeout  = 30 * time.Second
+	maxSyncRetries  = 3
+	baseRetryDelay  = 1 * time.Second
+)
 
 type SyncState int
 
@@ -197,7 +208,7 @@ func (s *Syncer) syncFromPeer(peerID peer.ID, peerStatus *reqresp.Status) {
 		"roots", len(roots),
 	)
 
-	blocks, err := s.streamHandler.RequestBlocksByRoot(s.ctx, peerID, roots)
+	blocks, err := s.requestBlocksWithRetry(peerID, roots)
 	if err != nil {
 		s.logger.Warn("failed to request blocks",
 			"peer", peerID,
@@ -277,7 +288,7 @@ func (s *Syncer) requestParentChain(parentRoot types.Root, fromPeer peer.ID) err
 		"peer", fromPeer,
 	)
 
-	blocks, err := s.streamHandler.RequestBlocksByRoot(s.ctx, fromPeer, []types.Root{parentRoot})
+	blocks, err := s.requestBlocksWithRetry(fromPeer, []types.Root{parentRoot})
 	if err != nil {
 		return fmt.Errorf("request parent: %w", err)
 	}
@@ -292,6 +303,40 @@ func (s *Syncer) requestParentChain(parentRoot types.Root, fromPeer peer.ID) err
 	}
 
 	return nil
+}
+
+// requestBlocksWithRetry wraps RequestBlocksByRoot with exponential backoff retry.
+// Retries up to maxSyncRetries (3) times with delays of 1s, 2s, 4s.
+// This handles transient libp2p stream reset errors that can occur under load.
+func (s *Syncer) requestBlocksWithRetry(peerID peer.ID, roots []types.Root) ([]*types.SignedBlock, error) {
+	var lastErr error
+	for attempt := 0; attempt <= maxSyncRetries; attempt++ {
+		if attempt > 0 {
+			delay := baseRetryDelay * time.Duration(1<<(attempt-1)) // 1s, 2s, 4s
+			s.logger.Debug("retrying block request",
+				"peer", peerID,
+				"attempt", attempt+1,
+				"delay", delay,
+			)
+			select {
+			case <-s.ctx.Done():
+				return nil, s.ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		blocks, err := s.streamHandler.RequestBlocksByRoot(s.ctx, peerID, roots)
+		if err == nil {
+			return blocks, nil
+		}
+		lastErr = err
+		s.logger.Debug("block request failed",
+			"peer", peerID,
+			"attempt", attempt+1,
+			"error", err,
+		)
+	}
+	return nil, fmt.Errorf("after %d retries: %w", maxSyncRetries, lastErr)
 }
 
 // RemovePeer removes a peer from tracking.
@@ -322,7 +367,7 @@ func (n *connectionNotifier) Listen(network.Network, multiaddr.Multiaddr) {}
 func (n *connectionNotifier) ListenClose(network.Network, multiaddr.Multiaddr) {}
 
 // Connected is called when a new peer connection is established.
-// Per spec: dialing client sends Status first.
+// The dialer sends Status first; the listener responds with its own.
 func (n *connectionNotifier) Connected(net network.Network, conn network.Conn) {
 	peerID := conn.RemotePeer()
 

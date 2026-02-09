@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/devylongs/gean/types"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -22,6 +23,9 @@ type Service struct {
 	blockSub   *pubsub.Subscription
 	voteTopic  *pubsub.Topic
 	voteSub    *pubsub.Subscription
+
+	// Bootnodes that failed initial connection, to be retried.
+	failedBootnodes []peer.AddrInfo
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -91,13 +95,14 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		cancel:     cancel,
 	}
 
-	// Connect to bootnodes
+	// Connect to bootnodes, track failures for retry
 	for _, pi := range cfg.Bootnodes {
 		if err := cfg.Host.Connect(ctx, pi); err != nil {
 			logger.Warn("failed to connect to bootnode",
 				"peer", pi.ID,
 				"error", err,
 			)
+			svc.failedBootnodes = append(svc.failedBootnodes, pi)
 		} else {
 			logger.Info("connected to bootnode", "peer", pi.ID)
 		}
@@ -110,6 +115,12 @@ func (s *Service) Start() {
 	s.wg.Add(2)
 	go s.processBlocks()
 	go s.processVotes()
+
+	if len(s.failedBootnodes) > 0 {
+		s.wg.Add(1)
+		go s.retryBootnodes()
+	}
+
 	s.logger.Info("networking service started",
 		"peer_id", s.host.ID(),
 		"addrs", s.host.Addrs(),
@@ -149,6 +160,38 @@ func (s *Service) PublishVote(ctx context.Context, vote *types.SignedVote) error
 // PeerCount returns the number of connected peers.
 func (s *Service) PeerCount() int {
 	return len(s.host.Network().Peers())
+}
+
+const bootnodeRetryInterval = 30 * time.Second
+
+// retryBootnodes periodically retries connecting to failed bootnodes.
+func (s *Service) retryBootnodes() {
+	defer s.wg.Done()
+
+	ticker := time.NewTicker(bootnodeRetryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			var remaining []peer.AddrInfo
+			for _, pi := range s.failedBootnodes {
+				if err := s.host.Connect(s.ctx, pi); err != nil {
+					s.logger.Debug("bootnode reconnect failed", "peer", pi.ID, "error", err)
+					remaining = append(remaining, pi)
+				} else {
+					s.logger.Info("reconnected to bootnode", "peer", pi.ID)
+				}
+			}
+			s.failedBootnodes = remaining
+			if len(s.failedBootnodes) == 0 {
+				s.logger.Debug("all bootnodes connected, stopping retry")
+				return
+			}
+		}
+	}
 }
 
 // processBlocks handles incoming block messages.

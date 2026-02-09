@@ -5,7 +5,8 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// GenerateGenesis creates a genesis state and block with the given parameters.
+// GenerateGenesis creates a genesis state and anchor block.
+// Bitlists use NewBitlist(0) for empty encoding (sentinel-only).
 func GenerateGenesis(genesisTime, numValidators uint64) (*types.State, *types.Block) {
 	emptyBody := types.BlockBody{Attestations: []types.SignedVote{}}
 	bodyRoot, _ := emptyBody.HashTreeRoot()
@@ -31,9 +32,9 @@ func GenerateGenesis(genesisTime, numValidators uint64) (*types.State, *types.Bl
 		LatestJustified:         genesisCheckpoint,
 		LatestFinalized:         genesisCheckpoint,
 		HistoricalBlockHashes:   []types.Root{},
-		JustifiedSlots:          bitfield.NewBitlist(1),
+		JustifiedSlots:          bitfield.NewBitlist(0),
 		JustificationRoots:      []types.Root{},
-		JustificationValidators: bitfield.NewBitlist(1),
+		JustificationValidators: bitfield.NewBitlist(0),
 	}
 
 	stateRoot, _ := state.HashTreeRoot()

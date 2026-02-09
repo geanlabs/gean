@@ -124,8 +124,8 @@ func TestBlock_HashTreeRoot(t *testing.T) {
 
 func TestState_HashTreeRoot(t *testing.T) {
 	// Use bitfield library to create valid SSZ bitlists
-	justifiedSlots := bitfield.NewBitlist(1)
-	justificationValidators := bitfield.NewBitlist(1)
+	justifiedSlots := bitfield.NewBitlist(0)
+	justificationValidators := bitfield.NewBitlist(0)
 
 	state := State{
 		Slot: 10,
