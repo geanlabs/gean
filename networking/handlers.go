@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	gossipcfg "github.com/devylongs/gean/networking/gossipsub"
 	"github.com/devylongs/gean/types"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -22,7 +23,7 @@ type MessageHandlers struct {
 
 // HandleBlockMessage decodes and processes an incoming block message.
 func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte, from peer.ID) error {
-	decoded, err := DecompressMessage(data)
+	decoded, err := gossipcfg.DecompressMessage(data)
 	if err != nil {
 		return fmt.Errorf("decompress block: %w", err)
 	}
@@ -40,7 +41,7 @@ func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte, f
 
 // HandleAttestationMessage decodes and processes an incoming attestation message.
 func (h *MessageHandlers) HandleAttestationMessage(ctx context.Context, data []byte) error {
-	decoded, err := DecompressMessage(data)
+	decoded, err := gossipcfg.DecompressMessage(data)
 	if err != nil {
 		return fmt.Errorf("decompress attestation: %w", err)
 	}

@@ -1,3 +1,4 @@
+// handler.go contains protocol IDs and server-side req/resp request handlers.
 // Package reqresp implements request/response protocols (Status, BlocksByRoot).
 package reqresp
 
@@ -53,8 +54,8 @@ func (h *Handler) HandleBlocksByRoot(request *BlocksByRootRequest) []*types.Sign
 		}
 
 		if block, exists := h.store.GetBlock(root); exists {
-		// Wrap block in envelope. ProposerAttestation and Signatures are empty —
-		// the req/resp layer serves raw blocks; full signatures are only in gossip.
+			// Wrap block in envelope. ProposerAttestation and Signatures are empty —
+			// the req/resp layer serves raw blocks; full signatures are only in gossip.
 			signedBlock := &types.SignedBlockWithAttestation{
 				Message: types.BlockWithAttestation{
 					Block: *block,

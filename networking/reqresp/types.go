@@ -1,3 +1,4 @@
+// types.go contains SSZ request/response message types for the req/resp protocols.
 package reqresp
 
 import "github.com/devylongs/gean/types"

@@ -1,3 +1,4 @@
+// stream.go contains libp2p stream registration plus req/resp client and stream handlers.
 package reqresp
 
 import (
