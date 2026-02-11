@@ -10,7 +10,7 @@ import (
 // helper to create a genesis state and first block for testing
 func setupGenesisAndFirstBlock(t *testing.T) (*types.State, *types.Block) {
 	t.Helper()
-	state, genesisBlock := GenerateGenesis(1000000000, 8)
+	state, genesisBlock := GenerateGenesis(1000000000, makeTestValidators(8))
 
 	// Advance state to slot 1
 	advanced, err := ProcessSlots(state, 1)
@@ -25,7 +25,7 @@ func setupGenesisAndFirstBlock(t *testing.T) (*types.State, *types.Block) {
 		ProposerIndex: 1, // slot 1 % 8 = 1
 		ParentRoot:    genesisHeaderRoot,
 		StateRoot:     types.Root{},
-		Body:          types.BlockBody{Attestations: []types.SignedVote{}},
+		Body:          types.BlockBody{Attestations: []types.Attestation{}},
 	}
 
 	postState, err := ProcessBlock(advanced, block)
@@ -40,45 +40,47 @@ func setupGenesisAndFirstBlock(t *testing.T) (*types.State, *types.Block) {
 	return postState, block
 }
 
-func TestProcessSlot_FillsStateRoot(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+func TestProcessSlots_FillsStateRootWhenAdvancing(t *testing.T) {
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 
 	// Genesis header has zero state root
 	if !state.LatestBlockHeader.StateRoot.IsZero() {
 		t.Fatal("expected zero state root in genesis header")
 	}
 
-	processed, err := ProcessSlot(state)
+	processed, err := ProcessSlots(state, 1)
 	if err != nil {
-		t.Fatalf("process slot: %v", err)
+		t.Fatalf("process slots: %v", err)
 	}
 
 	if processed.LatestBlockHeader.StateRoot.IsZero() {
-		t.Error("state root should be filled after ProcessSlot")
+		t.Error("state root should be filled during ProcessSlots")
 	}
 }
 
-func TestProcessSlot_NoOpWhenFilled(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+func TestProcessSlots_DoesNotRewriteFilledStateRoot(t *testing.T) {
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 
-	// First ProcessSlot fills state root
-	filled, _ := ProcessSlot(state)
-
-	// Second ProcessSlot should be no-op
-	reprocessed, err := ProcessSlot(filled)
+	// First ProcessSlots call fills state root for genesis header.
+	filled, err := ProcessSlots(state, 1)
 	if err != nil {
-		t.Fatalf("process slot: %v", err)
+		t.Fatalf("process slots to 1: %v", err)
+	}
+	rootBefore := filled.LatestBlockHeader.StateRoot
+
+	// Next ProcessSlots call should not rewrite the already-filled header state root.
+	reprocessed, err := ProcessSlots(filled, 2)
+	if err != nil {
+		t.Fatalf("process slots to 2: %v", err)
 	}
 
-	root1, _ := filled.HashTreeRoot()
-	root2, _ := reprocessed.HashTreeRoot()
-	if root1 != root2 {
-		t.Error("ProcessSlot should be no-op when state root already filled")
+	if reprocessed.LatestBlockHeader.StateRoot != rootBefore {
+		t.Error("ProcessSlots should preserve already-filled header state root")
 	}
 }
 
 func TestProcessSlots_AdvancesCorrectly(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 
 	advanced, err := ProcessSlots(state, 5)
 	if err != nil {
@@ -91,7 +93,7 @@ func TestProcessSlots_AdvancesCorrectly(t *testing.T) {
 }
 
 func TestProcessSlots_ErrorIfNotFuture(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 
 	_, err := ProcessSlots(state, 0)
 	if err == nil {
@@ -100,7 +102,7 @@ func TestProcessSlots_ErrorIfNotFuture(t *testing.T) {
 }
 
 func TestProcessBlockHeader_Valid(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	headerRoot, _ := advanced.LatestBlockHeader.HashTreeRoot()
@@ -123,7 +125,7 @@ func TestProcessBlockHeader_Valid(t *testing.T) {
 }
 
 func TestProcessBlockHeader_WrongSlot(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	block := &types.Block{
@@ -137,7 +139,7 @@ func TestProcessBlockHeader_WrongSlot(t *testing.T) {
 }
 
 func TestProcessBlockHeader_WrongProposer(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	headerRoot, _ := state.LatestBlockHeader.HashTreeRoot()
@@ -154,7 +156,7 @@ func TestProcessBlockHeader_WrongProposer(t *testing.T) {
 }
 
 func TestProcessBlockHeader_WrongParent(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	block := &types.Block{
@@ -170,7 +172,7 @@ func TestProcessBlockHeader_WrongParent(t *testing.T) {
 }
 
 func TestProcessBlockHeader_GenesisSpecialCase(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	headerRoot, _ := advanced.LatestBlockHeader.HashTreeRoot()
@@ -196,7 +198,7 @@ func TestProcessBlockHeader_GenesisSpecialCase(t *testing.T) {
 }
 
 func TestProcessBlockHeader_EmptySlots(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 	// Advance to slot 3 (skipping slot 1 and 2)
 	advanced, _ := ProcessSlots(state, 3)
 
@@ -230,28 +232,37 @@ func TestProcessBlockHeader_EmptySlots(t *testing.T) {
 	}
 }
 
-func TestProcessAttestations_JustifiesTarget(t *testing.T) {
-	// Create a state where slot 0 is justified
-	state := &types.State{
-		Config:        types.Config{NumValidators: 4, GenesisTime: 1000},
-		Slot:          3,
-		JustifiedSlots: bitfield.NewBitlist(4),
-		LatestJustified: types.Checkpoint{Root: types.Root{1}, Slot: 0},
-		LatestFinalized: types.Checkpoint{Root: types.Root{1}, Slot: 0},
+// makeTestState creates a minimal state for ProcessAttestations testing.
+func makeTestState(numValidators uint64, slot types.Slot, justified, finalized types.Checkpoint) *types.State {
+	return &types.State{
+		Config:                  types.Config{GenesisTime: 1000},
+		Slot:                    slot,
+		JustifiedSlots:          bitfield.NewBitlist(4),
+		Validators:              makeTestValidators(numValidators),
+		LatestJustified:         justified,
+		LatestFinalized:         finalized,
 		JustificationRoots:      []types.Root{},
 		JustificationValidators: bitfield.NewBitlist(0),
 		HistoricalBlockHashes:   []types.Root{},
 	}
+}
+
+func TestProcessAttestations_JustifiesTarget(t *testing.T) {
+	// Create a state where slot 0 is justified
+	state := makeTestState(4, 3,
+		types.Checkpoint{Root: types.Root{1}, Slot: 0},
+		types.Checkpoint{Root: types.Root{1}, Slot: 0},
+	)
 	// Mark slot 0 as justified
 	bitfield.Bitlist(state.JustifiedSlots).SetBitAt(0, true)
 
-	attestations := []types.SignedVote{
+	attestations := []types.Attestation{
 		{
-			Data: types.Vote{
-				ValidatorID: 0,
-				Slot:        2,
-				Source:       types.Checkpoint{Root: types.Root{1}, Slot: 0},
-				Target:      types.Checkpoint{Root: types.Root{2}, Slot: 2},
+			ValidatorID: 0,
+			Data: types.AttestationData{
+				Slot:   2,
+				Source: types.Checkpoint{Root: types.Root{1}, Slot: 0},
+				Target: types.Checkpoint{Root: types.Root{2}, Slot: 2},
 			},
 		},
 	}
@@ -274,28 +285,22 @@ func TestProcessAttestations_JustifiesTarget(t *testing.T) {
 
 func TestProcessAttestations_FinalizesSource(t *testing.T) {
 	// State with slots 0 and 1 justified (consecutive)
-	state := &types.State{
-		Config:        types.Config{NumValidators: 4, GenesisTime: 1000},
-		Slot:          5,
-		JustifiedSlots: bitfield.NewBitlist(4),
-		LatestJustified: types.Checkpoint{Root: types.Root{2}, Slot: 1},
-		LatestFinalized: types.Checkpoint{Root: types.Root{1}, Slot: 0},
-		JustificationRoots:      []types.Root{},
-		JustificationValidators: bitfield.NewBitlist(0),
-		HistoricalBlockHashes:   []types.Root{},
-	}
+	state := makeTestState(4, 5,
+		types.Checkpoint{Root: types.Root{2}, Slot: 1},
+		types.Checkpoint{Root: types.Root{1}, Slot: 0},
+	)
 	bl := bitfield.Bitlist(state.JustifiedSlots)
 	bl.SetBitAt(0, true)
 	bl.SetBitAt(1, true)
 
 	// Vote with source=0 target=1 (both already justified, consecutive)
-	attestations := []types.SignedVote{
+	attestations := []types.Attestation{
 		{
-			Data: types.Vote{
-				ValidatorID: 0,
-				Slot:        3,
-				Source:       types.Checkpoint{Root: types.Root{1}, Slot: 0},
-				Target:      types.Checkpoint{Root: types.Root{2}, Slot: 1},
+			ValidatorID: 0,
+			Data: types.AttestationData{
+				Slot:   3,
+				Source: types.Checkpoint{Root: types.Root{1}, Slot: 0},
+				Target: types.Checkpoint{Root: types.Root{2}, Slot: 1},
 			},
 		},
 	}
@@ -318,28 +323,23 @@ func TestProcessAttestations_FinalizesAcrossGap(t *testing.T) {
 	// Finalized=0, slots 0, 6, 9 justified.
 	// Slots 7 and 8 are NOT justifiable after finalized=0 (delta 7,8: not <=5, not square, not pronic).
 	// So source=6, target=9 should finalize source=6 (no justifiable gap between 7..8).
-	state := &types.State{
-		Config:          types.Config{NumValidators: 4, GenesisTime: 1000},
-		Slot:            15,
-		JustifiedSlots:  bitfield.NewBitlist(10),
-		LatestJustified: types.Checkpoint{Root: types.Root{9}, Slot: 9},
-		LatestFinalized: types.Checkpoint{Root: types.Root{1}, Slot: 0},
-		JustificationRoots:      []types.Root{},
-		JustificationValidators: bitfield.NewBitlist(0),
-		HistoricalBlockHashes:   []types.Root{},
-	}
+	state := makeTestState(4, 15,
+		types.Checkpoint{Root: types.Root{9}, Slot: 9},
+		types.Checkpoint{Root: types.Root{1}, Slot: 0},
+	)
+	state.JustifiedSlots = bitfield.NewBitlist(10)
 	bl := bitfield.Bitlist(state.JustifiedSlots)
 	bl.SetBitAt(0, true)
 	bl.SetBitAt(6, true)
 	bl.SetBitAt(9, true)
 
-	attestations := []types.SignedVote{
+	attestations := []types.Attestation{
 		{
-			Data: types.Vote{
-				ValidatorID: 0,
-				Slot:        10,
-				Source:       types.Checkpoint{Root: types.Root{6}, Slot: 6},
-				Target:      types.Checkpoint{Root: types.Root{9}, Slot: 9},
+			ValidatorID: 0,
+			Data: types.AttestationData{
+				Slot:   10,
+				Source: types.Checkpoint{Root: types.Root{6}, Slot: 6},
+				Target: types.Checkpoint{Root: types.Root{9}, Slot: 9},
 			},
 		},
 	}
@@ -358,27 +358,22 @@ func TestProcessAttestations_NoFinalizeWithGap(t *testing.T) {
 	// Finalized=0, slots 0 and 4 justified.
 	// Slots 1,2,3 ARE justifiable after finalized=0 (delta <=5).
 	// So source=0, target=4 should NOT finalize (justifiable gap exists).
-	state := &types.State{
-		Config:          types.Config{NumValidators: 4, GenesisTime: 1000},
-		Slot:            10,
-		JustifiedSlots:  bitfield.NewBitlist(5),
-		LatestJustified: types.Checkpoint{Root: types.Root{4}, Slot: 4},
-		LatestFinalized: types.Checkpoint{Root: types.Root{1}, Slot: 0},
-		JustificationRoots:      []types.Root{},
-		JustificationValidators: bitfield.NewBitlist(0),
-		HistoricalBlockHashes:   []types.Root{},
-	}
+	state := makeTestState(4, 10,
+		types.Checkpoint{Root: types.Root{4}, Slot: 4},
+		types.Checkpoint{Root: types.Root{1}, Slot: 0},
+	)
+	state.JustifiedSlots = bitfield.NewBitlist(5)
 	bl := bitfield.Bitlist(state.JustifiedSlots)
 	bl.SetBitAt(0, true)
 	bl.SetBitAt(4, true)
 
-	attestations := []types.SignedVote{
+	attestations := []types.Attestation{
 		{
-			Data: types.Vote{
-				ValidatorID: 0,
-				Slot:        5,
-				Source:       types.Checkpoint{Root: types.Root{1}, Slot: 0},
-				Target:      types.Checkpoint{Root: types.Root{4}, Slot: 4},
+			ValidatorID: 0,
+			Data: types.AttestationData{
+				Slot:   5,
+				Source: types.Checkpoint{Root: types.Root{1}, Slot: 0},
+				Target: types.Checkpoint{Root: types.Root{4}, Slot: 4},
 			},
 		},
 	}
@@ -395,27 +390,20 @@ func TestProcessAttestations_NoFinalizeWithGap(t *testing.T) {
 }
 
 func TestProcessAttestations_SkipsInvalid(t *testing.T) {
-	state := &types.State{
-		Config:        types.Config{NumValidators: 4, GenesisTime: 1000},
-		Slot:          5,
-		JustifiedSlots: bitfield.NewBitlist(4),
-		LatestJustified: types.Checkpoint{Root: types.Root{1}, Slot: 0},
-		LatestFinalized: types.Checkpoint{Root: types.Root{1}, Slot: 0},
-		JustificationRoots:      []types.Root{},
-		JustificationValidators: bitfield.NewBitlist(0),
-		HistoricalBlockHashes:   []types.Root{},
-	}
-	bl := bitfield.Bitlist(state.JustifiedSlots)
-	bl.SetBitAt(0, true)
+	state := makeTestState(4, 5,
+		types.Checkpoint{Root: types.Root{1}, Slot: 0},
+		types.Checkpoint{Root: types.Root{1}, Slot: 0},
+	)
+	bitfield.Bitlist(state.JustifiedSlots).SetBitAt(0, true)
 
 	// Invalid: source.Slot >= target.Slot
-	attestations := []types.SignedVote{
+	attestations := []types.Attestation{
 		{
-			Data: types.Vote{
-				ValidatorID: 0,
-				Slot:        3,
-				Source:       types.Checkpoint{Root: types.Root{1}, Slot: 2},
-				Target:      types.Checkpoint{Root: types.Root{2}, Slot: 1},
+			ValidatorID: 0,
+			Data: types.AttestationData{
+				Slot:   3,
+				Source: types.Checkpoint{Root: types.Root{1}, Slot: 2},
+				Target: types.Checkpoint{Root: types.Root{2}, Slot: 1},
 			},
 		},
 	}
@@ -443,7 +431,7 @@ func TestProcessBlock_EndToEnd(t *testing.T) {
 }
 
 func TestCopy_DeepIndependence(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
 
 	cp := Copy(state)
 	cp.Slot = 99

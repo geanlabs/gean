@@ -7,6 +7,9 @@ gean
 coverage.out
 coverage.html
 
+# Go cache
+.gocache/
+
 # IDE
 .idea/
 .vscode/

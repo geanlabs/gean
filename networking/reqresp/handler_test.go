@@ -69,8 +69,8 @@ func TestHandleBlocksByRoot(t *testing.T) {
 		t.Errorf("Expected 1 block, got %d", len(blocks))
 	}
 
-	if blocks[0].Message.Slot != 0 {
-		t.Errorf("Block slot = %d, want 0", blocks[0].Message.Slot)
+	if blocks[0].Message.Block.Slot != 0 {
+		t.Errorf("Block slot = %d, want 0", blocks[0].Message.Block.Slot)
 	}
 }
 

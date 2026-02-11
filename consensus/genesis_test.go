@@ -6,17 +6,58 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
+// makeTestValidators creates n placeholder validators for testing.
+func makeTestValidators(n uint64) []types.Validator {
+	validators := make([]types.Validator, n)
+	for i := uint64(0); i < n; i++ {
+		validators[i] = types.Validator{Index: types.ValidatorIndex(i)}
+	}
+	return validators
+}
+
+func TestGenerateValidators_DeterministicAndIndexed(t *testing.T) {
+	v1 := GenerateValidators(4)
+	v2 := GenerateValidators(4)
+
+	if len(v1) != 4 || len(v2) != 4 {
+		t.Fatalf("unexpected validator count: %d %d", len(v1), len(v2))
+	}
+	for i := range v1 {
+		if v1[i].Index != types.ValidatorIndex(i) {
+			t.Fatalf("validator index mismatch at %d: got %d", i, v1[i].Index)
+		}
+		if v2[i].Index != types.ValidatorIndex(i) {
+			t.Fatalf("validator index mismatch (second run) at %d: got %d", i, v2[i].Index)
+		}
+		if v1[i].Pubkey != v2[i].Pubkey {
+			t.Fatalf("determinism mismatch at validator %d", i)
+		}
+	}
+	if v1[0].Pubkey == (types.Pubkey{}) {
+		t.Fatal("expected non-zero deterministic placeholder pubkey")
+	}
+}
+
+func TestGenerateValidators_EmptyForNonPositive(t *testing.T) {
+	if got := GenerateValidators(0); len(got) != 0 {
+		t.Fatalf("expected empty validators for n=0, got %d", len(got))
+	}
+	if got := GenerateValidators(-1); len(got) != 0 {
+		t.Fatalf("expected empty validators for n<0, got %d", len(got))
+	}
+}
+
 func TestGenerateGenesis_Fields(t *testing.T) {
 	genesisTime := uint64(1000000000)
-	numValidators := uint64(8)
+	validators := GenerateValidators(8)
 
-	state, block := GenerateGenesis(genesisTime, numValidators)
+	state, block := GenerateGenesis(genesisTime, validators)
 
 	if state.Config.GenesisTime != genesisTime {
 		t.Errorf("genesis time = %d, want %d", state.Config.GenesisTime, genesisTime)
 	}
-	if state.Config.NumValidators != numValidators {
-		t.Errorf("num validators = %d, want %d", state.Config.NumValidators, numValidators)
+	if len(state.Validators) != 8 {
+		t.Errorf("validators length = %d, want 8", len(state.Validators))
 	}
 	if state.Slot != 0 {
 		t.Errorf("slot = %d, want 0", state.Slot)
@@ -52,7 +93,7 @@ func TestGenerateGenesis_Fields(t *testing.T) {
 }
 
 func TestGenerateGenesis_BlockStateRoot(t *testing.T) {
-	state, block := GenerateGenesis(1000000000, 8)
+	state, block := GenerateGenesis(1000000000, GenerateValidators(8))
 
 	stateRoot, err := state.HashTreeRoot()
 	if err != nil {
@@ -65,7 +106,7 @@ func TestGenerateGenesis_BlockStateRoot(t *testing.T) {
 }
 
 func TestGenerateGenesis_SSZRoundtrip(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, 8)
+	state, _ := GenerateGenesis(1000000000, GenerateValidators(8))
 
 	data, err := state.MarshalSSZ()
 	if err != nil {
@@ -82,5 +123,16 @@ func TestGenerateGenesis_SSZRoundtrip(t *testing.T) {
 
 	if originalRoot != decodedRoot {
 		t.Error("SSZ roundtrip hash mismatch")
+	}
+}
+
+func TestGenerateGenesis_CopiesValidatorSlice(t *testing.T) {
+	validators := GenerateValidators(2)
+	state, _ := GenerateGenesis(1000000000, validators)
+
+	// Mutate caller slice and verify state keeps its own copy.
+	validators[0].Index = 99
+	if state.Validators[0].Index == 99 {
+		t.Fatal("state validators alias caller slice")
 	}
 }

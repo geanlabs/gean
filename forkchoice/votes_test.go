@@ -27,17 +27,19 @@ func setupStoreWithBlock(t *testing.T) (*Store, types.Root, types.Root) {
 func TestValidateAttestation_Valid(t *testing.T) {
 	store, blockRoot, genesisRoot := setupStoreWithBlock(t)
 
-	signedVote := &types.SignedVote{
-		Data: types.Vote{
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
 			ValidatorID: 0,
-			Slot:        1,
-			Head:        types.Checkpoint{Root: blockRoot, Slot: 1},
-			Target:      types.Checkpoint{Root: blockRoot, Slot: 1},
-			Source:      types.Checkpoint{Root: genesisRoot, Slot: 0},
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: genesisRoot, Slot: 0},
+			},
 		},
 	}
 
-	if err := store.ValidateAttestation(signedVote); err != nil {
+	if err := store.ValidateAttestation(signed); err != nil {
 		t.Fatalf("expected valid attestation, got: %v", err)
 	}
 }
@@ -46,34 +48,39 @@ func TestValidateAttestation_GenesisSource(t *testing.T) {
 	store, blockRoot, _ := setupStoreWithBlock(t)
 
 	// Genesis source uses zero root and slot 0
-	signedVote := &types.SignedVote{
-		Data: types.Vote{
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
 			ValidatorID: 0,
-			Slot:        1,
-			Head:        types.Checkpoint{Root: blockRoot, Slot: 1},
-			Target:      types.Checkpoint{Root: blockRoot, Slot: 1},
-			Source:      types.Checkpoint{Root: types.Root{}, Slot: 0},
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
+			},
 		},
 	}
 
-	if err := store.ValidateAttestation(signedVote); err != nil {
+	if err := store.ValidateAttestation(signed); err != nil {
 		t.Fatalf("expected valid attestation with genesis source, got: %v", err)
 	}
 }
 
 func TestValidateAttestation_UnknownTarget(t *testing.T) {
-	store, _, _ := setupStoreWithBlock(t)
+	store, blockRoot, _ := setupStoreWithBlock(t)
 
-	signedVote := &types.SignedVote{
-		Data: types.Vote{
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
 			ValidatorID: 0,
-			Slot:        1,
-			Target:      types.Checkpoint{Root: types.Root{0xff}, Slot: 1},
-			Source:      types.Checkpoint{Root: types.Root{}, Slot: 0},
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: types.Root{0xff}, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
+			},
 		},
 	}
 
-	err := store.ValidateAttestation(signedVote)
+	err := store.ValidateAttestation(signed)
 	if err == nil {
 		t.Fatal("expected error for unknown target")
 	}
@@ -86,16 +93,19 @@ func TestValidateAttestation_SourceAfterTarget(t *testing.T) {
 	store, blockRoot, genesisRoot := setupStoreWithBlock(t)
 
 	// Source slot > target slot
-	signedVote := &types.SignedVote{
-		Data: types.Vote{
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
 			ValidatorID: 0,
-			Slot:        1,
-			Target:      types.Checkpoint{Root: genesisRoot, Slot: 0},
-			Source:      types.Checkpoint{Root: blockRoot, Slot: 1},
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: genesisRoot, Slot: 0},
+				Source: types.Checkpoint{Root: blockRoot, Slot: 1},
+			},
 		},
 	}
 
-	err := store.ValidateAttestation(signedVote)
+	err := store.ValidateAttestation(signed)
 	if err == nil {
 		t.Fatal("expected error for source after target")
 	}
@@ -107,27 +117,100 @@ func TestValidateAttestation_SourceAfterTarget(t *testing.T) {
 func TestValidateAttestation_FutureVote(t *testing.T) {
 	store, blockRoot, _ := setupStoreWithBlock(t)
 
-	// Vote slot far in the future (current slot is ~0 since genesis time is 1B)
-	signedVote := &types.SignedVote{
-		Data: types.Vote{
+	// Attestation slot far in the future (current slot is ~0 since genesis time is 1B)
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
 			ValidatorID: 0,
-			Slot:        9999,
-			Target:      types.Checkpoint{Root: blockRoot, Slot: 1},
-			Source:      types.Checkpoint{Root: types.Root{}, Slot: 0},
+			Data: types.AttestationData{
+				Slot:   9999,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
+			},
 		},
 	}
 
-	err := store.ValidateAttestation(signedVote)
+	err := store.ValidateAttestation(signed)
 	if err == nil {
-		t.Fatal("expected error for future vote")
+		t.Fatal("expected error for future attestation")
 	}
 	if !errors.Is(err, ErrFutureVote) {
 		t.Errorf("expected ErrFutureVote, got: %v", err)
 	}
 }
 
+func TestValidateAttestation_UnknownHead(t *testing.T) {
+	store, blockRoot, _ := setupStoreWithBlock(t)
+
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
+			ValidatorID: 0,
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: types.Root{0xaa}, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
+			},
+		},
+	}
+
+	err := store.ValidateAttestation(signed)
+	if err == nil {
+		t.Fatal("expected error for unknown head")
+	}
+	if !errors.Is(err, ErrHeadNotFound) {
+		t.Errorf("expected ErrHeadNotFound, got: %v", err)
+	}
+}
+
+func TestValidateAttestation_ValidatorOutOfRange(t *testing.T) {
+	store, blockRoot, _ := setupStoreWithBlock(t)
+
+	outOfRangeValidatorID := uint64(len(store.LatestKnownVotes))
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
+			ValidatorID: outOfRangeValidatorID,
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
+			},
+		},
+	}
+
+	err := store.ValidateAttestation(signed)
+	if err == nil {
+		t.Fatal("expected error for out-of-range validator index")
+	}
+	if !errors.Is(err, ErrValidatorOutOfRange) {
+		t.Errorf("expected ErrValidatorOutOfRange, got: %v", err)
+	}
+}
+
+func TestProcessAttestationLocked_OutOfRangeDoesNotPanic(t *testing.T) {
+	store, blockRoot, _ := setupStoreWithBlock(t)
+
+	invalidValidatorID := uint64(len(store.LatestKnownVotes)) + 10
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
+			ValidatorID: invalidValidatorID,
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
+			},
+		},
+	}
+
+	// This should safely no-op for both gossip and block paths.
+	store.processAttestationLocked(signed, false)
+	store.processAttestationLocked(signed, true)
+}
+
 func TestProcessAttestation_FromBlock_UpdatesKnown(t *testing.T) {
-	state, genesisBlock := consensus.GenerateGenesis(1000000000, 8)
+	state, genesisBlock := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	store, err := NewStore(state, genesisBlock, consensus.ProcessSlots, consensus.ProcessBlock)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -136,15 +219,15 @@ func TestProcessAttestation_FromBlock_UpdatesKnown(t *testing.T) {
 	block := buildValidBlock(t, store, 1)
 	blockRoot, _ := block.HashTreeRoot()
 
-	// Add attestations to the block
-	block.Body.Attestations = []types.SignedVote{
+	// Add attestations to the block body
+	block.Body.Attestations = []types.Attestation{
 		{
-			Data: types.Vote{
-				ValidatorID: 2,
-				Slot:        1,
-				Head:        types.Checkpoint{Root: blockRoot, Slot: 1},
-				Target:      types.Checkpoint{Root: blockRoot, Slot: 1},
-				Source:      types.Checkpoint{Root: types.Root{}, Slot: 0},
+			ValidatorID: 2,
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
 			},
 		},
 	}
@@ -169,20 +252,22 @@ func TestProcessAttestation_FromBlock_UpdatesKnown(t *testing.T) {
 func TestProcessAttestation_FromGossip_UpdatesNew(t *testing.T) {
 	store, blockRoot, _ := setupStoreWithBlock(t)
 
-	// Advance the clock so the vote isn't "too far in future"
+	// Advance the clock so the attestation isn't "too far in future"
 	store.AdvanceTime(1000000000+8, false) // advance past slot 1
 
-	signedVote := &types.SignedVote{
-		Data: types.Vote{
+	signed := &types.SignedAttestation{
+		Message: types.Attestation{
 			ValidatorID: 3,
-			Slot:        1,
-			Head:        types.Checkpoint{Root: blockRoot, Slot: 1},
-			Target:      types.Checkpoint{Root: blockRoot, Slot: 1},
-			Source:      types.Checkpoint{Root: types.Root{}, Slot: 0},
+			Data: types.AttestationData{
+				Slot:   1,
+				Head:   types.Checkpoint{Root: blockRoot, Slot: 1},
+				Target: types.Checkpoint{Root: blockRoot, Slot: 1},
+				Source: types.Checkpoint{Root: types.Root{}, Slot: 0},
+			},
 		},
 	}
 
-	if err := store.ProcessAttestation(signedVote); err != nil {
+	if err := store.ProcessAttestation(signed); err != nil {
 		t.Fatalf("ProcessAttestation: %v", err)
 	}
 

@@ -225,7 +225,7 @@ func (s *Syncer) syncFromPeer(peerID peer.ID, peerStatus *reqresp.Status) {
 	for _, block := range blocks {
 		if err := s.processReceivedBlock(block, peerID); err != nil {
 			s.logger.Warn("failed to process block",
-				"slot", block.Message.Slot,
+				"slot", block.Message.Block.Slot,
 				"error", err,
 			)
 		}
@@ -234,9 +234,9 @@ func (s *Syncer) syncFromPeer(peerID peer.ID, peerStatus *reqresp.Status) {
 
 // processReceivedBlock processes a block received via req/resp.
 // If parent is unknown, requests parent chain.
-func (s *Syncer) processReceivedBlock(block *types.SignedBlock, fromPeer peer.ID) error {
-	// Check if we already have this block
-	blockRoot, err := block.Message.HashTreeRoot()
+func (s *Syncer) processReceivedBlock(block *types.SignedBlockWithAttestation, fromPeer peer.ID) error {
+	innerBlock := &block.Message.Block
+	blockRoot, err := innerBlock.HashTreeRoot()
 	if err != nil {
 		return fmt.Errorf("hash block: %w", err)
 	}
@@ -245,7 +245,7 @@ func (s *Syncer) processReceivedBlock(block *types.SignedBlock, fromPeer peer.ID
 		return nil
 	}
 
-	parentRoot := block.Message.ParentRoot
+	parentRoot := innerBlock.ParentRoot
 	if !s.store.HasBlock(parentRoot) {
 		// Parent unknown - request parent chain
 		if err := s.requestParentChain(parentRoot, fromPeer); err != nil {
@@ -254,13 +254,13 @@ func (s *Syncer) processReceivedBlock(block *types.SignedBlock, fromPeer peer.ID
 	}
 
 	// Process the block
-	if err := s.store.ProcessBlock(&block.Message); err != nil {
+	if err := s.store.ProcessBlock(innerBlock); err != nil {
 		return fmt.Errorf("process block: %w", err)
 	}
 
 	s.logger.Info("synced block",
-		"slot", block.Message.Slot,
-		"proposer", block.Message.ProposerIndex,
+		"slot", innerBlock.Slot,
+		"proposer", innerBlock.ProposerIndex,
 	)
 
 	return nil
@@ -296,7 +296,7 @@ func (s *Syncer) requestParentChain(parentRoot types.Root, fromPeer peer.ID) err
 	for _, block := range blocks {
 		if err := s.processReceivedBlock(block, fromPeer); err != nil {
 			s.logger.Warn("failed to process parent block",
-				"slot", block.Message.Slot,
+				"slot", block.Message.Block.Slot,
 				"error", err,
 			)
 		}
@@ -308,7 +308,7 @@ func (s *Syncer) requestParentChain(parentRoot types.Root, fromPeer peer.ID) err
 // requestBlocksWithRetry wraps RequestBlocksByRoot with exponential backoff retry.
 // Retries up to maxSyncRetries (3) times with delays of 1s, 2s, 4s.
 // This handles transient libp2p stream reset errors that can occur under load.
-func (s *Syncer) requestBlocksWithRetry(peerID peer.ID, roots []types.Root) ([]*types.SignedBlock, error) {
+func (s *Syncer) requestBlocksWithRetry(peerID peer.ID, roots []types.Root) ([]*types.SignedBlockWithAttestation, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxSyncRetries; attempt++ {
 		if attempt > 0 {
@@ -346,8 +346,8 @@ func (s *Syncer) RemovePeer(peerID peer.ID) {
 	s.mu.Unlock()
 }
 
-func (s *Syncer) OnBlockReceived(block *types.SignedBlock, fromPeer peer.ID) error {
-	parentRoot := block.Message.ParentRoot
+func (s *Syncer) OnBlockReceived(block *types.SignedBlockWithAttestation, fromPeer peer.ID) error {
+	parentRoot := block.Message.Block.ParentRoot
 	if !s.store.HasBlock(parentRoot) {
 		return s.requestParentChain(parentRoot, fromPeer)
 	}

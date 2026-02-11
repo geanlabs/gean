@@ -9,15 +9,15 @@ import (
 )
 
 // BlockHandler processes incoming blocks from gossipsub.
-type BlockHandler func(ctx context.Context, block *types.SignedBlock, from peer.ID) error
+type BlockHandler func(ctx context.Context, block *types.SignedBlockWithAttestation, from peer.ID) error
 
-// VoteHandler processes incoming votes from gossipsub.
-type VoteHandler func(ctx context.Context, vote *types.SignedVote) error
+// AttestationHandler processes incoming attestations from gossipsub.
+type AttestationHandler func(ctx context.Context, att *types.SignedAttestation) error
 
 // MessageHandlers holds handlers for different message types.
 type MessageHandlers struct {
-	OnBlock BlockHandler
-	OnVote  VoteHandler
+	OnBlock       BlockHandler
+	OnAttestation AttestationHandler
 }
 
 // HandleBlockMessage decodes and processes an incoming block message.
@@ -27,7 +27,7 @@ func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte, f
 		return fmt.Errorf("decompress block: %w", err)
 	}
 
-	var block types.SignedBlock
+	var block types.SignedBlockWithAttestation
 	if err := block.UnmarshalSSZ(decoded); err != nil {
 		return fmt.Errorf("unmarshal block: %w", err)
 	}
@@ -38,20 +38,20 @@ func (h *MessageHandlers) HandleBlockMessage(ctx context.Context, data []byte, f
 	return nil
 }
 
-// HandleVoteMessage decodes and processes an incoming vote message.
-func (h *MessageHandlers) HandleVoteMessage(ctx context.Context, data []byte) error {
+// HandleAttestationMessage decodes and processes an incoming attestation message.
+func (h *MessageHandlers) HandleAttestationMessage(ctx context.Context, data []byte) error {
 	decoded, err := DecompressMessage(data)
 	if err != nil {
-		return fmt.Errorf("decompress vote: %w", err)
+		return fmt.Errorf("decompress attestation: %w", err)
 	}
 
-	var vote types.SignedVote
-	if err := vote.UnmarshalSSZ(decoded); err != nil {
-		return fmt.Errorf("unmarshal vote: %w", err)
+	var att types.SignedAttestation
+	if err := att.UnmarshalSSZ(decoded); err != nil {
+		return fmt.Errorf("unmarshal attestation: %w", err)
 	}
 
-	if h.OnVote != nil {
-		return h.OnVote(ctx, &vote)
+	if h.OnAttestation != nil {
+		return h.OnAttestation(ctx, &att)
 	}
 	return nil
 }

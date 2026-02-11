@@ -13,12 +13,14 @@ import (
 // Processing attestations may justify new checkpoints, making additional attestations
 // valid. Typically converges in 1-2 iterations.
 func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorIndex) (*types.Block, error) {
-	if err := validator.ValidateProposer(slot, validatorIndex, s.Config.NumValidators); err != nil {
-		return nil, err
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	headState := s.States[s.Head]
+	numValidators := uint64(len(headState.Validators))
+	if err := validator.ValidateProposer(slot, validatorIndex, numValidators); err != nil {
+		return nil, err
+	}
 
 	s.advanceToSlotLocked(slot)
 
@@ -31,7 +33,7 @@ func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorInde
 	blockExists := func(root types.Root) bool { _, ok := s.Blocks[root]; return ok }
 
 	// Iteratively collect attestations using fixed-point algorithm.
-	var attestations []types.SignedVote
+	var attestations []types.Attestation
 	for {
 		block, postState, err := validator.BuildBlock(slot, validatorIndex, headRoot, headState, attestations)
 		if err != nil {
@@ -62,8 +64,8 @@ func (s *Store) ProduceBlock(slot types.Slot, validatorIndex types.ValidatorInde
 	}
 }
 
-// ProduceAttestationVote creates an attestation vote for the given slot and validator.
-func (s *Store) ProduceAttestationVote(slot types.Slot, validatorIndex types.ValidatorIndex) *types.Vote {
+// ProduceAttestationData creates attestation data for the given slot.
+func (s *Store) ProduceAttestationData(slot types.Slot) *types.AttestationData {
 	s.mu.Lock()
 
 	s.advanceToSlotLocked(slot)
@@ -80,5 +82,10 @@ func (s *Store) ProduceAttestationVote(slot types.Slot, validatorIndex types.Val
 
 	s.mu.Unlock()
 
-	return validator.BuildVote(slot, validatorIndex, headCheckpoint, targetCheckpoint, latestJustified)
+	return &types.AttestationData{
+		Slot:   slot,
+		Head:   headCheckpoint,
+		Target: targetCheckpoint,
+		Source: latestJustified,
+	}
 }

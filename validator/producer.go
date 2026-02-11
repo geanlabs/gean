@@ -1,4 +1,4 @@
-// Package validator implements block and vote production for the Lean protocol.
+// Package validator implements block and attestation production for the Lean protocol.
 // Functions are pure — the caller (forkchoice.Store) manages state and locking.
 package validator
 
@@ -19,21 +19,21 @@ func ValidateProposer(slot types.Slot, validatorIndex types.ValidatorIndex, numV
 	return nil
 }
 
-// CollectNewAttestations gathers votes from known validators for block inclusion,
+// CollectNewAttestations gathers attestations from known validators for block inclusion,
 // filtering out attestations already in the existing set.
 func CollectNewAttestations(
 	knownVotes []types.Checkpoint,
 	blockExists func(types.Root) bool,
 	latestJustified types.Checkpoint,
-	existing []types.SignedVote,
-) []types.SignedVote {
+	existing []types.Attestation,
+) []types.Attestation {
 	// Build a set of existing attestation validator IDs for fast lookup.
 	seen := make(map[uint64]bool, len(existing))
-	for _, sv := range existing {
-		seen[sv.Data.ValidatorID] = true
+	for _, att := range existing {
+		seen[att.ValidatorID] = true
 	}
 
-	var newAttestations []types.SignedVote
+	var newAttestations []types.Attestation
 
 	for validatorID, checkpoint := range knownVotes {
 		if checkpoint.Root.IsZero() {
@@ -46,17 +46,16 @@ func CollectNewAttestations(
 			continue
 		}
 
-		signedVote := types.SignedVote{
-			Data: types.Vote{
-				ValidatorID: uint64(validatorID),
-				Slot:        checkpoint.Slot,
-				Head:        checkpoint,
-				Target:      checkpoint,
-				Source:       latestJustified,
+		att := types.Attestation{
+			ValidatorID: uint64(validatorID),
+			Data: types.AttestationData{
+				Slot:   checkpoint.Slot,
+				Head:   checkpoint,
+				Target: checkpoint,
+				Source: latestJustified,
 			},
-			Signature: types.Root{},
 		}
-		newAttestations = append(newAttestations, signedVote)
+		newAttestations = append(newAttestations, att)
 	}
 
 	return newAttestations
@@ -68,7 +67,7 @@ func BuildBlock(
 	validatorIndex types.ValidatorIndex,
 	parentRoot types.Root,
 	headState *types.State,
-	attestations []types.SignedVote,
+	attestations []types.Attestation,
 ) (*types.Block, *types.State, error) {
 	finalState, err := consensus.ProcessSlots(headState, slot)
 	if err != nil {
@@ -95,21 +94,4 @@ func BuildBlock(
 	block.StateRoot = stateRoot
 
 	return block, postState, nil
-}
-
-// BuildVote creates an attestation vote for the given slot and validator.
-func BuildVote(
-	slot types.Slot,
-	validatorIndex types.ValidatorIndex,
-	headCheckpoint types.Checkpoint,
-	targetCheckpoint types.Checkpoint,
-	sourceCheckpoint types.Checkpoint,
-) *types.Vote {
-	return &types.Vote{
-		ValidatorID: uint64(validatorIndex),
-		Slot:        slot,
-		Head:        headCheckpoint,
-		Target:      targetCheckpoint,
-		Source:       sourceCheckpoint,
-	}
 }

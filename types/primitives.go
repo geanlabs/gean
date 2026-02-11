@@ -11,6 +11,14 @@ type Slot uint64
 type ValidatorIndex uint64
 type Root [32]byte
 
+// Pubkey is a 52-byte XMSS public key.
+type Pubkey [52]byte
+
+// Signature is a 3112-byte XMSS signature container (devnet1 interop wire target).
+// Pinned leanSpec raw XMSS payload sizes are 412 bytes (test) / 3100 bytes (prod).
+// Note: leanSpec's container type is Bytes3116, so fixture adapters must normalize.
+type Signature [3112]byte
+
 func (r Root) IsZero() bool { return r == Root{} }
 
 // Short returns a short hex representation of the root (first 4 bytes).
@@ -71,7 +79,7 @@ func (s Slot) IsJustifiableAfter(finalizedSlot Slot) bool {
 	return sqv*sqv == v && sqv%2 == 1
 }
 
-// Protocol constants (Devnet 0).
+// Protocol constants.
 const (
 	SecondsPerSlot             uint64 = 4 // SECONDS_PER_SLOT: 4-second block times
 	IntervalsPerSlot           uint64 = 4 // INTERVALS_PER_SLOT: 4 intervals per slot (propose, vote, safe target, accept)

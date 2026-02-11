@@ -1,7 +1,8 @@
 // Package consensus implements the state transition function.
 //
-// Pipeline: process_slots → process_slot (cache state root)
-//           process_block → process_block_header + process_attestations
+// Pipeline: process_slots (cache state root inline)
+//
+//	process_block → process_block_header + process_attestations
 package consensus
 
 import (
@@ -11,38 +12,24 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// ProcessSlot caches the state root into the latest block header if empty.
-// Deferred caching avoids a circular dependency: the header is part of the state,
-// so we can't include the post-block state root at block creation time.
-func ProcessSlot(s *types.State) (*types.State, error) {
-	if s.LatestBlockHeader.StateRoot.IsZero() {
-		stateRoot, err := s.HashTreeRoot()
-		if err != nil {
-			return nil, fmt.Errorf("hash state: %w", err)
-		}
-		newState := Copy(s)
-		newState.LatestBlockHeader.StateRoot = stateRoot
-		return newState, nil
-	}
-	return s, nil
-}
-
 // ProcessSlots advances the state through empty slots up to targetSlot.
 func ProcessSlots(s *types.State, targetSlot types.Slot) (*types.State, error) {
 	if s.Slot >= targetSlot {
 		return nil, fmt.Errorf("target slot %d must be greater than current slot %d", targetSlot, s.Slot)
 	}
 
-	state := s
-	var err error
+	state := Copy(s)
 	for state.Slot < targetSlot {
-		state, err = ProcessSlot(state)
-		if err != nil {
-			return nil, err
+		// Cache state root into the latest header before advancing the slot.
+		// This avoids circular dependency during block construction.
+		if state.LatestBlockHeader.StateRoot.IsZero() {
+			stateRoot, err := state.HashTreeRoot()
+			if err != nil {
+				return nil, fmt.Errorf("hash state: %w", err)
+			}
+			state.LatestBlockHeader.StateRoot = stateRoot
 		}
-		newState := Copy(state)
-		newState.Slot++
-		state = newState
+		state.Slot++
 	}
 	return state, nil
 }
@@ -60,7 +47,7 @@ func ProcessBlockHeader(s *types.State, block *types.Block) (*types.State, error
 	}
 
 	// Validate proposer (round-robin)
-	expectedProposer := uint64(block.Slot) % s.Config.NumValidators
+	expectedProposer := uint64(block.Slot) % uint64(len(s.Validators))
 	if block.ProposerIndex != expectedProposer {
 		return nil, fmt.Errorf("invalid proposer %d for slot %d, expected %d", block.ProposerIndex, block.Slot, expectedProposer)
 	}
@@ -97,7 +84,7 @@ func ProcessBlockHeader(s *types.State, block *types.Block) (*types.State, error
 		newState.JustifiedSlots = appendBitAt(newState.JustifiedSlots, emptySlot, false)
 	}
 
-	// Create new block header (state_root left empty, filled by next ProcessSlot)
+	// Create new block header (state_root left empty, filled by next ProcessSlots step)
 	bodyRoot, err := block.Body.HashTreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("hash body: %w", err)
@@ -113,10 +100,11 @@ func ProcessBlockHeader(s *types.State, block *types.Block) (*types.State, error
 	return newState, nil
 }
 
-// ProcessAttestations processes votes and updates justification/finalization (3SF-mini).
+// ProcessAttestations processes attestations and updates justification/finalization (3SF-mini).
 // Each valid attestation individually justifies its target (no supermajority counting).
 // Finalization: if slots N and N+1 are both justified, slot N becomes finalized.
-func ProcessAttestations(s *types.State, attestations []types.SignedVote) (*types.State, error) {
+// TODO: rewrite to use 2/3 supermajority counting.
+func ProcessAttestations(s *types.State, attestations []types.Attestation) (*types.State, error) {
 	newState := Copy(s)
 
 	bl := bitfield.Bitlist(newState.JustifiedSlots)
@@ -130,10 +118,9 @@ func ProcessAttestations(s *types.State, attestations []types.SignedVote) (*type
 	// Original finalized slot used for gap checks (immutable during this call).
 	originalFinalizedSlot := newState.LatestFinalized.Slot
 
-	for _, signedVote := range attestations {
-		vote := signedVote.Data
-		source := vote.Source
-		target := vote.Target
+	for _, att := range attestations {
+		source := att.Data.Source
+		target := att.Data.Target
 
 		sourceSlot := int(source.Slot)
 		targetSlot := int(target.Slot)
@@ -206,6 +193,7 @@ func Copy(s *types.State) *types.State {
 	cp := *s
 	cp.HistoricalBlockHashes = append([]types.Root{}, s.HistoricalBlockHashes...)
 	cp.JustifiedSlots = append([]byte{}, s.JustifiedSlots...)
+	cp.Validators = append([]types.Validator{}, s.Validators...)
 	cp.JustificationRoots = append([]types.Root{}, s.JustificationRoots...)
 	cp.JustificationValidators = append([]byte{}, s.JustificationValidators...)
 	return &cp

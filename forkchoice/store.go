@@ -84,8 +84,8 @@ func NewStore(
 		LatestFinalized:  latestFinalized,
 		Blocks:           map[types.Root]*types.Block{anchorRoot: anchorBlock},
 		States:           map[types.Root]*types.State{anchorRoot: state},
-		LatestKnownVotes: make([]types.Checkpoint, state.Config.NumValidators),
-		LatestNewVotes:   make([]types.Checkpoint, state.Config.NumValidators),
+		LatestKnownVotes: make([]types.Checkpoint, len(state.Validators)),
+		LatestNewVotes:   make([]types.Checkpoint, len(state.Validators)),
 		processSlots:     processSlots,
 		processBlock:     processBlock,
 		logger:           slog.Default(),
@@ -182,9 +182,10 @@ func (s *Store) ProcessBlock(block *types.Block) error {
 	s.Blocks[blockHash] = block
 	s.States[blockHash] = newState
 
-	// Process attestations
-	for _, signedVote := range block.Body.Attestations {
-		s.processAttestationLocked(&signedVote, true)
+	// Process attestations from the block body (wrap unsigned attestations for the store)
+	for _, att := range block.Body.Attestations {
+		signedAtt := &types.SignedAttestation{Message: att}
+		s.processAttestationLocked(signedAtt, true)
 	}
 
 	// Update head
@@ -237,6 +238,7 @@ func (s *Store) updateHeadLocked() {
 
 // updateSafeTargetLocked recalculates the safe target using 2/3 supermajority on new votes.
 func (s *Store) updateSafeTargetLocked() {
-	minScore := int((s.Config.NumValidators*2 + 2) / 3) // ceiling division
+	numValidators := uint64(len(s.LatestKnownVotes))
+	minScore := int((numValidators*2 + 2) / 3) // ceiling division
 	s.SafeTarget = GetHead(s.Blocks, s.LatestJustified.Root, s.LatestNewVotes, minScore)
 }

@@ -37,9 +37,9 @@ type Node struct {
 	syncer *chainsync.Syncer
 	logger *slog.Logger
 
-	ctx             context.Context
-	cancel          context.CancelFunc
-	wg              sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
 	lastProposedSlot types.Slot // Track last slot we proposed/saw a block for
 }
 
@@ -61,8 +61,10 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 		logger = slog.Default()
 	}
 
-	// Generate genesis state and block
-	genesisState, genesisBlock := consensus.GenerateGenesis(cfg.GenesisTime, cfg.ValidatorCount)
+	// Generate deterministic placeholder validators for genesis.
+	// Real XMSS key loading and signing are added in later phases.
+	validators := consensus.GenerateValidators(int(cfg.ValidatorCount))
+	genesisState, genesisBlock := consensus.GenerateGenesis(cfg.GenesisTime, validators)
 
 	// Create fork choice store with injected state transition functions
 	store, err := forkchoice.NewStore(genesisState, genesisBlock, consensus.ProcessSlots, consensus.ProcessBlock, forkchoice.WithLogger(logger))
@@ -98,8 +100,8 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 
 	// Create networking service with handlers
 	handlers := &networking.MessageHandlers{
-		OnBlock: node.handleBlock,
-		OnVote:  node.handleVote,
+		OnBlock:       node.handleBlock,
+		OnAttestation: node.handleAttestation,
 	}
 
 	netSvc, err := networking.NewService(ctx, networking.ServiceConfig{
@@ -213,17 +215,23 @@ func (n *Node) onTick() {
 		}
 	}
 
-	// Interval 1: Validators vote (skip slot 0 - no block to vote on yet)
+	// Interval 1: Validators attest (skip slot 0 - no block to attest on yet)
 	if interval == 1 && slot > 0 {
-		n.produceVote(slot)
+		// Proposer already includes and processes its attestation at interval 0.
+		proposerIndex := uint64(slot) % n.config.ValidatorCount
+		if proposerIndex == n.config.ValidatorIndex {
+			return
+		}
+		n.produceAttestation(slot)
 	}
 }
 
-func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock, from peer.ID) error {
-	block := &signedBlock.Message
+// handleBlock processes an incoming block from the network.
+func (n *Node) handleBlock(ctx context.Context, signed *types.SignedBlockWithAttestation, from peer.ID) error {
+	block := &signed.Message.Block
 
 	// First, check if we need to request missing parent blocks
-	if err := n.syncer.OnBlockReceived(signedBlock, from); err != nil {
+	if err := n.syncer.OnBlockReceived(signed, from); err != nil {
 		n.logger.Warn("failed to request parent blocks", "error", err)
 	}
 
@@ -234,6 +242,19 @@ func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock, 
 			return fmt.Errorf("%w: %v", ErrSyncInProgress, err)
 		}
 		return fmt.Errorf("process block: %w", err)
+	}
+
+	// Process proposer attestation as a pending (gossip-stage) attestation.
+	// This happens after head update inside ProcessBlock to avoid circular weight.
+	proposerSigned := &types.SignedAttestation{
+		Message: signed.Message.ProposerAttestation,
+	}
+	if err := n.store.ProcessAttestation(proposerSigned); err != nil {
+		n.logger.Warn("failed to process proposer attestation from block envelope",
+			"slot", block.Slot,
+			"validator", proposerSigned.Message.ValidatorID,
+			"error", err,
+		)
 	}
 
 	// Track that we've seen a block for this slot to prevent proposing for same slot
@@ -248,14 +269,14 @@ func (n *Node) handleBlock(ctx context.Context, signedBlock *types.SignedBlock, 
 	return nil
 }
 
-// handleVote processes an incoming vote from the network.
-func (n *Node) handleVote(ctx context.Context, vote *types.SignedVote) error {
-	if err := n.store.ProcessAttestation(vote); err != nil {
-		return fmt.Errorf("process vote: %w", err)
+// handleAttestation processes an incoming attestation from the network.
+func (n *Node) handleAttestation(ctx context.Context, att *types.SignedAttestation) error {
+	if err := n.store.ProcessAttestation(att); err != nil {
+		return fmt.Errorf("process attestation: %w", err)
 	}
-	n.logger.Debug("processed vote",
-		"slot", vote.Data.Slot,
-		"validator", vote.Data.ValidatorID,
+	n.logger.Debug("processed attestation",
+		"slot", att.Message.Data.Slot,
+		"validator", att.Message.ValidatorID,
 	)
 	return nil
 }
@@ -272,10 +293,32 @@ func (n *Node) proposeBlock(slot types.Slot) {
 		return
 	}
 
-	// Create signed block (signature is placeholder for Devnet 0)
-	signedBlock := &types.SignedBlock{
-		Message:   *block,
-		Signature: types.Root{},
+	// Build proposer attestation data
+	attData := n.store.ProduceAttestationData(slot)
+	proposerAtt := types.Attestation{
+		ValidatorID: n.config.ValidatorIndex,
+		Data:        *attData,
+	}
+
+	// Create signed block envelope.
+	// TODO: attach XMSS signatures once key management is implemented.
+	signedBlock := &types.SignedBlockWithAttestation{
+		Message: types.BlockWithAttestation{
+			Block:               *block,
+			ProposerAttestation: proposerAtt,
+		},
+		// Signature list is empty until XMSS signing is wired.
+	}
+
+	// Process proposer attestation locally as pending gossip-stage vote.
+	// Proposers skip interval-1 attestation to avoid double-attesting.
+	proposerSigned := &types.SignedAttestation{Message: proposerAtt}
+	if err := n.store.ProcessAttestation(proposerSigned); err != nil {
+		n.logger.Warn("failed to process own proposer attestation",
+			"slot", slot,
+			"validator", proposerSigned.Message.ValidatorID,
+			"error", err,
+		)
 	}
 
 	if err := n.net.PublishBlock(n.ctx, signedBlock); err != nil {
@@ -286,30 +329,33 @@ func (n *Node) proposeBlock(slot types.Slot) {
 	n.logger.Info("proposed block", "slot", slot, "attestations", len(block.Body.Attestations))
 }
 
-// produceVote creates and publishes an attestation vote, then processes it locally.
-func (n *Node) produceVote(slot types.Slot) {
+// produceAttestation creates and publishes an attestation, then processes it locally.
+func (n *Node) produceAttestation(slot types.Slot) {
 	validatorIndex := types.ValidatorIndex(n.config.ValidatorIndex)
 
-	// Use ProduceAttestationVote which handles locking correctly
-	voteData := n.store.ProduceAttestationVote(slot, validatorIndex)
+	// Produce attestation data
+	attData := n.store.ProduceAttestationData(slot)
 
-	vote := &types.SignedVote{
-		Data:      *voteData,
-		Signature: types.Root{}, // Placeholder signature for Devnet 0
+	att := &types.SignedAttestation{
+		Message: types.Attestation{
+			ValidatorID: uint64(validatorIndex),
+			Data:        *attData,
+		},
+		// Signature is zero until XMSS signing is wired.
 	}
 
-	if err := n.net.PublishVote(n.ctx, vote); err != nil {
-		n.logger.Error("failed to publish vote", "slot", slot, "error", err)
+	if err := n.net.PublishAttestation(n.ctx, att); err != nil {
+		n.logger.Error("failed to publish attestation", "slot", slot, "error", err)
 		return
 	}
 
-	// Process our own vote
-	if err := n.store.ProcessAttestation(vote); err != nil {
-		n.logger.Error("failed to process own vote", "slot", slot, "error", err)
+	// Process our own attestation
+	if err := n.store.ProcessAttestation(att); err != nil {
+		n.logger.Error("failed to process own attestation", "slot", slot, "error", err)
 		return
 	}
 
-	n.logger.Debug("produced vote", "slot", slot)
+	n.logger.Debug("produced attestation", "slot", slot)
 }
 
 // CurrentSlot returns the current slot.
