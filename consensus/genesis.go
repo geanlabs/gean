@@ -5,10 +5,32 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
-// GenerateGenesis creates a genesis state and anchor block.
-// Bitlists use NewBitlist(0) for empty encoding (sentinel-only).
-func GenerateGenesis(genesisTime, numValidators uint64) (*types.State, *types.Block) {
-	emptyBody := types.BlockBody{Attestations: []types.SignedVote{}}
+// GenerateValidators creates n deterministic placeholder validators.
+// Phase 2 uses registry-based validator identities; XMSS key loading is added in later phases.
+func GenerateValidators(n int) []types.Validator {
+	if n <= 0 {
+		return []types.Validator{}
+	}
+
+	validators := make([]types.Validator, n)
+	for i := 0; i < n; i++ {
+		var pk types.Pubkey
+		// Deterministic non-zero placeholder pubkey bytes for local/dev tests.
+		for j := range pk {
+			pk[j] = byte((i + j + 1) % 251)
+		}
+		validators[i] = types.Validator{
+			Pubkey: pk,
+			Index:  types.ValidatorIndex(i),
+		}
+	}
+	return validators
+}
+
+// GenerateGenesis creates a genesis state and anchor block from the given
+// validator set. Bitlists use NewBitlist(0) for empty encoding (sentinel-only).
+func GenerateGenesis(genesisTime uint64, validators []types.Validator) (*types.State, *types.Block) {
+	emptyBody := types.BlockBody{Attestations: []types.Attestation{}}
 	bodyRoot, _ := emptyBody.HashTreeRoot()
 
 	genesisHeader := types.BlockHeader{
@@ -24,8 +46,7 @@ func GenerateGenesis(genesisTime, numValidators uint64) (*types.State, *types.Bl
 
 	state := &types.State{
 		Config: types.Config{
-			NumValidators: numValidators,
-			GenesisTime:   genesisTime,
+			GenesisTime: genesisTime,
 		},
 		Slot:                    0,
 		LatestBlockHeader:       genesisHeader,
@@ -33,6 +54,7 @@ func GenerateGenesis(genesisTime, numValidators uint64) (*types.State, *types.Bl
 		LatestFinalized:         genesisCheckpoint,
 		HistoricalBlockHashes:   []types.Root{},
 		JustifiedSlots:          bitfield.NewBitlist(0),
+		Validators:              append([]types.Validator{}, validators...),
 		JustificationRoots:      []types.Root{},
 		JustificationValidators: bitfield.NewBitlist(0),
 	}

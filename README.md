@@ -61,8 +61,8 @@ Devnet 1 upgrades gean with post-quantum signatures, supermajority consensus, an
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 — Containers | SSZ type restructuring | Planned |
-| 2 — State & Genesis | Validator registry, genesis updates | Planned |
+| 1 — Containers | SSZ type restructuring | Complete |
+| 2 — State & Genesis | Validator registry, genesis updates | Complete |
 | 3 — XMSS | Post-quantum signature scheme | Planned |
 | 4 — Consensus | 2/3 supermajority state transition | Planned |
 | 5 — Fork Choice | Head-based LMD-GHOST, store rewrite | Planned |

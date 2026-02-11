@@ -7,43 +7,55 @@ import (
 )
 
 // ValidateAttestation validates an attestation against the current store state.
-func (s *Store) ValidateAttestation(signedVote *types.SignedVote) error {
+func (s *Store) ValidateAttestation(signed *types.SignedAttestation) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.validateAttestationLocked(signedVote)
+	return s.validateAttestationLocked(signed)
 }
 
 // validateAttestationLocked validates an attestation's structural correctness.
 // Note: the spec checks future votes using intervals; we use slots (+1 tolerance).
-func (s *Store) validateAttestationLocked(signedVote *types.SignedVote) error {
-	vote := signedVote.Data
+func (s *Store) validateAttestationLocked(signed *types.SignedAttestation) error {
+	validatorID := signed.Message.ValidatorID
+	data := signed.Message.Data
+
+	// Validate validator index is in range.
+	if validatorID >= uint64(len(s.LatestKnownVotes)) {
+		return fmt.Errorf("%w: validator_id %d >= %d",
+			ErrValidatorOutOfRange, validatorID, len(s.LatestKnownVotes))
+	}
+
+	// Validate head exists in store.
+	if _, exists := s.Blocks[data.Head.Root]; !exists {
+		return fmt.Errorf("%w: head root %x", ErrHeadNotFound, data.Head.Root[:8])
+	}
 
 	// Validate target exists in store
-	if _, exists := s.Blocks[vote.Target.Root]; !exists {
-		return fmt.Errorf("%w: target root %x", ErrTargetNotFound, vote.Target.Root[:8])
+	if _, exists := s.Blocks[data.Target.Root]; !exists {
+		return fmt.Errorf("%w: target root %x", ErrTargetNotFound, data.Target.Root[:8])
 	}
-	targetBlock := s.Blocks[vote.Target.Root]
+	targetBlock := s.Blocks[data.Target.Root]
 
 	// Validate source exists (zero root is valid for genesis checkpoint)
 	var sourceSlot types.Slot
-	if vote.Source.Root.IsZero() {
+	if data.Source.Root.IsZero() {
 		// Genesis checkpoint - source slot must be 0
-		if vote.Source.Slot != 0 {
+		if data.Source.Slot != 0 {
 			return fmt.Errorf("%w: genesis source must have slot 0, got %d",
-				ErrSlotMismatch, vote.Source.Slot)
+				ErrSlotMismatch, data.Source.Slot)
 		}
 		sourceSlot = 0
 	} else {
-		sourceBlock, exists := s.Blocks[vote.Source.Root]
+		sourceBlock, exists := s.Blocks[data.Source.Root]
 		if !exists {
-			return fmt.Errorf("%w: source root %x", ErrSourceNotFound, vote.Source.Root[:8])
+			return fmt.Errorf("%w: source root %x", ErrSourceNotFound, data.Source.Root[:8])
 		}
 		sourceSlot = sourceBlock.Slot
 
 		// Validate checkpoint slot matches block slot
-		if sourceSlot != vote.Source.Slot {
+		if sourceSlot != data.Source.Slot {
 			return fmt.Errorf("%w: source block slot %d != checkpoint slot %d",
-				ErrSlotMismatch, sourceSlot, vote.Source.Slot)
+				ErrSlotMismatch, sourceSlot, data.Source.Slot)
 		}
 	}
 
@@ -52,56 +64,61 @@ func (s *Store) validateAttestationLocked(signedVote *types.SignedVote) error {
 		return fmt.Errorf("%w: source slot %d > target block slot %d",
 			ErrSlotMismatch, sourceSlot, targetBlock.Slot)
 	}
-	if vote.Source.Slot > vote.Target.Slot {
+	if data.Source.Slot > data.Target.Slot {
 		return fmt.Errorf("%w: source slot %d > target slot %d",
-			ErrSlotMismatch, vote.Source.Slot, vote.Target.Slot)
+			ErrSlotMismatch, data.Source.Slot, data.Target.Slot)
 	}
-	if targetBlock.Slot != vote.Target.Slot {
+	if targetBlock.Slot != data.Target.Slot {
 		return fmt.Errorf("%w: target block slot %d != checkpoint slot %d",
-			ErrSlotMismatch, targetBlock.Slot, vote.Target.Slot)
+			ErrSlotMismatch, targetBlock.Slot, data.Target.Slot)
 	}
 
 	// Validate attestation is not too far in future
 	currentSlot := s.Clock.CurrentSlot()
-	if vote.Slot > currentSlot+1 {
-		return fmt.Errorf("%w: vote slot %d too far ahead (current: %d)",
-			ErrFutureVote, vote.Slot, currentSlot)
+	if data.Slot > currentSlot+1 {
+		return fmt.Errorf("%w: attestation slot %d too far ahead (current: %d)",
+			ErrFutureVote, data.Slot, currentSlot)
 	}
 
 	return nil
 }
 
 // ProcessAttestation validates and processes a gossipsub attestation as a "new" vote.
-func (s *Store) ProcessAttestation(signedVote *types.SignedVote) error {
+func (s *Store) ProcessAttestation(signed *types.SignedAttestation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.validateAttestationLocked(signedVote); err != nil {
+	if err := s.validateAttestationLocked(signed); err != nil {
 		return err
 	}
-	s.processAttestationLocked(signedVote, false)
+	s.processAttestationLocked(signed, false)
 	return nil
 }
 
-// processAttestationLocked stores a vote. Block attestations go to LatestKnownVotes
+// processAttestationLocked stores an attestation. Block attestations go to LatestKnownVotes
 // directly; gossip attestations go to LatestNewVotes (promoted later by acceptNewVotes).
-func (s *Store) processAttestationLocked(signedVote *types.SignedVote, isFromBlock bool) {
-	vote := signedVote.Data
-	idx := vote.ValidatorID
+func (s *Store) processAttestationLocked(signed *types.SignedAttestation, isFromBlock bool) {
+	att := signed.Message
+	idx := att.ValidatorID
+	if idx >= uint64(len(s.LatestKnownVotes)) {
+		// Defensive guard: invalid validator indices must never panic the store.
+		return
+	}
+	i := int(idx)
 
 	if isFromBlock {
-		known := s.LatestKnownVotes[idx]
-		if known.Root.IsZero() || known.Slot < vote.Slot {
-			s.LatestKnownVotes[idx] = vote.Target
+		known := s.LatestKnownVotes[i]
+		if known.Root.IsZero() || known.Slot < att.Data.Slot {
+			s.LatestKnownVotes[i] = att.Data.Target
 		}
-		newVote := s.LatestNewVotes[idx]
-		if !newVote.Root.IsZero() && newVote.Slot <= vote.Target.Slot {
-			s.LatestNewVotes[idx] = types.Checkpoint{}
+		newVote := s.LatestNewVotes[i]
+		if !newVote.Root.IsZero() && newVote.Slot <= att.Data.Target.Slot {
+			s.LatestNewVotes[i] = types.Checkpoint{}
 		}
 	} else {
-		newVote := s.LatestNewVotes[idx]
-		if newVote.Root.IsZero() || newVote.Slot < vote.Target.Slot {
-			s.LatestNewVotes[idx] = vote.Target
+		newVote := s.LatestNewVotes[i]
+		if newVote.Root.IsZero() || newVote.Slot < att.Data.Target.Slot {
+			s.LatestNewVotes[i] = att.Data.Target
 		}
 	}
 }

@@ -1,3 +1,4 @@
+// handler_test.go contains unit tests for req/resp status and blocks-by-root handlers.
 package reqresp
 
 import (
@@ -13,9 +14,12 @@ type mockBlockReader struct {
 	finalized types.Checkpoint
 }
 
-func (m *mockBlockReader) GetHead() types.Root                            { return m.head }
-func (m *mockBlockReader) GetBlock(root types.Root) (*types.Block, bool)  { b, ok := m.blocks[root]; return b, ok }
-func (m *mockBlockReader) GetLatestFinalized() types.Checkpoint           { return m.finalized }
+func (m *mockBlockReader) GetHead() types.Root { return m.head }
+func (m *mockBlockReader) GetBlock(root types.Root) (*types.Block, bool) {
+	b, ok := m.blocks[root]
+	return b, ok
+}
+func (m *mockBlockReader) GetLatestFinalized() types.Checkpoint { return m.finalized }
 
 func newMockStore() (*mockBlockReader, types.Root) {
 	genesisBlock := &types.Block{
@@ -69,8 +73,8 @@ func TestHandleBlocksByRoot(t *testing.T) {
 		t.Errorf("Expected 1 block, got %d", len(blocks))
 	}
 
-	if blocks[0].Message.Slot != 0 {
-		t.Errorf("Block slot = %d, want 0", blocks[0].Message.Slot)
+	if blocks[0].Message.Block.Slot != 0 {
+		t.Errorf("Block slot = %d, want 0", blocks[0].Message.Block.Slot)
 	}
 }
 

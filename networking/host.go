@@ -36,7 +36,7 @@ func NewHost(ctx context.Context, cfg HostConfig) (host.Host, error) {
 
 	listenAddrs := cfg.ListenAddrs
 	if len(listenAddrs) == 0 {
-		// Devnet 0 uses QUIC transport
+		// Default: QUIC transport
 		listenAddrs = []string{
 			"/ip4/0.0.0.0/udp/9000/quic-v1",
 		}

@@ -1,3 +1,4 @@
+// service.go contains networking service types and constructor wiring.
 package networking
 
 import (
@@ -7,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devylongs/gean/types"
+	gossipcfg "github.com/devylongs/gean/networking/gossipsub"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
 type Service struct {
@@ -19,10 +20,10 @@ type Service struct {
 	handlers *MessageHandlers
 	logger   *slog.Logger
 
-	blockTopic *pubsub.Topic
-	blockSub   *pubsub.Subscription
-	voteTopic  *pubsub.Topic
-	voteSub    *pubsub.Subscription
+	blockTopic       *pubsub.Topic
+	blockSub         *pubsub.Subscription
+	attestationTopic *pubsub.Topic
+	attestationSub   *pubsub.Subscription
 
 	// Bootnodes that failed initial connection, to be retried.
 	failedBootnodes []peer.AddrInfo
@@ -40,6 +41,8 @@ type ServiceConfig struct {
 	Logger    *slog.Logger
 }
 
+const bootnodeRetryInterval = 30 * time.Second
+
 // NewService creates a new networking service.
 func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -50,23 +53,23 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	}
 
 	// Create gossipsub
-	ps, err := NewGossipSub(ctx, cfg.Host)
+	ps, err := gossipcfg.New(ctx, cfg.Host)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create gossipsub: %w", err)
 	}
 
 	// Join topics
-	blockTopic, err := ps.Join(BlockTopic)
+	blockTopic, err := ps.Join(gossipcfg.BlockTopic)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("join block topic: %w", err)
 	}
 
-	voteTopic, err := ps.Join(VoteTopic)
+	attestationTopic, err := ps.Join(gossipcfg.AttestationTopic)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("join vote topic: %w", err)
+		return nil, fmt.Errorf("join attestation topic: %w", err)
 	}
 
 	// Subscribe to topics
@@ -76,23 +79,23 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		return nil, fmt.Errorf("subscribe block topic: %w", err)
 	}
 
-	voteSub, err := voteTopic.Subscribe()
+	attestationSub, err := attestationTopic.Subscribe()
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("subscribe vote topic: %w", err)
+		return nil, fmt.Errorf("subscribe attestation topic: %w", err)
 	}
 
 	svc := &Service{
-		host:       cfg.Host,
-		pubsub:     ps,
-		handlers:   cfg.Handlers,
-		logger:     logger,
-		blockTopic: blockTopic,
-		blockSub:   blockSub,
-		voteTopic:  voteTopic,
-		voteSub:    voteSub,
-		ctx:        ctx,
-		cancel:     cancel,
+		host:             cfg.Host,
+		pubsub:           ps,
+		handlers:         cfg.Handlers,
+		logger:           logger,
+		blockTopic:       blockTopic,
+		blockSub:         blockSub,
+		attestationTopic: attestationTopic,
+		attestationSub:   attestationSub,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	// Connect to bootnodes, track failures for retry
@@ -109,141 +112,4 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 	}
 
 	return svc, nil
-}
-
-func (s *Service) Start() {
-	s.wg.Add(2)
-	go s.processBlocks()
-	go s.processVotes()
-
-	if len(s.failedBootnodes) > 0 {
-		s.wg.Add(1)
-		go s.retryBootnodes()
-	}
-
-	s.logger.Info("networking service started",
-		"peer_id", s.host.ID(),
-		"addrs", s.host.Addrs(),
-	)
-}
-
-// Stop shuts down the networking service.
-func (s *Service) Stop() {
-	s.cancel()
-	s.blockSub.Cancel()
-	s.voteSub.Cancel()
-	s.wg.Wait()
-	s.host.Close()
-	s.logger.Info("networking service stopped")
-}
-
-// PublishBlock publishes a signed block to the network.
-func (s *Service) PublishBlock(ctx context.Context, block *types.SignedBlock) error {
-	data, err := block.MarshalSSZ()
-	if err != nil {
-		return fmt.Errorf("marshal block: %w", err)
-	}
-	compressed := CompressMessage(data)
-	return s.blockTopic.Publish(ctx, compressed)
-}
-
-// PublishVote publishes a signed vote to the network.
-func (s *Service) PublishVote(ctx context.Context, vote *types.SignedVote) error {
-	data, err := vote.MarshalSSZ()
-	if err != nil {
-		return fmt.Errorf("marshal vote: %w", err)
-	}
-	compressed := CompressMessage(data)
-	return s.voteTopic.Publish(ctx, compressed)
-}
-
-// PeerCount returns the number of connected peers.
-func (s *Service) PeerCount() int {
-	return len(s.host.Network().Peers())
-}
-
-const bootnodeRetryInterval = 30 * time.Second
-
-// retryBootnodes periodically retries connecting to failed bootnodes.
-func (s *Service) retryBootnodes() {
-	defer s.wg.Done()
-
-	ticker := time.NewTicker(bootnodeRetryInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-ticker.C:
-			var remaining []peer.AddrInfo
-			for _, pi := range s.failedBootnodes {
-				if err := s.host.Connect(s.ctx, pi); err != nil {
-					s.logger.Debug("bootnode reconnect failed", "peer", pi.ID, "error", err)
-					remaining = append(remaining, pi)
-				} else {
-					s.logger.Info("reconnected to bootnode", "peer", pi.ID)
-				}
-			}
-			s.failedBootnodes = remaining
-			if len(s.failedBootnodes) == 0 {
-				s.logger.Debug("all bootnodes connected, stopping retry")
-				return
-			}
-		}
-	}
-}
-
-// processBlocks handles incoming block messages.
-func (s *Service) processBlocks() {
-	defer s.wg.Done()
-
-	for {
-		msg, err := s.blockSub.Next(s.ctx)
-		if err != nil {
-			if s.ctx.Err() != nil {
-				return // context cancelled
-			}
-			s.logger.Error("block subscription error", "error", err)
-			continue
-		}
-
-		// Skip self-published messages
-		if msg.ReceivedFrom == s.host.ID() {
-			continue
-		}
-
-		if s.handlers != nil {
-			if err := s.handlers.HandleBlockMessage(s.ctx, msg.Data, msg.ReceivedFrom); err != nil {
-				s.logger.Error("handle block error", "error", err)
-			}
-		}
-	}
-}
-
-// processVotes handles incoming vote messages.
-func (s *Service) processVotes() {
-	defer s.wg.Done()
-
-	for {
-		msg, err := s.voteSub.Next(s.ctx)
-		if err != nil {
-			if s.ctx.Err() != nil {
-				return // context cancelled
-			}
-			s.logger.Error("vote subscription error", "error", err)
-			continue
-		}
-
-		// Skip self-published messages
-		if msg.ReceivedFrom == s.host.ID() {
-			continue
-		}
-
-		if s.handlers != nil {
-			if err := s.handlers.HandleVoteMessage(s.ctx, msg.Data); err != nil {
-				s.logger.Error("handle vote error", "error", err)
-			}
-		}
-	}
 }

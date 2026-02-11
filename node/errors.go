@@ -1,3 +1,4 @@
+// errors.go contains sentinel errors exposed by the node package.
 package node
 
 import "errors"

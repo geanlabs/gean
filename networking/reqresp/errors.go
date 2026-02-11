@@ -1,3 +1,4 @@
+// errors.go contains sentinel errors exposed by the reqresp package.
 package reqresp
 
 import "errors"

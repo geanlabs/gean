@@ -1,3 +1,4 @@
+// stream.go contains libp2p stream registration plus req/resp client and stream handlers.
 package reqresp
 
 import (
@@ -171,7 +172,7 @@ func (s *StreamHandler) SendStatus(ctx context.Context, peerID peer.ID, status *
 }
 
 // RequestBlocksByRoot requests blocks from a peer by their roots.
-func (s *StreamHandler) RequestBlocksByRoot(ctx context.Context, peerID peer.ID, roots []types.Root) ([]*types.SignedBlock, error) {
+func (s *StreamHandler) RequestBlocksByRoot(ctx context.Context, peerID peer.ID, roots []types.Root) ([]*types.SignedBlockWithAttestation, error) {
 	stream, err := s.host.NewStream(ctx, peerID, protocol.ID(BlocksByRootProtocolV1))
 	if err != nil {
 		return nil, fmt.Errorf("open stream: %w", err)
@@ -197,7 +198,7 @@ func (s *StreamHandler) RequestBlocksByRoot(ctx context.Context, peerID peer.ID,
 	}
 
 	// Read responses (one per block, each already decompressed by readResponse)
-	var blocks []*types.SignedBlock
+	var blocks []*types.SignedBlockWithAttestation
 	_ = stream.SetReadDeadline(time.Now().Add(ReadTimeout))
 
 	for {
@@ -212,7 +213,7 @@ func (s *StreamHandler) RequestBlocksByRoot(ctx context.Context, peerID peer.ID,
 			continue
 		}
 
-		var block types.SignedBlock
+		var block types.SignedBlockWithAttestation
 		if err := block.UnmarshalSSZ(respData); err != nil {
 			continue
 		}
