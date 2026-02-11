@@ -7,10 +7,19 @@ import (
 	"github.com/devylongs/gean/types"
 )
 
+// makeTestValidators creates n placeholder validators for testing.
+func makeTestValidators(n uint64) []types.Validator {
+	validators := make([]types.Validator, n)
+	for i := uint64(0); i < n; i++ {
+		validators[i] = types.Validator{Index: types.ValidatorIndex(i)}
+	}
+	return validators
+}
+
 // setupTestStore creates a store from genesis for testing.
 func setupTestStore(t *testing.T) *Store {
 	t.Helper()
-	state, block := consensus.GenerateGenesis(1000000000, 8)
+	state, block := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	store, err := NewStore(state, block, consensus.ProcessSlots, consensus.ProcessBlock)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -31,13 +40,13 @@ func buildValidBlock(t *testing.T, store *Store, slot types.Slot) *types.Block {
 		t.Fatalf("ProcessSlots to slot %d: %v", slot, err)
 	}
 
-	proposer := uint64(slot) % headState.Config.NumValidators
+	proposer := uint64(slot) % uint64(len(headState.Validators))
 	block := &types.Block{
 		Slot:          slot,
 		ProposerIndex: proposer,
 		ParentRoot:    headRoot,
 		StateRoot:     types.Root{},
-		Body:          types.BlockBody{Attestations: []types.SignedVote{}},
+		Body:          types.BlockBody{Attestations: []types.Attestation{}},
 	}
 
 	postState, err := consensus.ProcessBlock(advanced, block)
@@ -55,7 +64,7 @@ func buildValidBlock(t *testing.T, store *Store, slot types.Slot) *types.Block {
 }
 
 func TestNewStore_Initialization(t *testing.T) {
-	state, block := consensus.GenerateGenesis(1000000000, 8)
+	state, block := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	store, err := NewStore(state, block, consensus.ProcessSlots, consensus.ProcessBlock)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -84,16 +93,13 @@ func TestNewStore_Initialization(t *testing.T) {
 	}
 
 	// Config should match
-	if store.Config.NumValidators != 8 {
-		t.Errorf("num validators = %d, want 8", store.Config.NumValidators)
-	}
 	if store.Config.GenesisTime != 1000000000 {
 		t.Errorf("genesis time = %d, want 1000000000", store.Config.GenesisTime)
 	}
 }
 
 func TestNewStore_AnchorMismatch(t *testing.T) {
-	state, block := consensus.GenerateGenesis(1000000000, 8)
+	state, block := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	block.StateRoot = types.Root{0xff} // corrupt the state root
 
 	_, err := NewStore(state, block, consensus.ProcessSlots, consensus.ProcessBlock)

@@ -16,9 +16,10 @@ import (
 const NetworkName = "devnet0"
 
 // Topic format: /leanconsensus/<network>/<type>/ssz_snappy
+// NetworkName stays "devnet0" — all interop clients use this regardless of version.
 var (
-	BlockTopic = "/leanconsensus/" + NetworkName + "/block/ssz_snappy"
-	VoteTopic  = "/leanconsensus/" + NetworkName + "/vote/ssz_snappy"
+	BlockTopic       = "/leanconsensus/" + NetworkName + "/block/ssz_snappy"
+	AttestationTopic = "/leanconsensus/" + NetworkName + "/attestation/ssz_snappy"
 )
 
 // Message domains for gossipsub message ID computation.
@@ -29,8 +30,7 @@ var (
 
 // NewGossipSub creates a gossipsub instance with Lean consensus parameters.
 func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
-	// SeenTTL = SECONDS_PER_SLOT * JUSTIFICATION_LOOKBACK_SLOTS * 2
-	// For Devnet 0: 4 * 3 * 2 = 24 seconds
+	// SeenTTL = SECONDS_PER_SLOT * JUSTIFICATION_LOOKBACK_SLOTS * 2 = 24 seconds
 	seenTTL := int(types.SecondsPerSlot) * int(types.JustificationLookbackSlots) * 2
 
 	gsParams := pubsub.DefaultGossipSubParams()

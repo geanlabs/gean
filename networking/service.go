@@ -19,10 +19,10 @@ type Service struct {
 	handlers *MessageHandlers
 	logger   *slog.Logger
 
-	blockTopic *pubsub.Topic
-	blockSub   *pubsub.Subscription
-	voteTopic  *pubsub.Topic
-	voteSub    *pubsub.Subscription
+	blockTopic       *pubsub.Topic
+	blockSub         *pubsub.Subscription
+	attestationTopic *pubsub.Topic
+	attestationSub   *pubsub.Subscription
 
 	// Bootnodes that failed initial connection, to be retried.
 	failedBootnodes []peer.AddrInfo
@@ -63,10 +63,10 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		return nil, fmt.Errorf("join block topic: %w", err)
 	}
 
-	voteTopic, err := ps.Join(VoteTopic)
+	attestationTopic, err := ps.Join(AttestationTopic)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("join vote topic: %w", err)
+		return nil, fmt.Errorf("join attestation topic: %w", err)
 	}
 
 	// Subscribe to topics
@@ -76,23 +76,23 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 		return nil, fmt.Errorf("subscribe block topic: %w", err)
 	}
 
-	voteSub, err := voteTopic.Subscribe()
+	attestationSub, err := attestationTopic.Subscribe()
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("subscribe vote topic: %w", err)
+		return nil, fmt.Errorf("subscribe attestation topic: %w", err)
 	}
 
 	svc := &Service{
-		host:       cfg.Host,
-		pubsub:     ps,
-		handlers:   cfg.Handlers,
-		logger:     logger,
-		blockTopic: blockTopic,
-		blockSub:   blockSub,
-		voteTopic:  voteTopic,
-		voteSub:    voteSub,
-		ctx:        ctx,
-		cancel:     cancel,
+		host:             cfg.Host,
+		pubsub:           ps,
+		handlers:         cfg.Handlers,
+		logger:           logger,
+		blockTopic:       blockTopic,
+		blockSub:         blockSub,
+		attestationTopic: attestationTopic,
+		attestationSub:   attestationSub,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	// Connect to bootnodes, track failures for retry
@@ -114,7 +114,7 @@ func NewService(ctx context.Context, cfg ServiceConfig) (*Service, error) {
 func (s *Service) Start() {
 	s.wg.Add(2)
 	go s.processBlocks()
-	go s.processVotes()
+	go s.processAttestations()
 
 	if len(s.failedBootnodes) > 0 {
 		s.wg.Add(1)
@@ -131,14 +131,14 @@ func (s *Service) Start() {
 func (s *Service) Stop() {
 	s.cancel()
 	s.blockSub.Cancel()
-	s.voteSub.Cancel()
+	s.attestationSub.Cancel()
 	s.wg.Wait()
 	s.host.Close()
 	s.logger.Info("networking service stopped")
 }
 
 // PublishBlock publishes a signed block to the network.
-func (s *Service) PublishBlock(ctx context.Context, block *types.SignedBlock) error {
+func (s *Service) PublishBlock(ctx context.Context, block *types.SignedBlockWithAttestation) error {
 	data, err := block.MarshalSSZ()
 	if err != nil {
 		return fmt.Errorf("marshal block: %w", err)
@@ -147,14 +147,14 @@ func (s *Service) PublishBlock(ctx context.Context, block *types.SignedBlock) er
 	return s.blockTopic.Publish(ctx, compressed)
 }
 
-// PublishVote publishes a signed vote to the network.
-func (s *Service) PublishVote(ctx context.Context, vote *types.SignedVote) error {
-	data, err := vote.MarshalSSZ()
+// PublishAttestation publishes a signed attestation to the network.
+func (s *Service) PublishAttestation(ctx context.Context, att *types.SignedAttestation) error {
+	data, err := att.MarshalSSZ()
 	if err != nil {
-		return fmt.Errorf("marshal vote: %w", err)
+		return fmt.Errorf("marshal attestation: %w", err)
 	}
 	compressed := CompressMessage(data)
-	return s.voteTopic.Publish(ctx, compressed)
+	return s.attestationTopic.Publish(ctx, compressed)
 }
 
 // PeerCount returns the number of connected peers.
@@ -221,17 +221,17 @@ func (s *Service) processBlocks() {
 	}
 }
 
-// processVotes handles incoming vote messages.
-func (s *Service) processVotes() {
+// processAttestations handles incoming attestation messages.
+func (s *Service) processAttestations() {
 	defer s.wg.Done()
 
 	for {
-		msg, err := s.voteSub.Next(s.ctx)
+		msg, err := s.attestationSub.Next(s.ctx)
 		if err != nil {
 			if s.ctx.Err() != nil {
 				return // context cancelled
 			}
-			s.logger.Error("vote subscription error", "error", err)
+			s.logger.Error("attestation subscription error", "error", err)
 			continue
 		}
 
@@ -241,8 +241,8 @@ func (s *Service) processVotes() {
 		}
 
 		if s.handlers != nil {
-			if err := s.handlers.HandleVoteMessage(s.ctx, msg.Data); err != nil {
-				s.logger.Error("handle vote error", "error", err)
+			if err := s.handlers.HandleAttestationMessage(s.ctx, msg.Data); err != nil {
+				s.logger.Error("handle attestation error", "error", err)
 			}
 		}
 	}
