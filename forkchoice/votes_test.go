@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/devylongs/gean/consensus"
+	"github.com/devylongs/gean/consensus/transition"
 	"github.com/devylongs/gean/types"
 )
 
@@ -211,7 +212,7 @@ func TestProcessAttestationLocked_OutOfRangeDoesNotPanic(t *testing.T) {
 
 func TestProcessAttestation_FromBlock_UpdatesKnown(t *testing.T) {
 	state, genesisBlock := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
-	store, err := NewStore(state, genesisBlock, consensus.ProcessSlots, consensus.ProcessBlock)
+	store, err := NewStore(state, genesisBlock, transition.ProcessSlots, transition.ProcessBlock)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -234,8 +235,8 @@ func TestProcessAttestation_FromBlock_UpdatesKnown(t *testing.T) {
 
 	// Rebuild the block with attestations to get correct state root
 	headState := store.States[store.Head]
-	advanced, _ := consensus.ProcessSlots(headState, 1)
-	postState, _ := consensus.ProcessBlock(advanced, block)
+	advanced, _ := transition.ProcessSlots(headState, 1)
+	postState, _ := transition.ProcessBlock(advanced, block)
 	stateRoot, _ := postState.HashTreeRoot()
 	block.StateRoot = stateRoot
 

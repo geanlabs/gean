@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devylongs/gean/consensus"
+	"github.com/devylongs/gean/consensus/transition"
 	"github.com/devylongs/gean/types"
 )
 
@@ -20,7 +21,7 @@ func makeTestValidators(n uint64) []types.Validator {
 func setupTestStore(t *testing.T) *Store {
 	t.Helper()
 	state, block := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
-	store, err := NewStore(state, block, consensus.ProcessSlots, consensus.ProcessBlock)
+	store, err := NewStore(state, block, transition.ProcessSlots, transition.ProcessBlock)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -35,7 +36,7 @@ func buildValidBlock(t *testing.T, store *Store, slot types.Slot) *types.Block {
 	headState := store.States[store.Head]
 	headRoot := store.Head
 
-	advanced, err := consensus.ProcessSlots(headState, slot)
+	advanced, err := transition.ProcessSlots(headState, slot)
 	if err != nil {
 		t.Fatalf("ProcessSlots to slot %d: %v", slot, err)
 	}
@@ -49,7 +50,7 @@ func buildValidBlock(t *testing.T, store *Store, slot types.Slot) *types.Block {
 		Body:          types.BlockBody{Attestations: []types.Attestation{}},
 	}
 
-	postState, err := consensus.ProcessBlock(advanced, block)
+	postState, err := transition.ProcessBlock(advanced, block)
 	if err != nil {
 		t.Fatalf("ProcessBlock at slot %d: %v", slot, err)
 	}
@@ -65,7 +66,7 @@ func buildValidBlock(t *testing.T, store *Store, slot types.Slot) *types.Block {
 
 func TestNewStore_Initialization(t *testing.T) {
 	state, block := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
-	store, err := NewStore(state, block, consensus.ProcessSlots, consensus.ProcessBlock)
+	store, err := NewStore(state, block, transition.ProcessSlots, transition.ProcessBlock)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestNewStore_AnchorMismatch(t *testing.T) {
 	state, block := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	block.StateRoot = types.Root{0xff} // corrupt the state root
 
-	_, err := NewStore(state, block, consensus.ProcessSlots, consensus.ProcessBlock)
+	_, err := NewStore(state, block, transition.ProcessSlots, transition.ProcessBlock)
 	if err == nil {
 		t.Error("expected error for anchor block state root mismatch")
 	}

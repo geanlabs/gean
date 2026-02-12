@@ -1,16 +1,27 @@
-package consensus
+// transition_test.go contains unit tests for slot, block, and attestation transition behavior.
+package transition
 
 import (
 	"testing"
 
 	"github.com/OffchainLabs/go-bitfield"
+	"github.com/devylongs/gean/consensus"
 	"github.com/devylongs/gean/types"
 )
+
+// makeTestValidators creates n placeholder validators for testing.
+func makeTestValidators(n uint64) []types.Validator {
+	validators := make([]types.Validator, n)
+	for i := uint64(0); i < n; i++ {
+		validators[i] = types.Validator{Index: types.ValidatorIndex(i)}
+	}
+	return validators
+}
 
 // helper to create a genesis state and first block for testing
 func setupGenesisAndFirstBlock(t *testing.T) (*types.State, *types.Block) {
 	t.Helper()
-	state, genesisBlock := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, genesisBlock := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 
 	// Advance state to slot 1
 	advanced, err := ProcessSlots(state, 1)
@@ -41,7 +52,7 @@ func setupGenesisAndFirstBlock(t *testing.T) (*types.State, *types.Block) {
 }
 
 func TestProcessSlots_FillsStateRootWhenAdvancing(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 
 	// Genesis header has zero state root
 	if !state.LatestBlockHeader.StateRoot.IsZero() {
@@ -59,7 +70,7 @@ func TestProcessSlots_FillsStateRootWhenAdvancing(t *testing.T) {
 }
 
 func TestProcessSlots_DoesNotRewriteFilledStateRoot(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 
 	// First ProcessSlots call fills state root for genesis header.
 	filled, err := ProcessSlots(state, 1)
@@ -80,7 +91,7 @@ func TestProcessSlots_DoesNotRewriteFilledStateRoot(t *testing.T) {
 }
 
 func TestProcessSlots_AdvancesCorrectly(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 
 	advanced, err := ProcessSlots(state, 5)
 	if err != nil {
@@ -93,7 +104,7 @@ func TestProcessSlots_AdvancesCorrectly(t *testing.T) {
 }
 
 func TestProcessSlots_ErrorIfNotFuture(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 
 	_, err := ProcessSlots(state, 0)
 	if err == nil {
@@ -102,7 +113,7 @@ func TestProcessSlots_ErrorIfNotFuture(t *testing.T) {
 }
 
 func TestProcessBlockHeader_Valid(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	headerRoot, _ := advanced.LatestBlockHeader.HashTreeRoot()
@@ -125,7 +136,7 @@ func TestProcessBlockHeader_Valid(t *testing.T) {
 }
 
 func TestProcessBlockHeader_WrongSlot(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	block := &types.Block{
@@ -139,7 +150,7 @@ func TestProcessBlockHeader_WrongSlot(t *testing.T) {
 }
 
 func TestProcessBlockHeader_WrongProposer(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	headerRoot, _ := state.LatestBlockHeader.HashTreeRoot()
@@ -156,7 +167,7 @@ func TestProcessBlockHeader_WrongProposer(t *testing.T) {
 }
 
 func TestProcessBlockHeader_WrongParent(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	block := &types.Block{
@@ -172,7 +183,7 @@ func TestProcessBlockHeader_WrongParent(t *testing.T) {
 }
 
 func TestProcessBlockHeader_GenesisSpecialCase(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	advanced, _ := ProcessSlots(state, 1)
 
 	headerRoot, _ := advanced.LatestBlockHeader.HashTreeRoot()
@@ -198,7 +209,7 @@ func TestProcessBlockHeader_GenesisSpecialCase(t *testing.T) {
 }
 
 func TestProcessBlockHeader_EmptySlots(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 	// Advance to slot 3 (skipping slot 1 and 2)
 	advanced, _ := ProcessSlots(state, 3)
 
@@ -431,7 +442,7 @@ func TestProcessBlock_EndToEnd(t *testing.T) {
 }
 
 func TestCopy_DeepIndependence(t *testing.T) {
-	state, _ := GenerateGenesis(1000000000, makeTestValidators(8))
+	state, _ := consensus.GenerateGenesis(1000000000, makeTestValidators(8))
 
 	cp := Copy(state)
 	cp.Slot = 99

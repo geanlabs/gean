@@ -5,7 +5,7 @@ package validator
 import (
 	"fmt"
 
-	"github.com/devylongs/gean/consensus"
+	"github.com/devylongs/gean/consensus/transition"
 	"github.com/devylongs/gean/types"
 )
 
@@ -69,7 +69,7 @@ func BuildBlock(
 	headState *types.State,
 	attestations []types.Attestation,
 ) (*types.Block, *types.State, error) {
-	finalState, err := consensus.ProcessSlots(headState, slot)
+	finalState, err := transition.ProcessSlots(headState, slot)
 	if err != nil {
 		return nil, nil, fmt.Errorf("process slots: %w", err)
 	}
@@ -82,7 +82,7 @@ func BuildBlock(
 		Body:          types.BlockBody{Attestations: attestations},
 	}
 
-	postState, err := consensus.ProcessBlock(finalState, block)
+	postState, err := transition.ProcessBlock(finalState, block)
 	if err != nil {
 		return nil, nil, fmt.Errorf("process block: %w", err)
 	}

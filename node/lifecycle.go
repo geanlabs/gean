@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/devylongs/gean/consensus"
+	"github.com/devylongs/gean/consensus/transition"
 	"github.com/devylongs/gean/forkchoice"
 	"github.com/devylongs/gean/networking"
 	"github.com/devylongs/gean/networking/reqresp"
@@ -61,7 +62,7 @@ func New(ctx context.Context, cfg *Config) (*Node, error) {
 	genesisState, genesisBlock := consensus.GenerateGenesis(cfg.GenesisTime, validators)
 
 	// Create fork choice store with injected state transition functions
-	store, err := forkchoice.NewStore(genesisState, genesisBlock, consensus.ProcessSlots, consensus.ProcessBlock, forkchoice.WithLogger(logger))
+	store, err := forkchoice.NewStore(genesisState, genesisBlock, transition.ProcessSlots, transition.ProcessBlock, forkchoice.WithLogger(logger))
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create store: %w", err)
