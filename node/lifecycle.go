@@ -19,11 +19,7 @@ func New(cfg Config) (*Node, error) {
 	log := logging.NewComponentLogger(logging.CompNode)
 
 	// Generate genesis.
-	validators := make([]*types.Validator, cfg.NumValidators)
-	for i := uint64(0); i < cfg.NumValidators; i++ {
-		validators[i] = &types.Validator{Index: i}
-	}
-	genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, validators)
+	genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)
 	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 
 	genesisBlock := &types.Block{
