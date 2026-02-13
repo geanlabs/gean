@@ -1,16 +1,6 @@
-.PHONY: build test lint fmt clean help
+.PHONY: build test test-race lint fmt clean docker-build run run-devnet help
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-
-help:
-	@echo "Usage: make [target]"
-	@echo ""
-	@echo "Targets:"
-	@echo "  build    Build the gean binary"
-	@echo "  test     Run tests with race detector"
-	@echo "  lint     Run linters (vet + staticcheck)"
-	@echo "  fmt      Format code"
-	@echo "  clean    Remove build artifacts"
 
 build:
 	@mkdir -p bin
@@ -19,6 +9,9 @@ build:
 	@echo "Done: bin/gean"
 
 test:
+	go test ./...
+
+test-race:
 	go test -race ./...
 
 lint:
@@ -31,3 +24,17 @@ fmt:
 clean:
 	rm -rf bin
 	go clean
+
+docker-build:
+	docker build -t gean:$(VERSION) .
+
+run: build
+	./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --node-id node0
+
+run-devnet:
+	@if [ ! -d "../lean-quickstart" ]; then \
+		echo "Cloning lean-quickstart..."; \
+		git clone https://github.com/blockblaz/lean-quickstart.git ../lean-quickstart; \
+	fi
+	$(MAKE) docker-build
+	cd ../lean-quickstart && NETWORK_DIR=local-devnet ./spin-node.sh --node gean_0 --generateGenesis --metrics
