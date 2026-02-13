@@ -13,10 +13,10 @@ func (c *Store) AdvanceTime(time uint64, hasProposal bool) {
 }
 
 func (c *Store) advanceTimeLocked(time uint64, hasProposal bool) {
-	if time <= c.Config.GenesisTime {
+	if time <= c.GenesisTime {
 		return
 	}
-	tickInterval := (time - c.Config.GenesisTime) / types.SecondsPerInterval
+	tickInterval := (time - c.GenesisTime) / types.SecondsPerInterval
 	for c.Time < tickInterval {
 		shouldSignal := hasProposal && (c.Time+1) == tickInterval
 		c.tickIntervalLocked(shouldSignal)
@@ -37,29 +37,29 @@ func (c *Store) tickIntervalLocked(hasProposal bool) {
 	switch currentInterval {
 	case 0:
 		if hasProposal {
-			c.acceptNewVotesLocked()
+			c.acceptNewAttestationsLocked()
 		}
 	case 1:
 		// Validator voting interval — no action.
 	case 2:
 		c.updateSafeTargetLocked()
 	case 3:
-		c.acceptNewVotesLocked()
+		c.acceptNewAttestationsLocked()
 	}
 }
 
-// AcceptNewVotes moves pending votes to known and updates head.
-func (c *Store) AcceptNewVotes() {
+// AcceptNewAttestations moves pending attestations to known and updates head.
+func (c *Store) AcceptNewAttestations() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.acceptNewVotesLocked()
+	c.acceptNewAttestationsLocked()
 }
 
-func (c *Store) acceptNewVotesLocked() {
-	for id, vote := range c.LatestNewVotes {
-		c.LatestKnownVotes[id] = vote
+func (c *Store) acceptNewAttestationsLocked() {
+	for id, att := range c.LatestNewAttestations {
+		c.LatestKnownAttestations[id] = att
 	}
-	c.LatestNewVotes = make(map[uint64]*types.Checkpoint)
+	c.LatestNewAttestations = make(map[uint64]*types.Attestation)
 	c.updateHeadLocked()
 }
 
@@ -68,7 +68,7 @@ func (c *Store) updateHeadLocked() {
 		c.LatestJustified = latest
 	}
 
-	c.Head = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestKnownVotes, 0)
+	c.Head = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestKnownAttestations, 0)
 
 	if headState, ok := c.Storage.GetState(c.Head); ok {
 		c.LatestFinalized = headState.LatestFinalized
@@ -84,7 +84,7 @@ func (c *Store) UpdateSafeTarget() {
 
 func (c *Store) updateSafeTargetLocked() {
 	minScore := int(ceilDiv(c.NumValidators*2, 3))
-	c.SafeTarget = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestNewVotes, minScore)
+	c.SafeTarget = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestNewAttestations, minScore)
 	if block, ok := c.Storage.GetBlock(c.SafeTarget); ok {
 		metrics.SafeTargetSlot.Set(float64(block.Slot))
 	}

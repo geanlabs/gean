@@ -9,7 +9,7 @@ import (
 func GetForkChoiceHead(
 	store storage.Store,
 	root [32]byte,
-	latestVotes map[uint64]*types.Checkpoint,
+	latestAttestations map[uint64]*types.Attestation,
 	minScore int,
 ) [32]byte {
 	blocks := store.GetAllBlocks()
@@ -27,7 +27,7 @@ func GetForkChoiceHead(
 		root = earliest
 	}
 
-	if len(latestVotes) == 0 {
+	if len(latestAttestations) == 0 {
 		return root
 	}
 
@@ -39,11 +39,12 @@ func GetForkChoiceHead(
 
 	// Count votes for each block. Votes for descendants count toward ancestors.
 	voteWeights := make(map[[32]byte]int)
-	for _, vote := range latestVotes {
-		if _, ok := blocks[vote.Root]; !ok {
+	for _, att := range latestAttestations {
+		headRoot := att.Data.Head.Root
+		if _, ok := blocks[headRoot]; !ok {
 			continue
 		}
-		blockHash := vote.Root
+		blockHash := headRoot
 		for {
 			b, exists := blocks[blockHash]
 			if !exists || b.Slot <= rootSlot {

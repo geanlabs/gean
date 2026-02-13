@@ -48,9 +48,17 @@ func TestProduceBlockRejectsWrongProposer(t *testing.T) {
 func TestProduceBlockIncludesAttestations(t *testing.T) {
 	fc, hashes := buildForkChoiceWithBlocks(t, 5, 3)
 
-	// Add votes for slot 3 block.
+	// Add attestations for slot 3 block.
 	for i := uint64(0); i < 3; i++ {
-		fc.LatestKnownVotes[i] = &types.Checkpoint{Root: hashes[3], Slot: 3}
+		fc.LatestKnownAttestations[i] = &types.Attestation{
+			ValidatorID: i,
+			Data: &types.AttestationData{
+				Slot:   3,
+				Head:   &types.Checkpoint{Root: hashes[3], Slot: 3},
+				Target: &types.Checkpoint{Root: hashes[3], Slot: 3},
+				Source: &types.Checkpoint{Root: hashes[0], Slot: 0},
+			},
+		}
 	}
 
 	block, err := fc.ProduceBlock(4, 4)

@@ -11,9 +11,9 @@ import (
 func (c *Store) GetProposalHead(slot uint64) [32]byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	slotTime := c.Config.GenesisTime + slot*types.SecondsPerSlot
+	slotTime := c.GenesisTime + slot*types.SecondsPerSlot
 	c.advanceTimeLocked(slotTime, true)
-	c.acceptNewVotesLocked()
+	c.acceptNewAttestationsLocked()
 	return c.Head
 }
 
@@ -68,9 +68,9 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.Block, error) 
 
 	headRoot := c.Head
 	// Advance and accept before proposing.
-	slotTime := c.Config.GenesisTime + slot*types.SecondsPerSlot
+	slotTime := c.GenesisTime + slot*types.SecondsPerSlot
 	c.advanceTimeLocked(slotTime, true)
-	c.acceptNewVotesLocked()
+	c.acceptNewAttestationsLocked()
 	headRoot = c.Head
 
 	headState, ok := c.Storage.GetState(headRoot)
@@ -100,21 +100,22 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.Block, error) 
 		}
 
 		var newAttestations []*types.Attestation
-		for vid, cp := range c.LatestKnownVotes {
-			if _, ok := c.Storage.GetBlock(cp.Root); !ok {
+		for _, att := range c.LatestKnownAttestations {
+			if _, ok := c.Storage.GetBlock(att.Data.Head.Root); !ok {
 				continue
 			}
-			att := &types.Attestation{
-				ValidatorID: vid,
+			// Build on-chain attestation with source from post-state.
+			onChainAtt := &types.Attestation{
+				ValidatorID: att.ValidatorID,
 				Data: &types.AttestationData{
-					Slot:   cp.Slot,
-					Head:   cp,
-					Target: cp,
+					Slot:   att.Data.Slot,
+					Head:   att.Data.Head,
+					Target: att.Data.Target,
 					Source: postState.LatestJustified,
 				},
 			}
-			if !containsAttestation(attestations, att) {
-				newAttestations = append(newAttestations, att)
+			if !containsAttestation(attestations, onChainAtt) {
+				newAttestations = append(newAttestations, onChainAtt)
 			}
 		}
 
@@ -156,9 +157,9 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64) *types.Attestati
 	defer c.mu.Unlock()
 
 	// Advance and accept before voting (matches leanSpec produce_attestation_vote).
-	slotTime := c.Config.GenesisTime + slot*types.SecondsPerSlot
+	slotTime := c.GenesisTime + slot*types.SecondsPerSlot
 	c.advanceTimeLocked(slotTime, true)
-	c.acceptNewVotesLocked()
+	c.acceptNewAttestationsLocked()
 	headRoot := c.Head
 
 	blocks := c.Storage.GetAllBlocks()

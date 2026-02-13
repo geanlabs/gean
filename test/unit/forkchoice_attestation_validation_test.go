@@ -84,12 +84,12 @@ func TestForkChoiceProcessAttestationValidGossip(t *testing.T) {
 	)
 	fc.ProcessAttestation(sa)
 
-	got, ok := fc.LatestNewVotes[5]
+	got, ok := fc.LatestNewAttestations[5]
 	if !ok {
-		t.Fatal("expected validator vote in latest_new_votes")
+		t.Fatal("expected validator attestation in latest_new_attestations")
 	}
-	if got.Slot != 2 || got.Root != hashes[2] {
-		t.Fatalf("unexpected vote target: got slot=%d root=%x", got.Slot, got.Root)
+	if got.Data.Target.Slot != 2 || got.Data.Target.Root != hashes[2] {
+		t.Fatalf("unexpected attestation target: got slot=%d root=%x", got.Data.Target.Slot, got.Data.Target.Root)
 	}
 }
 
@@ -104,8 +104,8 @@ func TestForkChoiceProcessAttestationRejectsCheckpointSlotMismatch(t *testing.T)
 	)
 	fc.ProcessAttestation(sa)
 
-	if len(fc.LatestNewVotes) != 0 {
-		t.Fatalf("expected no new votes, got %d", len(fc.LatestNewVotes))
+	if len(fc.LatestNewAttestations) != 0 {
+		t.Fatalf("expected no new votes, got %d", len(fc.LatestNewAttestations))
 	}
 }
 
@@ -120,8 +120,8 @@ func TestForkChoiceProcessAttestationRejectsTooFarFuture(t *testing.T) {
 	)
 	fc.ProcessAttestation(sa)
 
-	if len(fc.LatestNewVotes) != 0 {
-		t.Fatalf("expected no new votes, got %d", len(fc.LatestNewVotes))
+	if len(fc.LatestNewAttestations) != 0 {
+		t.Fatalf("expected no new votes, got %d", len(fc.LatestNewAttestations))
 	}
 }
 
@@ -136,7 +136,7 @@ func TestForkChoiceProcessAttestationRejectsFutureGossipVote(t *testing.T) {
 	)
 	fc.ProcessAttestation(sa)
 
-	if len(fc.LatestNewVotes) != 0 {
-		t.Fatalf("expected no new votes, got %d", len(fc.LatestNewVotes))
+	if len(fc.LatestNewAttestations) != 0 {
+		t.Fatalf("expected no new votes, got %d", len(fc.LatestNewAttestations))
 	}
 }

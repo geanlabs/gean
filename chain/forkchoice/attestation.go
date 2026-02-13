@@ -29,15 +29,15 @@ func (c *Store) processAttestationLocked(att *types.Attestation, isFromBlock boo
 	}
 
 	if isFromBlock {
-		// On-chain: update known votes if this is newer.
-		existing, ok := c.LatestKnownVotes[validatorID]
-		if !ok || existing.Slot < data.Slot {
-			c.LatestKnownVotes[validatorID] = data.Target
+		// On-chain: update known attestations if this is newer.
+		existing, ok := c.LatestKnownAttestations[validatorID]
+		if !ok || existing.Data.Slot < data.Slot {
+			c.LatestKnownAttestations[validatorID] = att
 		}
-		// Remove from new votes if superseded.
-		newVote, ok := c.LatestNewVotes[validatorID]
-		if ok && newVote.Slot <= data.Target.Slot {
-			delete(c.LatestNewVotes, validatorID)
+		// Remove from new attestations if superseded.
+		newAtt, ok := c.LatestNewAttestations[validatorID]
+		if ok && newAtt.Data.Target.Slot <= data.Target.Slot {
+			delete(c.LatestNewAttestations, validatorID)
 		}
 	} else {
 		// Network gossip attestation processing.
@@ -46,10 +46,10 @@ func (c *Store) processAttestationLocked(att *types.Attestation, isFromBlock boo
 			return
 		}
 
-		// Network gossip: update new votes if this is newer.
-		existing, ok := c.LatestNewVotes[validatorID]
-		if !ok || existing.Slot < data.Target.Slot {
-			c.LatestNewVotes[validatorID] = data.Target
+		// Network gossip: update new attestations if this is newer.
+		existing, ok := c.LatestNewAttestations[validatorID]
+		if !ok || existing.Data.Target.Slot < data.Target.Slot {
+			c.LatestNewAttestations[validatorID] = att
 		}
 	}
 
@@ -57,7 +57,7 @@ func (c *Store) processAttestationLocked(att *types.Attestation, isFromBlock boo
 	metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
 }
 
-// validateAttestationLocked performs leanSpec devnet0 attestation checks.
+// validateAttestationLocked performs attestation validation checks.
 func (c *Store) validateAttestationLocked(att *types.Attestation) bool {
 	data := att.Data
 

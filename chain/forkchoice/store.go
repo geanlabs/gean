@@ -12,17 +12,18 @@ import (
 type Store struct {
 	mu sync.Mutex
 
-	Time            uint64
-	Config          *types.Config
-	NumValidators   uint64
-	Head            [32]byte
-	SafeTarget      [32]byte
+	Time          uint64
+	GenesisTime   uint64
+	NumValidators uint64
+	Head          [32]byte
+	SafeTarget    [32]byte
+
 	LatestJustified *types.Checkpoint
 	LatestFinalized *types.Checkpoint
 	Storage         storage.Store
 
-	LatestKnownVotes map[uint64]*types.Checkpoint
-	LatestNewVotes   map[uint64]*types.Checkpoint
+	LatestKnownAttestations map[uint64]*types.Attestation
+	LatestNewAttestations   map[uint64]*types.Attestation
 }
 
 // NewStore initializes a store from an anchor state and block.
@@ -38,15 +39,15 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 	store.PutState(anchorRoot, state)
 
 	return &Store{
-		Time:             anchorBlock.Slot * types.SecondsPerSlot,
-		Config:           state.Config,
-		NumValidators:    uint64(len(state.Validators)),
-		Head:             anchorRoot,
-		SafeTarget:       anchorRoot,
-		LatestJustified:  state.LatestJustified,
-		LatestFinalized:  state.LatestFinalized,
-		Storage:          store,
-		LatestKnownVotes: make(map[uint64]*types.Checkpoint),
-		LatestNewVotes:   make(map[uint64]*types.Checkpoint),
+		Time:                    anchorBlock.Slot * types.SecondsPerSlot,
+		GenesisTime:             state.Config.GenesisTime,
+		NumValidators:           uint64(len(state.Validators)),
+		Head:                    anchorRoot,
+		SafeTarget:              anchorRoot,
+		LatestJustified:         state.LatestJustified,
+		LatestFinalized:         state.LatestFinalized,
+		Storage:                 store,
+		LatestKnownAttestations: make(map[uint64]*types.Attestation),
+		LatestNewAttestations:   make(map[uint64]*types.Attestation),
 	}
 }
