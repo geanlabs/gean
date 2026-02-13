@@ -1,0 +1,3 @@
+- multiaddr: "/ip4/127.0.0.1/udp/9000/quic-v1/p2p/16Uiu2HAmDgpAASaRK5xXsXQvkch4JnBUY2aFAD31d9WsBphQ3JAu"
+- multiaddr: "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/16Uiu2HAmU4Y5eBHSS4TT8td8u2BdFsEoLEcXR6JukSTTgccLXgVd"
+- multiaddr: "/ip4/127.0.0.1/udp/9002/quic-v1/p2p/16Uiu2HAmNW9x2MH2UtX2f3ZiaDseVrYjvR1ZF6HQRrxVtCaUte9V"
