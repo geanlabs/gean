@@ -83,7 +83,7 @@ func (c *Store) UpdateSafeTarget() {
 }
 
 func (c *Store) updateSafeTargetLocked() {
-	minScore := int(ceilDiv(c.Config.NumValidators*2, 3))
+	minScore := int(ceilDiv(c.NumValidators*2, 3))
 	c.SafeTarget = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestNewVotes, minScore)
 	if block, ok := c.Storage.GetBlock(c.SafeTarget); ok {
 		metrics.SafeTargetSlot.Set(float64(block.Slot))

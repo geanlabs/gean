@@ -14,7 +14,7 @@ func makeBlock(slot, proposer uint64, parent [32]byte) *types.Block {
 		ProposerIndex: proposer,
 		ParentRoot:    parent,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 }
 

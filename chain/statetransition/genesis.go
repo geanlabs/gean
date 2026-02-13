@@ -5,13 +5,12 @@ import (
 )
 
 // GenerateGenesis creates a genesis state with the given parameters.
-func GenerateGenesis(genesisTime, numValidators uint64) *types.State {
+func GenerateGenesis(genesisTime uint64, validators []*types.Validator) *types.State {
 	config := &types.Config{
-		NumValidators: numValidators,
-		GenesisTime:   genesisTime,
+		GenesisTime: genesisTime,
 	}
 
-	emptyBody := &types.BlockBody{Attestations: []*types.SignedVote{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 	bodyRoot, _ := emptyBody.HashTreeRoot()
 
 	genesisHeader := &types.BlockHeader{
@@ -30,6 +29,7 @@ func GenerateGenesis(genesisTime, numValidators uint64) *types.State {
 		LatestFinalized:          &types.Checkpoint{Root: types.ZeroHash, Slot: 0},
 		HistoricalBlockHashes:    [][32]byte{},
 		JustifiedSlots:           []byte{0x01}, // empty bitlist with sentinel
+		Validators:               validators,
 		JustificationsRoots:      [][32]byte{},
 		JustificationsValidators: []byte{0x01}, // empty bitlist with sentinel
 	}

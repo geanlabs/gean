@@ -35,7 +35,7 @@ func TestCheckpointHashTreeRoot(t *testing.T) {
 }
 
 func TestConfigSSZRoundTrip(t *testing.T) {
-	cfg := &types.Config{NumValidators: 30, GenesisTime: 1770407233}
+	cfg := &types.Config{GenesisTime: 1770407233}
 	data, err := cfg.MarshalSSZ()
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func TestConfigSSZRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if decoded.NumValidators != cfg.NumValidators || decoded.GenesisTime != cfg.GenesisTime {
+	if decoded.GenesisTime != cfg.GenesisTime {
 		t.Fatalf("round trip failed: got %+v, want %+v", decoded, cfg)
 	}
 }
@@ -75,31 +75,32 @@ func TestBlockHeaderSSZRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSignedVoteSSZRoundTrip(t *testing.T) {
-	sv := &types.SignedVote{
-		Data: &types.Vote{
+func TestSignedAttestationSSZRoundTrip(t *testing.T) {
+	sa := &types.SignedAttestation{
+		Message: &types.Attestation{
 			ValidatorID: 3,
-			Slot:        10,
-			Head:        &types.Checkpoint{Root: [32]byte{1}, Slot: 9},
-			Target:      &types.Checkpoint{Root: [32]byte{2}, Slot: 8},
-			Source:      &types.Checkpoint{Root: [32]byte{3}, Slot: 7},
+			Data: &types.AttestationData{
+				Slot:   10,
+				Head:   &types.Checkpoint{Root: [32]byte{1}, Slot: 9},
+				Target: &types.Checkpoint{Root: [32]byte{2}, Slot: 8},
+				Source: &types.Checkpoint{Root: [32]byte{3}, Slot: 7},
+			},
 		},
-		Signature: [32]byte{0xff},
 	}
-	data, err := sv.MarshalSSZ()
+	data, err := sa.MarshalSSZ()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	decoded := new(types.SignedVote)
+	decoded := new(types.SignedAttestation)
 	if err := decoded.UnmarshalSSZ(data); err != nil {
 		t.Fatal(err)
 	}
 
-	if decoded.Data.ValidatorID != 3 || decoded.Data.Slot != 10 {
-		t.Fatalf("vote round trip failed: got validator_id=%d slot=%d", decoded.Data.ValidatorID, decoded.Data.Slot)
+	if decoded.Message.ValidatorID != 3 || decoded.Message.Data.Slot != 10 {
+		t.Fatalf("attestation round trip failed: got validator_id=%d slot=%d", decoded.Message.ValidatorID, decoded.Message.Data.Slot)
 	}
-	if decoded.Data.Head.Slot != 9 || decoded.Data.Target.Slot != 8 || decoded.Data.Source.Slot != 7 {
+	if decoded.Message.Data.Head.Slot != 9 || decoded.Message.Data.Target.Slot != 8 || decoded.Message.Data.Source.Slot != 7 {
 		t.Fatal("checkpoint round trip failed")
 	}
 }
@@ -110,7 +111,7 @@ func TestBlockSSZRoundTrip(t *testing.T) {
 		ProposerIndex: 0,
 		ParentRoot:    [32]byte{0xaa},
 		StateRoot:     [32]byte{0xbb},
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 	data, err := block.MarshalSSZ()
 	if err != nil {
@@ -127,29 +128,30 @@ func TestBlockSSZRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSignedBlockSSZRoundTrip(t *testing.T) {
-	sb := &types.SignedBlock{
-		Message: &types.Block{
-			Slot:          1,
-			ProposerIndex: 0,
-			ParentRoot:    [32]byte{0xaa},
-			StateRoot:     [32]byte{0xbb},
-			Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+func TestSignedBlockWithAttestationSSZRoundTrip(t *testing.T) {
+	sb := &types.SignedBlockWithAttestation{
+		Message: &types.BlockWithAttestation{
+			Block: &types.Block{
+				Slot:          1,
+				ProposerIndex: 0,
+				ParentRoot:    [32]byte{0xaa},
+				StateRoot:     [32]byte{0xbb},
+				Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
+			},
 		},
-		Signature: [32]byte{0xdd},
 	}
 	data, err := sb.MarshalSSZ()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	decoded := new(types.SignedBlock)
+	decoded := new(types.SignedBlockWithAttestation)
 	if err := decoded.UnmarshalSSZ(data); err != nil {
 		t.Fatal(err)
 	}
 
-	if decoded.Message.Slot != 1 || decoded.Signature != sb.Signature {
-		t.Fatalf("signed block round trip failed")
+	if decoded.Message.Block.Slot != 1 {
+		t.Fatalf("signed block with attestation round trip failed")
 	}
 }
 

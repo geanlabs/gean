@@ -26,8 +26,7 @@ func (c *Store) ProcessBlock(block *types.Block) error {
 		return fmt.Errorf("parent state not found for %x", block.ParentRoot)
 	}
 
-	signedBlock := &types.SignedBlock{Message: block, Signature: types.ZeroHash}
-	state, err := statetransition.StateTransition(parentState, signedBlock)
+	state, err := statetransition.StateTransition(parentState, block)
 	if err != nil {
 		return fmt.Errorf("state_transition: %w", err)
 	}
@@ -36,8 +35,8 @@ func (c *Store) ProcessBlock(block *types.Block) error {
 	c.Storage.PutState(blockHash, state)
 
 	// Process block attestations as on-chain votes.
-	for _, sv := range block.Body.Attestations {
-		c.processAttestationLocked(sv, true)
+	for _, att := range block.Body.Attestations {
+		c.processAttestationLocked(att, true)
 	}
 
 	c.updateHeadLocked()

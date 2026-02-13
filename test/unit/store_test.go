@@ -10,9 +10,9 @@ import (
 )
 
 func makeGenesisFC(numValidators uint64) (*forkchoice.Store, *types.State) {
-	state := statetransition.GenerateGenesis(1000, numValidators)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
 
-	emptyBody := &types.BlockBody{Attestations: []*types.SignedVote{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 	genesisBlock := &types.Block{
 		Slot:          0,
 		ProposerIndex: 0,
@@ -66,8 +66,8 @@ func TestForkChoiceAcceptNewVotes(t *testing.T) {
 }
 
 func TestForkChoiceInitPanicsOnAnchorStateRootMismatch(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
-	emptyBody := &types.BlockBody{Attestations: []*types.SignedVote{}}
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
+	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 	genesisBlock := &types.Block{
 		Slot:          0,
 		ProposerIndex: 0,
@@ -84,11 +84,11 @@ func TestForkChoiceInitPanicsOnAnchorStateRootMismatch(t *testing.T) {
 	_ = forkchoice.NewStore(state, genesisBlock, memory.New())
 }
 
-func TestProduceAttestationVoteAcceptsNewVotesFirst(t *testing.T) {
+func TestProduceAttestationAcceptsNewVotesFirst(t *testing.T) {
 	fc, _ := makeGenesisFC(5)
 	fc.LatestNewVotes[3] = &types.Checkpoint{Root: fc.Head, Slot: 0}
 
-	_ = fc.ProduceAttestationVote(1, 0)
+	_ = fc.ProduceAttestation(1, 0)
 
 	if len(fc.LatestNewVotes) != 0 {
 		t.Fatalf("expected latest_new_votes to be drained, got %d entries", len(fc.LatestNewVotes))

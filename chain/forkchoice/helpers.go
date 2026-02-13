@@ -2,10 +2,10 @@ package forkchoice
 
 import "github.com/geanlabs/gean/types"
 
-func containsVote(list []*types.SignedVote, sv *types.SignedVote) bool {
+func containsAttestation(list []*types.Attestation, att *types.Attestation) bool {
 	for _, existing := range list {
-		if existing.Data.ValidatorID == sv.Data.ValidatorID &&
-			existing.Data.Slot == sv.Data.Slot {
+		if existing.ValidatorID == att.ValidatorID &&
+			existing.Data.Slot == att.Data.Slot {
 			return true
 		}
 	}

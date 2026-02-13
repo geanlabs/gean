@@ -19,7 +19,7 @@ var (
 )
 
 // PublishBlock SSZ-encodes, snappy-compresses, and publishes a signed block.
-func PublishBlock(ctx context.Context, topic *pubsub.Topic, sb *types.SignedBlock) error {
+func PublishBlock(ctx context.Context, topic *pubsub.Topic, sb *types.SignedBlockWithAttestation) error {
 	data, err := sb.MarshalSSZ()
 	if err != nil {
 		return err
@@ -27,9 +27,9 @@ func PublishBlock(ctx context.Context, topic *pubsub.Topic, sb *types.SignedBloc
 	return topic.Publish(ctx, snappy.Encode(nil, data))
 }
 
-// PublishVote SSZ-encodes, snappy-compresses, and publishes a signed vote.
-func PublishVote(ctx context.Context, topic *pubsub.Topic, sv *types.SignedVote) error {
-	data, err := sv.MarshalSSZ()
+// PublishAttestation SSZ-encodes, snappy-compresses, and publishes a signed attestation.
+func PublishAttestation(ctx context.Context, topic *pubsub.Topic, sa *types.SignedAttestation) error {
+	data, err := sa.MarshalSSZ()
 	if err != nil {
 		return err
 	}

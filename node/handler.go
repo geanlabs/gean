@@ -27,11 +27,13 @@ func registerHandlers(n *Node, store *memory.Store, fc *forkchoice.Store) error 
 				Head:      &types.Checkpoint{Root: fc.Head, Slot: headSlot},
 			}
 		},
-		OnBlocksByRoot: func(roots [][32]byte) []*types.SignedBlock {
-			var blocks []*types.SignedBlock
+		OnBlocksByRoot: func(roots [][32]byte) []*types.SignedBlockWithAttestation {
+			var blocks []*types.SignedBlockWithAttestation
 			for _, root := range roots {
 				if b, ok := store.GetBlock(root); ok {
-					blocks = append(blocks, &types.SignedBlock{Message: b, Signature: types.ZeroHash})
+					blocks = append(blocks, &types.SignedBlockWithAttestation{
+						Message: &types.BlockWithAttestation{Block: b},
+					})
 				}
 			}
 			return blocks
@@ -40,22 +42,23 @@ func registerHandlers(n *Node, store *memory.Store, fc *forkchoice.Store) error 
 
 	// Subscribe to gossip.
 	if err := gossipsub.SubscribeTopics(n.Host.Ctx, n.Topics, &gossipsub.GossipHandler{
-		OnBlock: func(sb *types.SignedBlock) {
-			blockRoot, _ := sb.Message.HashTreeRoot()
+		OnBlock: func(sb *types.SignedBlockWithAttestation) {
+			block := sb.Message.Block
+			blockRoot, _ := block.HashTreeRoot()
 			gossipLog.Info("received block via gossip",
-				"slot", sb.Message.Slot,
-				"proposer", sb.Message.ProposerIndex,
+				"slot", block.Slot,
+				"proposer", block.ProposerIndex,
 				"block_root", logging.ShortHash(blockRoot),
 			)
-			if err := fc.ProcessBlock(sb.Message); err != nil {
+			if err := fc.ProcessBlock(block); err != nil {
 				gossipLog.Warn("rejected gossip block",
-					"slot", sb.Message.Slot,
+					"slot", block.Slot,
 					"err", err,
 				)
 			}
 		},
-		OnVote: func(sv *types.SignedVote) {
-			fc.ProcessAttestation(sv)
+		OnAttestation: func(sa *types.SignedAttestation) {
+			fc.ProcessAttestation(sa)
 		},
 	}); err != nil {
 		return fmt.Errorf("subscribe topics: %w", err)

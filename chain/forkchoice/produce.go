@@ -62,7 +62,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.Block, error) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !statetransition.IsProposer(validatorIndex, slot, c.Config.NumValidators) {
+	if !statetransition.IsProposer(validatorIndex, slot, c.NumValidators) {
 		return nil, fmt.Errorf("validator %d is not proposer for slot %d", validatorIndex, slot)
 	}
 
@@ -78,7 +78,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.Block, error) 
 		return nil, fmt.Errorf("head state not found")
 	}
 
-	var attestations []*types.SignedVote
+	var attestations []*types.Attestation
 
 	// Fixed-point attestation collection.
 	for {
@@ -99,21 +99,22 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.Block, error) 
 			return nil, err
 		}
 
-		var newAttestations []*types.SignedVote
+		var newAttestations []*types.Attestation
 		for vid, cp := range c.LatestKnownVotes {
 			if _, ok := c.Storage.GetBlock(cp.Root); !ok {
 				continue
 			}
-			vote := &types.Vote{
+			att := &types.Attestation{
 				ValidatorID: vid,
-				Slot:        cp.Slot,
-				Head:        cp,
-				Target:      cp,
-				Source:      postState.LatestJustified,
+				Data: &types.AttestationData{
+					Slot:   cp.Slot,
+					Head:   cp,
+					Target: cp,
+					Source: postState.LatestJustified,
+				},
 			}
-			sv := &types.SignedVote{Data: vote, Signature: types.ZeroHash}
-			if !containsVote(attestations, sv) {
-				newAttestations = append(newAttestations, sv)
+			if !containsAttestation(attestations, att) {
+				newAttestations = append(newAttestations, att)
 			}
 		}
 
@@ -149,8 +150,8 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.Block, error) 
 	return finalBlock, nil
 }
 
-// ProduceAttestationVote produces a vote for the given slot and validator.
-func (c *Store) ProduceAttestationVote(slot, validatorIndex uint64) *types.Vote {
+// ProduceAttestation produces an attestation for the given slot and validator.
+func (c *Store) ProduceAttestation(slot, validatorIndex uint64) *types.Attestation {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -169,11 +170,13 @@ func (c *Store) ProduceAttestationVote(slot, validatorIndex uint64) *types.Vote 
 	headCheckpoint := &types.Checkpoint{Root: headRoot, Slot: headBlock.Slot}
 	targetCheckpoint := c.getVoteTargetLocked()
 
-	return &types.Vote{
+	return &types.Attestation{
 		ValidatorID: validatorIndex,
-		Slot:        slot,
-		Head:        headCheckpoint,
-		Target:      targetCheckpoint,
-		Source:      c.LatestJustified,
+		Data: &types.AttestationData{
+			Slot:   slot,
+			Head:   headCheckpoint,
+			Target: targetCheckpoint,
+			Source: c.LatestJustified,
+		},
 	}
 }

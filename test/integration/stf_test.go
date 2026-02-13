@@ -7,8 +7,16 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
+func makeTestValidators(n uint64) []*types.Validator {
+	validators := make([]*types.Validator, n)
+	for i := uint64(0); i < n; i++ {
+		validators[i] = &types.Validator{Index: i}
+	}
+	return validators
+}
+
 func TestGenesisToBlock1StateTransition(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 
 	// Advance to slot 1 and produce a block.
 	advanced, err := statetransition.ProcessSlots(state, 1)
@@ -22,7 +30,7 @@ func TestGenesisToBlock1StateTransition(t *testing.T) {
 		ProposerIndex: 1, // 1 % 5 == 1
 		ParentRoot:    parentRoot,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 
 	postState, err := statetransition.ProcessBlock(advanced, block)
@@ -34,9 +42,8 @@ func TestGenesisToBlock1StateTransition(t *testing.T) {
 	stateRoot, _ := postState.HashTreeRoot()
 	block.StateRoot = stateRoot
 
-	// Full state transition with the signed block.
-	signed := &types.SignedBlock{Message: block, Signature: types.ZeroHash}
-	result, err := statetransition.StateTransition(state, signed)
+	// Full state transition.
+	result, err := statetransition.StateTransition(state, block)
 	if err != nil {
 		t.Fatalf("state_transition: %v", err)
 	}
@@ -53,7 +60,7 @@ func TestGenesisToBlock1StateTransition(t *testing.T) {
 
 func TestMultipleBlocksAdvanceHead(t *testing.T) {
 	numValidators := uint64(5)
-	state := statetransition.GenerateGenesis(1000, numValidators)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
 
 	// Produce blocks for slots 1 through 5.
 	for slot := uint64(1); slot <= 5; slot++ {
@@ -69,7 +76,7 @@ func TestMultipleBlocksAdvanceHead(t *testing.T) {
 			ProposerIndex: proposer,
 			ParentRoot:    parentRoot,
 			StateRoot:     types.ZeroHash,
-			Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+			Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 		}
 
 		postState, err := statetransition.ProcessBlock(advanced, block)
@@ -80,8 +87,7 @@ func TestMultipleBlocksAdvanceHead(t *testing.T) {
 		stateRoot, _ := postState.HashTreeRoot()
 		block.StateRoot = stateRoot
 
-		signed := &types.SignedBlock{Message: block, Signature: types.ZeroHash}
-		state, err = statetransition.StateTransition(state, signed)
+		state, err = statetransition.StateTransition(state, block)
 		if err != nil {
 			t.Fatalf("slot %d state_transition: %v", slot, err)
 		}
@@ -98,7 +104,7 @@ func TestMultipleBlocksAdvanceHead(t *testing.T) {
 }
 
 func TestSSZRoundTripAfterStateTransition(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 3)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(3))
 
 	// Do one block transition.
 	advanced, _ := statetransition.ProcessSlots(state, 1)
@@ -108,14 +114,13 @@ func TestSSZRoundTripAfterStateTransition(t *testing.T) {
 		ProposerIndex: 1,
 		ParentRoot:    parentRoot,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 	postState, _ := statetransition.ProcessBlock(advanced, block)
 	stateRoot, _ := postState.HashTreeRoot()
 	block.StateRoot = stateRoot
 
-	signed := &types.SignedBlock{Message: block, Signature: types.ZeroHash}
-	result, err := statetransition.StateTransition(state, signed)
+	result, err := statetransition.StateTransition(state, block)
 	if err != nil {
 		t.Fatal(err)
 	}

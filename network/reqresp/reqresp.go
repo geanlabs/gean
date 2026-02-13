@@ -34,7 +34,7 @@ type Status struct {
 // ReqRespHandler processes incoming request/response messages.
 type ReqRespHandler struct {
 	OnStatus       func(Status) Status
-	OnBlocksByRoot func([][32]byte) []*types.SignedBlock
+	OnBlocksByRoot func([][32]byte) []*types.SignedBlockWithAttestation
 }
 
 // RegisterReqResp registers request/response protocol handlers.
@@ -106,7 +106,7 @@ func RequestStatus(ctx context.Context, h host.Host, pid peer.ID, status Status)
 }
 
 // RequestBlocksByRoot requests blocks by their roots from a peer.
-func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots [][32]byte) ([]*types.SignedBlock, error) {
+func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots [][32]byte) ([]*types.SignedBlockWithAttestation, error) {
 	ctx, cancel := context.WithTimeout(ctx, reqRespTimeout)
 	defer cancel()
 
@@ -129,7 +129,7 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 	}
 
 	// Read block responses until EOF.
-	var blocks []*types.SignedBlock
+	var blocks []*types.SignedBlockWithAttestation
 	for {
 		data, err := readSnappyFrame(s)
 		if err != nil {
@@ -138,7 +138,7 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 			}
 			return blocks, fmt.Errorf("read block: %w", err)
 		}
-		block := new(types.SignedBlock)
+		block := new(types.SignedBlockWithAttestation)
 		if err := block.UnmarshalSSZ(data); err != nil {
 			continue
 		}
@@ -171,7 +171,7 @@ func writeStatus(w io.Writer, status Status) error {
 	return writeSnappyFrame(w, buf[:])
 }
 
-func writeSignedBlock(w io.Writer, block *types.SignedBlock) error {
+func writeSignedBlock(w io.Writer, block *types.SignedBlockWithAttestation) error {
 	data, err := block.MarshalSSZ()
 	if err != nil {
 		return err

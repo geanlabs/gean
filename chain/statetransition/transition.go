@@ -42,7 +42,7 @@ func ProcessBlockHeader(state *types.State, block *types.Block) (*types.State, e
 	if block.Slot <= state.LatestBlockHeader.Slot {
 		return nil, fmt.Errorf("block slot %d <= latest header slot %d", block.Slot, state.LatestBlockHeader.Slot)
 	}
-	if !IsProposer(block.ProposerIndex, state.Slot, state.Config.NumValidators) {
+	if !IsProposer(block.ProposerIndex, state.Slot, uint64(len(state.Validators))) {
 		return nil, fmt.Errorf("validator %d is not proposer for slot %d", block.ProposerIndex, state.Slot)
 	}
 
@@ -96,10 +96,9 @@ func ProcessBlock(state *types.State, block *types.Block) (*types.State, error) 
 	return s, nil
 }
 
-// StateTransition applies the complete state transition for a signed block.
-func StateTransition(state *types.State, signedBlock *types.SignedBlock) (*types.State, error) {
-	block := signedBlock.Message
-
+// StateTransition applies the complete state transition for a block.
+// Signature verification must happen externally before calling this function.
+func StateTransition(state *types.State, block *types.Block) (*types.State, error) {
 	// Process intermediate slots.
 	s, err := ProcessSlots(state, block.Slot)
 	if err != nil {
@@ -132,6 +131,7 @@ func copyState(s *types.State) *types.State {
 		LatestFinalized:          s.LatestFinalized,
 		HistoricalBlockHashes:    s.HistoricalBlockHashes,
 		JustifiedSlots:           s.JustifiedSlots,
+		Validators:               s.Validators,
 		JustificationsRoots:      s.JustificationsRoots,
 		JustificationsValidators: s.JustificationsValidators,
 	}
