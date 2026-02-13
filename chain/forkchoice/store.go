@@ -38,7 +38,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 	store.PutState(anchorRoot, state)
 
 	return &Store{
-		Time:             anchorBlock.Slot * types.IntervalsPerSlot,
+		Time:             anchorBlock.Slot * types.SecondsPerSlot,
 		Config:           state.Config,
 		NumValidators:    uint64(len(state.Validators)),
 		Head:             anchorRoot,

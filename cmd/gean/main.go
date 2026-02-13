@@ -52,7 +52,7 @@ func main() {
 	}
 	logger.Info("genesis config loaded",
 		"genesis_time", genCfg.GenesisTime,
-		"validators", genCfg.ValidatorCount,
+		"validators", len(genCfg.Validators),
 	)
 
 	// Load bootnodes.
@@ -91,14 +91,14 @@ func main() {
 	}
 
 	nodeCfg := node.Config{
-		GenesisTime:   genCfg.GenesisTime,
-		NumValidators: genCfg.ValidatorCount,
-		ListenAddr:    *listenAddr,
-		NodeKeyPath:   *nodeKey,
-		Bootnodes:     bootnodes,
-		ValidatorIDs:  validatorIDs,
-		MetricsPort:   *metricsPort,
-		DevnetID:      *devnetID,
+		GenesisTime:  genCfg.GenesisTime,
+		Validators:   genCfg.Validators,
+		ListenAddr:   *listenAddr,
+		NodeKeyPath:  *nodeKey,
+		Bootnodes:    bootnodes,
+		ValidatorIDs: validatorIDs,
+		MetricsPort:  *metricsPort,
+		DevnetID:     *devnetID,
 	}
 
 	n, err := node.New(nodeCfg)
