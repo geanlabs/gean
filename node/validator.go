@@ -77,7 +77,7 @@ func (v *ValidatorDuties) tryAttest(ctx context.Context, slot uint64) {
 	for _, idx := range v.Indices {
 		att := v.FC.ProduceAttestation(slot, idx)
 		sa := &types.SignedAttestation{Message: att}
-		if err := gossipsub.PublishAttestation(ctx, v.Topics.Vote, sa); err != nil {
+		if err := gossipsub.PublishAttestation(ctx, v.Topics.Attestation, sa); err != nil {
 			v.log.Error("failed to publish attestation",
 				"slot", slot,
 				"validator", idx,

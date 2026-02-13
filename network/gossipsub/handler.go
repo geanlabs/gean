@@ -21,13 +21,13 @@ func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler
 	if err != nil {
 		return err
 	}
-	voteSub, err := topics.Vote.Subscribe()
+	attSub, err := topics.Attestation.Subscribe()
 	if err != nil {
 		return err
 	}
 
 	go readBlockMessages(ctx, blockSub, handler)
-	go readAttestationMessages(ctx, voteSub, handler)
+	go readAttestationMessages(ctx, attSub, handler)
 	return nil
 }
 
