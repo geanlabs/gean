@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/devylongs/gean/storage"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/storage"
+	"github.com/geanlabs/gean/types"
 )
 
 // Store tracks chain state and validator votes for the LMD GHOST algorithm.

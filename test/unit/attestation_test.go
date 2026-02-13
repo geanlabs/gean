@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/types"
 )
 
 // buildChainState produces consecutive blocks from genesis through targetSlot

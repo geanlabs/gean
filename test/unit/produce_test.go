@@ -3,7 +3,7 @@ package unit
 import (
 	"testing"
 
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 func TestProduceBlockCreatesValidBlock(t *testing.T) {

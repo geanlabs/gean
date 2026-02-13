@@ -3,8 +3,8 @@ package integration
 import (
 	"testing"
 
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/types"
 )
 
 func TestGenesisToBlock1StateTransition(t *testing.T) {

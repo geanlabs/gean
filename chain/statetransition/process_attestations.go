@@ -1,7 +1,7 @@
 package statetransition
 
 import (
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // ProcessAttestations applies attestation votes and updates

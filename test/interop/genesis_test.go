@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/types"
 )
 
 // Reference roots generated from leanSpec at commit 4b750f2:

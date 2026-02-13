@@ -9,7 +9,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pb "github.com/libp2p/go-libp2p-pubsub/pb"
 
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // Message domains for ID computation.

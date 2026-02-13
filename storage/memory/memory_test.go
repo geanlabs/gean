@@ -3,7 +3,7 @@ package memory
 import (
 	"testing"
 
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 func TestPutGetBlock(t *testing.T) {

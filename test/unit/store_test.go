@@ -3,10 +3,10 @@ package unit
 import (
 	"testing"
 
-	"github.com/devylongs/gean/chain/forkchoice"
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/storage/memory"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/forkchoice"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/storage/memory"
+	"github.com/geanlabs/gean/types"
 )
 
 func makeGenesisFC(numValidators uint64) (*forkchoice.Store, *types.State) {

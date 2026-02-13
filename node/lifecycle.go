@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devylongs/gean/chain/forkchoice"
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/network"
-	"github.com/devylongs/gean/network/gossipsub"
-	"github.com/devylongs/gean/observability/logging"
-	"github.com/devylongs/gean/observability/metrics"
-	"github.com/devylongs/gean/storage/memory"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/forkchoice"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/network"
+	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/observability/metrics"
+	"github.com/geanlabs/gean/storage/memory"
+	"github.com/geanlabs/gean/types"
 )
 
 // New creates and wires up a new Node.

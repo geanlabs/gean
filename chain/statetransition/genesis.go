@@ -1,7 +1,7 @@
 package statetransition
 
 import (
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // GenerateGenesis creates a genesis state with the given parameters.

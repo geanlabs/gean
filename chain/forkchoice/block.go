@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/observability/metrics"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/observability/metrics"
+	"github.com/geanlabs/gean/types"
 )
 
 // ProcessBlock processes a new block and updates chain state.

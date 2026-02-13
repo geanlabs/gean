@@ -8,7 +8,7 @@ import (
 	"github.com/golang/snappy"
 	pb "github.com/libp2p/go-libp2p-pubsub/pb"
 
-	"github.com/devylongs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/network/gossipsub"
 )
 
 func TestComputeMessageID(t *testing.T) {

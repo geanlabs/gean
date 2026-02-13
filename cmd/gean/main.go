@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/devylongs/gean/config"
-	"github.com/devylongs/gean/observability/logging"
-	"github.com/devylongs/gean/node"
+	"github.com/geanlabs/gean/config"
+	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/node"
 )
 
 const version = "v0.1.0"

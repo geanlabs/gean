@@ -6,7 +6,7 @@ import (
 	"github.com/golang/snappy"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // GossipHandler processes decoded gossip messages.

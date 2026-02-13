@@ -1,8 +1,8 @@
 package forkchoice
 
 import (
-	"github.com/devylongs/gean/observability/metrics"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/observability/metrics"
+	"github.com/geanlabs/gean/types"
 )
 
 // AdvanceTime advances the chain to the given wall-clock time.

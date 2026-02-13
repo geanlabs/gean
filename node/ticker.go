@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devylongs/gean/observability/logging"
-	"github.com/devylongs/gean/observability/metrics"
+	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/observability/metrics"
 )
 
 // Run starts the main event loop.

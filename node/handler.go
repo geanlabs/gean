@@ -3,12 +3,12 @@ package node
 import (
 	"fmt"
 
-	"github.com/devylongs/gean/chain/forkchoice"
-	"github.com/devylongs/gean/network/gossipsub"
-	"github.com/devylongs/gean/network/reqresp"
-	"github.com/devylongs/gean/observability/logging"
-	"github.com/devylongs/gean/storage/memory"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/forkchoice"
+	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/network/reqresp"
+	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/storage/memory"
+	"github.com/geanlabs/gean/types"
 )
 
 // registerHandlers wires up gossip subscriptions and req/resp protocol handlers.

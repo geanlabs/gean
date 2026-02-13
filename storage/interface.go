@@ -1,6 +1,6 @@
 package storage
 
-import "github.com/devylongs/gean/types"
+import "github.com/geanlabs/gean/types"
 
 // Store is a storage interface for blocks and states.
 type Store interface {

@@ -5,8 +5,8 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/devylongs/gean/network/reqresp"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/network/reqresp"
+	"github.com/geanlabs/gean/types"
 )
 
 // syncWithPeer exchanges status and fetches missing blocks from a single peer.

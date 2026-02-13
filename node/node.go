@@ -3,9 +3,9 @@ package node
 import (
 	"log/slog"
 
-	"github.com/devylongs/gean/chain/forkchoice"
-	"github.com/devylongs/gean/network"
-	"github.com/devylongs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/chain/forkchoice"
+	"github.com/geanlabs/gean/network"
+	"github.com/geanlabs/gean/network/gossipsub"
 )
 
 const version = "v0.1.0"

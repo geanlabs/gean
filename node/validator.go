@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/devylongs/gean/chain/forkchoice"
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/network/gossipsub"
-	"github.com/devylongs/gean/observability/logging"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/forkchoice"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/types"
 )
 
 // ValidatorDuties handles proposer and attester duties.

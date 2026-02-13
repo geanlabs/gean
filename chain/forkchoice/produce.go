@@ -3,8 +3,8 @@ package forkchoice
 import (
 	"fmt"
 
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/types"
 )
 
 // GetProposalHead returns the head for block proposal at the given slot.

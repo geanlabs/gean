@@ -1,8 +1,8 @@
 package forkchoice
 
 import (
-	"github.com/devylongs/gean/storage"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/storage"
+	"github.com/geanlabs/gean/types"
 )
 
 // GetForkChoiceHead uses LMD GHOST to find the head block from a given root.

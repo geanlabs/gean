@@ -3,7 +3,7 @@ package memory
 import (
 	"sync"
 
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // Store is an in-memory implementation of storage.Store.

@@ -1,6 +1,6 @@
 package forkchoice
 
-import "github.com/devylongs/gean/types"
+import "github.com/geanlabs/gean/types"
 
 func containsVote(list []*types.SignedVote, sv *types.SignedVote) bool {
 	for _, existing := range list {

@@ -3,7 +3,7 @@ package unit
 import (
 	"testing"
 
-	"github.com/devylongs/gean/network/reqresp"
+	"github.com/geanlabs/gean/network/reqresp"
 )
 
 func TestReqRespProtocolIDsMatchLeanSpec(t *testing.T) {

@@ -3,8 +3,8 @@ package forkchoice
 import (
 	"time"
 
-	"github.com/devylongs/gean/observability/metrics"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/observability/metrics"
+	"github.com/geanlabs/gean/types"
 )
 
 // ProcessAttestation processes an attestation from the network.

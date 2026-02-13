@@ -1,4 +1,4 @@
-module github.com/devylongs/gean
+module github.com/geanlabs/gean
 
 go 1.24.6
 

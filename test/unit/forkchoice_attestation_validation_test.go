@@ -3,9 +3,9 @@ package unit
 import (
 	"testing"
 
-	"github.com/devylongs/gean/chain/forkchoice"
-	"github.com/devylongs/gean/chain/statetransition"
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/chain/forkchoice"
+	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/types"
 )
 
 func buildForkChoiceWithBlocks(t *testing.T, numValidators, targetSlot uint64) (*forkchoice.Store, map[uint64][32]byte) {

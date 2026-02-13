@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 func TestStatusSSZRoundTrip(t *testing.T) {

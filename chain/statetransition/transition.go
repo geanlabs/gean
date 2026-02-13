@@ -3,7 +3,7 @@ package statetransition
 import (
 	"fmt"
 
-	"github.com/devylongs/gean/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // ProcessSlot performs per-slot maintenance. If the latest block header has

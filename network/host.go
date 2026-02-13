@@ -13,8 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
-	"github.com/devylongs/gean/network/gossipsub"
-	"github.com/devylongs/gean/observability/logging"
+	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/observability/logging"
 )
 
 var netLog = logging.NewComponentLogger(logging.CompNetwork)
