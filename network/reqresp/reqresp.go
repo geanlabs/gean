@@ -17,10 +17,18 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Protocol IDs matching leanSpec devnet0.
+// Protocol IDs matching cross-client convention (ssz_snappy encoding suffix).
 const (
-	StatusProtocol       = "/leanconsensus/req/status/1/"
-	BlocksByRootProtocol = "/leanconsensus/req/blocks_by_root/1/"
+	StatusProtocol       = "/leanconsensus/req/status/1/ssz_snappy"
+	BlocksByRootProtocol = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+)
+
+// Response status codes.
+const (
+	ResponseSuccess            = 0x00
+	ResponseInvalidRequest     = 0x01
+	ResponseServerError        = 0x02
+	ResponseResourceUnavailable = 0x03
 )
 
 const reqRespTimeout = 10 * time.Second
@@ -59,6 +67,9 @@ func handleStatus(s network.Stream, handler *ReqRespHandler) {
 		return
 	}
 	resp := handler.OnStatus(req)
+	if _, err := s.Write([]byte{ResponseSuccess}); err != nil {
+		return
+	}
 	if err := writeStatus(s, resp); err != nil {
 		return
 	}
@@ -74,6 +85,9 @@ func handleBlocksByRoot(s network.Stream, handler *ReqRespHandler) {
 	}
 	blocks := handler.OnBlocksByRoot(roots)
 	for _, block := range blocks {
+		if _, err := s.Write([]byte{ResponseSuccess}); err != nil {
+			return
+		}
 		if err := writeSignedBlock(s, block); err != nil {
 			return
 		}
@@ -96,6 +110,14 @@ func RequestStatus(ctx context.Context, h host.Host, pid peer.ID, status Status)
 	}
 	if err := s.CloseWrite(); err != nil {
 		return nil, fmt.Errorf("close write: %w", err)
+	}
+
+	code, err := readResponseCode(s)
+	if err != nil {
+		return nil, fmt.Errorf("read response code: %w", err)
+	}
+	if code != ResponseSuccess {
+		return nil, fmt.Errorf("peer returned error code %d", code)
 	}
 
 	resp, err := readStatus(s)
@@ -128,14 +150,21 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 		return nil, fmt.Errorf("close write: %w", err)
 	}
 
-	// Read block responses until EOF.
+	// Read block responses until EOF. Each response is prefixed with a status byte.
 	var blocks []*types.SignedBlockWithAttestation
 	for {
-		data, err := readSnappyFrame(s)
+		code, err := readResponseCode(s)
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
+			return blocks, fmt.Errorf("read response code: %w", err)
+		}
+		if code != ResponseSuccess {
+			break
+		}
+		data, err := readSnappyFrame(s)
+		if err != nil {
 			return blocks, fmt.Errorf("read block: %w", err)
 		}
 		block := new(types.SignedBlockWithAttestation)
@@ -196,6 +225,13 @@ func readBlocksByRootRequest(r io.Reader) ([][32]byte, error) {
 		copy(roots[i][:], data[i*32:(i+1)*32])
 	}
 	return roots, nil
+}
+
+// readResponseCode reads a single response status byte.
+func readResponseCode(r io.Reader) (byte, error) {
+	var buf [1]byte
+	_, err := io.ReadFull(r, buf[:])
+	return buf[0], err
 }
 
 // readSnappyFrame reads a varint-length-prefixed snappy frame encoded message.

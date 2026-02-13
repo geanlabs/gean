@@ -39,6 +39,49 @@ func TestStatusSSZRoundTrip(t *testing.T) {
 	}
 }
 
+func TestResponseCodeRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+
+	// Write success + status payload (simulates server response).
+	buf.WriteByte(ResponseSuccess)
+	in := Status{
+		Finalized: &types.Checkpoint{Root: [32]byte{0x01}, Slot: 1},
+		Head:      &types.Checkpoint{Root: [32]byte{0x02}, Slot: 2},
+	}
+	if err := writeStatus(&buf, in); err != nil {
+		t.Fatalf("writeStatus: %v", err)
+	}
+
+	// Read back: code then payload (simulates client).
+	code, err := readResponseCode(&buf)
+	if err != nil {
+		t.Fatalf("readResponseCode: %v", err)
+	}
+	if code != ResponseSuccess {
+		t.Fatalf("expected success code 0x00, got 0x%02x", code)
+	}
+	out, err := readStatus(&buf)
+	if err != nil {
+		t.Fatalf("readStatus: %v", err)
+	}
+	if out.Finalized.Slot != 1 || out.Head.Slot != 2 {
+		t.Fatal("status payload mismatch after response code")
+	}
+}
+
+func TestResponseCodeError(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteByte(ResponseServerError)
+
+	code, err := readResponseCode(&buf)
+	if err != nil {
+		t.Fatalf("readResponseCode: %v", err)
+	}
+	if code != ResponseServerError {
+		t.Fatalf("expected error code 0x02, got 0x%02x", code)
+	}
+}
+
 func TestReadStatusRejectsInvalidLength(t *testing.T) {
 	for _, n := range []int{79, 81} {
 		var buf bytes.Buffer
