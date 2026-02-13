@@ -1,7 +1,6 @@
 package unit
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/geanlabs/gean/chain/statetransition"
@@ -90,27 +89,64 @@ func makeAttestation(validatorID uint64, source, target *types.Checkpoint) *type
 	}
 }
 
-func TestAttestationJustifiesTargetWhenSourceIsJustified(t *testing.T) {
-	state, hashes := buildChainState(t, 5, 2)
+// makeSupermajorityAttestations creates attestations from enough validators
+// to reach supermajority (4 out of 5 for numValidators=5).
+func makeSupermajorityAttestations(numValidators uint64, source, target *types.Checkpoint) []*types.Attestation {
+	// Need 3*count >= 2*numValidators, so count >= ceil(2*numValidators/3).
+	needed := (2*numValidators + 2) / 3
+	atts := make([]*types.Attestation, needed)
+	for i := uint64(0); i < needed; i++ {
+		atts[i] = makeAttestation(i, source, target)
+	}
+	return atts
+}
 
-	source := &types.Checkpoint{Root: hashes[0], Slot: 0} // justified by first block processing
-	target := &types.Checkpoint{Root: hashes[1], Slot: 1}
+func TestAttestationJustifiesTargetWithSupermajority(t *testing.T) {
+	state, _ := buildChainState(t, 5, 2)
 
-	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+
+	atts := makeSupermajorityAttestations(5, source, target)
+	next := statetransition.ProcessAttestations(state, atts)
 
 	if next.LatestJustified.Slot != 1 {
 		t.Fatalf("latest justified slot = %d, want 1", next.LatestJustified.Slot)
 	}
 }
 
+func TestAttestationBelowSupermajorityDoesNotJustify(t *testing.T) {
+	state, _ := buildChainState(t, 5, 2)
+
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+
+	// Only 3 out of 5 — supermajority needs 4.
+	atts := []*types.Attestation{
+		makeAttestation(0, source, target),
+		makeAttestation(1, source, target),
+		makeAttestation(2, source, target),
+	}
+	next := statetransition.ProcessAttestations(state, atts)
+
+	if next.LatestJustified.Slot != state.LatestJustified.Slot {
+		t.Fatalf("should not justify with only 3/5 validators: got justified slot %d", next.LatestJustified.Slot)
+	}
+
+	// Votes should be tracked in justifications_roots/validators.
+	if len(next.JustificationsRoots) != 1 {
+		t.Fatalf("expected 1 pending justification root, got %d", len(next.JustificationsRoots))
+	}
+}
+
 func TestAttestationIgnoredWhenSourceNotJustified(t *testing.T) {
-	state, hashes := buildChainState(t, 5, 2)
+	state, _ := buildChainState(t, 5, 2)
 
-	// Slot 1 is not justified by default in this chain progression.
-	source := &types.Checkpoint{Root: hashes[1], Slot: 1}
-	target := &types.Checkpoint{Root: hashes[2], Slot: 2}
+	// Slot 1 is not justified.
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+	target := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1} // target == source to also fail ordering
 
-	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
+	next := statetransition.ProcessAttestations(state, makeSupermajorityAttestations(5, source, target))
 
 	if next.LatestJustified.Slot != state.LatestJustified.Slot {
 		t.Fatalf("latest justified slot changed: got %d want %d", next.LatestJustified.Slot, state.LatestJustified.Slot)
@@ -118,58 +154,123 @@ func TestAttestationIgnoredWhenSourceNotJustified(t *testing.T) {
 }
 
 func TestAttestationIgnoredWhenSourceIsNotBeforeTarget(t *testing.T) {
-	state, hashes := buildChainState(t, 5, 2)
+	state, _ := buildChainState(t, 5, 2)
 
-	source := &types.Checkpoint{Root: hashes[1], Slot: 1}
-	target := &types.Checkpoint{Root: hashes[1], Slot: 1}
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0} // same as source
 
-	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
+	next := statetransition.ProcessAttestations(state, makeSupermajorityAttestations(5, source, target))
 
 	if next.LatestJustified.Slot != state.LatestJustified.Slot {
 		t.Fatalf("latest justified slot changed: got %d want %d", next.LatestJustified.Slot, state.LatestJustified.Slot)
 	}
 }
 
-func TestAlreadyJustifiedConsecutiveTargetCanFinalize(t *testing.T) {
-	state, hashes := buildChainState(t, 5, 3)
+func TestAttestationIgnoredWhenRootMismatch(t *testing.T) {
+	state, _ := buildChainState(t, 5, 2)
 
-	source0 := &types.Checkpoint{Root: hashes[0], Slot: 0}
-	target1 := &types.Checkpoint{Root: hashes[1], Slot: 1}
-	state = statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source0, target1)})
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target := &types.Checkpoint{Root: [32]byte{0xff}, Slot: 1} // wrong root
 
-	source1 := &types.Checkpoint{Root: hashes[1], Slot: 1}
-	target2 := &types.Checkpoint{Root: hashes[2], Slot: 2}
-	state = statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(1, source1, target2)})
+	next := statetransition.ProcessAttestations(state, makeSupermajorityAttestations(5, source, target))
 
-	// Force latest_justified behind an already-justified target to exercise
-	// the leanSpec "target already justified" finalization branch.
-	state.LatestJustified = &types.Checkpoint{Root: hashes[1], Slot: 1}
-	state.LatestFinalized = &types.Checkpoint{Root: hashes[0], Slot: 0}
-
-	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(2, source1, target2)})
-
-	if next.LatestFinalized.Slot != 1 {
-		t.Fatalf("latest finalized slot = %d, want 1", next.LatestFinalized.Slot)
-	}
-	if next.LatestJustified.Slot != 2 {
-		t.Fatalf("latest justified slot = %d, want 2", next.LatestJustified.Slot)
+	if next.LatestJustified.Slot != state.LatestJustified.Slot {
+		t.Fatalf("should not justify with wrong target root")
 	}
 }
 
-func TestAttestationsDoNotMutateJustificationTrackingLists(t *testing.T) {
-	state, hashes := buildChainState(t, 5, 2)
+func TestConsecutiveJustificationFinalizes(t *testing.T) {
+	state, _ := buildChainState(t, 5, 3)
 
-	beforeRoots := append([][32]byte(nil), state.JustificationsRoots...)
-	beforeVals := append([]byte(nil), state.JustificationsValidators...)
+	// Step 1: Justify slot 1 from genesis (slot 0).
+	source0 := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target1 := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+	state = statetransition.ProcessAttestations(state, makeSupermajorityAttestations(5, source0, target1))
 
-	source := &types.Checkpoint{Root: hashes[0], Slot: 0}
-	target := &types.Checkpoint{Root: hashes[1], Slot: 1}
-	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
-
-	if len(next.JustificationsRoots) != len(beforeRoots) {
-		t.Fatalf("justifications_roots length changed: got %d want %d", len(next.JustificationsRoots), len(beforeRoots))
+	if state.LatestJustified.Slot != 1 {
+		t.Fatalf("step 1: latest justified = %d, want 1", state.LatestJustified.Slot)
 	}
-	if !bytes.Equal(next.JustificationsValidators, beforeVals) {
-		t.Fatal("justifications_validators changed unexpectedly")
+
+	// Step 2: Justify slot 2 from slot 1. Slots 0→1→2 are consecutive with
+	// no justifiable gap, so slot 1 (source) should be finalized.
+	source1 := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+	target2 := &types.Checkpoint{Root: state.HistoricalBlockHashes[2], Slot: 2}
+	state = statetransition.ProcessAttestations(state, makeSupermajorityAttestations(5, source1, target2))
+
+	if state.LatestJustified.Slot != 2 {
+		t.Fatalf("step 2: latest justified = %d, want 2", state.LatestJustified.Slot)
+	}
+	if state.LatestFinalized.Slot != 1 {
+		t.Fatalf("step 2: latest finalized = %d, want 1", state.LatestFinalized.Slot)
+	}
+}
+
+func TestVoteTrackingSurvivesRoundTrip(t *testing.T) {
+	state, _ := buildChainState(t, 5, 2)
+
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+
+	// 3 votes: not enough for supermajority but should be tracked.
+	atts := []*types.Attestation{
+		makeAttestation(0, source, target),
+		makeAttestation(1, source, target),
+		makeAttestation(2, source, target),
+	}
+	next := statetransition.ProcessAttestations(state, atts)
+
+	// Add 1 more vote in a second pass to reach supermajority (4/5).
+	next = statetransition.ProcessAttestations(next, []*types.Attestation{
+		makeAttestation(3, source, target),
+	})
+
+	if next.LatestJustified.Slot != 1 {
+		t.Fatalf("should justify after accumulating 4/5 votes across passes, got justified slot %d", next.LatestJustified.Slot)
+	}
+}
+
+func TestDuplicateVoteNotDoubleCounted(t *testing.T) {
+	state, _ := buildChainState(t, 5, 2)
+
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+
+	// Same validator votes 4 times — should count as 1.
+	atts := []*types.Attestation{
+		makeAttestation(0, source, target),
+		makeAttestation(0, source, target),
+		makeAttestation(0, source, target),
+		makeAttestation(0, source, target),
+	}
+	next := statetransition.ProcessAttestations(state, atts)
+
+	if next.LatestJustified.Slot != state.LatestJustified.Slot {
+		t.Fatalf("duplicate votes should not justify: got justified slot %d", next.LatestJustified.Slot)
+	}
+}
+
+func TestOriginalStateNotMutated(t *testing.T) {
+	state, _ := buildChainState(t, 5, 2)
+
+	origJustifiedSlot := state.LatestJustified.Slot
+	origRootsLen := len(state.JustificationsRoots)
+	origValsBytes := make([]byte, len(state.JustificationsValidators))
+	copy(origValsBytes, state.JustificationsValidators)
+
+	source := &types.Checkpoint{Root: state.HistoricalBlockHashes[0], Slot: 0}
+	target := &types.Checkpoint{Root: state.HistoricalBlockHashes[1], Slot: 1}
+	_ = statetransition.ProcessAttestations(state, makeSupermajorityAttestations(5, source, target))
+
+	// Original state must not be modified.
+	if state.LatestJustified.Slot != origJustifiedSlot {
+		t.Fatal("original state LatestJustified was mutated")
+	}
+	if len(state.JustificationsRoots) != origRootsLen {
+		t.Fatal("original state JustificationsRoots was mutated")
+	}
+	for i, b := range state.JustificationsValidators {
+		if b != origValsBytes[i] {
+			t.Fatal("original state JustificationsValidators was mutated")
+		}
 	}
 }
