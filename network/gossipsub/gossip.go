@@ -12,13 +12,13 @@ import (
 // Gossip topic names.
 const (
 	BlockTopicFmt = "/leanconsensus/%s/block/ssz_snappy"
-	VoteTopicFmt  = "/leanconsensus/%s/vote/ssz_snappy"
+	AttestationTopicFmt = "/leanconsensus/%s/attestation/ssz_snappy"
 )
 
 // Topics holds subscribed gossipsub topics.
 type Topics struct {
-	Block *pubsub.Topic
-	Vote  *pubsub.Topic
+	Block       *pubsub.Topic
+	Attestation *pubsub.Topic
 }
 
 // NewGossipSub creates a configured gossipsub instance.
@@ -60,9 +60,9 @@ func JoinTopics(ps *pubsub.PubSub, devnetID string) (*Topics, error) {
 	if err != nil {
 		return nil, fmt.Errorf("join block topic: %w", err)
 	}
-	voteTopic, err := ps.Join(fmt.Sprintf(VoteTopicFmt, devnetID))
+	attTopic, err := ps.Join(fmt.Sprintf(AttestationTopicFmt, devnetID))
 	if err != nil {
-		return nil, fmt.Errorf("join vote topic: %w", err)
+		return nil, fmt.Errorf("join attestation topic: %w", err)
 	}
-	return &Topics{Block: blockTopic, Vote: voteTopic}, nil
+	return &Topics{Block: blockTopic, Attestation: attTopic}, nil
 }
