@@ -1,0 +1,72 @@
+package gossipsub
+
+import (
+	"context"
+
+	"github.com/golang/snappy"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+
+	"github.com/devylongs/gean/types"
+)
+
+// GossipHandler processes decoded gossip messages.
+type GossipHandler struct {
+	OnBlock func(*types.SignedBlock)
+	OnVote  func(*types.SignedVote)
+}
+
+// SubscribeTopics subscribes to topics and dispatches messages to handler.
+func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler) error {
+	blockSub, err := topics.Block.Subscribe()
+	if err != nil {
+		return err
+	}
+	voteSub, err := topics.Vote.Subscribe()
+	if err != nil {
+		return err
+	}
+
+	go readBlockMessages(ctx, blockSub, handler)
+	go readVoteMessages(ctx, voteSub, handler)
+	return nil
+}
+
+func readBlockMessages(ctx context.Context, sub *pubsub.Subscription, handler *GossipHandler) {
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			return
+		}
+		decoded, err := snappy.Decode(nil, msg.Data)
+		if err != nil {
+			continue
+		}
+		block := new(types.SignedBlock)
+		if err := block.UnmarshalSSZ(decoded); err != nil {
+			continue
+		}
+		if handler.OnBlock != nil {
+			handler.OnBlock(block)
+		}
+	}
+}
+
+func readVoteMessages(ctx context.Context, sub *pubsub.Subscription, handler *GossipHandler) {
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			return
+		}
+		decoded, err := snappy.Decode(nil, msg.Data)
+		if err != nil {
+			continue
+		}
+		vote := new(types.SignedVote)
+		if err := vote.UnmarshalSSZ(decoded); err != nil {
+			continue
+		}
+		if handler.OnVote != nil {
+			handler.OnVote(vote)
+		}
+	}
+}

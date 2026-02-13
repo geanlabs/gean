@@ -1,0 +1,7 @@
+assignments:
+  - node_name: node0
+    validators: [0, 1]
+  - node_name: node1
+    validators: [2, 3]
+  - node_name: node2
+    validators: [4]
