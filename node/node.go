@@ -6,6 +6,7 @@ import (
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/network"
 	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/types"
 )
 
 const version = "v0.1.0"
@@ -22,12 +23,12 @@ type Node struct {
 
 // Config holds node configuration.
 type Config struct {
-	GenesisTime   uint64
-	NumValidators uint64
-	ListenAddr    string
-	NodeKeyPath   string
-	Bootnodes     []string
-	ValidatorIDs  []uint64
-	MetricsPort   int
-	DevnetID      string
+	GenesisTime  uint64
+	Validators   []*types.Validator
+	ListenAddr   string
+	NodeKeyPath  string
+	Bootnodes    []string
+	ValidatorIDs []uint64
+	MetricsPort  int
+	DevnetID     string
 }
