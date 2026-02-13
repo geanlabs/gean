@@ -49,19 +49,27 @@ func TestForkChoiceTickInterval(t *testing.T) {
 	}
 }
 
-func TestForkChoiceAcceptNewVotes(t *testing.T) {
+func TestForkChoiceAcceptNewAttestations(t *testing.T) {
 	fc, _ := makeGenesisFC(5)
 
-	// Add a vote to new votes.
-	fc.LatestNewVotes[0] = &types.Checkpoint{Root: fc.Head, Slot: 0}
-
-	fc.AcceptNewVotes()
-
-	if len(fc.LatestNewVotes) != 0 {
-		t.Error("new votes should be empty after accept")
+	// Add an attestation to new attestations.
+	fc.LatestNewAttestations[0] = &types.Attestation{
+		ValidatorID: 0,
+		Data: &types.AttestationData{
+			Slot:   0,
+			Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
+		},
 	}
-	if _, ok := fc.LatestKnownVotes[0]; !ok {
-		t.Error("vote should be in known votes after accept")
+
+	fc.AcceptNewAttestations()
+
+	if len(fc.LatestNewAttestations) != 0 {
+		t.Error("new attestations should be empty after accept")
+	}
+	if _, ok := fc.LatestKnownAttestations[0]; !ok {
+		t.Error("attestation should be in known attestations after accept")
 	}
 }
 
@@ -84,16 +92,24 @@ func TestForkChoiceInitPanicsOnAnchorStateRootMismatch(t *testing.T) {
 	_ = forkchoice.NewStore(state, genesisBlock, memory.New())
 }
 
-func TestProduceAttestationAcceptsNewVotesFirst(t *testing.T) {
+func TestProduceAttestationAcceptsNewAttestationsFirst(t *testing.T) {
 	fc, _ := makeGenesisFC(5)
-	fc.LatestNewVotes[3] = &types.Checkpoint{Root: fc.Head, Slot: 0}
+	fc.LatestNewAttestations[3] = &types.Attestation{
+		ValidatorID: 3,
+		Data: &types.AttestationData{
+			Slot:   0,
+			Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
+		},
+	}
 
 	_ = fc.ProduceAttestation(1, 0)
 
-	if len(fc.LatestNewVotes) != 0 {
-		t.Fatalf("expected latest_new_votes to be drained, got %d entries", len(fc.LatestNewVotes))
+	if len(fc.LatestNewAttestations) != 0 {
+		t.Fatalf("expected latest_new_attestations to be drained, got %d entries", len(fc.LatestNewAttestations))
 	}
-	if _, ok := fc.LatestKnownVotes[3]; !ok {
-		t.Fatal("expected vote to be moved into latest_known_votes")
+	if _, ok := fc.LatestKnownAttestations[3]; !ok {
+		t.Fatal("expected attestation to be moved into latest_known_attestations")
 	}
 }
