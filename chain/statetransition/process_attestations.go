@@ -6,15 +6,14 @@ import (
 
 // ProcessAttestations applies attestation votes and updates
 // justification/finalization according to leanSpec devnet0 rules.
-func ProcessAttestations(state *types.State, attestations []*types.SignedVote) *types.State {
+func ProcessAttestations(state *types.State, attestations []*types.Attestation) *types.State {
 	justifiedSlots := cloneBitlist(state.JustifiedSlots)
 	latestJustified := &types.Checkpoint{Root: state.LatestJustified.Root, Slot: state.LatestJustified.Slot}
 	latestFinalized := &types.Checkpoint{Root: state.LatestFinalized.Root, Slot: state.LatestFinalized.Slot}
 
-	for _, sv := range attestations {
-		vote := sv.Data
-		source := vote.Source
-		target := vote.Target
+	for _, att := range attestations {
+		source := att.Data.Source
+		target := att.Data.Target
 
 		if source.Slot >= target.Slot {
 			continue

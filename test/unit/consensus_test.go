@@ -7,14 +7,22 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
+func makeTestValidators(n uint64) []*types.Validator {
+	validators := make([]*types.Validator, n)
+	for i := uint64(0); i < n; i++ {
+		validators[i] = &types.Validator{Index: i}
+	}
+	return validators
+}
+
 func TestGenerateGenesis(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 30)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(30))
 
 	if state.Slot != 0 {
 		t.Errorf("genesis slot = %d, want 0", state.Slot)
 	}
-	if state.Config.NumValidators != 30 {
-		t.Errorf("num_validators = %d, want 30", state.Config.NumValidators)
+	if uint64(len(state.Validators)) != 30 {
+		t.Errorf("num_validators = %d, want 30", len(state.Validators))
 	}
 	if state.Config.GenesisTime != 1000 {
 		t.Errorf("genesis_time = %d, want 1000", state.Config.GenesisTime)
@@ -65,7 +73,7 @@ func TestIsProposerPanicsOnZeroValidators(t *testing.T) {
 }
 
 func TestProcessSlots(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 
 	// Process slots from 0 to 3.
 	newState, err := statetransition.ProcessSlots(state, 3)
@@ -78,7 +86,7 @@ func TestProcessSlots(t *testing.T) {
 }
 
 func TestProcessSlotsErrorOnPastSlot(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 	state.Slot = 5
 
 	_, err := statetransition.ProcessSlots(state, 3)
@@ -88,7 +96,7 @@ func TestProcessSlotsErrorOnPastSlot(t *testing.T) {
 }
 
 func TestProcessBlockHeader(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 
 	// Advance to slot 1.
 	state, err := statetransition.ProcessSlots(state, 1)
@@ -98,7 +106,7 @@ func TestProcessBlockHeader(t *testing.T) {
 
 	// Build block for slot 1 (validator 1 is proposer since 1 % 5 == 1).
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
-	emptyBody := &types.BlockBody{Attestations: []*types.SignedVote{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 	bodyRoot, _ := emptyBody.HashTreeRoot()
 	_ = bodyRoot
 
@@ -135,7 +143,7 @@ func TestProcessBlockHeader(t *testing.T) {
 }
 
 func TestProcessBlockHeaderWrongProposer(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 	state, _ = statetransition.ProcessSlots(state, 1)
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 
@@ -144,7 +152,7 @@ func TestProcessBlockHeaderWrongProposer(t *testing.T) {
 		ProposerIndex: 0, // Wrong! Should be 1 for slot 1 with 5 validators.
 		ParentRoot:    parentRoot,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 
 	_, err := statetransition.ProcessBlockHeader(state, block)
@@ -154,7 +162,7 @@ func TestProcessBlockHeaderWrongProposer(t *testing.T) {
 }
 
 func TestProcessBlockHeaderWrongParent(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 	state, _ = statetransition.ProcessSlots(state, 1)
 
 	block := &types.Block{
@@ -162,7 +170,7 @@ func TestProcessBlockHeaderWrongParent(t *testing.T) {
 		ProposerIndex: 1,
 		ParentRoot:    [32]byte{0xff}, // Wrong parent.
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 
 	_, err := statetransition.ProcessBlockHeader(state, block)
@@ -172,7 +180,7 @@ func TestProcessBlockHeaderWrongParent(t *testing.T) {
 }
 
 func TestProcessBlock(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 	state, _ = statetransition.ProcessSlots(state, 1)
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 
@@ -181,7 +189,7 @@ func TestProcessBlock(t *testing.T) {
 		ProposerIndex: 1,
 		ParentRoot:    parentRoot,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 
 	newState, err := statetransition.ProcessBlock(state, block)
@@ -195,7 +203,7 @@ func TestProcessBlock(t *testing.T) {
 }
 
 func TestEmptySlotGaps(t *testing.T) {
-	state := statetransition.GenerateGenesis(1000, 5)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(5))
 
 	// Advance to slot 3 (proposer is validator 3).
 	state, _ = statetransition.ProcessSlots(state, 3)
@@ -206,7 +214,7 @@ func TestEmptySlotGaps(t *testing.T) {
 		ProposerIndex: 3, // 3 % 5 == 3
 		ParentRoot:    parentRoot,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 	}
 
 	newState, err := statetransition.ProcessBlockHeader(state, block)

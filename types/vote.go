@@ -1,16 +1,21 @@
 package types
 
-// Vote represents a validator's vote for chain head.
-type Vote struct {
-	ValidatorID uint64
-	Slot        uint64
-	Head        *Checkpoint
-	Target      *Checkpoint
-	Source      *Checkpoint
+// AttestationData contains the vote data for a validator's attestation.
+type AttestationData struct {
+	Slot   uint64
+	Head   *Checkpoint
+	Target *Checkpoint
+	Source *Checkpoint
 }
 
-// SignedVote is a container for a vote and its corresponding signature.
-type SignedVote struct {
-	Data      *Vote
-	Signature [32]byte `ssz-size:"32"`
+// Attestation wraps a validator ID and attestation data (unsigned, goes in block body).
+type Attestation struct {
+	ValidatorID uint64
+	Data        *AttestationData
+}
+
+// SignedAttestation is the gossip envelope for attestations.
+type SignedAttestation struct {
+	Message   *Attestation
+	Signature [3116]byte `ssz-size:"3116"`
 }

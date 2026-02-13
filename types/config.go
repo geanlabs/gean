@@ -1,7 +1,6 @@
 package types
 
-// Config holds configuration properties for simplified consensus.
+// Config holds genesis configuration.
 type Config struct {
-	NumValidators uint64
-	GenesisTime   uint64
+	GenesisTime uint64
 }

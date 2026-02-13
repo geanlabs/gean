@@ -13,10 +13,10 @@ import (
 func buildChainState(t *testing.T, numValidators, targetSlot uint64) (*types.State, map[uint64][32]byte) {
 	t.Helper()
 
-	state := statetransition.GenerateGenesis(1000, numValidators)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
 	blockHashes := make(map[uint64][32]byte)
 
-	emptyBody := &types.BlockBody{Attestations: []*types.SignedVote{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 	genesisBlock := &types.Block{
 		Slot:          0,
 		ParentRoot:    types.ZeroHash,
@@ -51,7 +51,7 @@ func buildChainState(t *testing.T, numValidators, targetSlot uint64) (*types.Sta
 			ProposerIndex: proposer,
 			ParentRoot:    parentRoot,
 			StateRoot:     types.ZeroHash,
-			Body:          &types.BlockBody{Attestations: []*types.SignedVote{}},
+			Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
 		}
 		postState, err := statetransition.ProcessBlock(advanced, block)
 		if err != nil {
@@ -63,8 +63,7 @@ func buildChainState(t *testing.T, numValidators, targetSlot uint64) (*types.Sta
 		}
 		block.StateRoot = sr
 
-		signed := &types.SignedBlock{Message: block, Signature: types.ZeroHash}
-		state, err = statetransition.StateTransition(state, signed)
+		state, err = statetransition.StateTransition(state, block)
 		if err != nil {
 			t.Fatalf("state transition(%d): %v", slot, err)
 		}
@@ -79,16 +78,15 @@ func buildChainState(t *testing.T, numValidators, targetSlot uint64) (*types.Sta
 	return state, blockHashes
 }
 
-func makeVote(validatorID uint64, source, target *types.Checkpoint) *types.SignedVote {
-	return &types.SignedVote{
-		Data: &types.Vote{
-			ValidatorID: validatorID,
-			Slot:        target.Slot,
-			Head:        target,
-			Target:      target,
-			Source:      source,
+func makeAttestation(validatorID uint64, source, target *types.Checkpoint) *types.Attestation {
+	return &types.Attestation{
+		ValidatorID: validatorID,
+		Data: &types.AttestationData{
+			Slot:   target.Slot,
+			Head:   target,
+			Target: target,
+			Source: source,
 		},
-		Signature: types.ZeroHash,
 	}
 }
 
@@ -98,7 +96,7 @@ func TestAttestationJustifiesTargetWhenSourceIsJustified(t *testing.T) {
 	source := &types.Checkpoint{Root: hashes[0], Slot: 0} // justified by first block processing
 	target := &types.Checkpoint{Root: hashes[1], Slot: 1}
 
-	next := statetransition.ProcessAttestations(state, []*types.SignedVote{makeVote(0, source, target)})
+	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
 
 	if next.LatestJustified.Slot != 1 {
 		t.Fatalf("latest justified slot = %d, want 1", next.LatestJustified.Slot)
@@ -112,7 +110,7 @@ func TestAttestationIgnoredWhenSourceNotJustified(t *testing.T) {
 	source := &types.Checkpoint{Root: hashes[1], Slot: 1}
 	target := &types.Checkpoint{Root: hashes[2], Slot: 2}
 
-	next := statetransition.ProcessAttestations(state, []*types.SignedVote{makeVote(0, source, target)})
+	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
 
 	if next.LatestJustified.Slot != state.LatestJustified.Slot {
 		t.Fatalf("latest justified slot changed: got %d want %d", next.LatestJustified.Slot, state.LatestJustified.Slot)
@@ -125,7 +123,7 @@ func TestAttestationIgnoredWhenSourceIsNotBeforeTarget(t *testing.T) {
 	source := &types.Checkpoint{Root: hashes[1], Slot: 1}
 	target := &types.Checkpoint{Root: hashes[1], Slot: 1}
 
-	next := statetransition.ProcessAttestations(state, []*types.SignedVote{makeVote(0, source, target)})
+	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
 
 	if next.LatestJustified.Slot != state.LatestJustified.Slot {
 		t.Fatalf("latest justified slot changed: got %d want %d", next.LatestJustified.Slot, state.LatestJustified.Slot)
@@ -137,18 +135,18 @@ func TestAlreadyJustifiedConsecutiveTargetCanFinalize(t *testing.T) {
 
 	source0 := &types.Checkpoint{Root: hashes[0], Slot: 0}
 	target1 := &types.Checkpoint{Root: hashes[1], Slot: 1}
-	state = statetransition.ProcessAttestations(state, []*types.SignedVote{makeVote(0, source0, target1)})
+	state = statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source0, target1)})
 
 	source1 := &types.Checkpoint{Root: hashes[1], Slot: 1}
 	target2 := &types.Checkpoint{Root: hashes[2], Slot: 2}
-	state = statetransition.ProcessAttestations(state, []*types.SignedVote{makeVote(1, source1, target2)})
+	state = statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(1, source1, target2)})
 
 	// Force latest_justified behind an already-justified target to exercise
 	// the leanSpec "target already justified" finalization branch.
 	state.LatestJustified = &types.Checkpoint{Root: hashes[1], Slot: 1}
 	state.LatestFinalized = &types.Checkpoint{Root: hashes[0], Slot: 0}
 
-	next := statetransition.ProcessAttestations(state, []*types.SignedVote{makeVote(2, source1, target2)})
+	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(2, source1, target2)})
 
 	if next.LatestFinalized.Slot != 1 {
 		t.Fatalf("latest finalized slot = %d, want 1", next.LatestFinalized.Slot)
@@ -166,7 +164,7 @@ func TestAttestationsDoNotMutateJustificationTrackingLists(t *testing.T) {
 
 	source := &types.Checkpoint{Root: hashes[0], Slot: 0}
 	target := &types.Checkpoint{Root: hashes[1], Slot: 1}
-	next := statetransition.ProcessAttestations(state, []*types.SignedVote{makeVote(0, source, target)})
+	next := statetransition.ProcessAttestations(state, []*types.Attestation{makeAttestation(0, source, target)})
 
 	if len(next.JustificationsRoots) != len(beforeRoots) {
 		t.Fatalf("justifications_roots length changed: got %d want %d", len(next.JustificationsRoots), len(beforeRoots))

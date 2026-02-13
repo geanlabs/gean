@@ -11,8 +11,8 @@ import (
 
 // GossipHandler processes decoded gossip messages.
 type GossipHandler struct {
-	OnBlock func(*types.SignedBlock)
-	OnVote  func(*types.SignedVote)
+	OnBlock       func(*types.SignedBlockWithAttestation)
+	OnAttestation func(*types.SignedAttestation)
 }
 
 // SubscribeTopics subscribes to topics and dispatches messages to handler.
@@ -27,7 +27,7 @@ func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler
 	}
 
 	go readBlockMessages(ctx, blockSub, handler)
-	go readVoteMessages(ctx, voteSub, handler)
+	go readAttestationMessages(ctx, voteSub, handler)
 	return nil
 }
 
@@ -41,7 +41,7 @@ func readBlockMessages(ctx context.Context, sub *pubsub.Subscription, handler *G
 		if err != nil {
 			continue
 		}
-		block := new(types.SignedBlock)
+		block := new(types.SignedBlockWithAttestation)
 		if err := block.UnmarshalSSZ(decoded); err != nil {
 			continue
 		}
@@ -51,7 +51,7 @@ func readBlockMessages(ctx context.Context, sub *pubsub.Subscription, handler *G
 	}
 }
 
-func readVoteMessages(ctx context.Context, sub *pubsub.Subscription, handler *GossipHandler) {
+func readAttestationMessages(ctx context.Context, sub *pubsub.Subscription, handler *GossipHandler) {
 	for {
 		msg, err := sub.Next(ctx)
 		if err != nil {
@@ -61,12 +61,12 @@ func readVoteMessages(ctx context.Context, sub *pubsub.Subscription, handler *Go
 		if err != nil {
 			continue
 		}
-		vote := new(types.SignedVote)
-		if err := vote.UnmarshalSSZ(decoded); err != nil {
+		att := new(types.SignedAttestation)
+		if err := att.UnmarshalSSZ(decoded); err != nil {
 			continue
 		}
-		if handler.OnVote != nil {
-			handler.OnVote(vote)
+		if handler.OnAttestation != nil {
+			handler.OnAttestation(att)
 		}
 	}
 }

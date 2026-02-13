@@ -39,7 +39,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	}
 
 	// Walk backwards: request blocks we don't have, collecting roots to fetch.
-	var pending []*types.SignedBlock
+	var pending []*types.SignedBlockWithAttestation
 	nextRoot := peerStatus.Head.Root
 	const maxSyncDepth = 64
 
@@ -56,17 +56,18 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 
 		sb := blocks[0]
 		pending = append(pending, sb)
-		nextRoot = sb.Message.ParentRoot
+		nextRoot = sb.Message.Block.ParentRoot
 	}
 
 	// Process in forward order (oldest first).
 	synced := 0
 	for i := len(pending) - 1; i >= 0; i-- {
 		sb := pending[i]
-		if err := n.FC.ProcessBlock(sb.Message); err != nil {
-			n.log.Debug("sync block rejected", "slot", sb.Message.Slot, "err", err)
+		block := sb.Message.Block
+		if err := n.FC.ProcessBlock(block); err != nil {
+			n.log.Debug("sync block rejected", "slot", block.Slot, "err", err)
 		} else {
-			n.log.Info("synced block", "slot", sb.Message.Slot)
+			n.log.Info("synced block", "slot", block.Slot)
 			synced++
 		}
 	}

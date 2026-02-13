@@ -63,29 +63,29 @@ func TestProduceBlockIncludesAttestations(t *testing.T) {
 	}
 }
 
-func TestProduceAttestationVoteReturnsValidVote(t *testing.T) {
+func TestProduceAttestationReturnsValidAttestation(t *testing.T) {
 	fc, _ := buildForkChoiceWithBlocks(t, 5, 2)
 
-	vote := fc.ProduceAttestationVote(3, 0)
+	att := fc.ProduceAttestation(3, 0)
 
-	if vote.ValidatorID != 0 {
-		t.Fatalf("vote.ValidatorID = %d, want 0", vote.ValidatorID)
+	if att.ValidatorID != 0 {
+		t.Fatalf("att.ValidatorID = %d, want 0", att.ValidatorID)
 	}
-	if vote.Slot != 3 {
-		t.Fatalf("vote.Slot = %d, want 3", vote.Slot)
+	if att.Data.Slot != 3 {
+		t.Fatalf("att.Data.Slot = %d, want 3", att.Data.Slot)
 	}
-	if vote.Head == nil || vote.Target == nil || vote.Source == nil {
-		t.Fatal("vote checkpoints should not be nil")
+	if att.Data.Head == nil || att.Data.Target == nil || att.Data.Source == nil {
+		t.Fatal("attestation checkpoints should not be nil")
 	}
 }
 
-func TestProduceAttestationVoteSourceIsLatestJustified(t *testing.T) {
+func TestProduceAttestationSourceIsLatestJustified(t *testing.T) {
 	fc, _ := buildForkChoiceWithBlocks(t, 5, 2)
 
-	vote := fc.ProduceAttestationVote(3, 0)
+	att := fc.ProduceAttestation(3, 0)
 
-	if vote.Source.Slot != fc.LatestJustified.Slot {
-		t.Fatalf("vote.Source.Slot = %d, want LatestJustified.Slot = %d",
-			vote.Source.Slot, fc.LatestJustified.Slot)
+	if att.Data.Source.Slot != fc.LatestJustified.Slot {
+		t.Fatalf("att.Data.Source.Slot = %d, want LatestJustified.Slot = %d",
+			att.Data.Source.Slot, fc.LatestJustified.Slot)
 	}
 }

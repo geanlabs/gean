@@ -22,7 +22,7 @@ type ValidatorDuties struct {
 // HasProposal reports whether this node has a proposer for the slot.
 func (v *ValidatorDuties) HasProposal(slot uint64) bool {
 	for _, idx := range v.Indices {
-		if statetransition.IsProposer(idx, slot, v.FC.Config.NumValidators) {
+		if statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
 			return true
 		}
 	}
@@ -41,7 +41,7 @@ func (v *ValidatorDuties) OnInterval(ctx context.Context, slot, interval uint64)
 
 func (v *ValidatorDuties) tryPropose(ctx context.Context, slot uint64) {
 	for _, idx := range v.Indices {
-		if !statetransition.IsProposer(idx, slot, v.FC.Config.NumValidators) {
+		if !statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
 			continue
 		}
 		block, err := v.FC.ProduceBlock(slot, idx)
@@ -54,7 +54,9 @@ func (v *ValidatorDuties) tryPropose(ctx context.Context, slot uint64) {
 			continue
 		}
 		blockRoot, _ := block.HashTreeRoot()
-		sb := &types.SignedBlock{Message: block, Signature: types.ZeroHash}
+		sb := &types.SignedBlockWithAttestation{
+			Message: &types.BlockWithAttestation{Block: block},
+		}
 		if err := gossipsub.PublishBlock(ctx, v.Topics.Block, sb); err != nil {
 			v.log.Error("failed to publish block",
 				"slot", slot,
@@ -73,9 +75,9 @@ func (v *ValidatorDuties) tryPropose(ctx context.Context, slot uint64) {
 
 func (v *ValidatorDuties) tryAttest(ctx context.Context, slot uint64) {
 	for _, idx := range v.Indices {
-		vote := v.FC.ProduceAttestationVote(slot, idx)
-		sv := &types.SignedVote{Data: vote, Signature: types.ZeroHash}
-		if err := gossipsub.PublishVote(ctx, v.Topics.Vote, sv); err != nil {
+		att := v.FC.ProduceAttestation(slot, idx)
+		sa := &types.SignedAttestation{Message: att}
+		if err := gossipsub.PublishAttestation(ctx, v.Topics.Vote, sa); err != nil {
 			v.log.Error("failed to publish attestation",
 				"slot", slot,
 				"validator", idx,
@@ -85,7 +87,7 @@ func (v *ValidatorDuties) tryAttest(ctx context.Context, slot uint64) {
 			v.log.Debug("published attestation",
 				"slot", slot,
 				"validator", idx,
-				"target_slot", vote.Target.Slot,
+				"target_slot", att.Data.Target.Slot,
 			)
 		}
 	}

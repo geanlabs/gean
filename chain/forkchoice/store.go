@@ -14,6 +14,7 @@ type Store struct {
 
 	Time            uint64
 	Config          *types.Config
+	NumValidators   uint64
 	Head            [32]byte
 	SafeTarget      [32]byte
 	LatestJustified *types.Checkpoint
@@ -39,6 +40,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 	return &Store{
 		Time:             anchorBlock.Slot * types.IntervalsPerSlot,
 		Config:           state.Config,
+		NumValidators:    uint64(len(state.Validators)),
 		Head:             anchorRoot,
 		SafeTarget:       anchorRoot,
 		LatestJustified:  state.LatestJustified,
