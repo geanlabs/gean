@@ -28,8 +28,8 @@ func (c *Store) getVoteTargetLocked() *types.Checkpoint {
 	blocks := c.Storage.GetAllBlocks()
 	targetRoot := c.Head
 
-	// Walk back up to 3 steps if safe target is newer.
-	for i := 0; i < 3; i++ {
+	// Walk back up to JustificationLookback steps if safe target is newer.
+	for i := 0; i < types.JustificationLookback; i++ {
 		tBlock, ok := blocks[targetRoot]
 		sBlock, ok2 := blocks[c.SafeTarget]
 		if ok && ok2 && tBlock.Slot > sBlock.Slot {
@@ -104,18 +104,13 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.Block, error) 
 			if _, ok := c.Storage.GetBlock(att.Data.Head.Root); !ok {
 				continue
 			}
-			// Build on-chain attestation with source from post-state.
-			onChainAtt := &types.Attestation{
-				ValidatorID: att.ValidatorID,
-				Data: &types.AttestationData{
-					Slot:   att.Data.Slot,
-					Head:   att.Data.Head,
-					Target: att.Data.Target,
-					Source: postState.LatestJustified,
-				},
+			// Skip attestations whose source doesn't match post-state justified.
+			if att.Data.Source.Root != postState.LatestJustified.Root ||
+				att.Data.Source.Slot != postState.LatestJustified.Slot {
+				continue
 			}
-			if !containsAttestation(attestations, onChainAtt) {
-				newAttestations = append(newAttestations, onChainAtt)
+			if !containsAttestation(attestations, att) {
+				newAttestations = append(newAttestations, att)
 			}
 		}
 
