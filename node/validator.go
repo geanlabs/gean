@@ -8,7 +8,6 @@ import (
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/observability/logging"
-	"github.com/geanlabs/gean/types"
 )
 
 // ValidatorDuties handles proposer and attester duties.
@@ -44,7 +43,7 @@ func (v *ValidatorDuties) tryPropose(ctx context.Context, slot uint64) {
 		if !statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
 			continue
 		}
-		block, err := v.FC.ProduceBlock(slot, idx)
+		envelope, err := v.FC.ProduceBlock(slot, idx)
 		if err != nil {
 			v.log.Error("block proposal failed",
 				"slot", slot,
@@ -53,11 +52,8 @@ func (v *ValidatorDuties) tryPropose(ctx context.Context, slot uint64) {
 			)
 			continue
 		}
-		blockRoot, _ := block.HashTreeRoot()
-		sb := &types.SignedBlockWithAttestation{
-			Message: &types.BlockWithAttestation{Block: block},
-		}
-		if err := gossipsub.PublishBlock(ctx, v.Topics.Block, sb); err != nil {
+		blockRoot, _ := envelope.Message.Block.HashTreeRoot()
+		if err := gossipsub.PublishBlock(ctx, v.Topics.Block, envelope); err != nil {
 			v.log.Error("failed to publish block",
 				"slot", slot,
 				"proposer", idx,
@@ -75,8 +71,12 @@ func (v *ValidatorDuties) tryPropose(ctx context.Context, slot uint64) {
 
 func (v *ValidatorDuties) tryAttest(ctx context.Context, slot uint64) {
 	for _, idx := range v.Indices {
-		att := v.FC.ProduceAttestation(slot, idx)
-		sa := &types.SignedAttestation{Message: att}
+		// Skip if this validator is the proposer for this slot.
+		// The proposer already attests via ProposerAttestation in its block.
+		if statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
+			continue
+		}
+		sa := v.FC.ProduceAttestation(slot, idx)
 		if err := gossipsub.PublishAttestation(ctx, v.Topics.Attestation, sa); err != nil {
 			v.log.Error("failed to publish attestation",
 				"slot", slot,
@@ -87,7 +87,7 @@ func (v *ValidatorDuties) tryAttest(ctx context.Context, slot uint64) {
 			v.log.Debug("published attestation",
 				"slot", slot,
 				"validator", idx,
-				"target_slot", att.Data.Target.Slot,
+				"target_slot", sa.Message.Data.Target.Slot,
 			)
 		}
 	}

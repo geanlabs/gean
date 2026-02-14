@@ -18,16 +18,18 @@ func makeBlock(slot, proposer uint64, parent [32]byte) *types.Block {
 	}
 }
 
-// makeGhostAttestation creates a minimal attestation for GHOST tests.
-func makeGhostAttestation(validatorID uint64, headRoot [32]byte, headSlot uint64) *types.Attestation {
+// makeGhostAttestation creates a minimal signed attestation for GHOST tests.
+func makeGhostAttestation(validatorID uint64, headRoot [32]byte, headSlot uint64) *types.SignedAttestation {
 	cp := &types.Checkpoint{Root: headRoot, Slot: headSlot}
-	return &types.Attestation{
-		ValidatorID: validatorID,
-		Data: &types.AttestationData{
-			Slot:   headSlot,
-			Head:   cp,
-			Target: cp,
-			Source: cp,
+	return &types.SignedAttestation{
+		Message: &types.Attestation{
+			ValidatorID: validatorID,
+			Data: &types.AttestationData{
+				Slot:   headSlot,
+				Head:   cp,
+				Target: cp,
+				Source: cp,
+			},
 		},
 	}
 }
@@ -48,7 +50,7 @@ func TestGetForkChoiceHeadSingleChain(t *testing.T) {
 	store.PutBlock(block2Root, block2)
 
 	// Vote for block2.
-	atts := map[uint64]*types.Attestation{
+	atts := map[uint64]*types.SignedAttestation{
 		0: makeGhostAttestation(0, block2Root, 2),
 	}
 
@@ -65,7 +67,7 @@ func TestGetForkChoiceHeadNoVotes(t *testing.T) {
 	genesisRoot, _ := genesis.HashTreeRoot()
 	store.PutBlock(genesisRoot, genesis)
 
-	atts := map[uint64]*types.Attestation{}
+	atts := map[uint64]*types.SignedAttestation{}
 
 	head := forkchoice.GetForkChoiceHead(store, genesisRoot, atts, 0)
 	if head != genesisRoot {
@@ -91,7 +93,7 @@ func TestGetForkChoiceHeadTwoForks(t *testing.T) {
 	store.PutBlock(blockBRoot, blockB)
 
 	// 2 votes for A, 1 vote for B -> head should be A.
-	atts := map[uint64]*types.Attestation{
+	atts := map[uint64]*types.SignedAttestation{
 		0: makeGhostAttestation(0, blockARoot, 1),
 		1: makeGhostAttestation(1, blockARoot, 1),
 		2: makeGhostAttestation(2, blockBRoot, 1),
@@ -115,7 +117,7 @@ func TestGetForkChoiceHeadMinScore(t *testing.T) {
 	store.PutBlock(block1Root, block1)
 
 	// Only 1 vote, but require min_score=2.
-	atts := map[uint64]*types.Attestation{
+	atts := map[uint64]*types.SignedAttestation{
 		0: makeGhostAttestation(0, block1Root, 1),
 	}
 

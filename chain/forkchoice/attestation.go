@@ -11,11 +11,12 @@ import (
 func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.processAttestationLocked(sa.Message, false)
+	c.processAttestationLocked(sa, false)
 }
 
-func (c *Store) processAttestationLocked(att *types.Attestation, isFromBlock bool) {
+func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBlock bool) {
 	start := time.Now()
+	att := sa.Message
 	data := att.Data
 	validatorID := att.ValidatorID
 
@@ -31,12 +32,12 @@ func (c *Store) processAttestationLocked(att *types.Attestation, isFromBlock boo
 	if isFromBlock {
 		// On-chain: update known attestations if this is newer.
 		existing, ok := c.LatestKnownAttestations[validatorID]
-		if !ok || existing.Data.Slot < data.Slot {
-			c.LatestKnownAttestations[validatorID] = att
+		if !ok || existing.Message.Data.Slot < data.Slot {
+			c.LatestKnownAttestations[validatorID] = sa
 		}
 		// Remove from new attestations if superseded.
 		newAtt, ok := c.LatestNewAttestations[validatorID]
-		if ok && newAtt.Data.Target.Slot <= data.Target.Slot {
+		if ok && newAtt.Message.Data.Target.Slot <= data.Target.Slot {
 			delete(c.LatestNewAttestations, validatorID)
 		}
 	} else {
@@ -48,8 +49,8 @@ func (c *Store) processAttestationLocked(att *types.Attestation, isFromBlock boo
 
 		// Network gossip: update new attestations if this is newer.
 		existing, ok := c.LatestNewAttestations[validatorID]
-		if !ok || existing.Data.Target.Slot < data.Target.Slot {
-			c.LatestNewAttestations[validatorID] = att
+		if !ok || existing.Message.Data.Target.Slot < data.Target.Slot {
+			c.LatestNewAttestations[validatorID] = sa
 		}
 	}
 
@@ -61,6 +62,7 @@ func (c *Store) processAttestationLocked(att *types.Attestation, isFromBlock boo
 func (c *Store) validateAttestationLocked(att *types.Attestation) bool {
 	data := att.Data
 
+	// Availability check: source, target, and head blocks must exist.
 	sourceBlock, ok := c.Storage.GetBlock(data.Source.Root)
 	if !ok {
 		return false
@@ -69,13 +71,19 @@ func (c *Store) validateAttestationLocked(att *types.Attestation) bool {
 	if !ok {
 		return false
 	}
+	if _, ok := c.Storage.GetBlock(data.Head.Root); !ok {
+		return false
+	}
 
+	// Topology check.
 	if sourceBlock.Slot > targetBlock.Slot {
 		return false
 	}
 	if data.Source.Slot > data.Target.Slot {
 		return false
 	}
+
+	// Consistency check.
 	if sourceBlock.Slot != data.Source.Slot {
 		return false
 	}
@@ -83,6 +91,7 @@ func (c *Store) validateAttestationLocked(att *types.Attestation) bool {
 		return false
 	}
 
+	// Time check.
 	currentSlot := c.Time / types.IntervalsPerSlot
 	if data.Slot > currentSlot+1 {
 		return false

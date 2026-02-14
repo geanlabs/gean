@@ -63,11 +63,10 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	synced := 0
 	for i := len(pending) - 1; i >= 0; i-- {
 		sb := pending[i]
-		block := sb.Message.Block
-		if err := n.FC.ProcessBlock(block); err != nil {
-			n.log.Debug("sync block rejected", "slot", block.Slot, "err", err)
+		if err := n.FC.ProcessBlock(sb); err != nil {
+			n.log.Debug("sync block rejected", "slot", sb.Message.Block.Slot, "err", err)
 		} else {
-			n.log.Info("synced block", "slot", block.Slot)
+			n.log.Info("synced block", "slot", sb.Message.Block.Slot)
 			synced++
 		}
 	}

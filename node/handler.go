@@ -14,6 +14,7 @@ import (
 // registerHandlers wires up gossip subscriptions and req/resp protocol handlers.
 func registerHandlers(n *Node, store *memory.Store, fc *forkchoice.Store) error {
 	gossipLog := logging.NewComponentLogger(logging.CompGossip)
+	reqrespLog := logging.NewComponentLogger(logging.CompReqResp)
 
 	// Register req/resp handlers.
 	reqresp.RegisterReqResp(n.Host.P2P, &reqresp.ReqRespHandler{
@@ -30,7 +31,14 @@ func registerHandlers(n *Node, store *memory.Store, fc *forkchoice.Store) error 
 		OnBlocksByRoot: func(roots [][32]byte) []*types.SignedBlockWithAttestation {
 			var blocks []*types.SignedBlockWithAttestation
 			for _, root := range roots {
-				if b, ok := store.GetBlock(root); ok {
+				if sb, ok := store.GetSignedBlock(root); ok {
+					blocks = append(blocks, sb)
+				} else if b, ok := store.GetBlock(root); ok {
+					// TODO: remove fallback once all stored blocks have signed envelopes.
+					reqrespLog.Warn("serving bare block without signed envelope",
+						"root", logging.ShortHash(root),
+						"slot", b.Slot,
+					)
 					blocks = append(blocks, &types.SignedBlockWithAttestation{
 						Message: &types.BlockWithAttestation{Block: b},
 					})
@@ -50,7 +58,7 @@ func registerHandlers(n *Node, store *memory.Store, fc *forkchoice.Store) error 
 				"proposer", block.ProposerIndex,
 				"block_root", logging.ShortHash(blockRoot),
 			)
-			if err := fc.ProcessBlock(block); err != nil {
+			if err := fc.ProcessBlock(sb); err != nil {
 				gossipLog.Warn("rejected gossip block",
 					"slot", block.Slot,
 					"err", err,

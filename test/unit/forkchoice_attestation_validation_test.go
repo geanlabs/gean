@@ -46,7 +46,10 @@ func buildForkChoiceWithBlocks(t *testing.T, numValidators, targetSlot uint64) (
 			t.Fatalf("state transition(%d): %v", slot, err)
 		}
 
-		if err := fc.ProcessBlock(block); err != nil {
+		envelope := &types.SignedBlockWithAttestation{
+			Message: &types.BlockWithAttestation{Block: block},
+		}
+		if err := fc.ProcessBlock(envelope); err != nil {
 			t.Fatalf("forkchoice process block(%d): %v", slot, err)
 		}
 		bh, err := block.HashTreeRoot()
@@ -88,8 +91,8 @@ func TestForkChoiceProcessAttestationValidGossip(t *testing.T) {
 	if !ok {
 		t.Fatal("expected validator attestation in latest_new_attestations")
 	}
-	if got.Data.Target.Slot != 2 || got.Data.Target.Root != hashes[2] {
-		t.Fatalf("unexpected attestation target: got slot=%d root=%x", got.Data.Target.Slot, got.Data.Target.Root)
+	if got.Message.Data.Target.Slot != 2 || got.Message.Data.Target.Root != hashes[2] {
+		t.Fatalf("unexpected attestation target: got slot=%d root=%x", got.Message.Data.Target.Slot, got.Message.Data.Target.Root)
 	}
 }
 
