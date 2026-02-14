@@ -15,18 +15,6 @@ We treat simplicity as a core security and decentralization property:
 
 gean targets Lean consensus (formerly beam chain): a next-generation Ethereum consensus direction focused on stronger security, decentralization, and faster finality.
 
-## What are our goals
-
-Build a Lean consensus client that is:
-- Simple
-- Contributor-friendly
-- Interoperable
-- Production-minded
-
-And evolve it with explicit simplification principles:
-- prefer subtraction and cleanup over feature bloat
-- keep critical invariants clear and testable
-- minimize unnecessary complexity and dependency surface
 
 ## Current status
 
