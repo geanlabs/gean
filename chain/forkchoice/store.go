@@ -22,8 +22,8 @@ type Store struct {
 	LatestFinalized *types.Checkpoint
 	Storage         storage.Store
 
-	LatestKnownAttestations map[uint64]*types.Attestation
-	LatestNewAttestations   map[uint64]*types.Attestation
+	LatestKnownAttestations map[uint64]*types.SignedAttestation
+	LatestNewAttestations   map[uint64]*types.SignedAttestation
 }
 
 // NewStore initializes a store from an anchor state and block.
@@ -36,6 +36,9 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 	anchorRoot, _ := anchorBlock.HashTreeRoot()
 
 	store.PutBlock(anchorRoot, anchorBlock)
+	store.PutSignedBlock(anchorRoot, &types.SignedBlockWithAttestation{
+		Message: &types.BlockWithAttestation{Block: anchorBlock},
+	})
 	store.PutState(anchorRoot, state)
 
 	return &Store{
@@ -47,7 +50,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		LatestJustified:         state.LatestJustified,
 		LatestFinalized:         state.LatestFinalized,
 		Storage:                 store,
-		LatestKnownAttestations: make(map[uint64]*types.Attestation),
-		LatestNewAttestations:   make(map[uint64]*types.Attestation),
+		LatestKnownAttestations: make(map[uint64]*types.SignedAttestation),
+		LatestNewAttestations:   make(map[uint64]*types.SignedAttestation),
 	}
 }

@@ -56,10 +56,10 @@ func (c *Store) AcceptNewAttestations() {
 }
 
 func (c *Store) acceptNewAttestationsLocked() {
-	for id, att := range c.LatestNewAttestations {
-		c.LatestKnownAttestations[id] = att
+	for id, sa := range c.LatestNewAttestations {
+		c.LatestKnownAttestations[id] = sa
 	}
-	c.LatestNewAttestations = make(map[uint64]*types.Attestation)
+	c.LatestNewAttestations = make(map[uint64]*types.SignedAttestation)
 	c.updateHeadLocked()
 }
 

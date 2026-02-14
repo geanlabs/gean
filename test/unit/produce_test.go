@@ -10,11 +10,12 @@ func TestProduceBlockCreatesValidBlock(t *testing.T) {
 	fc, _ := buildForkChoiceWithBlocks(t, 5, 3)
 
 	// Slot 4, proposer = 4 % 5 = 4
-	block, err := fc.ProduceBlock(4, 4)
+	envelope, err := fc.ProduceBlock(4, 4)
 	if err != nil {
 		t.Fatalf("ProduceBlock: %v", err)
 	}
 
+	block := envelope.Message.Block
 	if block.Slot != 4 {
 		t.Fatalf("block.Slot = %d, want 4", block.Slot)
 	}
@@ -33,6 +34,25 @@ func TestProduceBlockCreatesValidBlock(t *testing.T) {
 	if _, ok := fc.Storage.GetState(blockHash); !ok {
 		t.Fatal("produced block state should be stored")
 	}
+
+	// Signed envelope should be stored.
+	if _, ok := fc.Storage.GetSignedBlock(blockHash); !ok {
+		t.Fatal("produced signed block envelope should be stored")
+	}
+
+	// Proposer attestation should be present.
+	if envelope.Message.ProposerAttestation == nil {
+		t.Fatal("envelope should include proposer attestation")
+	}
+	if envelope.Message.ProposerAttestation.ValidatorID != 4 {
+		t.Fatalf("proposer attestation validator = %d, want 4",
+			envelope.Message.ProposerAttestation.ValidatorID)
+	}
+
+	// Signature list: body attestations + proposer = at least 1.
+	if len(envelope.Signature) == 0 {
+		t.Fatal("envelope should have at least one signature slot (proposer)")
+	}
 }
 
 func TestProduceBlockRejectsWrongProposer(t *testing.T) {
@@ -50,23 +70,25 @@ func TestProduceBlockIncludesAttestations(t *testing.T) {
 
 	// Add attestations for slot 3 block.
 	for i := uint64(0); i < 3; i++ {
-		fc.LatestKnownAttestations[i] = &types.Attestation{
-			ValidatorID: i,
-			Data: &types.AttestationData{
-				Slot:   3,
-				Head:   &types.Checkpoint{Root: hashes[3], Slot: 3},
-				Target: &types.Checkpoint{Root: hashes[3], Slot: 3},
-				Source: &types.Checkpoint{Root: hashes[0], Slot: 0},
+		fc.LatestKnownAttestations[i] = &types.SignedAttestation{
+			Message: &types.Attestation{
+				ValidatorID: i,
+				Data: &types.AttestationData{
+					Slot:   3,
+					Head:   &types.Checkpoint{Root: hashes[3], Slot: 3},
+					Target: &types.Checkpoint{Root: hashes[3], Slot: 3},
+					Source: &types.Checkpoint{Root: hashes[0], Slot: 0},
+				},
 			},
 		}
 	}
 
-	block, err := fc.ProduceBlock(4, 4)
+	envelope, err := fc.ProduceBlock(4, 4)
 	if err != nil {
 		t.Fatalf("ProduceBlock: %v", err)
 	}
 
-	if len(block.Body.Attestations) == 0 {
+	if len(envelope.Message.Block.Body.Attestations) == 0 {
 		t.Fatal("block should include attestations from known votes")
 	}
 }
@@ -74,7 +96,8 @@ func TestProduceBlockIncludesAttestations(t *testing.T) {
 func TestProduceAttestationReturnsValidAttestation(t *testing.T) {
 	fc, _ := buildForkChoiceWithBlocks(t, 5, 2)
 
-	att := fc.ProduceAttestation(3, 0)
+	sa := fc.ProduceAttestation(3, 0)
+	att := sa.Message
 
 	if att.ValidatorID != 0 {
 		t.Fatalf("att.ValidatorID = %d, want 0", att.ValidatorID)
@@ -90,10 +113,10 @@ func TestProduceAttestationReturnsValidAttestation(t *testing.T) {
 func TestProduceAttestationSourceIsLatestJustified(t *testing.T) {
 	fc, _ := buildForkChoiceWithBlocks(t, 5, 2)
 
-	att := fc.ProduceAttestation(3, 0)
+	sa := fc.ProduceAttestation(3, 0)
 
-	if att.Data.Source.Slot != fc.LatestJustified.Slot {
+	if sa.Message.Data.Source.Slot != fc.LatestJustified.Slot {
 		t.Fatalf("att.Data.Source.Slot = %d, want LatestJustified.Slot = %d",
-			att.Data.Source.Slot, fc.LatestJustified.Slot)
+			sa.Message.Data.Source.Slot, fc.LatestJustified.Slot)
 	}
 }
