@@ -8,16 +8,18 @@ import (
 
 // Store is an in-memory implementation of storage.Store.
 type Store struct {
-	mu     sync.RWMutex
-	blocks map[[32]byte]*types.Block
-	states map[[32]byte]*types.State
+	mu           sync.RWMutex
+	blocks       map[[32]byte]*types.Block
+	signedBlocks map[[32]byte]*types.SignedBlockWithAttestation
+	states       map[[32]byte]*types.State
 }
 
 // New creates a new in-memory store.
 func New() *Store {
 	return &Store{
-		blocks: make(map[[32]byte]*types.Block),
-		states: make(map[[32]byte]*types.State),
+		blocks:       make(map[[32]byte]*types.Block),
+		signedBlocks: make(map[[32]byte]*types.SignedBlockWithAttestation),
+		states:       make(map[[32]byte]*types.State),
 	}
 }
 
@@ -32,6 +34,19 @@ func (m *Store) PutBlock(root [32]byte, block *types.Block) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.blocks[root] = block
+}
+
+func (m *Store) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sb, ok := m.signedBlocks[root]
+	return sb, ok
+}
+
+func (m *Store) PutSignedBlock(root [32]byte, sb *types.SignedBlockWithAttestation) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.signedBlocks[root] = sb
 }
 
 func (m *Store) GetState(root [32]byte) (*types.State, bool) {
