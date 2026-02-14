@@ -1,47 +1,61 @@
 # gean
 
-Go implementation of the Lean Ethereum consensus protocol.
+A Go consensus client for Lean Ethereum, built around the idea that protocol simplicity is a security property.
 
-## What is gean
+## Philosophy
 
-gean is a Lean consensus client focused on protocol simplicity, readability, and long-term maintainability.
+A consensus client should be something a developer can read, understand, and verify without needing to trust a small class of experts. If you can't inspect it end-to-end, it's not fully yours.
 
-We treat simplicity as a core security and decentralization property:
-- trustlessness improves when more people can inspect and reason about the protocol
-- the walkaway test improves when new teams can build clients without relying on a small expert class
-- self-sovereignty improves when protocol behavior is understandable end-to-end
+## What is Lean Consensus
 
-## What gean is building
+A complete redesign of Ethereum's consensus layer, hardened for security, decentralization, and finality in seconds.
 
-gean targets Lean consensus (formerly beam chain): a next-generation Ethereum consensus direction focused on stronger security, decentralization, and faster finality.
 
+## Design approach
+
+- **Readable over clever.** Code is written so that someone unfamiliar with the codebase can follow it. Naming is explicit. Control flow is linear where possible.
+- **Minimal dependencies.** Fewer imports means fewer things that can break, fewer things to audit, and fewer things to understand.
+- **No premature abstraction.** Interfaces and generics are introduced when the duplication is real, not when it's hypothetical. Concrete types until proven otherwise.
+- **Flat and direct.** Avoid deep package hierarchies and layers of indirection. A function should do what its name says, and you should be able to find it quickly.
+- **Concurrency only where necessary.** Go makes concurrency easy to write and hard to reason about. We use it at the boundaries (networking, event loops) and keep the core logic sequential and deterministic.
 
 ## Current status
 
-- **pq-devnet-0:** complete
-- **pq-devnet-1:** in progress
-  - completed: consensus envelope pipeline updates (`SignedAttestation`, `SignedBlockWithAttestation`, proposer-attestation flow, signed storage path)
-  - next: XMSS/leanSig integration (signing, verification, key loading), then interop hardening
+| Devnet | Status | Spec pin |
+|--------|--------|----------|
+| pq-devnet-0 | Complete | `leanSpec@4b750f2` |
+| pq-devnet-1 | In progress | `leanSpec@050fa4a`, `leanSig@f10dcbe` |
 
-Spec pins:
-- devnet-0: `leanSpec@4b750f2`
-- devnet-1: `leanSpec@050fa4a`, `leanSig@f10dcbe`
+devnet-1 progress:
+- Done: consensus envelope pipeline (`SignedAttestation`, `SignedBlockWithAttestation`, proposer-attestation ordering, signed storage/sync path)
+- Next: XMSS/leanSig integration (CGo bindings, key management, signing, verification), then cross-client interop
 
-## Getting Started
-
+## Getting started
 
 ```sh
+# Build
 make build
+
+# Run tests
 make test
+
+# Lint
 make lint
+
+# Run
 make run
 ```
+
+## Running in a devnet
+
+gean is part of the [lean-quickstart](https://github.com/blockblaz/lean-quickstart) multi-client devnet tooling (integration in progress for devnet-1).
 
 
 ## Acknowledgements
 
-- [LeanEthereum](https://github.com/leanEthereum)
-- [ethlambda](https://github.com/lambdaclass/ethlambda)
+- [Lean Ethereum](https://github.com/leanEthereum) 
+- [ethlambda](https://github.com/lambdaclass/ethlambda) 
+
 
 ## License
 
