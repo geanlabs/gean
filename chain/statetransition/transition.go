@@ -12,7 +12,6 @@ func ProcessSlot(state *types.State) *types.State {
 	if state.LatestBlockHeader.StateRoot == types.ZeroHash {
 		stateRoot, _ := state.HashTreeRoot()
 		out := copyState(state)
-		out.LatestBlockHeader = copyHeader(state.LatestBlockHeader)
 		out.LatestBlockHeader.StateRoot = stateRoot
 		return out
 	}
@@ -60,11 +59,11 @@ func ProcessBlockHeader(state *types.State, block *types.Block) (*types.State, e
 		out.LatestFinalized = &types.Checkpoint{Root: parentRoot, Slot: state.LatestFinalized.Slot}
 	}
 
-	// Append parent root to historical hashes.
-	out.HistoricalBlockHashes = append(cloneHashes(state.HistoricalBlockHashes), parentRoot)
+	// Append parent root to historical hashes (already cloned by copyState).
+	out.HistoricalBlockHashes = append(out.HistoricalBlockHashes, parentRoot)
 
-	// Append justified bit for parent: true only for genesis slot.
-	out.JustifiedSlots = appendBit(cloneBitlist(state.JustifiedSlots), state.LatestBlockHeader.Slot == 0)
+	// Append justified bit for parent: true only for genesis slot (already cloned by copyState).
+	out.JustifiedSlots = appendBit(out.JustifiedSlots, state.LatestBlockHeader.Slot == 0)
 
 	// Fill empty slots between parent and this block.
 	numEmpty := block.Slot - state.LatestBlockHeader.Slot - 1
@@ -124,20 +123,23 @@ func StateTransition(state *types.State, block *types.Block) (*types.State, erro
 
 func copyState(s *types.State) *types.State {
 	return &types.State{
-		Config:                   s.Config,
+		Config:                   copyConfig(s.Config),
 		Slot:                     s.Slot,
-		LatestBlockHeader:        s.LatestBlockHeader,
-		LatestJustified:          s.LatestJustified,
-		LatestFinalized:          s.LatestFinalized,
-		HistoricalBlockHashes:    s.HistoricalBlockHashes,
-		JustifiedSlots:           s.JustifiedSlots,
-		Validators:               s.Validators,
-		JustificationsRoots:      s.JustificationsRoots,
-		JustificationsValidators: s.JustificationsValidators,
+		LatestBlockHeader:        copyHeader(s.LatestBlockHeader),
+		LatestJustified:          copyCheckpoint(s.LatestJustified),
+		LatestFinalized:          copyCheckpoint(s.LatestFinalized),
+		HistoricalBlockHashes:    cloneHashes(s.HistoricalBlockHashes),
+		JustifiedSlots:           cloneBitlist(s.JustifiedSlots),
+		Validators:               copyValidators(s.Validators),
+		JustificationsRoots:      cloneHashes(s.JustificationsRoots),
+		JustificationsValidators: cloneBitlist(s.JustificationsValidators),
 	}
 }
 
 func copyHeader(h *types.BlockHeader) *types.BlockHeader {
+	if h == nil {
+		return nil
+	}
 	return &types.BlockHeader{
 		Slot:          h.Slot,
 		ProposerIndex: h.ProposerIndex,
@@ -147,7 +149,36 @@ func copyHeader(h *types.BlockHeader) *types.BlockHeader {
 	}
 }
 
+func copyCheckpoint(cp *types.Checkpoint) *types.Checkpoint {
+	if cp == nil {
+		return nil
+	}
+	return &types.Checkpoint{Root: cp.Root, Slot: cp.Slot}
+}
+
+func copyConfig(c *types.Config) *types.Config {
+	if c == nil {
+		return nil
+	}
+	return &types.Config{GenesisTime: c.GenesisTime}
+}
+
+func copyValidators(src []*types.Validator) []*types.Validator {
+	if src == nil {
+		return nil
+	}
+	dst := make([]*types.Validator, len(src))
+	for i, v := range src {
+		cp := *v
+		dst[i] = &cp
+	}
+	return dst
+}
+
 func cloneHashes(src [][32]byte) [][32]byte {
+	if src == nil {
+		return nil
+	}
 	dst := make([][32]byte, len(src))
 	copy(dst, src)
 	return dst

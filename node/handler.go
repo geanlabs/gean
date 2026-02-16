@@ -7,33 +7,29 @@ import (
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/network/reqresp"
 	"github.com/geanlabs/gean/observability/logging"
-	"github.com/geanlabs/gean/storage/memory"
 	"github.com/geanlabs/gean/types"
 )
 
 // registerHandlers wires up gossip subscriptions and req/resp protocol handlers.
-func registerHandlers(n *Node, store *memory.Store, fc *forkchoice.Store) error {
+func registerHandlers(n *Node, fc *forkchoice.Store) error {
 	gossipLog := logging.NewComponentLogger(logging.CompGossip)
 	reqrespLog := logging.NewComponentLogger(logging.CompReqResp)
 
 	// Register req/resp handlers.
 	reqresp.RegisterReqResp(n.Host.P2P, &reqresp.ReqRespHandler{
 		OnStatus: func(req reqresp.Status) reqresp.Status {
-			headSlot := uint64(0)
-			if hb, ok := store.GetBlock(fc.Head); ok {
-				headSlot = hb.Slot
-			}
+			status := fc.GetStatus()
 			return reqresp.Status{
-				Finalized: fc.LatestFinalized,
-				Head:      &types.Checkpoint{Root: fc.Head, Slot: headSlot},
+				Finalized: &types.Checkpoint{Root: status.FinalizedRoot, Slot: status.FinalizedSlot},
+				Head:      &types.Checkpoint{Root: status.Head, Slot: status.HeadSlot},
 			}
 		},
 		OnBlocksByRoot: func(roots [][32]byte) []*types.SignedBlockWithAttestation {
 			var blocks []*types.SignedBlockWithAttestation
 			for _, root := range roots {
-				if sb, ok := store.GetSignedBlock(root); ok {
+				if sb, ok := fc.Storage.GetSignedBlock(root); ok {
 					blocks = append(blocks, sb)
-				} else if b, ok := store.GetBlock(root); ok {
+				} else if b, ok := fc.Storage.GetBlock(root); ok {
 					// TODO: remove fallback once all stored blocks have signed envelopes.
 					reqrespLog.Warn("serving bare block without signed envelope",
 						"root", logging.ShortHash(root),

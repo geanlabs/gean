@@ -1,0 +1,14 @@
+[package]
+name = "leansig-ffi"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+
+[lib]
+name = "leansig_ffi"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+leansig = { git = "https://github.com/leanEthereum/leanSig", rev = "f10dcbefac2502d356d93f686e8b4ecd8dc8840a" }
+rand = "0.9"
+ssz = { package = "ethereum_ssz", version = "0.10.0" }
