@@ -2,6 +2,8 @@ package node
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -68,6 +70,16 @@ func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
 
 		blockRoot, _ := envelope.Message.Block.HashTreeRoot()
 
+		// Log signing confirmation.
+		lastIdx := len(envelope.Signature) - 1
+		proposerSig := envelope.Signature[lastIdx]
+		v.Log.Info("block signed (XMSS)",
+			"slot", slot,
+			"proposer", idx,
+			"sig_size", fmt.Sprintf("%d bytes", len(proposerSig)),
+			"sig_prefix", hex.EncodeToString(proposerSig[:8]),
+		)
+
 		if err := v.PublishBlock(ctx, v.Topics.Block, envelope); err != nil {
 			v.Log.Error("failed to publish block",
 				"slot", slot,
@@ -107,6 +119,14 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			)
 			continue
 		}
+
+		// Log signing confirmation.
+		v.Log.Info("attestation signed (XMSS)",
+			"slot", slot,
+			"validator", idx,
+			"sig_size", fmt.Sprintf("%d bytes", len(sa.Signature)),
+			"sig_prefix", hex.EncodeToString(sa.Signature[:8]),
+		)
 
 		if err := v.PublishAttestation(ctx, v.Topics.Attestation, sa); err != nil {
 			v.Log.Error("failed to publish attestation",
