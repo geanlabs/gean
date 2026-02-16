@@ -108,7 +108,7 @@ func TestProduceAttestationAcceptsNewAttestationsFirst(t *testing.T) {
 		},
 	}
 
-	_ = fc.ProduceAttestation(1, 0)
+	_, _ = fc.ProduceAttestation(1, 0, newTestSigner())
 
 	if len(fc.LatestNewAttestations) != 0 {
 		t.Fatalf("expected latest_new_attestations to be drained, got %d entries", len(fc.LatestNewAttestations))

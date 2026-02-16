@@ -1,4 +1,4 @@
-package node
+package unit
 
 import (
 	"context"
@@ -7,13 +7,14 @@ import (
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/storage/memory"
 	"github.com/geanlabs/gean/types"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-// MockSigner implements Signer interface for testing.
+// MockSigner implements forkchoice.Signer for testing.
 type MockSigner struct {
 	Signature []byte
 }
@@ -27,7 +28,7 @@ func (m *MockSigner) Sign(epoch uint32, message [32]byte) ([]byte, error) {
 
 func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	// Setup
-	numValidators := uint64(5)
+	numValidators := uint64(3)
 	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
 	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 	genesisBlock := &types.Block{
@@ -44,7 +45,7 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	fc := forkchoice.NewStore(state, genesisBlock, store)
 
 	// Mock keys
-	keys := make(map[uint64]Signer)
+	keys := make(map[uint64]forkchoice.Signer)
 	expectedSig := make([]byte, 3116)
 	expectedSig[0] = 0xAA // Marker
 	keys[1] = &MockSigner{Signature: expectedSig}
@@ -56,17 +57,17 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 		return nil
 	}
 
-	duties := &ValidatorDuties{
+	duties := &node.ValidatorDuties{
 		Indices:            []uint64{1},
 		Keys:               keys,
 		FC:                 fc,
 		Topics:             &gossipsub.Topics{Attestation: &pubsub.Topic{}}, // Dummy topic
 		PublishAttestation: publishFunc,
-		log:                logging.NewComponentLogger(logging.CompValidator),
+		Log:                logging.NewComponentLogger(logging.CompValidator),
 	}
 
-	// Action: validator 1 attests at slot 1
-	duties.tryAttest(context.Background(), 0)
+	// Action: validator 1 attests at slot 0
+	duties.TryAttest(context.Background(), 0)
 
 	// Verify
 	if publishedAtt == nil {
@@ -83,7 +84,7 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 
 func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 	// Setup
-	numValidators := uint64(5)
+	numValidators := uint64(3)
 	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
 	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
 	genesisBlock := &types.Block{
@@ -100,7 +101,7 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 	fc := forkchoice.NewStore(state, genesisBlock, store)
 
 	// Mock keys
-	keys := make(map[uint64]Signer)
+	keys := make(map[uint64]forkchoice.Signer)
 	expectedSig := make([]byte, 3116)
 	expectedSig[0] = 0xBB // Marker
 	keys[1] = &MockSigner{Signature: expectedSig}
@@ -112,19 +113,18 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 		return nil
 	}
 
-	duties := &ValidatorDuties{
+	duties := &node.ValidatorDuties{
 		Indices:      []uint64{1},
 		Keys:         keys,
 		FC:           fc,
 		Topics:       &gossipsub.Topics{Block: &pubsub.Topic{}}, // Dummy topic
 		PublishBlock: publishFunc,
-		log:          logging.NewComponentLogger(logging.CompValidator),
+		Log:          logging.NewComponentLogger(logging.CompValidator),
 	}
 
 	// Action: validator 1 proposes at slot 1
-	// Verify validator 1 is proposer for slot 1.
-	// 5 validators. Proposer = slot % 5. 1 % 5 = 1. Yes.
-	duties.tryPropose(context.Background(), 1)
+	// 3 validators. Proposer = slot % 3. 1 % 3 = 1. Yes.
+	duties.TryPropose(context.Background(), 1)
 
 	// Verify
 	if publishedBlock == nil {
@@ -134,7 +134,7 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 		t.Errorf("proposer = %d, want 1", publishedBlock.Message.Block.ProposerIndex)
 	}
 
-	// Verify signature at last index
+	// Verify signature at last index (proposer sig is set by ProduceBlock).
 	lastIdx := len(publishedBlock.Signature) - 1
 	if publishedBlock.Signature[lastIdx][0] != 0xBB {
 		t.Errorf("signature not matching mock signer output")

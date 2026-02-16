@@ -7,14 +7,6 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-func makeTestValidators(n uint64) []*types.Validator {
-	validators := make([]*types.Validator, n)
-	for i := uint64(0); i < n; i++ {
-		validators[i] = &types.Validator{Index: i}
-	}
-	return validators
-}
-
 func TestGenerateGenesis(t *testing.T) {
 	state := statetransition.GenerateGenesis(1000, makeTestValidators(30))
 

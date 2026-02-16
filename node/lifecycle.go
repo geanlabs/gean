@@ -74,7 +74,7 @@ func New(cfg Config) (*Node, error) {
 
 	clock := NewClock(cfg.GenesisTime)
 
-	validatorKeys := make(map[uint64]Signer)
+	validatorKeys := make(map[uint64]forkchoice.Signer)
 	if cfg.ValidatorKeysDir != "" {
 		for _, idx := range cfg.ValidatorIDs {
 			pkPath := filepath.Join(cfg.ValidatorKeysDir, fmt.Sprintf("validator_%d.pk", idx))
@@ -98,7 +98,7 @@ func New(cfg Config) (*Node, error) {
 		Topics:             topics,
 		PublishBlock:       gossipsub.PublishBlock,
 		PublishAttestation: gossipsub.PublishAttestation,
-		log:                logging.NewComponentLogger(logging.CompValidator),
+		Log:                logging.NewComponentLogger(logging.CompValidator),
 	}
 
 	n := &Node{
