@@ -47,19 +47,17 @@ func (n *Node) Run(ctx context.Context) error {
 			// Update metrics and log on slot boundary.
 			if slot != lastSlot {
 				start := time.Now()
+				status := n.FC.GetStatus()
+
 				metrics.CurrentSlot.Set(float64(slot))
-				headSlot := uint64(0)
-				if headBlock, ok := n.FC.Storage.GetBlock(n.FC.Head); ok {
-					headSlot = headBlock.Slot
-					metrics.HeadSlot.Set(float64(headBlock.Slot))
-				}
-				metrics.LatestFinalizedSlot.Set(float64(n.FC.LatestFinalized.Slot))
-				metrics.LatestJustifiedSlot.Set(float64(n.FC.LatestJustified.Slot))
+				metrics.HeadSlot.Set(float64(status.HeadSlot))
+				metrics.LatestFinalizedSlot.Set(float64(status.FinalizedSlot))
+				metrics.LatestJustifiedSlot.Set(float64(status.JustifiedSlot))
 				peerCount := len(n.Host.P2P.Network().Peers())
 				metrics.ConnectedPeers.Set(float64(peerCount))
 
 				// Periodic sync: if head is behind, try catching up.
-				if slot > headSlot+2 {
+				if slot > status.HeadSlot+2 {
 					for _, pid := range n.Host.P2P.Network().Peers() {
 						if n.syncWithPeer(ctx, pid) {
 							break
@@ -69,9 +67,9 @@ func (n *Node) Run(ctx context.Context) error {
 
 				n.log.Info("slot",
 					"slot", slot,
-					"head", headSlot,
-					"finalized", n.FC.LatestFinalized.Slot,
-					"justified", n.FC.LatestJustified.Slot,
+					"head", status.HeadSlot,
+					"finalized", status.FinalizedSlot,
+					"justified", status.JustifiedSlot,
 					"peers", peerCount,
 					"elapsed", logging.TimeSince(start),
 				)
