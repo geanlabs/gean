@@ -7,10 +7,16 @@ import (
 	"github.com/geanlabs/gean/leansig"
 )
 
+// Devnet-1 parameters for SIGTopLevelTargetSumLifetime32Dim64Base8:
+// LOG_LIFETIME=32, sqrt(LIFETIME)=65536, min active range = 2*65536 = 131072
+// Devnet-1 spec uses activation_time = 2^3 = 8
+const testLsigActivationEpoch = 0
+const testLsigNumActiveEpochs = 262144 // 2^3, matching devnet-1 spec
+
 // TestKeyGeneration verifies that keypair generation succeeds and returns
 // valid activation and prepared intervals.
 func TestKeyGeneration(t *testing.T) {
-	kp, err := leansig.GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -28,7 +34,7 @@ func TestKeyGeneration(t *testing.T) {
 }
 
 func TestKeySerializationRoundtrip(t *testing.T) {
-	kp, err := leansig.GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -54,7 +60,7 @@ func TestKeySerializationRoundtrip(t *testing.T) {
 }
 
 func TestSignAndVerifyWithKeypair(t *testing.T) {
-	kp, err := leansig.GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -80,7 +86,7 @@ func TestSignAndVerifyWithKeypair(t *testing.T) {
 }
 
 func TestSignAndVerifyWithSerializedPubkey(t *testing.T) {
-	kp, err := leansig.GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -108,7 +114,7 @@ func TestSignAndVerifyWithSerializedPubkey(t *testing.T) {
 }
 
 func TestVerifyRejectsWrongMessage(t *testing.T) {
-	kp, err := leansig.GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -135,7 +141,7 @@ func TestVerifyRejectsWrongMessage(t *testing.T) {
 }
 
 func TestVerifyRejectsWrongEpoch(t *testing.T) {
-	kp, err := leansig.GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -163,7 +169,7 @@ func TestAdvancePreparation(t *testing.T) {
 	// 200000 epochs roughly covers 1.5 windows.
 	const largeNumEpochs = 200000
 	t.Logf("Generating large keypair for advance test (%d epochs)...", largeNumEpochs)
-	kp, err := leansig.GenerateKeypair(42, testActivationEpoch, largeNumEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, largeNumEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
