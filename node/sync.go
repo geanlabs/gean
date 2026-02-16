@@ -13,14 +13,10 @@ import (
 // It walks backwards from the peer's head to find blocks we're missing, then
 // processes them in forward order.
 func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
-	headBlock, ok := n.FC.Storage.GetBlock(n.FC.Head)
-	headSlot := uint64(0)
-	if ok {
-		headSlot = headBlock.Slot
-	}
+	status := n.FC.GetStatus()
 	ourStatus := reqresp.Status{
-		Finalized: n.FC.LatestFinalized,
-		Head:      &types.Checkpoint{Root: n.FC.Head, Slot: headSlot},
+		Finalized: &types.Checkpoint{Root: status.FinalizedRoot, Slot: status.FinalizedSlot},
+		Head:      &types.Checkpoint{Root: status.Head, Slot: status.HeadSlot},
 	}
 
 	peerStatus, err := reqresp.RequestStatus(ctx, n.Host.P2P, pid, ourStatus)
@@ -34,7 +30,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		"peer_finalized_slot", peerStatus.Finalized.Slot,
 	)
 
-	if peerStatus.Head.Slot <= headSlot {
+	if peerStatus.Head.Slot <= status.HeadSlot {
 		return false
 	}
 

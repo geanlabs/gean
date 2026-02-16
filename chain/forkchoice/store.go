@@ -26,6 +26,32 @@ type Store struct {
 	LatestNewAttestations   map[uint64]*types.SignedAttestation
 }
 
+// ChainStatus is a snapshot of the fork choice head and checkpoint state.
+type ChainStatus struct {
+	Head            [32]byte
+	HeadSlot        uint64
+	JustifiedSlot   uint64
+	FinalizedSlot   uint64
+	FinalizedRoot   [32]byte
+}
+
+// GetStatus returns a consistent snapshot of the chain head and checkpoints.
+func (c *Store) GetStatus() ChainStatus {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	headSlot := uint64(0)
+	if hb, ok := c.Storage.GetBlock(c.Head); ok {
+		headSlot = hb.Slot
+	}
+	return ChainStatus{
+		Head:          c.Head,
+		HeadSlot:      headSlot,
+		JustifiedSlot: c.LatestJustified.Slot,
+		FinalizedSlot: c.LatestFinalized.Slot,
+		FinalizedRoot: c.LatestFinalized.Root,
+	}
+}
+
 // NewStore initializes a store from an anchor state and block.
 func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store) *Store {
 	stateRoot, _ := state.HashTreeRoot()
