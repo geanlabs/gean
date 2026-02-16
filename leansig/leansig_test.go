@@ -9,7 +9,7 @@ import (
 // LOG_LIFETIME=32, sqrt(LIFETIME)=65536, min active range = 2*65536 = 131072
 // Devnet-1 spec uses activation_time = 2^3 = 8
 const testActivationEpoch = 0
-const testNumActiveEpochs = 8 // 2^3, matching devnet-1 spec
+const testNumActiveEpochs = 262144 // 2^3, matching devnet-1 spec
 
 // TestKeyGeneration verifies that keypair generation succeeds and returns
 // valid activation and prepared intervals.
