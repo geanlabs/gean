@@ -3,6 +3,9 @@
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 build:
+	@echo "Building leansig-ffi..."
+	@cd leansig-ffi && cargo build --release
+	@echo "Done: leansig-ffi/target/release/leansig"
 	@mkdir -p bin
 	@echo "Building gean..."
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/gean ./cmd/gean
@@ -10,9 +13,6 @@ build:
 	@echo "Building keygen..."
 	@go build -o bin/keygen ./cmd/keygen
 	@echo "Done: bin/keygen"
-	@echo "Building leansig..."
-	@cd leansig && cargo build --release
-	@echo "Done: leansig/target/release/leansig"
 
 test:
 	go test ./...
