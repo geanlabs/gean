@@ -186,9 +186,8 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.SignedBlockWit
 	return envelope, nil
 }
 
-// ProduceAttestation produces a signed attestation for the given slot and validator.
-// Signature is zero-filled until XMSS signing is integrated.
-func (c *Store) ProduceAttestation(slot, validatorIndex uint64) *types.SignedAttestation {
+// ProduceAttestation produces an unsigned attestation for the given slot and validator.
+func (c *Store) ProduceAttestation(slot, validatorIndex uint64) *types.Attestation {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -207,16 +206,13 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64) *types.SignedAtt
 	headCheckpoint := &types.Checkpoint{Root: headRoot, Slot: headBlock.Slot}
 	targetCheckpoint := c.getVoteTargetLocked()
 
-	return &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: validatorIndex,
-			Data: &types.AttestationData{
-				Slot:   slot,
-				Head:   headCheckpoint,
-				Target: targetCheckpoint,
-				Source: c.LatestJustified,
-			},
+	return &types.Attestation{
+		ValidatorID: validatorIndex,
+		Data: &types.AttestationData{
+			Slot:   slot,
+			Head:   headCheckpoint,
+			Target: targetCheckpoint,
+			Source: c.LatestJustified,
 		},
-		// TODO: sign with XMSS once leanSig is integrated.
 	}
 }

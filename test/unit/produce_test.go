@@ -97,7 +97,7 @@ func TestProduceAttestationReturnsValidAttestation(t *testing.T) {
 	fc, _ := buildForkChoiceWithBlocks(t, 5, 2)
 
 	sa := fc.ProduceAttestation(3, 0)
-	att := sa.Message
+	att := sa
 
 	if att.ValidatorID != 0 {
 		t.Fatalf("att.ValidatorID = %d, want 0", att.ValidatorID)
@@ -115,8 +115,8 @@ func TestProduceAttestationSourceIsLatestJustified(t *testing.T) {
 
 	sa := fc.ProduceAttestation(3, 0)
 
-	if sa.Message.Data.Source.Slot != fc.LatestJustified.Slot {
+	if sa.Data.Source.Slot != fc.LatestJustified.Slot {
 		t.Fatalf("att.Data.Source.Slot = %d, want LatestJustified.Slot = %d",
-			sa.Message.Data.Source.Slot, fc.LatestJustified.Slot)
+			sa.Data.Source.Slot, fc.LatestJustified.Slot)
 	}
 }
