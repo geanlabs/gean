@@ -29,7 +29,7 @@ docker-build:
 	docker build -t gean:$(VERSION) .
 
 run: build
-	./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --node-id node0
+	./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0
 
 run-devnet:
 	@if [ ! -d "../lean-quickstart" ]; then \
