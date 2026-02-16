@@ -7,6 +7,11 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
+// Signer abstracts the signing capability (XMSS or mock).
+type Signer interface {
+	Sign(epoch uint32, message [32]byte) ([]byte, error)
+}
+
 // GetProposalHead returns the head for block proposal at the given slot.
 func (c *Store) GetProposalHead(slot uint64) [32]byte {
 	c.mu.Lock()
@@ -63,8 +68,9 @@ func (c *Store) getVoteTargetLocked() *types.Checkpoint {
 //   - the proposer's own attestation (head = produced block)
 //   - the signature list (body attestation sigs + proposer sig last)
 //
-// Signatures are zero-filled until XMSS signing is integrated.
-func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.SignedBlockWithAttestation, error) {
+// The signer is used to produce the proposer's XMSS signature over the
+// BlockWithAttestation hash-tree-root.
+func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types.SignedBlockWithAttestation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -164,12 +170,10 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.SignedBlockWit
 	}
 
 	// Build signature list: body attestation sigs in order, proposer sig last.
-	// TODO: populate with real XMSS signatures once leanSig is integrated.
 	sigs := make([][3116]byte, len(collectedSigned)+1)
 	for i, sa := range collectedSigned {
 		sigs[i] = sa.Signature
 	}
-	// sigs[len(collectedSigned)] is the proposer sig (zero for now).
 
 	envelope := &types.SignedBlockWithAttestation{
 		Message: &types.BlockWithAttestation{
@@ -179,6 +183,18 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.SignedBlockWit
 		Signature: sigs,
 	}
 
+	// Sign the BlockWithAttestation root with the proposer's key.
+	msgRoot, err := envelope.Message.HashTreeRoot()
+	if err != nil {
+		return nil, fmt.Errorf("hash block-with-attestation: %w", err)
+	}
+	epoch := uint32(slot / types.SlotsPerEpoch)
+	sig, err := signer.Sign(epoch, msgRoot)
+	if err != nil {
+		return nil, fmt.Errorf("sign block: %w", err)
+	}
+	copy(envelope.Signature[len(collectedSigned)][:], sig)
+
 	c.Storage.PutBlock(blockHash, finalBlock)
 	c.Storage.PutSignedBlock(blockHash, envelope)
 	c.Storage.PutState(blockHash, finalState)
@@ -187,8 +203,8 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64) (*types.SignedBlockWit
 }
 
 // ProduceAttestation produces a signed attestation for the given slot and validator.
-// Signature is zero-filled until XMSS signing is integrated.
-func (c *Store) ProduceAttestation(slot, validatorIndex uint64) *types.SignedAttestation {
+// The signer produces the XMSS signature over HashTreeRoot(AttestationData).
+func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (*types.SignedAttestation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -207,16 +223,32 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64) *types.SignedAtt
 	headCheckpoint := &types.Checkpoint{Root: headRoot, Slot: headBlock.Slot}
 	targetCheckpoint := c.getVoteTargetLocked()
 
-	return &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: validatorIndex,
-			Data: &types.AttestationData{
-				Slot:   slot,
-				Head:   headCheckpoint,
-				Target: targetCheckpoint,
-				Source: c.LatestJustified,
-			},
+	att := &types.Attestation{
+		ValidatorID: validatorIndex,
+		Data: &types.AttestationData{
+			Slot:   slot,
+			Head:   headCheckpoint,
+			Target: targetCheckpoint,
+			Source: c.LatestJustified,
 		},
-		// TODO: sign with XMSS once leanSig is integrated.
 	}
+
+	// Sign the attestation data root.
+	dataRoot, err := att.Data.HashTreeRoot()
+	if err != nil {
+		return nil, fmt.Errorf("hash attestation data: %w", err)
+	}
+	epoch := uint32(att.Data.Target.Slot / types.SlotsPerEpoch)
+	sig, err := signer.Sign(epoch, dataRoot)
+	if err != nil {
+		return nil, fmt.Errorf("sign attestation: %w", err)
+	}
+
+	var sigBytes [3116]byte
+	copy(sigBytes[:], sig)
+
+	return &types.SignedAttestation{
+		Message:   att,
+		Signature: sigBytes,
+	}, nil
 }

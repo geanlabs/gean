@@ -102,6 +102,47 @@ pub unsafe extern "C" fn leansig_keypair_generate(
     }
 }
 
+/// Restore a keypair from serialized public and secret key bytes.
+///
+/// # Arguments
+/// * `pk_bytes` - Pointer to the serialized public key bytes.
+/// * `pk_len` - Length of the public key bytes.
+/// * `sk_bytes` - Pointer to the serialized secret key bytes.
+/// * `sk_len` - Length of the secret key bytes.
+/// * `out_keypair` - Pointer to receive the opaque keypair handle.
+///
+/// # Returns
+/// `LeansigResult::Ok` on success, or `DeserializationFailed` if bytes are invalid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn leansig_keypair_restore(
+    pk_bytes: *const u8,
+    pk_len: usize,
+    sk_bytes: *const u8,
+    sk_len: usize,
+    out_keypair: *mut *mut LeansigKeypair,
+) -> LeansigResult {
+    if pk_bytes.is_null() || sk_bytes.is_null() || out_keypair.is_null() {
+        return LeansigResult::NullPointer;
+    }
+
+    let pk_slice = slice::from_raw_parts(pk_bytes, pk_len);
+    let sk_slice = slice::from_raw_parts(sk_bytes, sk_len);
+
+    let pk = match PublicKey::from_bytes(pk_slice) {
+        Ok(k) => k,
+        Err(_) => return LeansigResult::DeserializationFailed,
+    };
+
+    let sk = match SecretKey::from_bytes(sk_slice) {
+        Ok(k) => k,
+        Err(_) => return LeansigResult::DeserializationFailed,
+    };
+
+    let keypair = Box::new(LeansigKeypair { pk, sk });
+    *out_keypair = Box::into_raw(keypair);
+    LeansigResult::Ok
+}
+
 /// Free a keypair allocated by `leansig_keypair_generate`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn leansig_keypair_free(keypair: *mut LeansigKeypair) {

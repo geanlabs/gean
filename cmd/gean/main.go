@@ -12,8 +12,8 @@ import (
 	"syscall"
 
 	"github.com/geanlabs/gean/config"
-	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/node"
+	"github.com/geanlabs/gean/observability/logging"
 )
 
 const version = "v0.1.0"
@@ -24,6 +24,7 @@ func main() {
 	validatorsPath := flag.String("validator-registry-path", "", "Path to validators.yaml")
 	nodeID := flag.String("node-id", "", "Node name (index into validators.yaml)")
 	nodeKey := flag.String("node-key", "", "Path to secp256k1 private key file")
+	validatorKeys := flag.String("validator-keys", "", "Path to directory containing validator keys")
 	listenAddr := flag.String("listen-addr", "/ip4/0.0.0.0/udp/9000/quic-v1", "QUIC listen address")
 	metricsPort := flag.Int("metrics-port", 0, "Prometheus metrics port (0 = disabled)")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
@@ -91,14 +92,15 @@ func main() {
 	}
 
 	nodeCfg := node.Config{
-		GenesisTime:  genCfg.GenesisTime,
-		Validators:   genCfg.Validators,
-		ListenAddr:   *listenAddr,
-		NodeKeyPath:  *nodeKey,
-		Bootnodes:    bootnodes,
-		ValidatorIDs: validatorIDs,
-		MetricsPort:  *metricsPort,
-		DevnetID:     *devnetID,
+		GenesisTime:      genCfg.GenesisTime,
+		Validators:       genCfg.Validators,
+		ListenAddr:       *listenAddr,
+		NodeKeyPath:      *nodeKey,
+		Bootnodes:        bootnodes,
+		ValidatorIDs:     validatorIDs,
+		ValidatorKeysDir: *validatorKeys,
+		MetricsPort:      *metricsPort,
+		DevnetID:         *devnetID,
 	}
 
 	n, err := node.New(nodeCfg)

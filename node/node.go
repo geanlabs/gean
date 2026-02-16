@@ -23,12 +23,13 @@ type Node struct {
 
 // Config holds node configuration.
 type Config struct {
-	GenesisTime  uint64
-	Validators   []*types.Validator
-	ListenAddr   string
-	NodeKeyPath  string
-	Bootnodes    []string
-	ValidatorIDs []uint64
-	MetricsPort  int
-	DevnetID     string
+	GenesisTime      uint64
+	Validators       []*types.Validator
+	ListenAddr       string
+	NodeKeyPath      string
+	Bootnodes        []string
+	ValidatorIDs     []uint64
+	ValidatorKeysDir string
+	MetricsPort      int
+	DevnetID         string
 }

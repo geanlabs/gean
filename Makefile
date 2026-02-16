@@ -3,10 +3,16 @@
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 build:
+	@echo "Building leansig-ffi..."
+	@cd leansig-ffi && cargo build --release
+	@echo "Done: leansig-ffi/target/release/leansig"
 	@mkdir -p bin
 	@echo "Building gean..."
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/gean ./cmd/gean
 	@echo "Done: bin/gean"
+	@echo "Building keygen..."
+	@go build -o bin/keygen ./cmd/keygen
+	@echo "Done: bin/keygen"
 
 test:
 	go test ./...
@@ -29,7 +35,7 @@ docker-build:
 	docker build -t gean:$(VERSION) .
 
 run: build
-	./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --node-id node0
+	./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0
 
 run-devnet:
 	@if [ ! -d "../lean-quickstart" ]; then \
