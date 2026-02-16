@@ -58,6 +58,30 @@ func GenerateKeypair(seed uint64, activationEpoch uint64, numActiveEpochs uint64
 	return &Keypair{ptr: ptr}, nil
 }
 
+// RestoreKeypair reconstructs a Keypair from serialized public and secret keys.
+// This is used for loading keys from disk.
+func RestoreKeypair(pkBytes []byte, skBytes []byte) (*Keypair, error) {
+	if len(pkBytes) == 0 {
+		return nil, fmt.Errorf("public key bytes are empty")
+	}
+	if len(skBytes) == 0 {
+		return nil, fmt.Errorf("secret key bytes are empty")
+	}
+
+	var kpPtr *C.LeansigKeypair
+	pkPtr := (*C.uint8_t)(unsafe.Pointer(&pkBytes[0]))
+	pkLen := C.size_t(len(pkBytes))
+	skPtr := (*C.uint8_t)(unsafe.Pointer(&skBytes[0]))
+	skLen := C.size_t(len(skBytes))
+
+	result := C.leansig_keypair_restore(pkPtr, pkLen, skPtr, skLen, &kpPtr)
+	if result != ResultOK {
+		return nil, fmt.Errorf("leansig_keypair_restore failed with code %d", result)
+	}
+
+	return &Keypair{ptr: kpPtr}, nil
+}
+
 // Free releases the memory associated with this keypair.
 // The keypair must not be used after calling Free.
 func (kp *Keypair) Free() {

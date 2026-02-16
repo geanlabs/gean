@@ -6,6 +6,7 @@ import (
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/leansig"
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/observability/logging"
 )
@@ -13,6 +14,7 @@ import (
 // ValidatorDuties handles proposer and attester duties.
 type ValidatorDuties struct {
 	Indices []uint64
+	Keys    map[uint64]*leansig.Keypair
 	FC      *forkchoice.Store
 	Topics  *gossipsub.Topics
 	log     *slog.Logger

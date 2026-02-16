@@ -2,10 +2,12 @@ package node
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/leansig"
 	"github.com/geanlabs/gean/network"
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/observability/logging"
@@ -72,8 +74,26 @@ func New(cfg Config) (*Node, error) {
 
 	clock := NewClock(cfg.GenesisTime)
 
+	validatorKeys := make(map[uint64]*leansig.Keypair)
+	if cfg.ValidatorKeysDir != "" {
+		for _, idx := range cfg.ValidatorIDs {
+			pkPath := filepath.Join(cfg.ValidatorKeysDir, fmt.Sprintf("validator_%d.pk", idx))
+			skPath := filepath.Join(cfg.ValidatorKeysDir, fmt.Sprintf("validator_%d.sk", idx))
+
+			kp, err := leansig.LoadKeypair(pkPath, skPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load keypair for validator %d: %w", idx, err)
+			}
+			validatorKeys[idx] = kp
+			log.Info("loaded validator keypair", "validator_index", idx)
+		}
+	} else if len(cfg.ValidatorIDs) > 0 {
+		log.Warn("no validator keys directory specified; validator duties will fail signing")
+	}
+
 	validator := &ValidatorDuties{
 		Indices: cfg.ValidatorIDs,
+		Keys:    validatorKeys,
 		FC:      fc,
 		Topics:  topics,
 		log:     logging.NewComponentLogger(logging.CompValidator),
