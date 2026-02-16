@@ -11,8 +11,8 @@ import (
 )
 
 func main() {
-	count := flag.Int("n", 5, "Number of keys to generate")
-	outDir := flag.String("o", "keys", "Output directory for keys")
+	count := flag.Int("validators", 5, "Number of keys to generate")
+	outDir := flag.String("keys-dir", "keys", "Output directory for keys")
 	printYAML := flag.Bool("print-yaml", false, "Print GENESIS_VALIDATORS yaml to stdout")
 	flag.Parse()
 

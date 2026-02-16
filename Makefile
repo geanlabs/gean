@@ -7,6 +7,12 @@ build:
 	@echo "Building gean..."
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/gean ./cmd/gean
 	@echo "Done: bin/gean"
+	@echo "Building keygen..."
+	@go build -o bin/keygen ./cmd/keygen
+	@echo "Done: bin/keygen"
+	@echo "Building leansig..."
+	@cd leansig && cargo build --release
+	@echo "Done: leansig/target/release/leansig"
 
 test:
 	go test ./...

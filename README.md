@@ -42,6 +42,9 @@ make test
 # Lint
 make lint
 
+# Generate keys
+./bin/keygen -validators 5 -keys-dir keys -print-yaml
+
 # Run
 make run
 ```
