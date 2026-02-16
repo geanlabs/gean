@@ -1,20 +1,22 @@
-package leansig
+package test
 
 import (
 	"crypto/rand"
 	"testing"
+
+	"github.com/geanlabs/gean/leansig"
 )
 
 // Devnet-1 parameters for SIGTopLevelTargetSumLifetime32Dim64Base8:
 // LOG_LIFETIME=32, sqrt(LIFETIME)=65536, min active range = 2*65536 = 131072
 // Devnet-1 spec uses activation_time = 2^3 = 8
-const testActivationEpoch = 0
-const testNumActiveEpochs = 8 // 2^3, matching devnet-1 spec
+const testLsigActivationEpoch = 0
+const testLsigNumActiveEpochs = 262144 // 2^3, matching devnet-1 spec
 
 // TestKeyGeneration verifies that keypair generation succeeds and returns
 // valid activation and prepared intervals.
 func TestKeyGeneration(t *testing.T) {
-	kp, err := GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -31,10 +33,8 @@ func TestKeyGeneration(t *testing.T) {
 	}
 }
 
-// TestKeySerializationRoundtrip tests that public key serialization produces
-// non-empty bytes.
 func TestKeySerializationRoundtrip(t *testing.T) {
-	kp, err := GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -59,10 +59,8 @@ func TestKeySerializationRoundtrip(t *testing.T) {
 	t.Logf("Secret key size: %d bytes", len(skBytes))
 }
 
-// TestSignAndVerifyWithKeypair tests the full sign and verify roundtrip using
-// the keypair handle for verification.
 func TestSignAndVerifyWithKeypair(t *testing.T) {
-	kp, err := GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -87,10 +85,8 @@ func TestSignAndVerifyWithKeypair(t *testing.T) {
 	t.Log("Signature verified with keypair ✓")
 }
 
-// TestSignAndVerifyWithSerializedPubkey tests the full sign and verify roundtrip
-// using serialized public key bytes (the path used in consensus).
 func TestSignAndVerifyWithSerializedPubkey(t *testing.T) {
-	kp, err := GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -110,16 +106,15 @@ func TestSignAndVerifyWithSerializedPubkey(t *testing.T) {
 		t.Fatalf("Sign failed: %v", err)
 	}
 
-	err = Verify(pkBytes, epoch, msg, sig)
+	err = leansig.Verify(pkBytes, epoch, msg, sig)
 	if err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
 	t.Log("Signature verified with serialized pubkey ✓")
 }
 
-// TestVerifyRejectsWrongMessage tests that verification fails for a wrong message.
 func TestVerifyRejectsWrongMessage(t *testing.T) {
-	kp, err := GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -145,9 +140,8 @@ func TestVerifyRejectsWrongMessage(t *testing.T) {
 	t.Logf("Correctly rejected wrong message: %v ✓", err)
 }
 
-// TestVerifyRejectsWrongEpoch tests that verification fails at a wrong epoch.
 func TestVerifyRejectsWrongEpoch(t *testing.T) {
-	kp, err := GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, testLsigNumActiveEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}
@@ -170,11 +164,12 @@ func TestVerifyRejectsWrongEpoch(t *testing.T) {
 	t.Logf("Correctly rejected wrong epoch: %v ✓", err)
 }
 
-// TestAdvancePreparation tests that the preparation window can be advanced.
-// With LOG_LIFETIME=32, sqrt(LIFETIME)=65536, prepared_window=2*65536=131072.
-// We need num_active_epochs > 131072 for advance to work (262144 gives 4 bottom trees).
 func TestAdvancePreparation(t *testing.T) {
-	kp, err := GenerateKeypair(42, testActivationEpoch, testNumActiveEpochs)
+	// We need > 131072 epochs to trigger window advancement.
+	// 200000 epochs roughly covers 1.5 windows.
+	const largeNumEpochs = 200000
+	t.Logf("Generating large keypair for advance test (%d epochs)...", largeNumEpochs)
+	kp, err := leansig.GenerateKeypair(42, testLsigActivationEpoch, largeNumEpochs)
 	if err != nil {
 		t.Fatalf("GenerateKeypair failed: %v", err)
 	}

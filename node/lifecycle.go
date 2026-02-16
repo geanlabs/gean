@@ -111,7 +111,7 @@ func New(cfg Config) (*Node, error) {
 	}
 
 	// Register gossip and req/resp handlers.
-	if err := registerHandlers(n, store, fc); err != nil {
+	if err := registerHandlers(n, fc); err != nil {
 		host.Close()
 		return nil, err
 	}
