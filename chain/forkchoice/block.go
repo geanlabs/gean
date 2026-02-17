@@ -5,9 +5,30 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/leansig"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )
+
+func (c *Store) verifyAttestationSignatureWithState(state *types.State, att *types.Attestation, sig [3112]byte) error {
+	valID := att.ValidatorID
+	if valID >= uint64(len(state.Validators)) {
+		return fmt.Errorf("invalid validator index %d", valID)
+	}
+	pubkey := state.Validators[valID].Pubkey
+
+	dataRoot, err := att.Data.HashTreeRoot()
+	if err != nil {
+		return fmt.Errorf("failed to hash attestation data: %w", err)
+	}
+
+	epoch := uint32(att.Data.Target.Slot / types.SlotsPerEpoch)
+
+	if err := leansig.Verify(pubkey[:], epoch, dataRoot, sig[:]); err != nil {
+		return fmt.Errorf("signature verification failed: %w", err)
+	}
+	return nil
+}
 
 // ProcessBlock processes a new signed block envelope and updates chain state.
 // Attestation processing follows leanSpec on_block ordering:
@@ -51,6 +72,36 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 			return fmt.Errorf("signature count mismatch: got %d, want %d (body=%d, no proposer)",
 				len(envelope.Signature), numBodyAtts, numBodyAtts)
 		}
+	}
+
+	c.Storage.PutState(blockHash, state)
+
+	// Step 1b: Verify signatures.
+	// Verify Body Attestations.
+	for i, att := range block.Body.Attestations {
+		// Use parent state to get validator keys (static validators).
+		if err := c.verifyAttestationSignatureWithState(parentState, att, envelope.Signature[i]); err != nil {
+			return fmt.Errorf("invalid body attestation signature at index %d: %w", i, err)
+		}
+	}
+
+	// Verify Block Proposer Signature.
+	if block.ProposerIndex >= uint64(len(parentState.Validators)) {
+		return fmt.Errorf("invalid proposer index")
+	}
+	proposerPubkey := parentState.Validators[block.ProposerIndex].Pubkey
+
+	// Message is hash(envelope.Message).
+	msgRoot, err := envelope.Message.HashTreeRoot()
+	if err != nil {
+		return fmt.Errorf("failed to hash block message: %w", err)
+	}
+
+	epoch := uint32(block.Slot / types.SlotsPerEpoch)
+	proposerSig := envelope.Signature[numBodyAtts] // Last signature
+
+	if err := leansig.Verify(proposerPubkey[:], epoch, msgRoot, proposerSig[:]); err != nil {
+		return fmt.Errorf("invalid block signature: %w", err)
 	}
 
 	c.Storage.PutBlock(blockHash, block)

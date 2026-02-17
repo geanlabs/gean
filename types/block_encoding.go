@@ -526,13 +526,13 @@ func (s *SignedBlockWithAttestation) UnmarshalSSZ(buf []byte) error {
 	// Field (1) 'Signature'
 	{
 		buf = tail[o1:]
-		num, err := ssz.DivideInt2(len(buf), 3116, 4096)
+		num, err := ssz.DivideInt2(len(buf), 3112, 4096)
 		if err != nil {
 			return err
 		}
-		s.Signature = make([][3116]byte, num)
+		s.Signature = make([][3112]byte, num)
 		for ii := 0; ii < num; ii++ {
-			copy(s.Signature[ii][:], buf[ii*3116:(ii+1)*3116])
+			copy(s.Signature[ii][:], buf[ii*3112:(ii+1)*3112])
 		}
 	}
 	return err
@@ -549,7 +549,7 @@ func (s *SignedBlockWithAttestation) SizeSSZ() (size int) {
 	size += s.Message.SizeSSZ()
 
 	// Field (1) 'Signature'
-	size += len(s.Signature) * 3116
+	size += len(s.Signature) * 3112
 
 	return
 }
