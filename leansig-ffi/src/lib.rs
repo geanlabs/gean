@@ -93,7 +93,9 @@ pub unsafe extern "C" fn leansig_keypair_generate(
         Ok(join_handle) => match join_handle.join() {
             Ok((pk, sk)) => {
                 let keypair = Box::new(LeansigKeypair { pk, sk });
-                *out_keypair = Box::into_raw(keypair);
+                unsafe {
+                    *out_keypair = Box::into_raw(keypair);
+                }
                 LeansigResult::Ok
             }
             Err(_) => LeansigResult::SigningFailed, // thread panicked
@@ -125,8 +127,8 @@ pub unsafe extern "C" fn leansig_keypair_restore(
         return LeansigResult::NullPointer;
     }
 
-    let pk_slice = slice::from_raw_parts(pk_bytes, pk_len);
-    let sk_slice = slice::from_raw_parts(sk_bytes, sk_len);
+    let pk_slice = unsafe { slice::from_raw_parts(pk_bytes, pk_len) };
+    let sk_slice = unsafe { slice::from_raw_parts(sk_bytes, sk_len) };
 
     let pk = match PublicKey::from_bytes(pk_slice) {
         Ok(k) => k,
@@ -139,7 +141,9 @@ pub unsafe extern "C" fn leansig_keypair_restore(
     };
 
     let keypair = Box::new(LeansigKeypair { pk, sk });
-    *out_keypair = Box::into_raw(keypair);
+    unsafe {
+        *out_keypair = Box::into_raw(keypair);
+    }
     LeansigResult::Ok
 }
 

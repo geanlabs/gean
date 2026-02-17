@@ -13,7 +13,6 @@ import (
 // registerHandlers wires up gossip subscriptions and req/resp protocol handlers.
 func registerHandlers(n *Node, fc *forkchoice.Store) error {
 	gossipLog := logging.NewComponentLogger(logging.CompGossip)
-	reqrespLog := logging.NewComponentLogger(logging.CompReqResp)
 
 	// Register req/resp handlers.
 	reqresp.RegisterReqResp(n.Host.P2P, &reqresp.ReqRespHandler{
@@ -29,15 +28,6 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 			for _, root := range roots {
 				if sb, ok := fc.Storage.GetSignedBlock(root); ok {
 					blocks = append(blocks, sb)
-				} else if b, ok := fc.Storage.GetBlock(root); ok {
-					// TODO: remove fallback once all stored blocks have signed envelopes.
-					reqrespLog.Warn("serving bare block without signed envelope",
-						"root", logging.ShortHash(root),
-						"slot", b.Slot,
-					)
-					blocks = append(blocks, &types.SignedBlockWithAttestation{
-						Message: &types.BlockWithAttestation{Block: b},
-					})
 				}
 			}
 			return blocks

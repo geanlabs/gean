@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/leansig"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )
@@ -32,7 +31,6 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 	// Verify signature.
 	if err := c.verifyAttestationSignature(sa); err != nil {
-		// metrics.AttestationsInvalidSignature.Inc()
 		return
 	}
 
@@ -67,44 +65,16 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 // verifyAttestationSignature verifies the XMSS signature on the attestation.
 func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
-	// 1. Get validator public key.
-	// We need access to state to get the pubkey.
-	// Since verification is stateless w.r.t the specific block, we might not have the "current" state loaded.
-	// However, forkchoice store has c.Head state.
-	// Validator set is static for Devnet-1.
-	// We can get the pubkey from the head state or any state.
-	// If dynamic, we'd need the state at the target epoch.
-
-	// c.Storage.GetState(c.Head) is safe for static validators.
 	headState, ok := c.Storage.GetState(c.Head)
 	if !ok {
 		return fmt.Errorf("head state not found")
 	}
 
-	valID := sa.ValidatorID
-	if valID >= uint64(len(headState.Validators)) {
-		return fmt.Errorf("invalid validator index")
+	att := &types.Attestation{
+		ValidatorID: sa.ValidatorID,
+		Data:        sa.Message,
 	}
-	pubkey := headState.Validators[valID].Pubkey
-
-	// 2. Compute signing root (HashTreeRoot of AttestationData).
-	dataRoot, err := sa.Message.HashTreeRoot()
-	if err != nil {
-		return err
-	}
-
-	// 3. Verify.
-	epoch := uint32(sa.Message.Target.Slot / types.SlotsPerEpoch)
-
-	// sa.Signature is [3112]byte. Transform to slice.
-	sig := sa.Signature[:]
-
-	if err := leansig.Verify(pubkey[:], epoch, dataRoot, sig); err != nil {
-		log.Warn("attestation signature invalid", "slot", sa.Message.Slot, "validator", valID, "err", err)
-		return err
-	}
-	log.Info("attestation verified (XMSS)", "slot", sa.Message.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
-	return nil
+	return c.verifyAttestationSignatureWithState(headState, att, sa.Signature)
 }
 
 // validateAttestationData performs attestation validation checks.

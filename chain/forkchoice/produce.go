@@ -23,28 +23,27 @@ func (c *Store) GetProposalHead(slot uint64) [32]byte {
 }
 
 // GetVoteTarget calculates the target checkpoint for validator votes.
-func (c *Store) GetVoteTarget() *types.Checkpoint {
+func (c *Store) GetVoteTarget() (*types.Checkpoint, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.getVoteTargetLocked()
 }
 
-func (c *Store) getVoteTargetLocked() *types.Checkpoint {
-	blocks := c.Storage.GetAllBlocks()
+func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 	targetRoot := c.Head
 
 	// Walk back up to JustificationLookback steps if safe target is newer.
+	safeBlock, safeOK := c.Storage.GetBlock(c.SafeTarget)
 	for i := 0; i < types.JustificationLookback; i++ {
-		tBlock, ok := blocks[targetRoot]
-		sBlock, ok2 := blocks[c.SafeTarget]
-		if ok && ok2 && tBlock.Slot > sBlock.Slot {
+		tBlock, ok := c.Storage.GetBlock(targetRoot)
+		if ok && safeOK && tBlock.Slot > safeBlock.Slot {
 			targetRoot = tBlock.ParentRoot
 		}
 	}
 
 	// Ensure target is in justifiable slot range.
 	for {
-		tBlock, ok := blocks[targetRoot]
+		tBlock, ok := c.Storage.GetBlock(targetRoot)
 		if !ok {
 			break
 		}
@@ -54,12 +53,12 @@ func (c *Store) getVoteTargetLocked() *types.Checkpoint {
 		targetRoot = tBlock.ParentRoot
 	}
 
-	tBlock, ok := blocks[targetRoot]
+	tBlock, ok := c.Storage.GetBlock(targetRoot)
 	if !ok {
-		panic("vote target block not found")
+		return nil, fmt.Errorf("vote target block not found")
 	}
 	blockHash, _ := tBlock.HashTreeRoot()
-	return &types.Checkpoint{Root: blockHash, Slot: tBlock.Slot}
+	return &types.Checkpoint{Root: blockHash, Slot: tBlock.Slot}, nil
 }
 
 // ProduceBlock creates a new signed block envelope for the given slot and validator.
@@ -168,10 +167,14 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		Data: &types.AttestationData{
 			Slot:   slot,
 			Head:   &types.Checkpoint{Root: blockHash, Slot: slot},
-			Target: c.getVoteTargetLocked(),
 			Source: c.LatestJustified,
 		},
 	}
+	voteTarget, err := c.getVoteTargetLocked()
+	if err != nil {
+		return nil, fmt.Errorf("vote target: %w", err)
+	}
+	proposerAtt.Data.Target = voteTarget
 
 	// Build signature list: body attestation sigs in order, proposer sig last.
 	sigs := make([][3112]byte, len(collectedSigned)+1)
@@ -218,14 +221,16 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 	c.acceptNewAttestationsLocked()
 	headRoot := c.Head
 
-	blocks := c.Storage.GetAllBlocks()
-	headBlock, ok := blocks[headRoot]
+	headBlock, ok := c.Storage.GetBlock(headRoot)
 	if !ok {
-		panic("head block not found")
+		return nil, fmt.Errorf("head block not found")
 	}
 
 	headCheckpoint := &types.Checkpoint{Root: headRoot, Slot: headBlock.Slot}
-	targetCheckpoint := c.getVoteTargetLocked()
+	targetCheckpoint, err := c.getVoteTargetLocked()
+	if err != nil {
+		return nil, fmt.Errorf("vote target: %w", err)
+	}
 
 	data := &types.AttestationData{
 		Slot:   slot,

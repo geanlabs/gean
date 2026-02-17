@@ -8,7 +8,6 @@ import (
 )
 
 // SSZ round-trip tests for devnet-1 types.
-// TODO: Add cross-client reference values from leanSpec devnet-1.
 
 func TestSignedBlockWithAttestationSSZRoundTrip(t *testing.T) {
 	var parentRoot, stateRoot [32]byte
