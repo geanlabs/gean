@@ -6,8 +6,8 @@ package statetransition
 // after the last data bit to mark the length. The byte length is
 // ceil((numBits + 1) / 8).
 
-// bitlistLen returns the number of data bits in an SSZ bitlist.
-func bitlistLen(bl []byte) int {
+// BitlistLen returns the number of data bits in an SSZ bitlist.
+func BitlistLen(bl []byte) int {
 	if len(bl) == 0 {
 		return 0
 	}
@@ -22,8 +22,8 @@ func bitlistLen(bl []byte) int {
 	return (len(bl)-1)*8 + msb - 1
 }
 
-// getBit returns the value of bit at index idx in an SSZ bitlist.
-func getBit(bl []byte, idx uint64) bool {
+// GetBit returns the value of bit at index idx in an SSZ bitlist.
+func GetBit(bl []byte, idx uint64) bool {
 	byteIdx := idx / 8
 	bitIdx := idx % 8
 	if int(byteIdx) >= len(bl) {
@@ -32,8 +32,8 @@ func getBit(bl []byte, idx uint64) bool {
 	return (bl[byteIdx] & (1 << bitIdx)) != 0
 }
 
-// setBit sets the value of bit at index idx in an SSZ bitlist.
-func setBit(bl []byte, idx uint64, val bool) []byte {
+// SetBit sets the value of bit at index idx in an SSZ bitlist.
+func SetBit(bl []byte, idx uint64, val bool) []byte {
 	byteIdx := idx / 8
 	bitIdx := idx % 8
 	if int(byteIdx) >= len(bl) {
@@ -47,9 +47,9 @@ func setBit(bl []byte, idx uint64, val bool) []byte {
 	return bl
 }
 
-// appendBit adds a new data bit to an SSZ bitlist, maintaining the sentinel.
-func appendBit(bl []byte, val bool) []byte {
-	n := bitlistLen(bl)
+// AppendBit adds a new data bit to an SSZ bitlist, maintaining the sentinel.
+func AppendBit(bl []byte, val bool) []byte {
+	n := BitlistLen(bl)
 	newLen := n + 1
 	neededBytes := (newLen + 1 + 7) / 8
 
@@ -84,8 +84,8 @@ func appendBit(bl []byte, val bool) []byte {
 	return bl
 }
 
-// cloneBitlist returns a copy of an SSZ bitlist.
-func cloneBitlist(src []byte) []byte {
+// CloneBitlist returns a copy of an SSZ bitlist.
+func CloneBitlist(src []byte) []byte {
 	dst := make([]byte, len(src))
 	copy(dst, src)
 	return dst

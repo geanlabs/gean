@@ -1,10 +1,11 @@
-package forkchoice
+package unit
 
 import (
 	"crypto/rand"
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/leansig"
 	"github.com/geanlabs/gean/storage/memory"
@@ -48,7 +49,7 @@ func TestVerification(t *testing.T) {
 	genesisBlock.StateRoot = stateRoot
 
 	store := memory.New()
-	fc := NewStore(state, genesisBlock, store)
+	fc := forkchoice.NewStore(state, genesisBlock, store)
 
 	// 2. Test ProcessBlock Verification
 
@@ -64,7 +65,7 @@ func TestVerification(t *testing.T) {
 
 	// Better approach: Use separate FC instance for generating blocks.
 	genStore := memory.New()
-	genFc := NewStore(state, genesisBlock, genStore)
+	genFc := forkchoice.NewStore(state, genesisBlock, genStore)
 
 	// Generate valid blocks using genFc
 	envelope1, err := genFc.ProduceBlock(1, 0, kp)
@@ -133,28 +134,27 @@ func TestVerification(t *testing.T) {
 	// 3a. Verify valid attestation processing
 	fc.ProcessAttestation(sa)
 
-	fc.mu.Lock()
+	// Note: fc.mu is unexported, so we cannot lock/unlock.
+	// We assume ProcessAttestation is synchronous and efficient enough that
+	// checking LatestNewAttestations immediately after is safe in this single-threaded test.
 	if _, ok := fc.LatestNewAttestations[0]; !ok {
 		t.Error("Valid attestation not added to store")
 	}
-	fc.mu.Unlock()
 
 	// 3b. Verify invalid attestation signature
 	saInvalid := deepCopySignedAttestation(sa)
 	rand.Read(saInvalid.Signature[:])
 
 	// Reset store
-	fc.mu.Lock()
+	// Cannot lock mu. Delete map entry directly.
+	// Map access is unsafe if concurrent, but we are sequential here.
 	delete(fc.LatestNewAttestations, 0)
-	fc.mu.Unlock()
 
 	fc.ProcessAttestation(saInvalid)
 
-	fc.mu.Lock()
 	if _, ok := fc.LatestNewAttestations[0]; ok {
 		t.Error("Invalid attestation ADDED to store")
 	}
-	fc.mu.Unlock()
 }
 
 func deepCopyBlockEnvelope(src *types.SignedBlockWithAttestation) *types.SignedBlockWithAttestation {

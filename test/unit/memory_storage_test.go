@@ -1,13 +1,14 @@
-package memory
+package unit
 
 import (
 	"testing"
 
+	"github.com/geanlabs/gean/storage/memory"
 	"github.com/geanlabs/gean/types"
 )
 
 func TestPutGetBlock(t *testing.T) {
-	s := New()
+	s := memory.New()
 	root := [32]byte{1}
 	block := &types.Block{Slot: 5}
 
@@ -23,7 +24,7 @@ func TestPutGetBlock(t *testing.T) {
 }
 
 func TestPutGetState(t *testing.T) {
-	s := New()
+	s := memory.New()
 	root := [32]byte{2}
 	state := &types.State{Slot: 10}
 
@@ -39,7 +40,7 @@ func TestPutGetState(t *testing.T) {
 }
 
 func TestGetMissingBlockReturnsFalse(t *testing.T) {
-	s := New()
+	s := memory.New()
 	_, ok := s.GetBlock([32]byte{0xff})
 	if ok {
 		t.Fatal("expected missing block to return false")
@@ -47,7 +48,7 @@ func TestGetMissingBlockReturnsFalse(t *testing.T) {
 }
 
 func TestGetMissingStateReturnsFalse(t *testing.T) {
-	s := New()
+	s := memory.New()
 	_, ok := s.GetState([32]byte{0xff})
 	if ok {
 		t.Fatal("expected missing state to return false")
@@ -55,7 +56,7 @@ func TestGetMissingStateReturnsFalse(t *testing.T) {
 }
 
 func TestGetAllBlocksCopiesMap(t *testing.T) {
-	s := New()
+	s := memory.New()
 	root := [32]byte{1}
 	block := &types.Block{Slot: 1}
 	s.PutBlock(root, block)
@@ -71,7 +72,7 @@ func TestGetAllBlocksCopiesMap(t *testing.T) {
 }
 
 func TestGetAllStatesCopiesMap(t *testing.T) {
-	s := New()
+	s := memory.New()
 	root := [32]byte{1}
 	state := &types.State{Slot: 1}
 	s.PutState(root, state)
