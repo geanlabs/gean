@@ -88,6 +88,16 @@ Tests live in `test/unit/`, `test/interop/`, and `test/integration/`. Some packa
 - **Receiver names:** single letter (`n *Node`, `s *Store`, `st *State`)
 - **SSZ types:** generated encoding code lives in `*_encoding.go` files alongside type definitions
 
+## Devnet-1 Metrics (leanMetrics@e077ac2)
+
+Gean exposes Prometheus metrics on `--metrics-port` at `/metrics`. The 14 leanMetrics spec metrics are defined in `observability/metrics/metrics.go`:
+
+**Fork-Choice:** `lean_head_slot`, `lean_fork_choice_block_processing_time_seconds`, `lean_attestations_valid_total`, `lean_attestations_invalid_total`, `lean_attestation_validation_time_seconds`
+
+**State Transition:** `lean_latest_justified_slot`, `lean_latest_finalized_slot`, `lean_state_transition_time_seconds`, `lean_state_transition_slots_processed_total`, `lean_state_transition_slots_processing_time_seconds`, `lean_state_transition_block_processing_time_seconds`, `lean_state_transition_attestations_processed_total`, `lean_state_transition_attestations_processing_time_seconds`
+
+**Validator:** `lean_validators_count`
+
 ## Design Philosophy
 
 - Readable over clever — linear control flow, explicit naming

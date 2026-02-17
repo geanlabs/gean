@@ -26,7 +26,7 @@ func main() {
 	nodeKey := flag.String("node-key", "", "Path to secp256k1 private key file")
 	validatorKeys := flag.String("validator-keys", "", "Path to directory containing validator keys")
 	listenAddr := flag.String("listen-addr", "/ip4/0.0.0.0/udp/9000/quic-v1", "QUIC listen address")
-	metricsPort := flag.Int("metrics-port", 0, "Prometheus metrics port (0 = disabled)")
+	metricsPort := flag.Int("metrics-port", 8080, "Prometheus metrics port (0 = disabled)")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
