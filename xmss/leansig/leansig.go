@@ -4,7 +4,7 @@
 //
 // The library must be built before using this package:
 //
-//	cd leansig-ffi && cargo build --release
+//	cd xmss/leansig-ffi && cargo build --release
 package leansig
 
 /*
