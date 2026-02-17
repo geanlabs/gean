@@ -3,7 +3,7 @@
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 build:
-	@cd leansig-ffi && cargo build --release > /dev/null 2>&1
+	@cd xmss/leansig-ffi && cargo build --release > /dev/null 2>&1
 	@mkdir -p bin
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen

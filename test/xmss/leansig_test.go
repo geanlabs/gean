@@ -4,14 +4,14 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/geanlabs/gean/leansig"
+	"github.com/geanlabs/gean/xmss/leansig"
 )
 
 // Devnet-1 parameters for SIGTopLevelTargetSumLifetime32Dim64Base8:
 // LOG_LIFETIME=32, sqrt(LIFETIME)=65536, min active range = 2*65536 = 131072
 // Devnet-1 spec uses activation_time = 2^3 = 8
 const testLsigActivationEpoch = 0
-const testLsigNumActiveEpochs = 262144 // 2^3, matching devnet-1 spec
+const testLsigNumActiveEpochs = 262144 // 2^18, matching devnet-1 spec
 
 // TestKeyGeneration verifies that keypair generation succeeds and returns
 // valid activation and prepared intervals.
@@ -67,7 +67,7 @@ func TestSignAndVerifyWithKeypair(t *testing.T) {
 	defer kp.Free()
 
 	epoch := uint32(0)
-	var msg [MessageLength]byte
+	var msg [leansig.MessageLength]byte
 	if _, err := rand.Read(msg[:]); err != nil {
 		t.Fatalf("rand.Read failed: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestSignAndVerifyWithSerializedPubkey(t *testing.T) {
 	}
 
 	epoch := uint32(0)
-	var msg [MessageLength]byte
+	var msg [leansig.MessageLength]byte
 	copy(msg[:], []byte("test message for devnet-1 xmss"))
 
 	sig, err := kp.Sign(epoch, msg)
@@ -121,7 +121,7 @@ func TestVerifyRejectsWrongMessage(t *testing.T) {
 	defer kp.Free()
 
 	epoch := uint32(0)
-	var msg [MessageLength]byte
+	var msg [leansig.MessageLength]byte
 	copy(msg[:], []byte("correct message"))
 
 	sig, err := kp.Sign(epoch, msg)
@@ -130,7 +130,7 @@ func TestVerifyRejectsWrongMessage(t *testing.T) {
 	}
 
 	// Tamper with the message
-	var wrongMsg [MessageLength]byte
+	var wrongMsg [leansig.MessageLength]byte
 	copy(wrongMsg[:], []byte("wrong message!!"))
 
 	err = kp.VerifyWithKeypair(epoch, wrongMsg, sig)
@@ -148,7 +148,7 @@ func TestVerifyRejectsWrongEpoch(t *testing.T) {
 	defer kp.Free()
 
 	epoch := uint32(0)
-	var msg [MessageLength]byte
+	var msg [leansig.MessageLength]byte
 	copy(msg[:], []byte("epoch test message"))
 
 	sig, err := kp.Sign(epoch, msg)

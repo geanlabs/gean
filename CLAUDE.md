@@ -26,13 +26,13 @@ go test -run TestName ./path/to/package
 
 The leansig CGo bindings require the Rust FFI library to be built first:
 ```bash
-cd leansig-ffi && cargo build --release
+cd xmss/leansig-ffi && cargo build --release
 ```
 
 ## Toolchain Requirements
 
 - **Go** 1.24.6+ (toolchain 1.24.12)
-- **Rust** 1.87+ (for leansig-ffi)
+- **Rust** 1.87+ (for xmss/leansig-ffi)
 - **staticcheck** (optional, for linting)
 
 ## Architecture
@@ -64,8 +64,8 @@ chain/                network/
 - `types/` — SSZ-encoded core data structures (State, Block, Attestation) with `ssz-*` struct tags
 - `storage/` — Storage interface with in-memory implementation (`storage/memory/`)
 - `config/` — YAML config loaders for genesis, bootnodes, validator registry
-- `leansig/` — Go CGo bindings for XMSS post-quantum signatures
-- `leansig-ffi/` — Rust FFI library wrapping the leanSig crate
+- `xmss/leansig/` — Go CGo bindings for XMSS post-quantum signatures
+- `xmss/leansig-ffi/` — Rust FFI library wrapping the leanSig crate
 - `observability/` — Structured logging (slog) and Prometheus metrics
 
 ## Consensus Flow
