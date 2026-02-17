@@ -97,12 +97,14 @@ func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
 	// 3. Verify.
 	epoch := uint32(sa.Message.Data.Target.Slot / types.SlotsPerEpoch)
 
-	// sa.Signature is [3116]byte. Transform to slice.
+	// sa.Signature is [3112]byte. Transform to slice.
 	sig := sa.Signature[:]
 
 	if err := leansig.Verify(pubkey[:], epoch, dataRoot, sig); err != nil {
+		log.Warn("attestation signature invalid", "slot", sa.Message.Data.Slot, "validator", valID, "err", err)
 		return err
 	}
+	log.Info("attestation verified (XMSS)", "slot", sa.Message.Data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
 	return nil
 }
 

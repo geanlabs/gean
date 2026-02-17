@@ -25,8 +25,10 @@ func (c *Store) verifyAttestationSignatureWithState(state *types.State, att *typ
 	epoch := uint32(att.Data.Target.Slot / types.SlotsPerEpoch)
 
 	if err := leansig.Verify(pubkey[:], epoch, dataRoot, sig[:]); err != nil {
+		log.Warn("body attestation signature invalid", "slot", att.Data.Slot, "validator", valID, "err", err)
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
+	log.Info("body attestation signed (XMSS)", "slot", att.Data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
 	return nil
 }
 
@@ -101,8 +103,10 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	proposerSig := envelope.Signature[numBodyAtts] // Last signature
 
 	if err := leansig.Verify(proposerPubkey[:], epoch, msgRoot, proposerSig[:]); err != nil {
+		log.Warn("block signature invalid", "slot", block.Slot, "proposer", block.ProposerIndex, "err", err)
 		return fmt.Errorf("invalid block signature: %w", err)
 	}
+	log.Info("block signed (XMSS)", "slot", block.Slot, "proposer", block.ProposerIndex, "sig_size", fmt.Sprintf("%d bytes", len(proposerSig)))
 
 	c.Storage.PutBlock(blockHash, block)
 	c.Storage.PutSignedBlock(blockHash, envelope)

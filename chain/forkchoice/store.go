@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 )
+
+var log = logging.NewComponentLogger(logging.CompForkChoice)
 
 // Store tracks chain state and validator votes for the LMD GHOST algorithm.
 type Store struct {
@@ -28,11 +31,11 @@ type Store struct {
 
 // ChainStatus is a snapshot of the fork choice head and checkpoint state.
 type ChainStatus struct {
-	Head            [32]byte
-	HeadSlot        uint64
-	JustifiedSlot   uint64
-	FinalizedSlot   uint64
-	FinalizedRoot   [32]byte
+	Head          [32]byte
+	HeadSlot      uint64
+	JustifiedSlot uint64
+	FinalizedSlot uint64
+	FinalizedRoot [32]byte
 }
 
 // GetStatus returns a consistent snapshot of the chain head and checkpoints.
