@@ -223,9 +223,9 @@ func TestSignedBlockWithAttestationFullSSZRoundTrip(t *testing.T) {
 	}
 
 	// Two signatures: one for the block attestation, one for the proposer attestation.
-	var sig1, sig2 [3116]byte
+	var sig1, sig2 [3112]byte
 	sig1[0] = 0xaa
-	sig1[3115] = 0xbb
+	sig1[3111] = 0xbb
 	sig2[0] = 0xcc
 
 	sb := &types.SignedBlockWithAttestation{
@@ -239,7 +239,7 @@ func TestSignedBlockWithAttestationFullSSZRoundTrip(t *testing.T) {
 			},
 			ProposerAttestation: proposerAtt,
 		},
-		Signature: [][3116]byte{sig1, sig2},
+		Signature: [][3112]byte{sig1, sig2},
 	}
 
 	data, err := sb.MarshalSSZ()
@@ -273,7 +273,7 @@ func TestSignedBlockWithAttestationFullSSZRoundTrip(t *testing.T) {
 	if len(decoded.Signature) != 2 {
 		t.Fatalf("expected 2 signatures, got %d", len(decoded.Signature))
 	}
-	if decoded.Signature[0][0] != 0xaa || decoded.Signature[0][3115] != 0xbb {
+	if decoded.Signature[0][0] != 0xaa || decoded.Signature[0][3111] != 0xbb {
 		t.Fatal("signature[0] data mismatch")
 	}
 	if decoded.Signature[1][0] != 0xcc {

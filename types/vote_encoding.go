@@ -242,7 +242,7 @@ func (s *SignedAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 func (s *SignedAttestation) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size != 3252 {
+	if size != 3248 {
 		return ssz.ErrSize
 	}
 
@@ -255,14 +255,14 @@ func (s *SignedAttestation) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (1) 'Signature'
-	copy(s.Signature[:], buf[136:3252])
+	copy(s.Signature[:], buf[136:3248])
 
 	return err
 }
 
 // SizeSSZ returns the ssz encoded size in bytes for the SignedAttestation object
 func (s *SignedAttestation) SizeSSZ() (size int) {
-	size = 3252
+	size = 3248
 	return
 }
 

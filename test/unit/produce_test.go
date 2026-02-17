@@ -16,7 +16,7 @@ func (s *testSigner) Sign(epoch uint32, message [32]byte) ([]byte, error) {
 	if s.sig != nil {
 		return s.sig, nil
 	}
-	out := make([]byte, 3116)
+	out := make([]byte, 3112)
 	out[0] = 0xAA // marker
 	return out, nil
 }

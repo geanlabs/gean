@@ -32,5 +32,5 @@ type BlockWithAttestation struct {
 // SignedBlockWithAttestation is the gossip/wire envelope for blocks.
 type SignedBlockWithAttestation struct {
 	Message   *BlockWithAttestation
-	Signature [][3116]byte `ssz-max:"4096" ssz-size:"?,3116"`
+	Signature [][3112]byte `ssz-max:"4096" ssz-size:"?,3112"`
 }

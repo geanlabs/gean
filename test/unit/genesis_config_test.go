@@ -1,9 +1,11 @@
-package config
+package unit
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/geanlabs/gean/config"
 )
 
 func TestLoadGenesisConfigParsesValidators(t *testing.T) {
@@ -15,7 +17,7 @@ GENESIS_VALIDATORS:
   - "d4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a31105bd9a69afd2690ffd737d22ec6e3b31d47a642f"
 `
 	path := writeTempYAML(t, yaml)
-	cfg, err := LoadGenesisConfig(path)
+	cfg, err := config.LoadGenesisConfig(path)
 	if err != nil {
 		t.Fatalf("LoadGenesisConfig: %v", err)
 	}
@@ -48,7 +50,7 @@ GENESIS_VALIDATORS:
   - "0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a"
 `
 	path := writeTempYAML(t, yaml)
-	cfg, err := LoadGenesisConfig(path)
+	cfg, err := config.LoadGenesisConfig(path)
 	if err != nil {
 		t.Fatalf("LoadGenesisConfig: %v", err)
 	}
@@ -66,7 +68,7 @@ GENESIS_TIME: 1000
 GENESIS_VALIDATORS: []
 `
 	path := writeTempYAML(t, yaml)
-	_, err := LoadGenesisConfig(path)
+	_, err := config.LoadGenesisConfig(path)
 	if err == nil {
 		t.Fatal("expected error for empty validators")
 	}
@@ -79,7 +81,7 @@ GENESIS_VALIDATORS:
   - "aabbcc"
 `
 	path := writeTempYAML(t, yaml)
-	_, err := LoadGenesisConfig(path)
+	_, err := config.LoadGenesisConfig(path)
 	if err == nil {
 		t.Fatal("expected error for wrong pubkey length")
 	}
@@ -92,7 +94,7 @@ GENESIS_VALIDATORS:
   - "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
 `
 	path := writeTempYAML(t, yaml)
-	_, err := LoadGenesisConfig(path)
+	_, err := config.LoadGenesisConfig(path)
 	if err == nil {
 		t.Fatal("expected error for invalid hex")
 	}

@@ -25,9 +25,9 @@ const (
 
 // Response status codes.
 const (
-	ResponseSuccess            = 0x00
-	ResponseInvalidRequest     = 0x01
-	ResponseServerError        = 0x02
+	ResponseSuccess             = 0x00
+	ResponseInvalidRequest      = 0x01
+	ResponseServerError         = 0x02
 	ResponseResourceUnavailable = 0x03
 )
 
@@ -62,7 +62,7 @@ func handleStatus(s network.Stream, handler *ReqRespHandler) {
 	if handler.OnStatus == nil {
 		return
 	}
-	req, err := readStatus(s)
+	req, err := ReadStatus(s)
 	if err != nil {
 		return
 	}
@@ -70,7 +70,7 @@ func handleStatus(s network.Stream, handler *ReqRespHandler) {
 	if _, err := s.Write([]byte{ResponseSuccess}); err != nil {
 		return
 	}
-	if err := writeStatus(s, resp); err != nil {
+	if err := WriteStatus(s, resp); err != nil {
 		return
 	}
 }
@@ -105,14 +105,14 @@ func RequestStatus(ctx context.Context, h host.Host, pid peer.ID, status Status)
 	}
 	defer s.Close()
 
-	if err := writeStatus(s, status); err != nil {
+	if err := WriteStatus(s, status); err != nil {
 		return nil, fmt.Errorf("write status: %w", err)
 	}
 	if err := s.CloseWrite(); err != nil {
 		return nil, fmt.Errorf("close write: %w", err)
 	}
 
-	code, err := readResponseCode(s)
+	code, err := ReadResponseCode(s)
 	if err != nil {
 		return nil, fmt.Errorf("read response code: %w", err)
 	}
@@ -120,7 +120,7 @@ func RequestStatus(ctx context.Context, h host.Host, pid peer.ID, status Status)
 		return nil, fmt.Errorf("peer returned error code %d", code)
 	}
 
-	resp, err := readStatus(s)
+	resp, err := ReadStatus(s)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -143,7 +143,7 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 	for _, r := range roots {
 		rootsBuf = append(rootsBuf, r[:]...)
 	}
-	if err := writeSnappyFrame(s, rootsBuf); err != nil {
+	if err := WriteSnappyFrame(s, rootsBuf); err != nil {
 		return nil, fmt.Errorf("write roots: %w", err)
 	}
 	if err := s.CloseWrite(); err != nil {
@@ -153,7 +153,7 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 	// Read block responses until EOF. Each response is prefixed with a status byte.
 	var blocks []*types.SignedBlockWithAttestation
 	for {
-		code, err := readResponseCode(s)
+		code, err := ReadResponseCode(s)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -163,7 +163,7 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 		if code != ResponseSuccess {
 			break
 		}
-		data, err := readSnappyFrame(s)
+		data, err := ReadSnappyFrame(s)
 		if err != nil {
 			return blocks, fmt.Errorf("read block: %w", err)
 		}
@@ -176,8 +176,8 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 	return blocks, nil
 }
 
-func readStatus(r io.Reader) (Status, error) {
-	data, err := readSnappyFrame(r)
+func ReadStatus(r io.Reader) (Status, error) {
+	data, err := ReadSnappyFrame(r)
 	if err != nil {
 		return Status{}, err
 	}
@@ -191,13 +191,13 @@ func readStatus(r io.Reader) (Status, error) {
 	return Status{Finalized: finalized, Head: head}, nil
 }
 
-func writeStatus(w io.Writer, status Status) error {
+func WriteStatus(w io.Writer, status Status) error {
 	var buf [80]byte
 	copy(buf[0:32], status.Finalized.Root[:])
 	binary.LittleEndian.PutUint64(buf[32:40], status.Finalized.Slot)
 	copy(buf[40:72], status.Head.Root[:])
 	binary.LittleEndian.PutUint64(buf[72:80], status.Head.Slot)
-	return writeSnappyFrame(w, buf[:])
+	return WriteSnappyFrame(w, buf[:])
 }
 
 func writeSignedBlock(w io.Writer, block *types.SignedBlockWithAttestation) error {
@@ -205,11 +205,11 @@ func writeSignedBlock(w io.Writer, block *types.SignedBlockWithAttestation) erro
 	if err != nil {
 		return err
 	}
-	return writeSnappyFrame(w, data)
+	return WriteSnappyFrame(w, data)
 }
 
 func readBlocksByRootRequest(r io.Reader) ([][32]byte, error) {
-	data, err := readSnappyFrame(r)
+	data, err := ReadSnappyFrame(r)
 	if err != nil {
 		return nil, err
 	}
@@ -227,16 +227,16 @@ func readBlocksByRootRequest(r io.Reader) ([][32]byte, error) {
 	return roots, nil
 }
 
-// readResponseCode reads a single response status byte.
-func readResponseCode(r io.Reader) (byte, error) {
+// ReadResponseCode reads a single response status byte.
+func ReadResponseCode(r io.Reader) (byte, error) {
 	var buf [1]byte
 	_, err := io.ReadFull(r, buf[:])
 	return buf[0], err
 }
 
-// readSnappyFrame reads a varint-length-prefixed snappy frame encoded message.
+// ReadSnappyFrame reads a varint-length-prefixed snappy frame encoded message.
 // Wire format: varint(uncompressed_len) + snappy_frame(data)
-func readSnappyFrame(r io.Reader) ([]byte, error) {
+func ReadSnappyFrame(r io.Reader) ([]byte, error) {
 	// Read varint: the uncompressed SSZ length.
 	length, err := binary.ReadUvarint(byteReader{r})
 	if err != nil {
@@ -254,9 +254,9 @@ func readSnappyFrame(r io.Reader) ([]byte, error) {
 	return decoded, nil
 }
 
-// writeSnappyFrame writes a varint-length-prefixed snappy frame encoded message.
+// WriteSnappyFrame writes a varint-length-prefixed snappy frame encoded message.
 // Wire format: varint(uncompressed_len) + snappy_frame(data)
-func writeSnappyFrame(w io.Writer, data []byte) error {
+func WriteSnappyFrame(w io.Writer, data []byte) error {
 	// Write varint of uncompressed length.
 	var lenBuf [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(lenBuf[:], uint64(len(data)))

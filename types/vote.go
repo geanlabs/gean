@@ -17,5 +17,5 @@ type Attestation struct {
 // SignedAttestation is the gossip envelope for attestations.
 type SignedAttestation struct {
 	Message   *Attestation
-	Signature [3116]byte `ssz-size:"3116"`
+	Signature [3112]byte `ssz-size:"3112"`
 }

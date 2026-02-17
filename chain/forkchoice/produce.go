@@ -170,7 +170,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 	}
 
 	// Build signature list: body attestation sigs in order, proposer sig last.
-	sigs := make([][3116]byte, len(collectedSigned)+1)
+	sigs := make([][3112]byte, len(collectedSigned)+1)
 	for i, sa := range collectedSigned {
 		sigs[i] = sa.Signature
 	}
@@ -244,7 +244,7 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 		return nil, fmt.Errorf("sign attestation: %w", err)
 	}
 
-	var sigBytes [3116]byte
+	var sigBytes [3112]byte
 	copy(sigBytes[:], sig)
 
 	return &types.SignedAttestation{

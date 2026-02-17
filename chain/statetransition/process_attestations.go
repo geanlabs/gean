@@ -22,12 +22,12 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 		votes := make([]bool, numValidators)
 		for v := uint64(0); v < numValidators; v++ {
 			bitIdx := uint64(i)*numValidators + v
-			votes[v] = getBit(state.JustificationsValidators, bitIdx)
+			votes[v] = GetBit(state.JustificationsValidators, bitIdx)
 		}
 		justifications[root] = votes
 	}
 
-	justifiedSlots := cloneBitlist(state.JustifiedSlots)
+	justifiedSlots := CloneBitlist(state.JustifiedSlots)
 	latestJustified := &types.Checkpoint{Root: state.LatestJustified.Root, Slot: state.LatestJustified.Slot}
 	latestFinalized := &types.Checkpoint{Root: state.LatestFinalized.Root, Slot: state.LatestFinalized.Slot}
 	originalFinalizedSlot := state.LatestFinalized.Slot
@@ -44,12 +44,12 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 		}
 
 		// Source must be justified.
-		if srcSlot >= uint64(bitlistLen(justifiedSlots)) || !getBit(justifiedSlots, srcSlot) {
+		if srcSlot >= uint64(BitlistLen(justifiedSlots)) || !GetBit(justifiedSlots, srcSlot) {
 			continue
 		}
 
 		// Target must not already be justified.
-		if tgtSlot < uint64(bitlistLen(justifiedSlots)) && getBit(justifiedSlots, tgtSlot) {
+		if tgtSlot < uint64(BitlistLen(justifiedSlots)) && GetBit(justifiedSlots, tgtSlot) {
 			continue
 		}
 
@@ -98,10 +98,10 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 
 		// Justify target.
 		latestJustified = &types.Checkpoint{Root: target.Root, Slot: tgtSlot}
-		for uint64(bitlistLen(justifiedSlots)) <= tgtSlot {
-			justifiedSlots = appendBit(justifiedSlots, false)
+		for uint64(BitlistLen(justifiedSlots)) <= tgtSlot {
+			justifiedSlots = AppendBit(justifiedSlots, false)
 		}
-		justifiedSlots = setBit(justifiedSlots, tgtSlot, true)
+		justifiedSlots = SetBit(justifiedSlots, tgtSlot, true)
 		delete(justifications, target.Root)
 
 		// Finalization: if no justifiable slot exists between source and target,
