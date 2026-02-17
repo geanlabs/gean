@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/geanlabs/gean/leansig"
+	"github.com/geanlabs/gean/xmss/leansig"
 )
 
 func main() {

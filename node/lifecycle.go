@@ -7,7 +7,7 @@ import (
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
-	"github.com/geanlabs/gean/leansig"
+	"github.com/geanlabs/gean/xmss/leansig"
 	"github.com/geanlabs/gean/network"
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/observability/logging"
