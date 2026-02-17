@@ -55,7 +55,9 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		return fmt.Errorf("parent state not found for %x", block.ParentRoot)
 	}
 
+	stStart := time.Now()
 	state, err := statetransition.StateTransition(parentState, block)
+	metrics.StateTransitionTime.Observe(time.Since(stStart).Seconds())
 	if err != nil {
 		return fmt.Errorf("state_transition: %w", err)
 	}
@@ -140,6 +142,5 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	}
 
 	metrics.ForkChoiceBlockProcessingTime.Observe(time.Since(start).Seconds())
-	metrics.StateTransitionTime.Observe(time.Since(start).Seconds())
 	return nil
 }

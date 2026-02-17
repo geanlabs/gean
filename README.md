@@ -49,6 +49,30 @@ make lint
 make run
 ```
 
+## Metrics and Grafana
+
+gean exposes Prometheus metrics at `/metrics` when `--metrics-port` is enabled.
+
+```sh
+./bin/gean \
+  --genesis config.yaml \
+  --bootnodes nodes.yaml \
+  --validator-registry-path validators.yaml \
+  --validator-keys keys \
+  --node-id node0 \
+  --metrics-port 8080
+```
+
+Grafana assets for gean are provided at:
+
+- `observability/grafana/gean-dashboard.json` (dashboard import)
+- `observability/grafana/prometheus-scrape.example.yml` (scrape config example)
+
+Dashboard notes:
+
+- Datasource UID is hardcoded to `feyrb1q11ge0wa`.
+- Panels filter targets using the `Gean Job` variable (`$gean_job`), populated from Prometheus `job` labels.
+
 ## Running in a devnet
 
 gean is part of the [lean-quickstart](https://github.com/blockblaz/lean-quickstart) multi-client devnet tooling (integration in progress for devnet-1).

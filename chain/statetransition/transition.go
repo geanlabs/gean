@@ -2,7 +2,9 @@ package statetransition
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -99,16 +101,25 @@ func ProcessBlock(state *types.State, block *types.Block) (*types.State, error) 
 // Signature verification must happen externally before calling this function.
 func StateTransition(state *types.State, block *types.Block) (*types.State, error) {
 	// Process intermediate slots.
+	slotsStart := time.Now()
 	s, err := ProcessSlots(state, block.Slot)
 	if err != nil {
 		return nil, fmt.Errorf("process_slots: %w", err)
 	}
+	metrics.STFSlotsProcessed.Add(float64(block.Slot - state.Slot))
+	metrics.STFSlotsProcessingTime.Observe(time.Since(slotsStart).Seconds())
 
-	// Process the block.
-	s, err = ProcessBlock(s, block)
+	// Process the block (header + attestations).
+	blockStart := time.Now()
+	s, err = ProcessBlockHeader(s, block)
 	if err != nil {
 		return nil, fmt.Errorf("process_block: %w", err)
 	}
+	attStart := time.Now()
+	s = ProcessAttestations(s, block.Body.Attestations)
+	metrics.STFAttestationsProcessed.Add(float64(len(block.Body.Attestations)))
+	metrics.STFAttestationsProcessingTime.Observe(time.Since(attStart).Seconds())
+	metrics.STFBlockProcessingTime.Observe(time.Since(blockStart).Seconds())
 
 	// Validate state root.
 	computedRoot, _ := s.HashTreeRoot()
