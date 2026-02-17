@@ -117,7 +117,7 @@ func TestVerification(t *testing.T) {
 	// Produce attestation from genFc (so time advances there)
 	// But 'fc' time is still Genesis (ProcessBlock doesn't advance time).
 	// We must advance 'fc' time to accept future attestation.
-	fc.Time = fc.GenesisTime + 2*types.SecondsPerSlot
+	fc.Time = 10 * types.IntervalsPerSlot // current slot 10, well ahead of attestation slot 2
 
 	sa, err := fc.ProduceAttestation(2, 0, kp) // Attest to block 2
 	if err != nil {
@@ -125,8 +125,8 @@ func TestVerification(t *testing.T) {
 	}
 
 	// Explicitly check signature validity
-	dataRoot, _ := sa.Message.Data.HashTreeRoot()
-	ep := uint32(sa.Message.Data.Target.Slot / types.SlotsPerEpoch)
+	dataRoot, _ := sa.Message.HashTreeRoot()
+	ep := uint32(sa.Message.Target.Slot / types.SlotsPerEpoch)
 	if err := leansig.Verify(pubkey[:], ep, dataRoot, sa.Signature[:]); err != nil {
 		t.Fatalf("Generated attestation has invalid signature: %v", err)
 	}

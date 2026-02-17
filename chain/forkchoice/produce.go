@@ -115,14 +115,18 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		var newAttestations []*types.Attestation
 		var newSigned []*types.SignedAttestation
 		for _, sa := range c.LatestKnownAttestations {
-			att := sa.Message
-			if _, ok := c.Storage.GetBlock(att.Data.Head.Root); !ok {
+			data := sa.Message
+			if _, ok := c.Storage.GetBlock(data.Head.Root); !ok {
 				continue
 			}
 			// Skip attestations whose source doesn't match post-state justified.
-			if att.Data.Source.Root != postState.LatestJustified.Root ||
-				att.Data.Source.Slot != postState.LatestJustified.Slot {
+			if data.Source.Root != postState.LatestJustified.Root ||
+				data.Source.Slot != postState.LatestJustified.Slot {
 				continue
+			}
+			att := &types.Attestation{
+				ValidatorID: sa.ValidatorID,
+				Data:        data,
 			}
 			if !containsAttestation(attestations, att) {
 				newAttestations = append(newAttestations, att)
@@ -223,22 +227,19 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 	headCheckpoint := &types.Checkpoint{Root: headRoot, Slot: headBlock.Slot}
 	targetCheckpoint := c.getVoteTargetLocked()
 
-	att := &types.Attestation{
-		ValidatorID: validatorIndex,
-		Data: &types.AttestationData{
-			Slot:   slot,
-			Head:   headCheckpoint,
-			Target: targetCheckpoint,
-			Source: c.LatestJustified,
-		},
+	data := &types.AttestationData{
+		Slot:   slot,
+		Head:   headCheckpoint,
+		Target: targetCheckpoint,
+		Source: c.LatestJustified,
 	}
 
 	// Sign the attestation data root.
-	dataRoot, err := att.Data.HashTreeRoot()
+	dataRoot, err := data.HashTreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("hash attestation data: %w", err)
 	}
-	epoch := uint32(att.Data.Target.Slot / types.SlotsPerEpoch)
+	epoch := uint32(data.Target.Slot / types.SlotsPerEpoch)
 	sig, err := signer.Sign(epoch, dataRoot)
 	if err != nil {
 		return nil, fmt.Errorf("sign attestation: %w", err)
@@ -248,7 +249,8 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 	copy(sigBytes[:], sig)
 
 	return &types.SignedAttestation{
-		Message:   att,
-		Signature: sigBytes,
+		ValidatorID: validatorIndex,
+		Message:     data,
+		Signature:   sigBytes,
 	}, nil
 }

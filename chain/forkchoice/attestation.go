@@ -18,16 +18,15 @@ func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 
 func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBlock bool) {
 	start := time.Now()
-	att := sa.Message
-	data := att.Data
-	validatorID := att.ValidatorID
+	data := sa.Message
+	validatorID := sa.ValidatorID
 
 	source := "gossip"
 	if isFromBlock {
 		source = "block"
 	}
 
-	if !c.validateAttestationLocked(att) {
+	if !c.validateAttestationData(data) {
 		return
 	}
 
@@ -40,12 +39,12 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	if isFromBlock {
 		// On-chain: update known attestations if this is newer.
 		existing, ok := c.LatestKnownAttestations[validatorID]
-		if !ok || existing.Message.Data.Slot < data.Slot {
+		if !ok || existing.Message.Slot < data.Slot {
 			c.LatestKnownAttestations[validatorID] = sa
 		}
 		// Remove from new attestations if superseded.
 		newAtt, ok := c.LatestNewAttestations[validatorID]
-		if ok && newAtt.Message.Data.Target.Slot <= data.Target.Slot {
+		if ok && newAtt.Message.Target.Slot <= data.Target.Slot {
 			delete(c.LatestNewAttestations, validatorID)
 		}
 	} else {
@@ -57,7 +56,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 		// Network gossip: update new attestations if this is newer.
 		existing, ok := c.LatestNewAttestations[validatorID]
-		if !ok || existing.Message.Data.Target.Slot < data.Target.Slot {
+		if !ok || existing.Message.Target.Slot < data.Target.Slot {
 			c.LatestNewAttestations[validatorID] = sa
 		}
 	}
@@ -82,36 +81,34 @@ func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
 		return fmt.Errorf("head state not found")
 	}
 
-	valID := sa.Message.ValidatorID
+	valID := sa.ValidatorID
 	if valID >= uint64(len(headState.Validators)) {
 		return fmt.Errorf("invalid validator index")
 	}
 	pubkey := headState.Validators[valID].Pubkey
 
 	// 2. Compute signing root (HashTreeRoot of AttestationData).
-	dataRoot, err := sa.Message.Data.HashTreeRoot()
+	dataRoot, err := sa.Message.HashTreeRoot()
 	if err != nil {
 		return err
 	}
 
 	// 3. Verify.
-	epoch := uint32(sa.Message.Data.Target.Slot / types.SlotsPerEpoch)
+	epoch := uint32(sa.Message.Target.Slot / types.SlotsPerEpoch)
 
 	// sa.Signature is [3112]byte. Transform to slice.
 	sig := sa.Signature[:]
 
 	if err := leansig.Verify(pubkey[:], epoch, dataRoot, sig); err != nil {
-		log.Warn("attestation signature invalid", "slot", sa.Message.Data.Slot, "validator", valID, "err", err)
+		log.Warn("attestation signature invalid", "slot", sa.Message.Slot, "validator", valID, "err", err)
 		return err
 	}
-	log.Info("attestation verified (XMSS)", "slot", sa.Message.Data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
+	log.Info("attestation verified (XMSS)", "slot", sa.Message.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
 	return nil
 }
 
-// validateAttestationLocked performs attestation validation checks.
-func (c *Store) validateAttestationLocked(att *types.Attestation) bool {
-	data := att.Data
-
+// validateAttestationData performs attestation validation checks.
+func (c *Store) validateAttestationData(data *types.AttestationData) bool {
 	// Availability check: source, target, and head blocks must exist.
 	sourceBlock, ok := c.Storage.GetBlock(data.Source.Root)
 	if !ok {

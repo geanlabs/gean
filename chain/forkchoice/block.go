@@ -87,26 +87,28 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		}
 	}
 
-	// Verify Block Proposer Signature.
-	if block.ProposerIndex >= uint64(len(parentState.Validators)) {
-		return fmt.Errorf("invalid proposer index")
-	}
-	proposerPubkey := parentState.Validators[block.ProposerIndex].Pubkey
+	// Verify Block Proposer Signature (only when a proposer attestation is present).
+	if envelope.Message.ProposerAttestation != nil {
+		if block.ProposerIndex >= uint64(len(parentState.Validators)) {
+			return fmt.Errorf("invalid proposer index")
+		}
+		proposerPubkey := parentState.Validators[block.ProposerIndex].Pubkey
 
-	// Message is hash(envelope.Message).
-	msgRoot, err := envelope.Message.HashTreeRoot()
-	if err != nil {
-		return fmt.Errorf("failed to hash block message: %w", err)
-	}
+		// Message is hash(envelope.Message).
+		msgRoot, err := envelope.Message.HashTreeRoot()
+		if err != nil {
+			return fmt.Errorf("failed to hash block message: %w", err)
+		}
 
-	epoch := uint32(block.Slot / types.SlotsPerEpoch)
-	proposerSig := envelope.Signature[numBodyAtts] // Last signature
+		epoch := uint32(block.Slot / types.SlotsPerEpoch)
+		proposerSig := envelope.Signature[numBodyAtts] // Last signature
 
-	if err := leansig.Verify(proposerPubkey[:], epoch, msgRoot, proposerSig[:]); err != nil {
-		log.Warn("block signature invalid", "slot", block.Slot, "proposer", block.ProposerIndex, "err", err)
-		return fmt.Errorf("invalid block signature: %w", err)
+		if err := leansig.Verify(proposerPubkey[:], epoch, msgRoot, proposerSig[:]); err != nil {
+			log.Warn("block signature invalid", "slot", block.Slot, "proposer", block.ProposerIndex, "err", err)
+			return fmt.Errorf("invalid block signature: %w", err)
+		}
+		log.Info("block signed (XMSS)", "slot", block.Slot, "proposer", block.ProposerIndex, "sig_size", fmt.Sprintf("%d bytes", len(proposerSig)))
 	}
-	log.Info("block signed (XMSS)", "slot", block.Slot, "proposer", block.ProposerIndex, "sig_size", fmt.Sprintf("%d bytes", len(proposerSig)))
 
 	c.Storage.PutBlock(blockHash, block)
 	c.Storage.PutSignedBlock(blockHash, envelope)
@@ -116,8 +118,9 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	// Pair each body attestation with its signature from the envelope.
 	for i, att := range block.Body.Attestations {
 		sa := &types.SignedAttestation{
-			Message:   att,
-			Signature: envelope.Signature[i],
+			ValidatorID: att.ValidatorID,
+			Message:     att.Data,
+			Signature:   envelope.Signature[i],
 		}
 		c.processAttestationLocked(sa, true)
 	}
@@ -127,9 +130,11 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 
 	// Step 4: Process proposer attestation as gossip vote (is_from_block=false).
 	if envelope.Message.ProposerAttestation != nil {
+		proposerAtt := envelope.Message.ProposerAttestation
 		proposerSA := &types.SignedAttestation{
-			Message:   envelope.Message.ProposerAttestation,
-			Signature: envelope.Signature[numBodyAtts], // always last
+			ValidatorID: proposerAtt.ValidatorID,
+			Message:     proposerAtt.Data,
+			Signature:   envelope.Signature[numBodyAtts], // always last
 		}
 		c.processAttestationLocked(proposerSA, false)
 	}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/leansig"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -64,35 +65,54 @@ func buildForkChoiceWithBlocks(t *testing.T, numValidators, targetSlot uint64) (
 
 func makeFCAttestation(validatorID, slot uint64, head, source, target *types.Checkpoint) *types.SignedAttestation {
 	return &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: validatorID,
-			Data: &types.AttestationData{
-				Slot:   slot,
-				Head:   head,
-				Target: target,
-				Source: source,
-			},
+		ValidatorID: validatorID,
+		Message: &types.AttestationData{
+			Slot:   slot,
+			Head:   head,
+			Target: target,
+			Source: source,
 		},
 	}
 }
 
 func TestForkChoiceProcessAttestationValidGossip(t *testing.T) {
-	fc, hashes := buildForkChoiceWithBlocks(t, 5, 2)
+	// Use a real keypair so the attestation signature is valid.
+	kp, err := leansig.GenerateKeypair(42, 0, 8)
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	defer kp.Free()
+
+	pubkey, err := kp.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("pubkey: %v", err)
+	}
+	var pk [52]byte
+	copy(pk[:], pubkey)
+
+	fc, _ := buildForkChoiceWithBlocks(t, 5, 2)
+
+	// Patch validator 0's pubkey in all stored states so signature verification
+	// can succeed.
+	for _, st := range fc.Storage.GetAllStates() {
+		st.Validators[0].Pubkey = pk
+	}
+
 	fc.Time = 10 * types.IntervalsPerSlot // current slot far ahead of vote slot
 
-	sa := makeFCAttestation(5, 2,
-		&types.Checkpoint{Root: hashes[2], Slot: 2},
-		&types.Checkpoint{Root: hashes[1], Slot: 1},
-		&types.Checkpoint{Root: hashes[2], Slot: 2},
-	)
+	// Produce a properly signed attestation for validator 0 at slot 2.
+	sa, err := fc.ProduceAttestation(2, 0, kp)
+	if err != nil {
+		t.Fatalf("ProduceAttestation: %v", err)
+	}
 	fc.ProcessAttestation(sa)
 
-	got, ok := fc.LatestNewAttestations[5]
+	got, ok := fc.LatestNewAttestations[0]
 	if !ok {
 		t.Fatal("expected validator attestation in latest_new_attestations")
 	}
-	if got.Message.Data.Target.Slot != 2 || got.Message.Data.Target.Root != hashes[2] {
-		t.Fatalf("unexpected attestation target: got slot=%d root=%x", got.Message.Data.Target.Slot, got.Message.Data.Target.Root)
+	if got.Message.Target.Slot != sa.Message.Target.Slot {
+		t.Fatalf("unexpected attestation target slot: got %d, want %d", got.Message.Target.Slot, sa.Message.Target.Slot)
 	}
 }
 
