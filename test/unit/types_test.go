@@ -77,14 +77,12 @@ func TestBlockHeaderSSZRoundTrip(t *testing.T) {
 
 func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 	sa := &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: 3,
-			Data: &types.AttestationData{
-				Slot:   10,
-				Head:   &types.Checkpoint{Root: [32]byte{1}, Slot: 9},
-				Target: &types.Checkpoint{Root: [32]byte{2}, Slot: 8},
-				Source: &types.Checkpoint{Root: [32]byte{3}, Slot: 7},
-			},
+		ValidatorID: 3,
+		Message: &types.AttestationData{
+			Slot:   10,
+			Head:   &types.Checkpoint{Root: [32]byte{1}, Slot: 9},
+			Target: &types.Checkpoint{Root: [32]byte{2}, Slot: 8},
+			Source: &types.Checkpoint{Root: [32]byte{3}, Slot: 7},
 		},
 	}
 	data, err := sa.MarshalSSZ()
@@ -97,10 +95,10 @@ func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if decoded.Message.ValidatorID != 3 || decoded.Message.Data.Slot != 10 {
-		t.Fatalf("attestation round trip failed: got validator_id=%d slot=%d", decoded.Message.ValidatorID, decoded.Message.Data.Slot)
+	if decoded.ValidatorID != 3 || decoded.Message.Slot != 10 {
+		t.Fatalf("attestation round trip failed: got validator_id=%d slot=%d", decoded.ValidatorID, decoded.Message.Slot)
 	}
-	if decoded.Message.Data.Head.Slot != 9 || decoded.Message.Data.Target.Slot != 8 || decoded.Message.Data.Source.Slot != 7 {
+	if decoded.Message.Head.Slot != 9 || decoded.Message.Target.Slot != 8 || decoded.Message.Source.Slot != 7 {
 		t.Fatal("checkpoint round trip failed")
 	}
 }
@@ -160,21 +158,21 @@ func TestIsJustifiableAfter(t *testing.T) {
 		slot, finalized uint64
 		want            bool
 	}{
-		{0, 0, true},   // delta=0, <=5
-		{5, 0, true},   // delta=5, <=5
-		{6, 0, true},   // delta=6, pronic (2*3)
-		{7, 0, false},  // delta=7, not square or pronic
-		{9, 0, true},   // delta=9, perfect square (3^2)
-		{10, 0, false}, // delta=10, neither
-		{12, 0, true},  // delta=12, pronic (3*4)
-		{16, 0, true},  // delta=16, perfect square (4^2)
-		{20, 0, true},  // delta=20, pronic (4*5)
-		{25, 0, true},  // delta=25, perfect square (5^2)
-		{30, 0, true},  // delta=30, pronic (5*6)
-		{7, 2, true},          // delta=5, <=5
-		{8, 2, true},          // delta=6, pronic
-		{1 << 26, 0, true},   // delta=2^26 = 67108864, perfect square (8192^2)
-		{1<<26 + 1, 0, false}, // not square or pronic
+		{0, 0, true},           // delta=0, <=5
+		{5, 0, true},           // delta=5, <=5
+		{6, 0, true},           // delta=6, pronic (2*3)
+		{7, 0, false},          // delta=7, not square or pronic
+		{9, 0, true},           // delta=9, perfect square (3^2)
+		{10, 0, false},         // delta=10, neither
+		{12, 0, true},          // delta=12, pronic (3*4)
+		{16, 0, true},          // delta=16, perfect square (4^2)
+		{20, 0, true},          // delta=20, pronic (4*5)
+		{25, 0, true},          // delta=25, perfect square (5^2)
+		{30, 0, true},          // delta=30, pronic (5*6)
+		{7, 2, true},           // delta=5, <=5
+		{8, 2, true},           // delta=6, pronic
+		{1 << 26, 0, true},     // delta=2^26 = 67108864, perfect square (8192^2)
+		{1<<26 + 1, 0, false},  // not square or pronic
 		{8192 * 8193, 0, true}, // pronic: 8192*8193 = 67117056
 	}
 

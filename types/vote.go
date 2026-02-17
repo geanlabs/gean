@@ -16,6 +16,7 @@ type Attestation struct {
 
 // SignedAttestation is the gossip envelope for attestations.
 type SignedAttestation struct {
-	Message   *Attestation
-	Signature [3112]byte `ssz-size:"3112"`
+	ValidatorID uint64
+	Message     *AttestationData
+	Signature   [3112]byte `ssz-size:"3112"`
 }

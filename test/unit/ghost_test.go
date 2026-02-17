@@ -22,14 +22,12 @@ func makeBlock(slot, proposer uint64, parent [32]byte) *types.Block {
 func makeGhostAttestation(validatorID uint64, headRoot [32]byte, headSlot uint64) *types.SignedAttestation {
 	cp := &types.Checkpoint{Root: headRoot, Slot: headSlot}
 	return &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: validatorID,
-			Data: &types.AttestationData{
-				Slot:   headSlot,
-				Head:   cp,
-				Target: cp,
-				Source: cp,
-			},
+		ValidatorID: validatorID,
+		Message: &types.AttestationData{
+			Slot:   headSlot,
+			Head:   cp,
+			Target: cp,
+			Source: cp,
 		},
 	}
 }

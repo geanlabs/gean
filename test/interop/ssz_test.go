@@ -76,14 +76,12 @@ func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 	}
 
 	sa := &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: 2,
-			Data: &types.AttestationData{
-				Slot:   5,
-				Head:   &types.Checkpoint{Root: headRoot, Slot: 3},
-				Target: &types.Checkpoint{Root: targetRoot, Slot: 4},
-				Source: &types.Checkpoint{Root: sourceRoot, Slot: 1},
-			},
+		ValidatorID: 2,
+		Message: &types.AttestationData{
+			Slot:   5,
+			Head:   &types.Checkpoint{Root: headRoot, Slot: 3},
+			Target: &types.Checkpoint{Root: targetRoot, Slot: 4},
+			Source: &types.Checkpoint{Root: sourceRoot, Slot: 1},
 		},
 	}
 
@@ -99,7 +97,7 @@ func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 	}
 	t.Logf("SignedAttestation root: %s", hex.EncodeToString(root[:]))
 
-	attRoot, err := sa.Message.Data.HashTreeRoot()
+	attRoot, err := sa.Message.HashTreeRoot()
 	if err != nil {
 		t.Fatalf("AttestationData HashTreeRoot: %v", err)
 	}

@@ -29,8 +29,11 @@ type BlockWithAttestation struct {
 	ProposerAttestation *Attestation
 }
 
+// BlockSignatures is the aggregated signature list for a block envelope.
+type BlockSignatures = [][3112]byte
+
 // SignedBlockWithAttestation is the gossip/wire envelope for blocks.
 type SignedBlockWithAttestation struct {
 	Message   *BlockWithAttestation
-	Signature [][3112]byte `ssz-max:"4096" ssz-size:"?,3112"`
+	Signature BlockSignatures `ssz-max:"4096" ssz-size:"?,3112"`
 }

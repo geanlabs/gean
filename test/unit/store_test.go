@@ -54,14 +54,12 @@ func TestForkChoiceAcceptNewAttestations(t *testing.T) {
 
 	// Add an attestation to new attestations.
 	fc.LatestNewAttestations[0] = &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: 0,
-			Data: &types.AttestationData{
-				Slot:   0,
-				Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
-				Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
-				Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
-			},
+		ValidatorID: 0,
+		Message: &types.AttestationData{
+			Slot:   0,
+			Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
 		},
 	}
 
@@ -97,14 +95,12 @@ func TestForkChoiceInitPanicsOnAnchorStateRootMismatch(t *testing.T) {
 func TestProduceAttestationAcceptsNewAttestationsFirst(t *testing.T) {
 	fc, _ := makeGenesisFC(5)
 	fc.LatestNewAttestations[3] = &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: 3,
-			Data: &types.AttestationData{
-				Slot:   0,
-				Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
-				Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
-				Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
-			},
+		ValidatorID: 3,
+		Message: &types.AttestationData{
+			Slot:   0,
+			Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
 		},
 	}
 

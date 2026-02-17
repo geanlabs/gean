@@ -46,14 +46,12 @@ func TestTickIntervalCyclesThroughAllIntervals(t *testing.T) {
 func TestAcceptNewAttestationsOnInterval0WithProposal(t *testing.T) {
 	fc, _ := makeGenesisFC(5)
 	fc.LatestNewAttestations[0] = &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: 0,
-			Data: &types.AttestationData{
-				Slot:   0,
-				Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
-				Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
-				Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
-			},
+		ValidatorID: 0,
+		Message: &types.AttestationData{
+			Slot:   0,
+			Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
+			Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
 		},
 	}
 

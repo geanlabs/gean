@@ -138,7 +138,7 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			v.Log.Debug("published attestation",
 				"slot", slot,
 				"validator", idx,
-				"target_slot", sa.Message.Data.Target.Slot,
+				"target_slot", sa.Message.Target.Slot,
 			)
 		}
 	}

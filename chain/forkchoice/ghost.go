@@ -40,7 +40,7 @@ func GetForkChoiceHead(
 	// Count votes for each block. Votes for descendants count toward ancestors.
 	voteWeights := make(map[[32]byte]int)
 	for _, sa := range latestAttestations {
-		headRoot := sa.Message.Data.Head.Root
+		headRoot := sa.Message.Head.Root
 		if _, ok := blocks[headRoot]; !ok {
 			continue
 		}
@@ -99,6 +99,9 @@ func GetLatestJustified(store storage.Store) *types.Checkpoint {
 	var latest *types.Checkpoint
 	for _, s := range states {
 		if latest == nil || s.LatestJustified.Slot > latest.Slot {
+			latest = s.LatestJustified
+		} else if s.LatestJustified.Slot == latest.Slot && latest.Root == types.ZeroHash && s.LatestJustified.Root != types.ZeroHash {
+			// Prefer non-zero root when slots are tied (ZeroHash is genesis sentinel).
 			latest = s.LatestJustified
 		}
 	}

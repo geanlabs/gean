@@ -96,14 +96,12 @@ func TestProduceBlockIncludesAttestations(t *testing.T) {
 	// Add attestations for slot 2 block.
 	for i := uint64(0); i < 2; i++ {
 		fc.LatestKnownAttestations[i] = &types.SignedAttestation{
-			Message: &types.Attestation{
-				ValidatorID: i,
-				Data: &types.AttestationData{
-					Slot:   2,
-					Head:   &types.Checkpoint{Root: hashes[2], Slot: 2},
-					Target: &types.Checkpoint{Root: hashes[2], Slot: 2},
-					Source: &types.Checkpoint{Root: hashes[0], Slot: 0},
-				},
+			ValidatorID: i,
+			Message: &types.AttestationData{
+				Slot:   2,
+				Head:   &types.Checkpoint{Root: hashes[2], Slot: 2},
+				Target: &types.Checkpoint{Root: hashes[2], Slot: 2},
+				Source: &types.Checkpoint{Root: hashes[0], Slot: 0},
 			},
 		}
 	}
@@ -128,13 +126,13 @@ func TestProduceAttestationReturnsValidAttestation(t *testing.T) {
 	}
 	att := sa.Message
 
-	if att.ValidatorID != 0 {
-		t.Fatalf("att.ValidatorID = %d, want 0", att.ValidatorID)
+	if sa.ValidatorID != 0 {
+		t.Fatalf("sa.ValidatorID = %d, want 0", sa.ValidatorID)
 	}
-	if att.Data.Slot != 2 {
-		t.Fatalf("att.Data.Slot = %d, want 2", att.Data.Slot)
+	if att.Slot != 2 {
+		t.Fatalf("att.Slot = %d, want 2", att.Slot)
 	}
-	if att.Data.Head == nil || att.Data.Target == nil || att.Data.Source == nil {
+	if att.Head == nil || att.Target == nil || att.Source == nil {
 		t.Fatal("attestation checkpoints should not be nil")
 	}
 
@@ -152,8 +150,8 @@ func TestProduceAttestationSourceIsLatestJustified(t *testing.T) {
 		t.Fatalf("ProduceAttestation: %v", err)
 	}
 
-	if sa.Message.Data.Source.Slot != fc.LatestJustified.Slot {
-		t.Fatalf("att.Data.Source.Slot = %d, want LatestJustified.Slot = %d",
-			sa.Message.Data.Source.Slot, fc.LatestJustified.Slot)
+	if sa.Message.Source.Slot != fc.LatestJustified.Slot {
+		t.Fatalf("att.Message.Source.Slot = %d, want LatestJustified.Slot = %d",
+			sa.Message.Source.Slot, fc.LatestJustified.Slot)
 	}
 }
