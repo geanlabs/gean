@@ -5,14 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/leansig"
+	"github.com/geanlabs/gean/xmss/leansig"
 )
 
-// Constants from original test
 const (
 	testActivationEpoch = 0
 	testNumActiveEpochs = 8
-	MessageLength       = 32
 )
 
 func TestSaveAndLoadKeypair(t *testing.T) {
@@ -24,7 +22,7 @@ func TestSaveAndLoadKeypair(t *testing.T) {
 	defer kp.Free()
 
 	// 2. Sign some message
-	var msg [MessageLength]byte
+	var msg [leansig.MessageLength]byte
 	if _, err := rand.Read(msg[:]); err != nil {
 		t.Fatalf("rand.Read failed: %v", err)
 	}
