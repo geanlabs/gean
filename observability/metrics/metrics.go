@@ -55,11 +55,6 @@ var AttestationsValid = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Help: "Total number of valid attestations",
 }, []string{"source"})
 
-var AttestationsInvalid = prometheus.NewCounterVec(prometheus.CounterOpts{
-	Name: "lean_attestations_invalid_total",
-	Help: "Total number of invalid attestations",
-}, []string{"source"})
-
 var AttestationValidationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_attestation_validation_time_seconds",
 	Help:    "Time taken to validate attestation",
@@ -82,34 +77,6 @@ var StateTransitionTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_state_transition_time_seconds",
 	Help:    "Time to process state transition",
 	Buckets: stfBuckets,
-})
-
-var STFSlotsProcessed = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "lean_state_transition_slots_processed_total",
-	Help: "Total number of processed slots",
-})
-
-var STFSlotsProcessingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
-	Name:    "lean_state_transition_slots_processing_time_seconds",
-	Help:    "Time taken to process slots",
-	Buckets: fastBuckets,
-})
-
-var STFBlockProcessingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
-	Name:    "lean_state_transition_block_processing_time_seconds",
-	Help:    "Time taken to process block",
-	Buckets: fastBuckets,
-})
-
-var STFAttestationsProcessed = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "lean_state_transition_attestations_processed_total",
-	Help: "Total number of processed attestations",
-})
-
-var STFAttestationsProcessingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
-	Name:    "lean_state_transition_attestations_processing_time_seconds",
-	Help:    "Time taken to process attestations",
-	Buckets: fastBuckets,
 })
 
 // --- Validator ---
@@ -137,17 +104,11 @@ func init() {
 		SafeTargetSlot,
 		ForkChoiceBlockProcessingTime,
 		AttestationsValid,
-		AttestationsInvalid,
 		AttestationValidationTime,
 		// State transition
 		LatestJustifiedSlot,
 		LatestFinalizedSlot,
 		StateTransitionTime,
-		STFSlotsProcessed,
-		STFSlotsProcessingTime,
-		STFBlockProcessingTime,
-		STFAttestationsProcessed,
-		STFAttestationsProcessingTime,
 		// Validator
 		ValidatorsCount,
 		// Network

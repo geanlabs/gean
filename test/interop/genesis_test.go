@@ -17,9 +17,6 @@ func makeTestValidators(n uint64) []*types.Validator {
 	return validators
 }
 
-// TODO: Update expected roots for devnet-1 types (Validators field added to State, NumValidators removed from Config).
-// Reference roots were generated from leanSpec at commit 4b750f2 (devnet-0) and are no longer valid.
-
 func TestGenesisStateRootConsistency(t *testing.T) {
 	tests := []struct {
 		genesisTime   uint64

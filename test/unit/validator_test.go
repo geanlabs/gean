@@ -14,18 +14,6 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-// MockSigner implements forkchoice.Signer for testing.
-type MockSigner struct {
-	Signature []byte
-}
-
-func (m *MockSigner) Sign(epoch uint32, message [32]byte) ([]byte, error) {
-	if m.Signature == nil {
-		return make([]byte, 3116), nil // Default Signature
-	}
-	return m.Signature, nil
-}
-
 func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	// Setup
 	numValidators := uint64(3)
@@ -46,9 +34,9 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 
 	// Mock keys
 	keys := make(map[uint64]forkchoice.Signer)
-	expectedSig := make([]byte, 3116)
+	expectedSig := make([]byte, 3112)
 	expectedSig[0] = 0xAA // Marker
-	keys[1] = &MockSigner{Signature: expectedSig}
+	keys[1] = &testSigner{sig: expectedSig}
 
 	// Capture published attestation
 	var publishedAtt *types.SignedAttestation
@@ -102,9 +90,9 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 
 	// Mock keys
 	keys := make(map[uint64]forkchoice.Signer)
-	expectedSig := make([]byte, 3116)
+	expectedSig := make([]byte, 3112)
 	expectedSig[0] = 0xBB // Marker
-	keys[1] = &MockSigner{Signature: expectedSig}
+	keys[1] = &testSigner{sig: expectedSig}
 
 	// Capture published block
 	var publishedBlock *types.SignedBlockWithAttestation
