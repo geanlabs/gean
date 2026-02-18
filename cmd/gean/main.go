@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/geanlabs/gean/config"
 	"github.com/geanlabs/gean/node"
@@ -56,6 +57,10 @@ func main() {
 		"validators", len(genCfg.Validators),
 	)
 
+	if genCfg.GenesisTime < uint64(time.Now().Unix()) {
+		logger.Warn("genesis time is in the past", "genesis_time", genCfg.GenesisTime, "now", time.Now().Unix())
+	}
+
 	// Load bootnodes.
 	var bootnodes []string
 	if *bootnodesPath != "" {
@@ -78,6 +83,10 @@ func main() {
 		reg, err := config.LoadValidators(*validatorsPath)
 		if err != nil {
 			logger.Error("failed to load validators", "err", err)
+			os.Exit(1)
+		}
+		if err := reg.Validate(uint64(len(genCfg.Validators))); err != nil {
+			logger.Error("invalid validator config", "err", err)
 			os.Exit(1)
 		}
 		validatorIDs = reg.GetValidatorIndices(*nodeID)

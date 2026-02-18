@@ -26,14 +26,16 @@ func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler
 	if err != nil {
 		return err
 	}
-	aggSub, err := topics.AggregateAttestation.Subscribe()
-	if err != nil {
-		return err
-	}
 
 	go readBlockMessages(ctx, blockSub, handler)
 	go readAttestationMessages(ctx, attSub, handler)
-	go readAggregatedAttestationMessages(ctx, aggSub, handler)
+	if topics.AggregateAttestation != nil && handler.OnAggregatedAttestation != nil {
+		aggSub, err := topics.AggregateAttestation.Subscribe()
+		if err != nil {
+			return err
+		}
+		go readAggregatedAttestationMessages(ctx, aggSub, handler)
+	}
 	return nil
 }
 

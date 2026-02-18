@@ -74,13 +74,6 @@ func VerifyAggregatedAttestation(state *types.State, agg *types.AggregatedAttest
 	if err != nil {
 		return 0, fmt.Errorf("disaggregate: %w", err)
 	}
-
-	dataRoot, err := agg.Data.HashTreeRoot()
-	if err != nil {
-		return 0, fmt.Errorf("hash attestation data: %w", err)
-	}
-
-	epoch := uint32(agg.Data.Target.Slot / types.SlotsPerEpoch)
 	verified := 0
 
 	for i, valID := range validatorIDs {
@@ -89,7 +82,12 @@ func VerifyAggregatedAttestation(state *types.State, agg *types.AggregatedAttest
 			continue
 		}
 		pubkey := state.Validators[valID].Pubkey
-		if err := leansig.Verify(pubkey[:], epoch, dataRoot, sigs[i][:]); err != nil {
+		att := &types.Attestation{ValidatorID: valID, Data: agg.Data}
+		messageRoot, err := att.HashTreeRoot()
+		if err != nil {
+			return 0, fmt.Errorf("hash attestation: %w", err)
+		}
+		if err := leansig.Verify(pubkey[:], uint32(agg.Data.Slot), messageRoot, sigs[i][:]); err != nil {
 			log.Warn("aggregated attestation: signature invalid",
 				"validator", valID, "slot", agg.Data.Slot, "err", err,
 			)
@@ -121,11 +119,6 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 		return
 	}
 
-	dataRoot, err := agg.Data.HashTreeRoot()
-	if err != nil {
-		return
-	}
-	epoch := uint32(agg.Data.Target.Slot / types.SlotsPerEpoch)
 	currentSlot := c.Time / types.IntervalsPerSlot
 
 	for i, valID := range validatorIDs {
@@ -133,7 +126,12 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 			continue
 		}
 		pubkey := headState.Validators[valID].Pubkey
-		if err := leansig.Verify(pubkey[:], epoch, dataRoot, sigs[i][:]); err != nil {
+		att := &types.Attestation{ValidatorID: valID, Data: agg.Data}
+		messageRoot, err := att.HashTreeRoot()
+		if err != nil {
+			return
+		}
+		if err := leansig.Verify(pubkey[:], uint32(agg.Data.Slot), messageRoot, sigs[i][:]); err != nil {
 			continue
 		}
 		if agg.Data.Slot > currentSlot {
@@ -146,7 +144,7 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 			Signature:   sigs[i],
 		}
 		existing, ok := c.LatestNewAttestations[valID]
-		if !ok || existing.Message.Target.Slot < agg.Data.Target.Slot {
+		if !ok || existing.Message.Slot < agg.Data.Slot {
 			c.LatestNewAttestations[valID] = sa
 		}
 	}

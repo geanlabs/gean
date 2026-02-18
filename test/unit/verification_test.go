@@ -7,9 +7,9 @@ import (
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
-	"github.com/geanlabs/gean/xmss/leansig"
 	"github.com/geanlabs/gean/storage/memory"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss/leansig"
 )
 
 // TestVerification checks that ProcessBlock and ProcessAttestation
@@ -74,9 +74,9 @@ func TestVerification(t *testing.T) {
 	}
 	t.Logf("Validation: Signature size (envelope) = %d bytes", len(envelope1.Signature[0]))
 
-	// Check raw signature size
-	msgRoot1, _ := envelope1.Message.HashTreeRoot()
-	rawSig, err := kp.Sign(0, msgRoot1) // epoch 0
+	// Check raw signature size for proposer attestation signature semantics.
+	msgRoot1, _ := envelope1.Message.ProposerAttestation.HashTreeRoot()
+	rawSig, err := kp.Sign(uint32(envelope1.Message.ProposerAttestation.Data.Slot), msgRoot1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,10 +124,11 @@ func TestVerification(t *testing.T) {
 		t.Fatalf("ProduceAttestation failed: %v", err)
 	}
 
-	// Explicitly check signature validity
-	dataRoot, _ := sa.Message.HashTreeRoot()
-	ep := uint32(sa.Message.Target.Slot / types.SlotsPerEpoch)
-	if err := leansig.Verify(pubkey[:], ep, dataRoot, sa.Signature[:]); err != nil {
+	// Explicitly check signature validity.
+	attMsg := &types.Attestation{ValidatorID: sa.ValidatorID, Data: sa.Message}
+	attRoot, _ := attMsg.HashTreeRoot()
+	signingSlot := uint32(sa.Message.Slot)
+	if err := leansig.Verify(pubkey[:], signingSlot, attRoot, sa.Signature[:]); err != nil {
 		t.Fatalf("Generated attestation has invalid signature: %v", err)
 	}
 

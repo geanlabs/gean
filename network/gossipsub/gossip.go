@@ -56,7 +56,7 @@ func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
 	)
 }
 
-// JoinTopics joins the block and vote gossip topics.
+// JoinTopics joins the block and attestation gossip topics.
 func JoinTopics(ps *pubsub.PubSub, devnetID string) (*Topics, error) {
 	blockTopic, err := ps.Join(fmt.Sprintf(BlockTopicFmt, devnetID))
 	if err != nil {
@@ -66,9 +66,6 @@ func JoinTopics(ps *pubsub.PubSub, devnetID string) (*Topics, error) {
 	if err != nil {
 		return nil, fmt.Errorf("join attestation topic: %w", err)
 	}
-	aggTopic, err := ps.Join(fmt.Sprintf(AggregateAttestationTopicFmt, devnetID))
-	if err != nil {
-		return nil, fmt.Errorf("join aggregate attestation topic: %w", err)
-	}
-	return &Topics{Block: blockTopic, Attestation: attTopic, AggregateAttestation: aggTopic}, nil
+	// aggregate_attestation is not part of current devnet-1 interop topics.
+	return &Topics{Block: blockTopic, Attestation: attTopic}, nil
 }

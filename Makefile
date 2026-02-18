@@ -1,4 +1,4 @@
-.PHONY: build test test-race lint fmt clean docker-build run run-devnet help
+.PHONY: build test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
@@ -28,7 +28,12 @@ clean:
 docker-build:
 	docker build -t gean:$(VERSION) .
 
-run: build
+refresh-genesis-time:
+	@NEW_TIME=$$(( $$(date +%s) + 30 )); \
+	sed -i "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" config.yaml; \
+	echo "Updated GENESIS_TIME to $$NEW_TIME"
+
+run: build refresh-genesis-time
 	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0
 
 run-devnet:

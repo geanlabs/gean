@@ -56,6 +56,11 @@ func (v *ValidatorDuties) OnInterval(ctx context.Context, slot, interval uint64)
 }
 
 func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
+	// Slot 0 is the anchor/genesis slot and should not produce a new block.
+	if slot == 0 {
+		return
+	}
+
 	for _, idx := range v.Indices {
 		if !statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
 			continue
@@ -191,7 +196,7 @@ func (v *ValidatorDuties) TryAggregate(ctx context.Context, slot uint64) {
 		"aggregate_size", fmt.Sprintf("%d bytes", aggSize),
 	)
 
-	if v.PublishAggregatedAttestation != nil {
+	if v.PublishAggregatedAttestation != nil && v.Topics.AggregateAttestation != nil {
 		if err := v.PublishAggregatedAttestation(ctx, v.Topics.AggregateAttestation, agg); err != nil {
 			v.Log.Error("failed to publish aggregated attestation",
 				"slot", slot,

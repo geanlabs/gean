@@ -29,9 +29,11 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		return
 	}
 
-	// Verify signature.
-	if err := c.verifyAttestationSignature(sa); err != nil {
-		return
+	// Verify signature (skip for on-chain attestations; already verified in ProcessBlock).
+	if !isFromBlock {
+		if err := c.verifyAttestationSignature(sa); err != nil {
+			return
+		}
 	}
 
 	if isFromBlock {
@@ -42,7 +44,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		}
 		// Remove from new attestations if superseded.
 		newAtt, ok := c.LatestNewAttestations[validatorID]
-		if ok && newAtt.Message.Target.Slot <= data.Target.Slot {
+		if ok && newAtt.Message.Slot <= data.Slot {
 			delete(c.LatestNewAttestations, validatorID)
 		}
 	} else {
@@ -54,7 +56,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 		// Network gossip: update new attestations if this is newer.
 		existing, ok := c.LatestNewAttestations[validatorID]
-		if !ok || existing.Message.Target.Slot < data.Target.Slot {
+		if !ok || existing.Message.Slot < data.Slot {
 			c.LatestNewAttestations[validatorID] = sa
 		}
 	}
