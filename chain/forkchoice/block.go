@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/chain/statetransition"
-	"github.com/geanlabs/gean/leansig"
+	"github.com/geanlabs/gean/xmss/leansig"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )

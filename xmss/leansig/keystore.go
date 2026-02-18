@@ -22,7 +22,7 @@ func LoadKeypair(pkPath, skPath string) (*Keypair, error) {
 }
 
 // SaveKeypair writes the public and secret keys of a Keypair to disk.
-// Files will be created or overwritten with 0600 permissions.
+// Public key is written with 0644 permissions, secret key with 0600.
 func SaveKeypair(kp *Keypair, pkPath, skPath string) error {
 	pkBytes, err := kp.PublicKeyBytes()
 	if err != nil {
