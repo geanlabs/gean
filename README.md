@@ -65,7 +65,7 @@ gean exposes Prometheus metrics at `/metrics` when `--metrics-port` is enabled.
 
 Grafana assets for gean are provided at:
 
-- `observability/grafana/gean-dashboard.json` (dashboard import)
+- `observability/grafana/client-dashboard.json` (dashboard import)
 - `observability/grafana/prometheus-scrape.example.yml` (scrape config example)
 
 Dashboard notes:

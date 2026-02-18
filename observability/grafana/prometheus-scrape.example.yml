@@ -1,6 +1,6 @@
 # Example Prometheus scrape config for gean metrics.
 # Gean exposes metrics at: http://<host>:<metrics-port>/metrics
-# Dashboard queries in observability/grafana/gean-dashboard.json filter on: job=~"$gean_job"
+# Dashboard queries in observability/grafana/client-dashboard.json filter on: job=~"$gean_job"
 
 scrape_configs:
   - job_name: gean
