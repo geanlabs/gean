@@ -7,13 +7,13 @@ import (
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
-	"github.com/geanlabs/gean/xmss/leansig"
 	"github.com/geanlabs/gean/network"
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/storage/memory"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss/leansig"
 )
 
 // New creates and wires up a new Node.
@@ -92,13 +92,14 @@ func New(cfg Config) (*Node, error) {
 	}
 
 	validator := &ValidatorDuties{
-		Indices:            cfg.ValidatorIDs,
-		Keys:               validatorKeys,
-		FC:                 fc,
-		Topics:             topics,
-		PublishBlock:       gossipsub.PublishBlock,
-		PublishAttestation: gossipsub.PublishAttestation,
-		Log:                logging.NewComponentLogger(logging.CompValidator),
+		Indices:                      cfg.ValidatorIDs,
+		Keys:                         validatorKeys,
+		FC:                           fc,
+		Topics:                       topics,
+		PublishBlock:                 gossipsub.PublishBlock,
+		PublishAttestation:           gossipsub.PublishAttestation,
+		PublishAggregatedAttestation: gossipsub.PublishAggregatedAttestation,
+		Log:                          logging.NewComponentLogger(logging.CompValidator),
 	}
 
 	n := &Node{

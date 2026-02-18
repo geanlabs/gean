@@ -54,6 +54,13 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 		OnAttestation: func(sa *types.SignedAttestation) {
 			fc.ProcessAttestation(sa)
 		},
+		OnAggregatedAttestation: func(agg *types.AggregatedAttestation) {
+			gossipLog.Debug("received aggregated attestation via gossip",
+				"slot", agg.Data.Slot,
+				"num_sigs", len(agg.AggregatedSignature)/types.XMSSSignatureSize,
+			)
+			fc.ProcessAggregatedAttestation(agg)
+		},
 	}); err != nil {
 		return fmt.Errorf("subscribe topics: %w", err)
 	}

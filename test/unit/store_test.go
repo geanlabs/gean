@@ -7,6 +7,7 @@ import (
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/storage/memory"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss/leansig"
 )
 
 func makeGenesisFC(numValidators uint64) (*forkchoice.Store, *types.State) {
@@ -34,8 +35,61 @@ func TestForkChoiceInitFromGenesis(t *testing.T) {
 	if fc.Head == types.ZeroHash {
 		t.Error("head should not be zero after genesis")
 	}
-	if fc.LatestJustified.Root != types.ZeroHash {
-		t.Error("genesis justified root should be zero")
+	if fc.LatestJustified.Root == types.ZeroHash {
+		t.Error("justified root should be anchor root, not zero")
+	}
+	if fc.LatestJustified.Root != fc.Head {
+		t.Errorf("justified root (%x) != head (%x)", fc.LatestJustified.Root[:4], fc.Head[:4])
+	}
+	if fc.LatestFinalized.Root != fc.Head {
+		t.Errorf("finalized root (%x) != head (%x)", fc.LatestFinalized.Root[:4], fc.Head[:4])
+	}
+}
+
+func TestAnchorRootSourcePassesValidation(t *testing.T) {
+	// Use a real keypair so signature verification passes.
+	kp, err := leansig.GenerateKeypair(42, 0, 8)
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	defer kp.Free()
+
+	pubkey, err := kp.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("pubkey: %v", err)
+	}
+	var pk [52]byte
+	copy(pk[:], pubkey)
+
+	// Use buildForkChoiceWithBlocks so we have at least 1 block.
+	fc, _ := buildForkChoiceWithBlocks(t, 5, 2)
+
+	// Patch validator 1's pubkey in all stored states.
+	for _, st := range fc.Storage.GetAllStates() {
+		st.Validators[1].Pubkey = pk
+	}
+
+	// The key assertion: source root should be anchor root (not ZeroHash).
+	if fc.LatestJustified.Root == types.ZeroHash {
+		t.Fatal("justified root is zero — store init bug not fixed")
+	}
+
+	fc.Time = 10 * types.IntervalsPerSlot
+
+	sa, err := fc.ProduceAttestation(2, 1, kp)
+	if err != nil {
+		t.Fatalf("ProduceAttestation: %v", err)
+	}
+
+	// Source should use the non-zero justified root.
+	if sa.Message.Source.Root == types.ZeroHash {
+		t.Fatal("attestation source root is zero — should be anchor root")
+	}
+
+	fc.ProcessAttestation(sa)
+
+	if _, ok := fc.LatestNewAttestations[1]; !ok {
+		t.Fatal("attestation with anchor root source should pass validation")
 	}
 }
 
