@@ -84,6 +84,18 @@ func AppendBit(bl []byte, val bool) []byte {
 	return bl
 }
 
+// MakeBitlist creates a zero-filled SSZ bitlist with numBits data bits
+// and a sentinel bit at position numBits.
+func MakeBitlist(numBits uint64) []byte {
+	if numBits == 0 {
+		return []byte{0x01}
+	}
+	numBytes := (numBits + 1 + 7) / 8
+	bl := make([]byte, numBytes)
+	bl[numBits/8] |= 1 << (numBits % 8)
+	return bl
+}
+
 // CloneBitlist returns a copy of an SSZ bitlist.
 func CloneBitlist(src []byte) []byte {
 	dst := make([]byte, len(src))

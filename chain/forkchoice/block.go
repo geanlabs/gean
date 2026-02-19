@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/chain/statetransition"
-	"github.com/geanlabs/gean/xmss/leansig"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss/leansig"
 )
 
 func (c *Store) verifyAttestationSignatureWithState(state *types.State, att *types.Attestation, sig [3112]byte) error {
@@ -17,18 +17,18 @@ func (c *Store) verifyAttestationSignatureWithState(state *types.State, att *typ
 	}
 	pubkey := state.Validators[valID].Pubkey
 
-	dataRoot, err := att.Data.HashTreeRoot()
+	messageRoot, err := att.HashTreeRoot()
 	if err != nil {
-		return fmt.Errorf("failed to hash attestation data: %w", err)
+		return fmt.Errorf("failed to hash attestation message: %w", err)
 	}
 
-	epoch := uint32(att.Data.Target.Slot / types.SlotsPerEpoch)
+	signingSlot := uint32(att.Data.Slot)
 
-	if err := leansig.Verify(pubkey[:], epoch, dataRoot, sig[:]); err != nil {
-		log.Warn("body attestation signature invalid", "slot", att.Data.Slot, "validator", valID, "err", err)
+	if err := leansig.Verify(pubkey[:], signingSlot, messageRoot, sig[:]); err != nil {
+		log.Warn("attestation signature invalid", "slot", att.Data.Slot, "validator", valID, "err", err)
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
-	log.Info("body attestation signed (XMSS)", "slot", att.Data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
+	log.Info("attestation signature verified (XMSS)", "slot", att.Data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
 	return nil
 }
 
@@ -87,32 +87,26 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		}
 	}
 
-	// Verify Block Proposer Signature (only when a proposer attestation is present).
+	// Verify proposer attestation signature (only when a proposer attestation is present).
 	if envelope.Message.ProposerAttestation != nil {
-		if block.ProposerIndex >= uint64(len(parentState.Validators)) {
-			return fmt.Errorf("invalid proposer index")
-		}
-		proposerPubkey := parentState.Validators[block.ProposerIndex].Pubkey
-
-		// Message is hash(envelope.Message).
-		msgRoot, err := envelope.Message.HashTreeRoot()
-		if err != nil {
-			return fmt.Errorf("failed to hash block message: %w", err)
-		}
-
-		epoch := uint32(block.Slot / types.SlotsPerEpoch)
 		proposerSig := envelope.Signature[numBodyAtts] // Last signature
-
-		if err := leansig.Verify(proposerPubkey[:], epoch, msgRoot, proposerSig[:]); err != nil {
-			log.Warn("block signature invalid", "slot", block.Slot, "proposer", block.ProposerIndex, "err", err)
-			return fmt.Errorf("invalid block signature: %w", err)
+		if err := c.verifyAttestationSignatureWithState(parentState, envelope.Message.ProposerAttestation, proposerSig); err != nil {
+			return fmt.Errorf("invalid proposer attestation signature: %w", err)
 		}
-		log.Info("block signed (XMSS)", "slot", block.Slot, "proposer", block.ProposerIndex, "sig_size", fmt.Sprintf("%d bytes", len(proposerSig)))
 	}
 
 	c.Storage.PutBlock(blockHash, block)
 	c.Storage.PutSignedBlock(blockHash, envelope)
 	c.Storage.PutState(blockHash, state)
+
+	// Update justified checkpoint from this block's post-state (monotonic).
+	if state.LatestJustified.Slot > c.LatestJustified.Slot {
+		c.LatestJustified = state.LatestJustified
+	}
+	// Update finalized checkpoint from this block's post-state (monotonic).
+	if state.LatestFinalized.Slot > c.LatestFinalized.Slot {
+		c.LatestFinalized = state.LatestFinalized
+	}
 
 	// Step 2: Process body attestations as on-chain votes.
 	// Pair each body attestation with its signature from the envelope.

@@ -9,7 +9,7 @@ import (
 
 // Signer abstracts the signing capability (XMSS or mock).
 type Signer interface {
-	Sign(epoch uint32, message [32]byte) ([]byte, error)
+	Sign(signingSlot uint32, message [32]byte) ([]byte, error)
 }
 
 // GetProposalHead returns the head for block proposal at the given slot.
@@ -68,7 +68,7 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 //   - the signature list (body attestation sigs + proposer sig last)
 //
 // The signer is used to produce the proposer's XMSS signature over the
-// BlockWithAttestation hash-tree-root.
+// proposer attestation hash-tree-root.
 func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types.SignedBlockWithAttestation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -190,15 +190,15 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		Signature: sigs,
 	}
 
-	// Sign the BlockWithAttestation root with the proposer's key.
-	msgRoot, err := envelope.Message.HashTreeRoot()
+	// Sign proposer attestation message (validator_id + data).
+	msgRoot, err := proposerAtt.HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("hash block-with-attestation: %w", err)
+		return nil, fmt.Errorf("hash proposer attestation: %w", err)
 	}
-	epoch := uint32(slot / types.SlotsPerEpoch)
-	sig, err := signer.Sign(epoch, msgRoot)
+	signingSlot := uint32(proposerAtt.Data.Slot)
+	sig, err := signer.Sign(signingSlot, msgRoot)
 	if err != nil {
-		return nil, fmt.Errorf("sign block: %w", err)
+		return nil, fmt.Errorf("sign proposer attestation: %w", err)
 	}
 	copy(envelope.Signature[len(collectedSigned)][:], sig)
 
@@ -210,7 +210,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 }
 
 // ProduceAttestation produces a signed attestation for the given slot and validator.
-// The signer produces the XMSS signature over HashTreeRoot(AttestationData).
+// The signer produces the XMSS signature over HashTreeRoot(Attestation).
 func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (*types.SignedAttestation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -239,13 +239,18 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 		Source: c.LatestJustified,
 	}
 
-	// Sign the attestation data root.
-	dataRoot, err := data.HashTreeRoot()
-	if err != nil {
-		return nil, fmt.Errorf("hash attestation data: %w", err)
+	att := &types.Attestation{
+		ValidatorID: validatorIndex,
+		Data:        data,
 	}
-	epoch := uint32(data.Target.Slot / types.SlotsPerEpoch)
-	sig, err := signer.Sign(epoch, dataRoot)
+
+	// Sign the attestation message root (validator_id + data).
+	messageRoot, err := att.HashTreeRoot()
+	if err != nil {
+		return nil, fmt.Errorf("hash attestation: %w", err)
+	}
+	signingSlot := uint32(data.Slot)
+	sig, err := signer.Sign(signingSlot, messageRoot)
 	if err != nil {
 		return nil, fmt.Errorf("sign attestation: %w", err)
 	}
