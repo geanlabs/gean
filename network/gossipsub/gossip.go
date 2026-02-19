@@ -11,14 +11,16 @@ import (
 
 // Gossip topic names.
 const (
-	BlockTopicFmt = "/leanconsensus/%s/block/ssz_snappy"
-	AttestationTopicFmt = "/leanconsensus/%s/attestation/ssz_snappy"
+	BlockTopicFmt                = "/leanconsensus/%s/block/ssz_snappy"
+	AttestationTopicFmt          = "/leanconsensus/%s/attestation/ssz_snappy"
+	AggregateAttestationTopicFmt = "/leanconsensus/%s/aggregate_attestation/ssz_snappy"
 )
 
 // Topics holds subscribed gossipsub topics.
 type Topics struct {
-	Block       *pubsub.Topic
-	Attestation *pubsub.Topic
+	Block                *pubsub.Topic
+	Attestation          *pubsub.Topic
+	AggregateAttestation *pubsub.Topic
 }
 
 // NewGossipSub creates a configured gossipsub instance.
@@ -54,7 +56,7 @@ func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
 	)
 }
 
-// JoinTopics joins the block and vote gossip topics.
+// JoinTopics joins the block and attestation gossip topics.
 func JoinTopics(ps *pubsub.PubSub, devnetID string) (*Topics, error) {
 	blockTopic, err := ps.Join(fmt.Sprintf(BlockTopicFmt, devnetID))
 	if err != nil {
@@ -64,5 +66,6 @@ func JoinTopics(ps *pubsub.PubSub, devnetID string) (*Topics, error) {
 	if err != nil {
 		return nil, fmt.Errorf("join attestation topic: %w", err)
 	}
+	// aggregate_attestation is not part of current devnet-1 interop topics.
 	return &Topics{Block: blockTopic, Attestation: attTopic}, nil
 }

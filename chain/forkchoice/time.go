@@ -64,15 +64,7 @@ func (c *Store) acceptNewAttestationsLocked() {
 }
 
 func (c *Store) updateHeadLocked() {
-	if latest := GetLatestJustified(c.Storage); latest != nil {
-		c.LatestJustified = latest
-	}
-
 	c.Head = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestKnownAttestations, 0)
-
-	if headState, ok := c.Storage.GetState(c.Head); ok {
-		c.LatestFinalized = headState.LatestFinalized
-	}
 }
 
 // UpdateSafeTarget finds the head with sufficient (2/3+) vote support.

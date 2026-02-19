@@ -126,6 +126,25 @@ var ConnectedPeers = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of connected peers",
 })
 
+// --- Devnet-1 Baseline Metrics ---
+
+var SignatureVerificationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_signature_verification_time_seconds",
+	Help:    "Time to verify a single XMSS signature",
+	Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1},
+})
+
+var SigningTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_signing_time_seconds",
+	Help:    "Time to produce a single XMSS signature",
+	Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.5},
+})
+
+var AggregateSizeBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_aggregate_size_bytes",
+	Help: "Size in bytes of the latest aggregated signature",
+})
+
 func init() {
 	prometheus.MustRegister(
 		// Node info
@@ -152,6 +171,10 @@ func init() {
 		ValidatorsCount,
 		// Network
 		ConnectedPeers,
+		// Devnet-1 baselines
+		SignatureVerificationTime,
+		SigningTime,
+		AggregateSizeBytes,
 	)
 }
 

@@ -33,6 +33,23 @@ func LoadValidators(path string) (*ValidatorRegistry, error) {
 	return &reg, nil
 }
 
+// Validate checks for overlapping assignments and out-of-range indices.
+func (r *ValidatorRegistry) Validate(numGenesisValidators uint64) error {
+	seen := make(map[uint64]string)
+	for _, a := range r.Assignments {
+		for _, idx := range a.Validators {
+			if idx >= numGenesisValidators {
+				return fmt.Errorf("validator %d in %s out of range (genesis has %d)", idx, a.NodeName, numGenesisValidators)
+			}
+			if prev, ok := seen[idx]; ok {
+				return fmt.Errorf("validator %d assigned to both %s and %s", idx, prev, a.NodeName)
+			}
+			seen[idx] = a.NodeName
+		}
+	}
+	return nil
+}
+
 // GetValidatorIndices returns the validator indices for a given node name.
 func (r *ValidatorRegistry) GetValidatorIndices(nodeName string) []uint64 {
 	for _, a := range r.Assignments {

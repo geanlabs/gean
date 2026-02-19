@@ -103,6 +103,80 @@ func TestGetForkChoiceHeadTwoForks(t *testing.T) {
 	}
 }
 
+// TestGetForkChoiceHeadTiebreakBySlotThenHash verifies that with equal vote
+// weight, higher slot wins first, and hash only breaks ties when slot is equal.
+func TestGetForkChoiceHeadTiebreakBySlotThenHash(t *testing.T) {
+	store := memory.New()
+
+	genesis := makeBlock(0, 0, types.ZeroHash)
+	genesisRoot, _ := genesis.HashTreeRoot()
+	store.PutBlock(genesisRoot, genesis)
+
+	// Fork A at slot 3 (higher slot).
+	blockA := makeBlock(3, 0, genesisRoot)
+	blockARoot, _ := blockA.HashTreeRoot()
+	store.PutBlock(blockARoot, blockA)
+
+	// Fork B at slot 1 (lower slot).
+	blockB := makeBlock(1, 1, genesisRoot)
+	blockBRoot, _ := blockB.HashTreeRoot()
+	store.PutBlock(blockBRoot, blockB)
+
+	// Equal weight: 1 vote each.
+	atts := map[uint64]*types.SignedAttestation{
+		0: makeGhostAttestation(0, blockARoot, 3),
+		1: makeGhostAttestation(1, blockBRoot, 1),
+	}
+
+	head := forkchoice.GetForkChoiceHead(store, genesisRoot, atts, 0)
+	if head != blockARoot {
+		t.Errorf("expected higher-slot blockA to win, got %x", head[:4])
+	}
+}
+
+func TestGetForkChoiceHeadTiebreakByHashWhenSlotsEqual(t *testing.T) {
+	store := memory.New()
+
+	genesis := makeBlock(0, 0, types.ZeroHash)
+	genesisRoot, _ := genesis.HashTreeRoot()
+	store.PutBlock(genesisRoot, genesis)
+
+	// Same slot, equal weight; hash decides.
+	blockA := makeBlock(2, 0, genesisRoot)
+	blockARoot, _ := blockA.HashTreeRoot()
+	store.PutBlock(blockARoot, blockA)
+
+	blockB := makeBlock(2, 1, genesisRoot)
+	blockBRoot, _ := blockB.HashTreeRoot()
+	store.PutBlock(blockBRoot, blockB)
+
+	atts := map[uint64]*types.SignedAttestation{
+		0: makeGhostAttestation(0, blockARoot, 2),
+		1: makeGhostAttestation(1, blockBRoot, 2),
+	}
+
+	head := forkchoice.GetForkChoiceHead(store, genesisRoot, atts, 0)
+	expected := blockARoot
+	if hashGreaterTest(blockBRoot, blockARoot) {
+		expected = blockBRoot
+	}
+	if head != expected {
+		t.Errorf("expected larger-hash block %x, got %x", expected[:4], head[:4])
+	}
+}
+
+func hashGreaterTest(a, b [32]byte) bool {
+	for i := 0; i < 32; i++ {
+		if a[i] > b[i] {
+			return true
+		}
+		if a[i] < b[i] {
+			return false
+		}
+	}
+	return false
+}
+
 func TestGetForkChoiceHeadMinScore(t *testing.T) {
 	store := memory.New()
 

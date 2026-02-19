@@ -65,7 +65,7 @@ func GetForkChoiceHead(
 	}
 
 	// Walk down tree, choosing child with most votes.
-	// Tiebreak: highest slot, then largest hash.
+	// Tiebreak: highest slot, then largest hash (lexicographic).
 	current := root
 	for {
 		children := childrenMap[current]
@@ -88,26 +88,6 @@ func GetForkChoiceHead(
 		current = best
 	}
 }
-
-// GetLatestJustified finds the justified checkpoint with the highest slot.
-func GetLatestJustified(store storage.Store) *types.Checkpoint {
-	states := store.GetAllStates()
-	if len(states) == 0 {
-		return nil
-	}
-
-	var latest *types.Checkpoint
-	for _, s := range states {
-		if latest == nil || s.LatestJustified.Slot > latest.Slot {
-			latest = s.LatestJustified
-		} else if s.LatestJustified.Slot == latest.Slot && latest.Root == types.ZeroHash && s.LatestJustified.Root != types.ZeroHash {
-			// Prefer non-zero root when slots are tied (ZeroHash is genesis sentinel).
-			latest = s.LatestJustified
-		}
-	}
-	return latest
-}
-
 func hashGreater(a, b [32]byte) bool {
 	for i := 0; i < 32; i++ {
 		if a[i] > b[i] {
