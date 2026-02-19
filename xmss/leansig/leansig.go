@@ -24,13 +24,13 @@ const MessageLength = 32
 
 // Result codes matching the LeansigResult C enum.
 const (
-	ResultOK                    = C.LEANSIG_OK
-	ResultNullPointer           = C.LEANSIG_NULL_POINTER
-	ResultInvalidLength         = C.LEANSIG_INVALID_LENGTH
-	ResultSigningFailed         = C.LEANSIG_SIGNING_FAILED
-	ResultDeserializationFailed = C.LEANSIG_DESERIALIZATION_FAILED
-	ResultVerificationFailed    = C.LEANSIG_VERIFICATION_FAILED
-	ResultEpochNotPrepared      = C.LEANSIG_EPOCH_NOT_PREPARED
+	ResultOK                    = C.LEANSIG_RESULT_OK
+	ResultNullPointer           = C.LEANSIG_RESULT_NULL_POINTER
+	ResultInvalidLength         = C.LEANSIG_RESULT_INVALID_LENGTH
+	ResultSigningFailed         = C.LEANSIG_RESULT_SIGNING_FAILED
+	ResultDeserializationFailed = C.LEANSIG_RESULT_DESERIALIZATION_FAILED
+	ResultVerificationFailed    = C.LEANSIG_RESULT_VERIFICATION_FAILED
+	ResultEpochNotPrepared      = C.LEANSIG_RESULT_EPOCH_NOT_PREPARED
 )
 
 // Keypair wraps an opaque leansig keypair handle.
