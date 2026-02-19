@@ -17,21 +17,22 @@ func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 
 func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBlock bool) {
 	start := time.Now()
+	defer func() {
+		metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
+	}()
+
 	data := sa.Message
 	validatorID := sa.ValidatorID
 
-	source := "gossip"
-	if isFromBlock {
-		source = "block"
-	}
-
 	if !c.validateAttestationData(data) {
+		metrics.AttestationsInvalid.Inc()
 		return
 	}
 
 	// Verify signature (skip for on-chain attestations; already verified in ProcessBlock).
 	if !isFromBlock {
 		if err := c.verifyAttestationSignature(sa); err != nil {
+      metrics.AttestationsInvalid.Inc()
 			return
 		}
 	}
@@ -51,6 +52,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		// Network gossip attestation processing.
 		currentSlot := c.Time / types.IntervalsPerSlot
 		if data.Slot > currentSlot {
+			metrics.AttestationsInvalid.Inc()
 			return
 		}
 
@@ -61,8 +63,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		}
 	}
 
-	metrics.AttestationsValid.WithLabelValues(source).Inc()
-	metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
+	metrics.AttestationsValid.Inc()
 }
 
 // verifyAttestationSignature verifies the XMSS signature on the attestation.
