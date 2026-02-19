@@ -1,3 +1,3 @@
-- multiaddr: "/ip4/127.0.0.1/udp/9000/quic-v1/p2p/16Uiu2HAkyhJUvc4vWbpfpAo8uTD3xBXhXK1BsuXY1ZNUwwhKmbjr"
-- multiaddr: "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/16Uiu2HAmKbxPADz6rwkvMRc2QahFu5ie1W3tGihrxZzVJcCDm8qr"
-- multiaddr: "/ip4/127.0.0.1/udp/9002/quic-v1/p2p/16Uiu2HAm51i5Vb2WjS9ZN2qE5RNSyiMcf1JW8aGNQ9mHE3smmoTa"
+- multiaddr: "/ip4/127.0.0.1/tcp/9000/p2p/16Uiu2HAmGfqyJZmWn2TBZCZc3wSa2PJf8HHeghBWRKhLqaFR5Sps"
+- multiaddr: "/ip4/127.0.0.1/tcp/9001/p2p/16Uiu2HAm4G6v4DTxw9JfBCM59kijrdfFJnmmWyb2qFeYdT2dSFJb"
+- multiaddr: "/ip4/127.0.0.1/tcp/9002/p2p/16Uiu2HAmS7RrymmhTpgZVpchUUp7kAZZEG2Firw6onDHt1mNouVj"
