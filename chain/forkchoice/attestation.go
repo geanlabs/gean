@@ -32,7 +32,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	// Verify signature (skip for on-chain attestations; already verified in ProcessBlock).
 	if !isFromBlock {
 		if err := c.verifyAttestationSignature(sa); err != nil {
-      metrics.AttestationsInvalid.Inc()
+			metrics.AttestationsInvalid.Inc()
 			return
 		}
 	}

@@ -49,7 +49,7 @@ run-devnet:
 	cd ../lean-quickstart && NETWORK_DIR=local-devnet ./spin-node.sh --node gean_0 --generateGenesis --metrics
 
 run-node-1:
-	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node1 --listen-addr /ip4/0.0.0.0/tcp/9001 --node-key node1.key --data-dir data/node1
+	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node1 --listen-addr /ip4/0.0.0.0/tcp/9001 --node-key node1.key --data-dir data/node1 --discovery-port 9001
 
 run-node-2:
-	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node2 --listen-addr /ip4/0.0.0.0/tcp/9002 --node-key node2.key --data-dir data/node2
+	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node2 --listen-addr /ip4/0.0.0.0/tcp/9002 --node-key node2.key --data-dir data/node2 --discovery-port 9002
