@@ -28,6 +28,8 @@ func main() {
 	validatorKeys := flag.String("validator-keys", "", "Path to directory containing validator keys")
 	listenAddr := flag.String("listen-addr", "/ip4/0.0.0.0/udp/9000/quic-v1", "QUIC listen address")
 	metricsPort := flag.Int("metrics-port", 8080, "Prometheus metrics port (0 = disabled)")
+	discoveryPort := flag.Int("discovery-port", 9000, "Discovery v5 UDP port")
+	dataDir := flag.String("data-dir", ".", "Data directory for node database and keys")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
@@ -109,6 +111,8 @@ func main() {
 		ValidatorIDs:     validatorIDs,
 		ValidatorKeysDir: *validatorKeys,
 		MetricsPort:      *metricsPort,
+		DiscoveryPort:    *discoveryPort,
+		DataDir:          *dataDir,
 		DevnetID:         *devnetID,
 	}
 

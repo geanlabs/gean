@@ -2,6 +2,8 @@ package node
 
 import (
 	"fmt"
+	"net"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/network"
 	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/network/p2p"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/storage/memory"
@@ -72,6 +75,29 @@ func New(cfg Config) (*Node, error) {
 	gossipLog := logging.NewComponentLogger(logging.CompGossip)
 	gossipLog.Info("gossipsub topics joined", "devnet", devnetID)
 
+	// Initialize P2P Discovery
+	discPort := cfg.DiscoveryPort
+	if discPort == 0 {
+		discPort = 9000
+	}
+
+	p2pDBPath := filepath.Join(cfg.DataDir, "p2p")
+	if err := os.MkdirAll(p2pDBPath, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create p2p db dir: %w", err)
+	}
+
+	// Use the same key file for both Libp2p and ENR/Discv5 for consistent identity.
+	// We updated p2p package to support raw binary keys used by lean-quickstart.
+	p2pManager, err := p2p.NewLocalNodeManager(p2pDBPath, cfg.NodeKeyPath, net.IPv4(0, 0, 0, 0), discPort, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init p2p manager: %w", err)
+	}
+
+	p2pDiscovery, err := p2p.NewDiscoveryService(p2pManager, discPort, cfg.Bootnodes)
+	if err != nil {
+		log.Error("Failed to start p2p discovery", "err", err)
+	}
+
 	clock := NewClock(cfg.GenesisTime)
 
 	validatorKeys := make(map[uint64]forkchoice.Signer)
@@ -103,12 +129,14 @@ func New(cfg Config) (*Node, error) {
 	}
 
 	n := &Node{
-		FC:        fc,
-		Host:      host,
-		Topics:    topics,
-		Clock:     clock,
-		Validator: validator,
-		log:       log,
+		FC:           fc,
+		Host:         host,
+		Topics:       topics,
+		Clock:        clock,
+		Validator:    validator,
+		P2PManager:   p2pManager,
+		P2PDiscovery: p2pDiscovery,
+		log:          log,
 	}
 
 	// Register gossip and req/resp handlers.
