@@ -17,3 +17,4 @@ coverage.html
 
 # Keys
 keys/
+node*.key
