@@ -193,7 +193,7 @@ func (kp *Keypair) Sign(epoch uint32, message [MessageLength]byte) ([]byte, erro
 }
 
 // verifyResult maps a C verify result code to a Go error.
-func verifyResult(result C.LeansigResult, op string) error {
+func verifyResult(result C.enum_LeansigResult, op string) error {
 	switch result {
 	case ResultOK:
 		return nil
