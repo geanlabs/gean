@@ -1,4 +1,4 @@
-.PHONY: build ffi spect-test unit-test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
+.PHONY: build ffi spec-test unit-test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
@@ -11,7 +11,7 @@ build: ffi
 	@go build -o bin/keygen ./cmd/keygen
 
 # Run the spectests with the leanSpec fixtures, skipping signature verification for faster test execution
-spect-test: ffi leanSpec/fixtures
+spec-test: ffi leanSpec/fixtures
 	go test -tags skip_sig_verify -count=1 ./spectests/...
 
 # Run the unit tests, which include signature verification and thus take longer to execute

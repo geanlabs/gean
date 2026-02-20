@@ -43,7 +43,7 @@ devnet-1 progress:
 make build
 
 # Run consensus spectests (builds FFI + fixtures)
-make spect-test
+make spec-test
 
 # Run Go unit tests
 make unit-test
@@ -60,7 +60,7 @@ make run
 
 ## leanSpec fixtures and spectests (devnet-1)
 
-`make spect-test` is the primary consensus-conformance entry point. It bootstraps leanSpec fixtures and runs spectests in a signature-skip lane.
+`make spec-test` is the primary consensus-conformance entry point. It bootstraps leanSpec fixtures and runs spectests in a signature-skip lane.
 
 ```sh
 # Generate/update fixtures from pinned leanSpec commit
@@ -71,7 +71,7 @@ git -C leanSpec rev-parse HEAD
 cat leanSpec/.fixtures-commit
 
 # Run only consensus spectests (fork-choice + state-transition)
-make spect-test
+make spec-test
 
 # Run Go unit tests across packages
 make unit-test
