@@ -9,6 +9,8 @@ coverage.html
 
 # Go cache
 .gocache/
+.uv-cache/
+/leanSpec
 
 # IDE
 .idea/

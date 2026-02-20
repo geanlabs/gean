@@ -49,6 +49,30 @@ make lint
 make run
 ```
 
+## leanSpec fixtures and spectests (devnet-1)
+
+`make test` is the primary local entry point. It bootstraps leanSpec fixtures and runs all Go tests, including spectests in a signature-skip lane.
+
+```sh
+# Generate/update fixtures from pinned leanSpec commit
+make leanSpec/fixtures
+
+# Verify leanSpec pin used for fixtures
+git -C leanSpec rev-parse HEAD
+cat leanSpec/.fixtures-commit
+
+# Run only consensus spectests (fork-choice + state-transition)
+go test -tags skip_sig_verify -count=1 ./test/spectests/...
+
+# Run everything (unit/integration + spectests)
+make test
+```
+
+Notes:
+- Fixtures are generated under `leanSpec/fixtures`.
+- `leanSpec/` is a local working directory and is gitignored.
+- Devnet-1 fixture generation uses `uv run fill --fork=Devnet --layer=consensus --clean -o fixtures`.
+
 ## Metrics and Grafana
 
 gean exposes Prometheus metrics at `/metrics` when `--metrics-port` is enabled.

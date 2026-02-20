@@ -27,10 +27,6 @@ func GetForkChoiceHead(
 		root = earliest
 	}
 
-	if len(latestAttestations) == 0 {
-		return root
-	}
-
 	rootBlock, ok := blocks[root]
 	if !ok {
 		return root

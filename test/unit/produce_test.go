@@ -28,18 +28,18 @@ func newTestSigner() forkchoice.Signer {
 func TestProduceBlockCreatesValidBlock(t *testing.T) {
 	fc, _ := buildForkChoiceWithBlocks(t, 3, 2)
 
-	// Slot 2, proposer = 2 % 3 = 2
-	envelope, err := fc.ProduceBlock(2, 2, newTestSigner())
+	// Slot 3, proposer = 3 % 3 = 0
+	envelope, err := fc.ProduceBlock(3, 0, newTestSigner())
 	if err != nil {
 		t.Fatalf("ProduceBlock: %v", err)
 	}
 
 	block := envelope.Message.Block
-	if block.Slot != 2 {
-		t.Fatalf("block.Slot = %d, want 2", block.Slot)
+	if block.Slot != 3 {
+		t.Fatalf("block.Slot = %d, want 3", block.Slot)
 	}
-	if block.ProposerIndex != 2 {
-		t.Fatalf("block.ProposerIndex = %d, want 2", block.ProposerIndex)
+	if block.ProposerIndex != 0 {
+		t.Fatalf("block.ProposerIndex = %d, want 0", block.ProposerIndex)
 	}
 	if block.StateRoot == types.ZeroHash {
 		t.Fatal("block.StateRoot should not be zero")
@@ -63,8 +63,8 @@ func TestProduceBlockCreatesValidBlock(t *testing.T) {
 	if envelope.Message.ProposerAttestation == nil {
 		t.Fatal("envelope should include proposer attestation")
 	}
-	if envelope.Message.ProposerAttestation.ValidatorID != 2 {
-		t.Fatalf("proposer attestation validator = %d, want 2",
+	if envelope.Message.ProposerAttestation.ValidatorID != 0 {
+		t.Fatalf("proposer attestation validator = %d, want 0",
 			envelope.Message.ProposerAttestation.ValidatorID)
 	}
 

@@ -80,20 +80,22 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 
 	c.Storage.PutState(blockHash, state)
 
-	// Step 1b: Verify signatures.
-	// Verify Body Attestations.
-	for i, att := range block.Body.Attestations {
-		// Use parent state to get validator keys (static validators).
-		if err := c.verifyAttestationSignatureWithState(parentState, att, envelope.Signature[i]); err != nil {
-			return fmt.Errorf("invalid body attestation signature at index %d: %w", i, err)
+	// Step 1b: Verify signatures (skipped when skip_sig_verify build tag is set).
+	if c.shouldVerifySignatures() {
+		// Verify Body Attestations.
+		for i, att := range block.Body.Attestations {
+			// Use parent state to get validator keys (static validators).
+			if err := c.verifyAttestationSignatureWithState(parentState, att, envelope.Signature[i]); err != nil {
+				return fmt.Errorf("invalid body attestation signature at index %d: %w", i, err)
+			}
 		}
-	}
 
-	// Verify proposer attestation signature (only when a proposer attestation is present).
-	if envelope.Message.ProposerAttestation != nil {
-		proposerSig := envelope.Signature[numBodyAtts] // Last signature
-		if err := c.verifyAttestationSignatureWithState(parentState, envelope.Message.ProposerAttestation, proposerSig); err != nil {
-			return fmt.Errorf("invalid proposer attestation signature: %w", err)
+		// Verify proposer attestation signature (only when a proposer attestation is present).
+		if envelope.Message.ProposerAttestation != nil {
+			proposerSig := envelope.Signature[numBodyAtts] // Last signature
+			if err := c.verifyAttestationSignatureWithState(parentState, envelope.Message.ProposerAttestation, proposerSig); err != nil {
+				return fmt.Errorf("invalid proposer attestation signature: %w", err)
+			}
 		}
 	}
 
