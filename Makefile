@@ -1,18 +1,20 @@
-.PHONY: build test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
+.PHONY: build ffi test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
-build:
-	@cd xmss/leansig-ffi && cargo build --release > /dev/null 2>&1
+ffi:
+	@cd xmss/leansig-ffi && cargo build --release
+
+build: ffi
 	@mkdir -p bin
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
-test: leanSpec/fixtures
+test: ffi leanSpec/fixtures
 	go test ./...
 	go test -tags skip_sig_verify -count=1 ./test/spectests/...
 
-test-race:
+test-race: ffi
 	go test -race ./...
 
 lint:
