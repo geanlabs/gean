@@ -13,7 +13,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-const stfFixtureDir = "../../leanSpec/fixtures/consensus/state_transition"
+const stfFixtureDir = "../leanSpec/fixtures/consensus/state_transition"
 
 func TestStateTransition(t *testing.T) {
 	files := findJSONFiles(t, stfFixtureDir)

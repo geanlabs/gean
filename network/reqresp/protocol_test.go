@@ -1,4 +1,4 @@
-package unit
+package reqresp_test
 
 import (
 	"testing"

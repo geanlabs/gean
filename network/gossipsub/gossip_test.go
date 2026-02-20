@@ -1,4 +1,4 @@
-package unit
+package gossipsub_test
 
 import (
 	"crypto/sha256"

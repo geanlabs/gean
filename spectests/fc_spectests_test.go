@@ -13,7 +13,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-const fcFixtureDir = "../../leanSpec/fixtures/consensus/fork_choice"
+const fcFixtureDir = "../leanSpec/fixtures/consensus/fork_choice"
 
 func TestForkChoice(t *testing.T) {
 	files := findJSONFiles(t, fcFixtureDir)

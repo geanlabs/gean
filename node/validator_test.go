@@ -1,4 +1,4 @@
-package unit
+package node_test
 
 import (
 	"context"
@@ -13,6 +13,19 @@ import (
 	"github.com/geanlabs/gean/types"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
+
+type testSigner struct {
+	sig []byte
+}
+
+func (s *testSigner) Sign(epoch uint32, message [32]byte) ([]byte, error) {
+	if s.sig != nil {
+		return s.sig, nil
+	}
+	out := make([]byte, 3112)
+	out[0] = 0xAA
+	return out, nil
+}
 
 func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	// Setup
