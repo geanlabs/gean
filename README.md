@@ -42,8 +42,11 @@ devnet-1 progress:
 # Build (includes FFI library)
 make build
 
-# Run tests (builds FFI, generates fixtures, runs unit + spectests)
-make test
+# Run consensus spectests (builds FFI + fixtures)
+make spect-test
+
+# Run Go unit tests
+make unit-test
 
 # Lint
 make lint
@@ -57,7 +60,7 @@ make run
 
 ## leanSpec fixtures and spectests (devnet-1)
 
-`make test` is the primary local entry point. It bootstraps leanSpec fixtures and runs all Go tests, including spectests in a signature-skip lane.
+`make spect-test` is the primary consensus-conformance entry point. It bootstraps leanSpec fixtures and runs spectests in a signature-skip lane.
 
 ```sh
 # Generate/update fixtures from pinned leanSpec commit
@@ -68,10 +71,10 @@ git -C leanSpec rev-parse HEAD
 cat leanSpec/.fixtures-commit
 
 # Run only consensus spectests (fork-choice + state-transition)
-go test -tags skip_sig_verify -count=1 ./test/spectests/...
+make spect-test
 
-# Run everything (unit/integration + spectests)
-make test
+# Run Go unit tests across packages
+make unit-test
 ```
 
 Notes:

@@ -1,4 +1,4 @@
-package unit
+package config_test
 
 import (
 	"os"
