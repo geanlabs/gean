@@ -1,17 +1,20 @@
-.PHONY: build test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help
+.PHONY: build ffi test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
-build:
-	@cd xmss/leansig-ffi && cargo build --release > /dev/null 2>&1
+ffi:
+	@cd xmss/leansig-ffi && cargo build --release
+
+build: ffi
 	@mkdir -p bin
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
-test:
+test: ffi leanSpec/fixtures
 	go test ./...
+	go test -tags skip_sig_verify -count=1 ./test/spectests/...
 
-test-race:
+test-race: ffi
 	go test -race ./...
 
 lint:
@@ -53,3 +56,27 @@ run-node-1:
 
 run-node-2:
 	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node2 --listen-addr /ip4/0.0.0.0/tcp/9002 --node-key node2.key --data-dir data/node2 --discovery-port 9002
+
+# The commit hash of the leanSpec repository to use for testing and fixtures
+LEAN_SPEC_COMMIT_HASH := 050fa4a18881d54d7dc07601fe59e34eb20b9630
+
+# A file to track which commit of the leanSpec fixtures have been generated, to avoid unnecessary regeneration
+LEAN_SPEC_FIXTURE_STAMP := leanSpec/.fixtures-commit
+
+# Clone the leanSpec repository if it doesn't exist, and checkout the specified commit
+leanSpec:
+	@if [ ! -d "leanSpec/.git" ]; then \
+		git clone https://github.com/leanEthereum/leanSpec.git --single-branch leanSpec; \
+	fi
+	@cd leanSpec && CURRENT_COMMIT=$$(git rev-parse HEAD) && \
+	if [ "$$CURRENT_COMMIT" != "$(LEAN_SPEC_COMMIT_HASH)" ]; then \
+		git fetch --all --tags --prune && git checkout $(LEAN_SPEC_COMMIT_HASH); \
+	fi
+
+# Generate the leanSpec fixtures if they are not already generated for the specified commit
+leanSpec/fixtures: leanSpec
+	@CURRENT_FIXTURE_COMMIT=$$(cat $(LEAN_SPEC_FIXTURE_STAMP) 2>/dev/null || true); \
+	if [ "$$CURRENT_FIXTURE_COMMIT" != "$(LEAN_SPEC_COMMIT_HASH)" ] || [ ! -d "leanSpec/fixtures/consensus" ]; then \
+		cd leanSpec && uv run fill --fork=Devnet --layer=consensus --clean -o fixtures && \
+		echo "$(LEAN_SPEC_COMMIT_HASH)" > .fixtures-commit; \
+	fi
