@@ -10,7 +10,8 @@ Gean is a Go consensus client for Lean Ethereum, implementing a simplified conse
 
 ```bash
 make build          # Build binary to bin/gean
-make test           # Run all tests
+make spect-test     # Run consensus spectests (fixtures + skip-sig lane)
+make unit-test      # Run Go unit tests across packages
 make test-race      # Run tests with race detector
 make lint           # go vet + staticcheck
 make fmt            # go fmt
@@ -78,7 +79,7 @@ Key entry points: `forkchoice.Store.ProcessBlock()`, `forkchoice.Store.ProcessAt
 
 ## Tests
 
-Tests live in `test/unit/`, `test/interop/`, and `test/integration/`. Some packages also have colocated test files. Tests use standard `testing.T` with helper functions like `makeGenesisFC()` and `makeTestValidators()`.
+Consensus correctness is validated via top-level `spectests/` (run with `make spect-test` or `go test -tags skip_sig_verify -count=1 ./spectests/...`). Additional non-consensus tests are colocated in packages like `config/`, `network/`, `storage/memory/`, `node/`, and `xmss/leansig/`.
 
 ## Code Conventions
 

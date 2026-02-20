@@ -1,4 +1,4 @@
-package test
+package leansig_test
 
 import (
 	"crypto/rand"

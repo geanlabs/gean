@@ -1,4 +1,4 @@
-package unit
+package memory_test
 
 import (
 	"testing"
