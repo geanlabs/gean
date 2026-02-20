@@ -30,13 +30,19 @@ devnet-1 progress:
 - Done: consensus envelope pipeline (`SignedAttestation`, `SignedBlockWithAttestation`, proposer-attestation ordering, signed storage/sync path)
 - Next: XMSS/leanSig integration (CGo bindings, key management, signing, verification), then cross-client interop
 
+## Prerequisites
+
+- **Go** 1.24.6+
+- **Rust** 1.87+ (for the leanSig FFI library under `xmss/leansig-ffi/`)
+- **uv** ([astral.sh/uv](https://docs.astral.sh/uv/)) — needed to generate leanSpec test fixtures
+
 ## Getting started
 
 ```sh
-# Build
+# Build (includes FFI library)
 make build
 
-# Run tests
+# Run tests (builds FFI, generates fixtures, runs unit + spectests)
 make test
 
 # Lint
