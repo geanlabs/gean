@@ -19,13 +19,13 @@ func AggregateAttestations(attestations []*types.SignedAttestation) (*types.Aggr
 	sorted := make([]*types.SignedAttestation, len(attestations))
 	copy(sorted, attestations)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].ValidatorID < sorted[j].ValidatorID
+		return sorted[i].Message.ValidatorID < sorted[j].Message.ValidatorID
 	})
 
-	maxID := sorted[len(sorted)-1].ValidatorID
+	maxID := sorted[len(sorted)-1].Message.ValidatorID
 	bits := statetransition.MakeBitlist(maxID + 1)
 	for _, sa := range sorted {
-		bits = statetransition.SetBit(bits, sa.ValidatorID, true)
+		bits = statetransition.SetBit(bits, sa.Message.ValidatorID, true)
 	}
 
 	aggSig := make([]byte, 0, len(sorted)*types.XMSSSignatureSize)
@@ -34,7 +34,7 @@ func AggregateAttestations(attestations []*types.SignedAttestation) (*types.Aggr
 	}
 
 	return &types.AggregatedAttestation{
-		Data:                sorted[0].Message,
+		Data:                sorted[0].Message.Data,
 		AggregationBits:     bits,
 		AggregatedSignature: aggSig,
 	}, nil
@@ -139,12 +139,14 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 		}
 
 		sa := &types.SignedAttestation{
-			ValidatorID: valID,
-			Message:     agg.Data,
-			Signature:   sigs[i],
+			Message: &types.Attestation{
+				ValidatorID: valID,
+				Data:        agg.Data,
+			},
+			Signature: sigs[i],
 		}
 		existing, ok := c.LatestNewAttestations[valID]
-		if !ok || existing.Message.Slot < agg.Data.Slot {
+		if !ok || existing.Message.Data.Slot < agg.Data.Slot {
 			c.LatestNewAttestations[valID] = sa
 		}
 	}

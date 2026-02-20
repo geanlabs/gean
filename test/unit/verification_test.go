@@ -125,9 +125,9 @@ func TestVerification(t *testing.T) {
 	}
 
 	// Explicitly check signature validity.
-	attMsg := &types.Attestation{ValidatorID: sa.ValidatorID, Data: sa.Message}
+	attMsg := sa.Message
 	attRoot, _ := attMsg.HashTreeRoot()
-	signingSlot := uint32(sa.Message.Slot)
+	signingSlot := uint32(sa.Message.Data.Slot)
 	if err := leansig.Verify(pubkey[:], signingSlot, attRoot, sa.Signature[:]); err != nil {
 		t.Fatalf("Generated attestation has invalid signature: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestVerification(t *testing.T) {
 func deepCopyBlockEnvelope(src *types.SignedBlockWithAttestation) *types.SignedBlockWithAttestation {
 	// Minimal deep copy for signature corruption
 	dst := *src
-	dst.Signature = make([][3112]byte, len(src.Signature))
+	dst.Signature = make([][types.XMSSSignatureSize]byte, len(src.Signature))
 	copy(dst.Signature, src.Signature)
 	return &dst
 }

@@ -114,7 +114,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		var newAttestations []*types.Attestation
 		var newSigned []*types.SignedAttestation
 		for _, sa := range c.LatestKnownAttestations {
-			data := sa.Message
+			data := sa.Message.Data
 			if _, ok := c.Storage.GetBlock(data.Head.Root); !ok {
 				continue
 			}
@@ -123,12 +123,8 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 				data.Source.Slot != postState.LatestJustified.Slot {
 				continue
 			}
-			att := &types.Attestation{
-				ValidatorID: sa.ValidatorID,
-				Data:        data,
-			}
-			if !containsAttestation(attestations, att) {
-				newAttestations = append(newAttestations, att)
+			if !containsAttestation(attestations, sa.Message) {
+				newAttestations = append(newAttestations, sa.Message)
 				newSigned = append(newSigned, sa)
 			}
 		}
@@ -177,7 +173,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 	proposerAtt.Data.Target = voteTarget
 
 	// Build signature list: body attestation sigs in order, proposer sig last.
-	sigs := make([][3112]byte, len(collectedSigned)+1)
+	sigs := make([][types.XMSSSignatureSize]byte, len(collectedSigned)+1)
 	for i, sa := range collectedSigned {
 		sigs[i] = sa.Signature
 	}
@@ -255,12 +251,11 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 		return nil, fmt.Errorf("sign attestation: %w", err)
 	}
 
-	var sigBytes [3112]byte
+	var sigBytes [types.XMSSSignatureSize]byte
 	copy(sigBytes[:], sig)
 
 	return &types.SignedAttestation{
-		ValidatorID: validatorIndex,
-		Message:     data,
-		Signature:   sigBytes,
+		Message:   att,
+		Signature: sigBytes,
 	}, nil
 }

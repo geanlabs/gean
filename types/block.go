@@ -30,7 +30,7 @@ type BlockWithAttestation struct {
 }
 
 // BlockSignatures is the aggregated signature list for a block envelope.
-type BlockSignatures = [][3112]byte
+type BlockSignatures = [][XMSSSignatureSize]byte
 
 // SignedBlockWithAttestation is the gossip/wire envelope for blocks.
 type SignedBlockWithAttestation struct {

@@ -75,12 +75,14 @@ func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 	}
 
 	sa := &types.SignedAttestation{
-		ValidatorID: 2,
-		Message: &types.AttestationData{
-			Slot:   5,
-			Head:   &types.Checkpoint{Root: headRoot, Slot: 3},
-			Target: &types.Checkpoint{Root: targetRoot, Slot: 4},
-			Source: &types.Checkpoint{Root: sourceRoot, Slot: 1},
+		Message: &types.Attestation{
+			ValidatorID: 2,
+			Data: &types.AttestationData{
+				Slot:   5,
+				Head:   &types.Checkpoint{Root: headRoot, Slot: 3},
+				Target: &types.Checkpoint{Root: targetRoot, Slot: 4},
+				Source: &types.Checkpoint{Root: sourceRoot, Slot: 1},
+			},
 		},
 	}
 
@@ -98,9 +100,9 @@ func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 
 	attRoot, err := sa.Message.HashTreeRoot()
 	if err != nil {
-		t.Fatalf("AttestationData HashTreeRoot: %v", err)
+		t.Fatalf("Attestation HashTreeRoot: %v", err)
 	}
-	t.Logf("AttestationData root: %s", hex.EncodeToString(attRoot[:]))
+	t.Logf("Attestation root: %s", hex.EncodeToString(attRoot[:]))
 
 	// Round-trip.
 	decoded := new(types.SignedAttestation)
@@ -220,9 +222,9 @@ func TestSignedBlockWithAttestationFullSSZRoundTrip(t *testing.T) {
 	}
 
 	// Two signatures: one for the block attestation, one for the proposer attestation.
-	var sig1, sig2 [3112]byte
+	var sig1, sig2 [types.XMSSSignatureSize]byte
 	sig1[0] = 0xaa
-	sig1[3111] = 0xbb
+	sig1[types.XMSSSignatureSize-1] = 0xbb
 	sig2[0] = 0xcc
 
 	sb := &types.SignedBlockWithAttestation{
@@ -236,7 +238,7 @@ func TestSignedBlockWithAttestationFullSSZRoundTrip(t *testing.T) {
 			},
 			ProposerAttestation: proposerAtt,
 		},
-		Signature: [][3112]byte{sig1, sig2},
+		Signature: [][types.XMSSSignatureSize]byte{sig1, sig2},
 	}
 
 	data, err := sb.MarshalSSZ()
@@ -270,7 +272,7 @@ func TestSignedBlockWithAttestationFullSSZRoundTrip(t *testing.T) {
 	if len(decoded.Signature) != 2 {
 		t.Fatalf("expected 2 signatures, got %d", len(decoded.Signature))
 	}
-	if decoded.Signature[0][0] != 0xaa || decoded.Signature[0][3111] != 0xbb {
+	if decoded.Signature[0][0] != 0xaa || decoded.Signature[0][types.XMSSSignatureSize-1] != 0xbb {
 		t.Fatal("signature[0] data mismatch")
 	}
 	if decoded.Signature[1][0] != 0xcc {

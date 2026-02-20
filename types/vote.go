@@ -15,8 +15,8 @@ type Attestation struct {
 }
 
 // SignedAttestation is the gossip envelope for attestations.
+// The message field contains the full Attestation (validator_id + data) per leanSpec.
 type SignedAttestation struct {
-	ValidatorID uint64
-	Message     *AttestationData
-	Signature   [3112]byte `ssz-size:"3112"`
+	Message   *Attestation
+	Signature [XMSSSignatureSize]byte `ssz-size:"3112"`
 }

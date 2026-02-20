@@ -16,7 +16,7 @@ func (s *testSigner) Sign(epoch uint32, message [32]byte) ([]byte, error) {
 	if s.sig != nil {
 		return s.sig, nil
 	}
-	out := make([]byte, 3112)
+	out := make([]byte, types.XMSSSignatureSize)
 	out[0] = 0xAA // marker
 	return out, nil
 }
@@ -96,12 +96,14 @@ func TestProduceBlockIncludesAttestations(t *testing.T) {
 	// Add attestations for slot 2 block.
 	for i := uint64(0); i < 2; i++ {
 		fc.LatestKnownAttestations[i] = &types.SignedAttestation{
-			ValidatorID: i,
-			Message: &types.AttestationData{
-				Slot:   2,
-				Head:   &types.Checkpoint{Root: hashes[2], Slot: 2},
-				Target: &types.Checkpoint{Root: hashes[2], Slot: 2},
-				Source: &types.Checkpoint{Root: hashes[0], Slot: 0},
+			Message: &types.Attestation{
+				ValidatorID: i,
+				Data: &types.AttestationData{
+					Slot:   2,
+					Head:   &types.Checkpoint{Root: hashes[2], Slot: 2},
+					Target: &types.Checkpoint{Root: hashes[2], Slot: 2},
+					Source: &types.Checkpoint{Root: hashes[0], Slot: 0},
+				},
 			},
 		}
 	}
@@ -124,10 +126,10 @@ func TestProduceAttestationReturnsValidAttestation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProduceAttestation: %v", err)
 	}
-	att := sa.Message
+	att := sa.Message.Data
 
-	if sa.ValidatorID != 0 {
-		t.Fatalf("sa.ValidatorID = %d, want 0", sa.ValidatorID)
+	if sa.Message.ValidatorID != 0 {
+		t.Fatalf("sa.Message.ValidatorID = %d, want 0", sa.Message.ValidatorID)
 	}
 	if att.Slot != 2 {
 		t.Fatalf("att.Slot = %d, want 2", att.Slot)
@@ -150,8 +152,8 @@ func TestProduceAttestationSourceIsLatestJustified(t *testing.T) {
 		t.Fatalf("ProduceAttestation: %v", err)
 	}
 
-	if sa.Message.Source.Slot != fc.LatestJustified.Slot {
-		t.Fatalf("att.Message.Source.Slot = %d, want LatestJustified.Slot = %d",
-			sa.Message.Source.Slot, fc.LatestJustified.Slot)
+	if sa.Message.Data.Source.Slot != fc.LatestJustified.Slot {
+		t.Fatalf("att.Message.Data.Source.Slot = %d, want LatestJustified.Slot = %d",
+			sa.Message.Data.Source.Slot, fc.LatestJustified.Slot)
 	}
 }

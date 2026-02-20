@@ -82,7 +82,7 @@ func TestAnchorRootSourcePassesValidation(t *testing.T) {
 	}
 
 	// Source should use the non-zero justified root.
-	if sa.Message.Source.Root == types.ZeroHash {
+	if sa.Message.Data.Source.Root == types.ZeroHash {
 		t.Fatal("attestation source root is zero — should be anchor root")
 	}
 
@@ -108,12 +108,14 @@ func TestForkChoiceAcceptNewAttestations(t *testing.T) {
 
 	// Add an attestation to new attestations.
 	fc.LatestNewAttestations[0] = &types.SignedAttestation{
-		ValidatorID: 0,
-		Message: &types.AttestationData{
-			Slot:   0,
-			Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
-			Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
-			Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
+		Message: &types.Attestation{
+			ValidatorID: 0,
+			Data: &types.AttestationData{
+				Slot:   0,
+				Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
+				Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
+				Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
+			},
 		},
 	}
 
@@ -149,12 +151,14 @@ func TestForkChoiceInitPanicsOnAnchorStateRootMismatch(t *testing.T) {
 func TestProduceAttestationAcceptsNewAttestationsFirst(t *testing.T) {
 	fc, _ := makeGenesisFC(5)
 	fc.LatestNewAttestations[3] = &types.SignedAttestation{
-		ValidatorID: 3,
-		Message: &types.AttestationData{
-			Slot:   0,
-			Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
-			Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
-			Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
+		Message: &types.Attestation{
+			ValidatorID: 3,
+			Data: &types.AttestationData{
+				Slot:   0,
+				Head:   &types.Checkpoint{Root: fc.Head, Slot: 0},
+				Target: &types.Checkpoint{Root: fc.Head, Slot: 0},
+				Source: &types.Checkpoint{Root: fc.Head, Slot: 0},
+			},
 		},
 	}
 
@@ -325,8 +329,8 @@ func TestAttestationSupersedingUsesSlot(t *testing.T) {
 	if !ok {
 		t.Fatal("expected validator 0 attestation in LatestNewAttestations")
 	}
-	if got.Message.Slot != 3 {
-		t.Fatalf("expected attestation with slot=3 to remain, got slot=%d", got.Message.Slot)
+	if got.Message.Data.Slot != 3 {
+		t.Fatalf("expected attestation with slot=3 to remain, got slot=%d", got.Message.Data.Slot)
 	}
 }
 
@@ -489,7 +493,7 @@ func TestReorgOnNewlyJustifiedCheckpoint(t *testing.T) {
 	blockB4.StateRoot = srB4
 
 	// Sign each body attestation with the real keypair.
-	sigs := make([][3112]byte, 4)
+	sigs := make([][types.XMSSSignatureSize]byte, 4)
 	for i := 0; i < 4; i++ {
 		attRoot, _ := bodyAtts[i].HashTreeRoot()
 		signingSlot := uint32(bodyAtts[i].Data.Slot)

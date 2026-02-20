@@ -21,8 +21,8 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
 	}()
 
-	data := sa.Message
-	validatorID := sa.ValidatorID
+	data := sa.Message.Data
+	validatorID := sa.Message.ValidatorID
 
 	if !c.validateAttestationData(data) {
 		metrics.AttestationsInvalid.Inc()
@@ -40,12 +40,12 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	if isFromBlock {
 		// On-chain: update known attestations if this is newer.
 		existing, ok := c.LatestKnownAttestations[validatorID]
-		if !ok || existing.Message.Slot < data.Slot {
+		if !ok || existing.Message.Data.Slot < data.Slot {
 			c.LatestKnownAttestations[validatorID] = sa
 		}
 		// Remove from new attestations if superseded.
 		newAtt, ok := c.LatestNewAttestations[validatorID]
-		if ok && newAtt.Message.Slot <= data.Slot {
+		if ok && newAtt.Message.Data.Slot <= data.Slot {
 			delete(c.LatestNewAttestations, validatorID)
 		}
 	} else {
@@ -58,7 +58,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 		// Network gossip: update new attestations if this is newer.
 		existing, ok := c.LatestNewAttestations[validatorID]
-		if !ok || existing.Message.Slot < data.Slot {
+		if !ok || existing.Message.Data.Slot < data.Slot {
 			c.LatestNewAttestations[validatorID] = sa
 		}
 	}
@@ -73,11 +73,7 @@ func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
 		return fmt.Errorf("head state not found")
 	}
 
-	att := &types.Attestation{
-		ValidatorID: sa.ValidatorID,
-		Data:        sa.Message,
-	}
-	return c.verifyAttestationSignatureWithState(headState, att, sa.Signature)
+	return c.verifyAttestationSignatureWithState(headState, sa.Message, sa.Signature)
 }
 
 // validateAttestationData performs attestation validation checks.

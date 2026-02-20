@@ -34,7 +34,7 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 
 	// Mock keys
 	keys := make(map[uint64]forkchoice.Signer)
-	expectedSig := make([]byte, 3112)
+	expectedSig := make([]byte, types.XMSSSignatureSize)
 	expectedSig[0] = 0xAA // Marker
 	keys[1] = &testSigner{sig: expectedSig}
 
@@ -61,8 +61,8 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	if publishedAtt == nil {
 		t.Fatal("expected PublishAttestation to be called")
 	}
-	if publishedAtt.ValidatorID != 1 {
-		t.Errorf("attester = %d, want 1", publishedAtt.ValidatorID)
+	if publishedAtt.Message.ValidatorID != 1 {
+		t.Errorf("attester = %d, want 1", publishedAtt.Message.ValidatorID)
 	}
 	// Verify signature
 	if publishedAtt.Signature[0] != 0xAA {
@@ -90,7 +90,7 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 
 	// Mock keys
 	keys := make(map[uint64]forkchoice.Signer)
-	expectedSig := make([]byte, 3112)
+	expectedSig := make([]byte, types.XMSSSignatureSize)
 	expectedSig[0] = 0xBB // Marker
 	keys[1] = &testSigner{sig: expectedSig}
 

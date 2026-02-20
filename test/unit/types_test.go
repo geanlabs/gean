@@ -77,12 +77,14 @@ func TestBlockHeaderSSZRoundTrip(t *testing.T) {
 
 func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 	sa := &types.SignedAttestation{
-		ValidatorID: 3,
-		Message: &types.AttestationData{
-			Slot:   10,
-			Head:   &types.Checkpoint{Root: [32]byte{1}, Slot: 9},
-			Target: &types.Checkpoint{Root: [32]byte{2}, Slot: 8},
-			Source: &types.Checkpoint{Root: [32]byte{3}, Slot: 7},
+		Message: &types.Attestation{
+			ValidatorID: 3,
+			Data: &types.AttestationData{
+				Slot:   10,
+				Head:   &types.Checkpoint{Root: [32]byte{1}, Slot: 9},
+				Target: &types.Checkpoint{Root: [32]byte{2}, Slot: 8},
+				Source: &types.Checkpoint{Root: [32]byte{3}, Slot: 7},
+			},
 		},
 	}
 	data, err := sa.MarshalSSZ()
@@ -95,10 +97,10 @@ func TestSignedAttestationSSZRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if decoded.ValidatorID != 3 || decoded.Message.Slot != 10 {
-		t.Fatalf("attestation round trip failed: got validator_id=%d slot=%d", decoded.ValidatorID, decoded.Message.Slot)
+	if decoded.Message.ValidatorID != 3 || decoded.Message.Data.Slot != 10 {
+		t.Fatalf("attestation round trip failed: got validator_id=%d slot=%d", decoded.Message.ValidatorID, decoded.Message.Data.Slot)
 	}
-	if decoded.Message.Head.Slot != 9 || decoded.Message.Target.Slot != 8 || decoded.Message.Source.Slot != 7 {
+	if decoded.Message.Data.Head.Slot != 9 || decoded.Message.Data.Target.Slot != 8 || decoded.Message.Data.Source.Slot != 7 {
 		t.Fatal("checkpoint round trip failed")
 	}
 }

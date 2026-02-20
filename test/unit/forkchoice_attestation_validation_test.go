@@ -65,12 +65,14 @@ func buildForkChoiceWithBlocks(t *testing.T, numValidators, targetSlot uint64) (
 
 func makeFCAttestation(validatorID, slot uint64, head, source, target *types.Checkpoint) *types.SignedAttestation {
 	return &types.SignedAttestation{
-		ValidatorID: validatorID,
-		Message: &types.AttestationData{
-			Slot:   slot,
-			Head:   head,
-			Target: target,
-			Source: source,
+		Message: &types.Attestation{
+			ValidatorID: validatorID,
+			Data: &types.AttestationData{
+				Slot:   slot,
+				Head:   head,
+				Target: target,
+				Source: source,
+			},
 		},
 	}
 }
@@ -111,8 +113,8 @@ func TestForkChoiceProcessAttestationValidGossip(t *testing.T) {
 	if !ok {
 		t.Fatal("expected validator attestation in latest_new_attestations")
 	}
-	if got.Message.Target.Slot != sa.Message.Target.Slot {
-		t.Fatalf("unexpected attestation target slot: got %d, want %d", got.Message.Target.Slot, sa.Message.Target.Slot)
+	if got.Message.Data.Target.Slot != sa.Message.Data.Target.Slot {
+		t.Fatalf("unexpected attestation target slot: got %d, want %d", got.Message.Data.Target.Slot, sa.Message.Data.Target.Slot)
 	}
 }
 

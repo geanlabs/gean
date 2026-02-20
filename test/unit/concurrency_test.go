@@ -80,12 +80,14 @@ func TestConcurrentAdvanceTimeAndProcessAttestation(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 100; i++ {
 				fc.ProcessAttestation(&types.SignedAttestation{
-					ValidatorID: uint64(id % 5),
-					Message: &types.AttestationData{
-						Slot:   1,
-						Head:   &types.Checkpoint{Root: headRoot, Slot: 1},
-						Target: &types.Checkpoint{Root: headRoot, Slot: 1},
-						Source: &types.Checkpoint{Root: headRoot, Slot: 0},
+					Message: &types.Attestation{
+						ValidatorID: uint64(id % 5),
+						Data: &types.AttestationData{
+							Slot:   1,
+							Head:   &types.Checkpoint{Root: headRoot, Slot: 1},
+							Target: &types.Checkpoint{Root: headRoot, Slot: 1},
+							Source: &types.Checkpoint{Root: headRoot, Slot: 0},
+						},
 					},
 				})
 			}
@@ -129,12 +131,14 @@ func TestConcurrentGetStatusWithMutations(t *testing.T) {
 			for j := 0; j < 100; j++ {
 				fc.AdvanceTime(uint64(1000+id*100+j), false)
 				fc.ProcessAttestation(&types.SignedAttestation{
-					ValidatorID: uint64(id % 5),
-					Message: &types.AttestationData{
-						Slot:   1,
-						Head:   &types.Checkpoint{Root: headRoot, Slot: 1},
-						Target: &types.Checkpoint{Root: headRoot, Slot: 1},
-						Source: &types.Checkpoint{Root: headRoot, Slot: 0},
+					Message: &types.Attestation{
+						ValidatorID: uint64(id % 5),
+						Data: &types.AttestationData{
+							Slot:   1,
+							Head:   &types.Checkpoint{Root: headRoot, Slot: 1},
+							Target: &types.Checkpoint{Root: headRoot, Slot: 1},
+							Source: &types.Checkpoint{Root: headRoot, Slot: 0},
+						},
 					},
 				})
 			}
