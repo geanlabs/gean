@@ -24,11 +24,7 @@ A complete redesign of Ethereum's consensus layer, hardened for security, decent
 | Devnet | Status | Spec pin |
 |--------|--------|----------|
 | pq-devnet-0 | Complete | `leanSpec@4b750f2` |
-| pq-devnet-1 | In progress | `leanSpec@050fa4a`, `leanSig@f10dcbe` |
-
-devnet-1 progress:
-- Done: consensus envelope pipeline (`SignedAttestation`, `SignedBlockWithAttestation`, proposer-attestation ordering, signed storage/sync path)
-- Next: XMSS/leanSig integration (CGo bindings, key management, signing, verification), then cross-client interop
+| pq-devnet-1 | Complete | `leanSpec@050fa4a`, `leanSig@f10dcbe` |
 
 ## Prerequisites
 
@@ -112,7 +108,6 @@ Dashboard notes:
 ## Running in a devnet
 
 gean is part of the [lean-quickstart](https://github.com/blockblaz/lean-quickstart) multi-client devnet tooling (integration in progress for devnet-1).
-
 
 ## Acknowledgements
 
