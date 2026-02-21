@@ -28,11 +28,6 @@ type Store struct {
 	latestKnownAttestations map[uint64]*types.SignedAttestation
 	latestNewAttestations   map[uint64]*types.SignedAttestation
 
-	// NowFn returns the current wall-clock unix timestamp. When set,
-	// ProcessBlock/ProcessAttestation/ProcessAggregatedAttestation advance
-	// store time before processing to avoid stale-time rejections from
-	// gossip messages arriving between ticker intervals.
-	// Nil in spec tests where time is controlled via AdvanceTime.
 	NowFn func() uint64
 }
 

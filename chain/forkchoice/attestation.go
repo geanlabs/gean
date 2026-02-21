@@ -13,10 +13,6 @@ func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Advance store time to wall clock before processing.
-	// Gossip attestations arrive asynchronously between ticker intervals;
-	// without this, c.time can be stale, causing valid attestations
-	// to be rejected by the slot check.
 	if c.NowFn != nil {
 		c.advanceTimeLocked(c.NowFn(), false)
 	}
