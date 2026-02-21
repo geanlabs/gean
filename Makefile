@@ -41,7 +41,7 @@ CONFIG := $(MAKEFILE_DIR)config.yaml
 
 refresh-genesis-time:
 	@NEW_TIME=$$(($$(date +%s) + 30)); \
-	sed -i'' "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" $(CONFIG); \
+	sed -i '' "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" $(CONFIG); \
 	echo "Updated GENESIS_TIME to $$NEW_TIME in $(CONFIG)"
 
 run: build refresh-genesis-time
