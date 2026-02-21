@@ -192,6 +192,18 @@ func (kp *Keypair) Sign(epoch uint32, message [MessageLength]byte) ([]byte, erro
 	return goBytes, nil
 }
 
+// verifyResult maps a C verify result code to a Go error.
+func verifyResult(result C.enum_LeansigResult, op string) error {
+	switch result {
+	case ResultOK:
+		return nil
+	case ResultVerificationFailed:
+		return fmt.Errorf("signature verification failed")
+	default:
+		return fmt.Errorf("%s failed with code %d", op, result)
+	}
+}
+
 // Verify checks an XMSS signature against a serialized public key, epoch, and message.
 // Returns nil if the signature is valid, an error otherwise.
 func Verify(pubkeyBytes []byte, epoch uint32, message [MessageLength]byte, sigBytes []byte) error {
@@ -206,13 +218,7 @@ func Verify(pubkeyBytes []byte, epoch uint32, message [MessageLength]byte, sigBy
 		(*C.uint8_t)(unsafe.Pointer(&sigBytes[0])),
 		C.size_t(len(sigBytes)),
 	)
-	if result == ResultOK {
-		return nil
-	}
-	if result == ResultVerificationFailed {
-		return fmt.Errorf("signature verification failed")
-	}
-	return fmt.Errorf("leansig_verify failed with code %d", result)
+	return verifyResult(result, "leansig_verify")
 }
 
 // VerifyWithKeypair checks an XMSS signature using the public key from a keypair.
@@ -231,11 +237,5 @@ func (kp *Keypair) VerifyWithKeypair(epoch uint32, message [MessageLength]byte, 
 		(*C.uint8_t)(unsafe.Pointer(&sigBytes[0])),
 		C.size_t(len(sigBytes)),
 	)
-	if result == ResultOK {
-		return nil
-	}
-	if result == ResultVerificationFailed {
-		return fmt.Errorf("signature verification failed")
-	}
-	return fmt.Errorf("leansig_verify_with_keypair failed with code %d", result)
+	return verifyResult(result, "leansig_verify_with_keypair")
 }

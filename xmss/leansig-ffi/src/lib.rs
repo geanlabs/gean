@@ -20,6 +20,16 @@ type PublicKey = <SigScheme as SignatureScheme>::PublicKey;
 type SecretKey = <SigScheme as SignatureScheme>::SecretKey;
 type Signature = <SigScheme as SignatureScheme>::Signature;
 
+// Deserialize a value from bytes, returning `DeserializationFailed` on error.
+macro_rules! try_deserialize {
+    ($expr:expr) => {
+        match $expr {
+            Ok(v) => v,
+            Err(_) => return LeansigResult::DeserializationFailed,
+        }
+    };
+}
+
 /// Result codes returned by FFI functions.
 #[repr(C)]
 pub enum LeansigResult {
@@ -130,15 +140,8 @@ pub unsafe extern "C" fn leansig_keypair_restore(
     let pk_slice = unsafe { slice::from_raw_parts(pk_bytes, pk_len) };
     let sk_slice = unsafe { slice::from_raw_parts(sk_bytes, sk_len) };
 
-    let pk = match PublicKey::from_bytes(pk_slice) {
-        Ok(k) => k,
-        Err(_) => return LeansigResult::DeserializationFailed,
-    };
-
-    let sk = match SecretKey::from_bytes(sk_slice) {
-        Ok(k) => k,
-        Err(_) => return LeansigResult::DeserializationFailed,
-    };
+    let pk = try_deserialize!(PublicKey::from_bytes(pk_slice));
+    let sk = try_deserialize!(SecretKey::from_bytes(sk_slice));
 
     let keypair = Box::new(LeansigKeypair { pk, sk });
     unsafe {
@@ -367,15 +370,8 @@ pub unsafe extern "C" fn leansig_verify(
     let sig_bytes = unsafe { slice::from_raw_parts(sig_data, sig_len) };
     let msg: &[u8; 32] = unsafe { &*(message as *const [u8; 32]) };
 
-    let pk = match PublicKey::from_bytes(pk_bytes) {
-        Ok(pk) => pk,
-        Err(_) => return LeansigResult::DeserializationFailed,
-    };
-
-    let sig = match Signature::from_bytes(sig_bytes) {
-        Ok(sig) => sig,
-        Err(_) => return LeansigResult::DeserializationFailed,
-    };
+    let pk = try_deserialize!(PublicKey::from_bytes(pk_bytes));
+    let sig = try_deserialize!(Signature::from_bytes(sig_bytes));
 
     if SigScheme::verify(&pk, epoch, msg, &sig) {
         LeansigResult::Ok
@@ -407,10 +403,7 @@ pub unsafe extern "C" fn leansig_verify_with_keypair(
     let sig_bytes = unsafe { slice::from_raw_parts(sig_data, sig_len) };
     let msg: &[u8; 32] = unsafe { &*(message as *const [u8; 32]) };
 
-    let sig = match Signature::from_bytes(sig_bytes) {
-        Ok(sig) => sig,
-        Err(_) => return LeansigResult::DeserializationFailed,
-    };
+    let sig = try_deserialize!(Signature::from_bytes(sig_bytes));
 
     if SigScheme::verify(&keypair.pk, epoch, msg, &sig) {
         LeansigResult::Ok
