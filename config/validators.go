@@ -25,6 +25,19 @@ func LoadValidators(path string) (*ValidatorRegistry, error) {
 		return nil, fmt.Errorf("read validators: %w", err)
 	}
 
+	var nodeMap map[string][]uint64
+	if err := yaml.Unmarshal(data, &nodeMap); err == nil && len(nodeMap) > 0 {
+		reg := &ValidatorRegistry{}
+		for name, indices := range nodeMap {
+			reg.Assignments = append(reg.Assignments, ValidatorAssignment{
+				NodeName:   name,
+				Validators: indices,
+			})
+		}
+		return reg, nil
+	}
+
+	// Fall back to legacy struct format.
 	var reg ValidatorRegistry
 	if err := yaml.Unmarshal(data, &reg); err != nil {
 		return nil, fmt.Errorf("parse validators: %w", err)
