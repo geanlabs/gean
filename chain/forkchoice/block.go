@@ -43,6 +43,10 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.NowFn != nil {
+		c.advanceTimeLocked(c.NowFn(), false)
+	}
+
 	block := envelope.Message.Block
 	blockHash, _ := block.HashTreeRoot()
 

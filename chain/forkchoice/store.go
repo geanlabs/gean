@@ -27,6 +27,8 @@ type Store struct {
 
 	latestKnownAttestations map[uint64]*types.SignedAttestation
 	latestNewAttestations   map[uint64]*types.SignedAttestation
+
+	NowFn func() uint64
 }
 
 // ChainStatus is a snapshot of the fork choice head and checkpoint state.
