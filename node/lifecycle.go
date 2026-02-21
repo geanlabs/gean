@@ -26,7 +26,7 @@ func New(cfg Config) (*Node, error) {
 
 	fc := initGenesis(log, cfg)
 
-	host, topics, err := initP2P(log, cfg)
+	host, topics, err := initP2P(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func initGenesis(log *slog.Logger, cfg Config) *forkchoice.Store {
 	return forkchoice.NewStore(genesisState, genesisBlock, memory.New())
 }
 
-func initP2P(log *slog.Logger, cfg Config) (*network.Host, *gossipsub.Topics, error) {
+func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
 	host, err := network.NewHost(cfg.ListenAddr, cfg.NodeKeyPath, cfg.Bootnodes)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create host: %w", err)
