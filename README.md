@@ -51,8 +51,11 @@ make unit-test
 # Lint
 make lint
 
-# Generate keys
+# Generate validator keys (XMSS)
 ./bin/keygen -validators 5 -keys-dir keys -print-yaml
+
+# Generate node identity keys (libp2p/discv5)
+go run ./scripts/gen_node_keys
 
 # Run
 make run
