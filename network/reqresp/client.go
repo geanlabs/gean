@@ -50,7 +50,7 @@ func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots []
 	ctx, cancel := context.WithTimeout(ctx, reqRespTimeout)
 	defer cancel()
 
-	s, err := h.NewStream(ctx, pid, protocol.ID(BlocksByRootProtocol))
+	s, err := h.NewStream(ctx, pid, protocol.ID(BlocksByRootProtocol), protocol.ID(BlocksByRootProtocolLegacy))
 	if err != nil {
 		return nil, fmt.Errorf("open stream: %w", err)
 	}
