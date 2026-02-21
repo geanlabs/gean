@@ -46,11 +46,11 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	block := envelope.Message.Block
 	blockHash, _ := block.HashTreeRoot()
 
-	if _, ok := c.Storage.GetBlock(blockHash); ok {
+	if _, ok := c.storage.GetBlock(blockHash); ok {
 		return nil // already known
 	}
 
-	parentState, ok := c.Storage.GetState(block.ParentRoot)
+	parentState, ok := c.storage.GetState(block.ParentRoot)
 	if !ok {
 		return fmt.Errorf("parent state not found for %x", block.ParentRoot)
 	}
@@ -78,7 +78,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		}
 	}
 
-	c.Storage.PutState(blockHash, state)
+	c.storage.PutState(blockHash, state)
 
 	// Step 1b: Verify signatures (skipped when skip_sig_verify build tag is set).
 	if c.shouldVerifySignatures() {
@@ -99,17 +99,17 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		}
 	}
 
-	c.Storage.PutBlock(blockHash, block)
-	c.Storage.PutSignedBlock(blockHash, envelope)
-	c.Storage.PutState(blockHash, state)
+	c.storage.PutBlock(blockHash, block)
+	c.storage.PutSignedBlock(blockHash, envelope)
+	c.storage.PutState(blockHash, state)
 
 	// Update justified checkpoint from this block's post-state (monotonic).
-	if state.LatestJustified.Slot > c.LatestJustified.Slot {
-		c.LatestJustified = state.LatestJustified
+	if state.LatestJustified.Slot > c.latestJustified.Slot {
+		c.latestJustified = state.LatestJustified
 	}
 	// Update finalized checkpoint from this block's post-state (monotonic).
-	if state.LatestFinalized.Slot > c.LatestFinalized.Slot {
-		c.LatestFinalized = state.LatestFinalized
+	if state.LatestFinalized.Slot > c.latestFinalized.Slot {
+		c.latestFinalized = state.LatestFinalized
 	}
 
 	// Step 2: Process body attestations as on-chain votes.

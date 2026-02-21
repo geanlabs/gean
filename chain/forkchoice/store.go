@@ -15,27 +15,28 @@ var log = logging.NewComponentLogger(logging.CompForkChoice)
 type Store struct {
 	mu sync.Mutex
 
-	Time          uint64
-	GenesisTime   uint64
-	NumValidators uint64
-	Head          [32]byte
-	SafeTarget    [32]byte
+	time          uint64
+	genesisTime   uint64
+	numValidators uint64
+	head          [32]byte
+	safeTarget    [32]byte
 
-	LatestJustified *types.Checkpoint
-	LatestFinalized *types.Checkpoint
-	Storage         storage.Store
+	latestJustified *types.Checkpoint
+	latestFinalized *types.Checkpoint
+	storage         storage.Store
 
-	LatestKnownAttestations map[uint64]*types.SignedAttestation
-	LatestNewAttestations   map[uint64]*types.SignedAttestation
+	latestKnownAttestations map[uint64]*types.SignedAttestation
+	latestNewAttestations   map[uint64]*types.SignedAttestation
 }
 
 // ChainStatus is a snapshot of the fork choice head and checkpoint state.
 type ChainStatus struct {
 	Head          [32]byte
 	HeadSlot      uint64
+	JustifiedRoot [32]byte
 	JustifiedSlot uint64
-	FinalizedSlot uint64
 	FinalizedRoot [32]byte
+	FinalizedSlot uint64
 }
 
 // GetStatus returns a consistent snapshot of the chain head and checkpoints.
@@ -43,16 +44,48 @@ func (c *Store) GetStatus() ChainStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	headSlot := uint64(0)
-	if hb, ok := c.Storage.GetBlock(c.Head); ok {
+	if hb, ok := c.storage.GetBlock(c.head); ok {
 		headSlot = hb.Slot
 	}
 	return ChainStatus{
-		Head:          c.Head,
+		Head:          c.head,
 		HeadSlot:      headSlot,
-		JustifiedSlot: c.LatestJustified.Slot,
-		FinalizedSlot: c.LatestFinalized.Slot,
-		FinalizedRoot: c.LatestFinalized.Root,
+		JustifiedRoot: c.latestJustified.Root,
+		JustifiedSlot: c.latestJustified.Slot,
+		FinalizedRoot: c.latestFinalized.Root,
+		FinalizedSlot: c.latestFinalized.Slot,
 	}
+}
+
+// NumValidators returns the number of validators in the store.
+func (c *Store) NumValidators() uint64 {
+	return c.numValidators
+}
+
+// GetBlock retrieves a block by its root hash.
+func (c *Store) GetBlock(root [32]byte) (*types.Block, bool) {
+	return c.storage.GetBlock(root)
+}
+
+// GetSignedBlock retrieves a signed block envelope by its root hash.
+func (c *Store) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
+	return c.storage.GetSignedBlock(root)
+}
+
+// GetKnownAttestation returns the latest known attestation for a validator.
+func (c *Store) GetKnownAttestation(validator uint64) (*types.SignedAttestation, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	sa, ok := c.latestKnownAttestations[validator]
+	return sa, ok
+}
+
+// GetNewAttestation returns the latest new (pending) attestation for a validator.
+func (c *Store) GetNewAttestation(validator uint64) (*types.SignedAttestation, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	sa, ok := c.latestNewAttestations[validator]
+	return sa, ok
 }
 
 // NewStore initializes a store from an anchor state and block.
@@ -71,15 +104,15 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 	store.PutState(anchorRoot, state)
 
 	return &Store{
-		Time:                    anchorBlock.Slot * types.SecondsPerSlot,
-		GenesisTime:             state.Config.GenesisTime,
-		NumValidators:           uint64(len(state.Validators)),
-		Head:                    anchorRoot,
-		SafeTarget:              anchorRoot,
-		LatestJustified:         &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
-		LatestFinalized:         &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
-		Storage:                 store,
-		LatestKnownAttestations: make(map[uint64]*types.SignedAttestation),
-		LatestNewAttestations:   make(map[uint64]*types.SignedAttestation),
+		time:                    anchorBlock.Slot * types.SecondsPerSlot,
+		genesisTime:             state.Config.GenesisTime,
+		numValidators:           uint64(len(state.Validators)),
+		head:                    anchorRoot,
+		safeTarget:              anchorRoot,
+		latestJustified:         &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
+		latestFinalized:         &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
+		storage:                 store,
+		latestKnownAttestations: make(map[uint64]*types.SignedAttestation),
+		latestNewAttestations:   make(map[uint64]*types.SignedAttestation),
 	}
 }

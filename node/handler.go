@@ -26,7 +26,7 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 		OnBlocksByRoot: func(roots [][32]byte) []*types.SignedBlockWithAttestation {
 			var blocks []*types.SignedBlockWithAttestation
 			for _, root := range roots {
-				if sb, ok := fc.Storage.GetSignedBlock(root); ok {
+				if sb, ok := fc.GetSignedBlock(root); ok {
 					blocks = append(blocks, sb)
 				}
 			}

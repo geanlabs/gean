@@ -16,10 +16,10 @@ type Signer interface {
 func (c *Store) GetProposalHead(slot uint64) [32]byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	slotTime := c.GenesisTime + slot*types.SecondsPerSlot
+	slotTime := c.genesisTime + slot*types.SecondsPerSlot
 	c.advanceTimeLocked(slotTime, true)
 	c.acceptNewAttestationsLocked()
-	return c.Head
+	return c.head
 }
 
 // GetVoteTarget calculates the target checkpoint for validator votes.
@@ -30,12 +30,12 @@ func (c *Store) GetVoteTarget() (*types.Checkpoint, error) {
 }
 
 func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
-	targetRoot := c.Head
+	targetRoot := c.head
 
 	// Walk back up to JustificationLookback steps if safe target is newer.
-	safeBlock, safeOK := c.Storage.GetBlock(c.SafeTarget)
+	safeBlock, safeOK := c.storage.GetBlock(c.safeTarget)
 	for i := 0; i < types.JustificationLookback; i++ {
-		tBlock, ok := c.Storage.GetBlock(targetRoot)
+		tBlock, ok := c.storage.GetBlock(targetRoot)
 		if ok && safeOK && tBlock.Slot > safeBlock.Slot {
 			targetRoot = tBlock.ParentRoot
 		}
@@ -43,17 +43,17 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 
 	// Ensure target is in justifiable slot range.
 	for {
-		tBlock, ok := c.Storage.GetBlock(targetRoot)
+		tBlock, ok := c.storage.GetBlock(targetRoot)
 		if !ok {
 			break
 		}
-		if types.IsJustifiableAfter(tBlock.Slot, c.LatestFinalized.Slot) {
+		if types.IsJustifiableAfter(tBlock.Slot, c.latestFinalized.Slot) {
 			break
 		}
 		targetRoot = tBlock.ParentRoot
 	}
 
-	tBlock, ok := c.Storage.GetBlock(targetRoot)
+	tBlock, ok := c.storage.GetBlock(targetRoot)
 	if !ok {
 		return nil, fmt.Errorf("vote target block not found")
 	}
@@ -73,18 +73,18 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !statetransition.IsProposer(validatorIndex, slot, c.NumValidators) {
+	if !statetransition.IsProposer(validatorIndex, slot, c.numValidators) {
 		return nil, fmt.Errorf("validator %d is not proposer for slot %d", validatorIndex, slot)
 	}
 
-	headRoot := c.Head
+	headRoot := c.head
 	// Advance and accept before proposing.
-	slotTime := c.GenesisTime + slot*types.SecondsPerSlot
+	slotTime := c.genesisTime + slot*types.SecondsPerSlot
 	c.advanceTimeLocked(slotTime, true)
 	c.acceptNewAttestationsLocked()
-	headRoot = c.Head
+	headRoot = c.head
 
-	headState, ok := c.Storage.GetState(headRoot)
+	headState, ok := c.storage.GetState(headRoot)
 	if !ok {
 		return nil, fmt.Errorf("head state not found")
 	}
@@ -113,9 +113,9 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 
 		var newAttestations []*types.Attestation
 		var newSigned []*types.SignedAttestation
-		for _, sa := range c.LatestKnownAttestations {
+		for _, sa := range c.latestKnownAttestations {
 			data := sa.Message
-			if _, ok := c.Storage.GetBlock(data.Head.Root); !ok {
+			if _, ok := c.storage.GetBlock(data.Head.Root); !ok {
 				continue
 			}
 			// Skip attestations whose source doesn't match post-state justified.
@@ -167,7 +167,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		Data: &types.AttestationData{
 			Slot:   slot,
 			Head:   &types.Checkpoint{Root: blockHash, Slot: slot},
-			Source: c.LatestJustified,
+			Source: c.latestJustified,
 		},
 	}
 	voteTarget, err := c.getVoteTargetLocked()
@@ -202,9 +202,9 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 	}
 	copy(envelope.Signature[len(collectedSigned)][:], sig)
 
-	c.Storage.PutBlock(blockHash, finalBlock)
-	c.Storage.PutSignedBlock(blockHash, envelope)
-	c.Storage.PutState(blockHash, finalState)
+	c.storage.PutBlock(blockHash, finalBlock)
+	c.storage.PutSignedBlock(blockHash, envelope)
+	c.storage.PutState(blockHash, finalState)
 
 	return envelope, nil
 }
@@ -216,12 +216,12 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 	defer c.mu.Unlock()
 
 	// Advance and accept before voting (matches leanSpec produce_attestation_vote).
-	slotTime := c.GenesisTime + slot*types.SecondsPerSlot
+	slotTime := c.genesisTime + slot*types.SecondsPerSlot
 	c.advanceTimeLocked(slotTime, true)
 	c.acceptNewAttestationsLocked()
-	headRoot := c.Head
+	headRoot := c.head
 
-	headBlock, ok := c.Storage.GetBlock(headRoot)
+	headBlock, ok := c.storage.GetBlock(headRoot)
 	if !ok {
 		return nil, fmt.Errorf("head block not found")
 	}
@@ -236,7 +236,7 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 		Slot:   slot,
 		Head:   headCheckpoint,
 		Target: targetCheckpoint,
-		Source: c.LatestJustified,
+		Source: c.latestJustified,
 	}
 
 	att := &types.Attestation{
