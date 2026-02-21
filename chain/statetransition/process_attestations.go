@@ -122,7 +122,7 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 	sortedRoots := sortedJustificationRoots(justifications)
 	flatVotes := flattenVotes(sortedRoots, justifications, numValidators)
 
-	out := copyState(state)
+	out := state.Copy()
 	out.JustifiedSlots = justifiedSlots
 	out.LatestJustified = latestJustified
 	out.LatestFinalized = latestFinalized
