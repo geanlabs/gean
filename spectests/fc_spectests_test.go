@@ -142,7 +142,7 @@ func validateStoreChecks(t *testing.T, testName string, stepIdx int, store *fork
 	t.Helper()
 
 	status := store.GetStatus()
-	justifiedRoot := store.LatestJustified.Root
+	justifiedRoot := status.JustifiedRoot
 
 	if checks.HeadSlot != nil {
 		if status.HeadSlot != *checks.HeadSlot {
@@ -247,16 +247,17 @@ func validateStoreChecks(t *testing.T, testName string, stepIdx int, store *fork
 	if len(checks.AttestationChecks) > 0 {
 		for _, ac := range checks.AttestationChecks {
 			var sa *types.SignedAttestation
+			var found bool
 			var locationName string
 			if ac.Location == "known" {
-				sa = store.LatestKnownAttestations[ac.Validator]
+				sa, found = store.GetKnownAttestation(ac.Validator)
 				locationName = "latest_known_attestations"
 			} else {
-				sa = store.LatestNewAttestations[ac.Validator]
+				sa, found = store.GetNewAttestation(ac.Validator)
 				locationName = "latest_new_attestations"
 			}
 
-			if sa == nil {
+			if !found {
 				t.Errorf("[%s] step %d: validator %d not found in %s",
 					testName, stepIdx, ac.Validator, locationName)
 				continue

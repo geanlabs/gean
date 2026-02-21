@@ -108,7 +108,7 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 		return
 	}
 
-	headState, ok := c.Storage.GetState(c.Head)
+	headState, ok := c.storage.GetState(c.head)
 	if !ok {
 		return
 	}
@@ -119,7 +119,7 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 		return
 	}
 
-	currentSlot := c.Time / types.IntervalsPerSlot
+	currentSlot := c.time / types.IntervalsPerSlot
 
 	for i, valID := range validatorIDs {
 		if valID >= uint64(len(headState.Validators)) {
@@ -143,9 +143,9 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 			Message:     agg.Data,
 			Signature:   sigs[i],
 		}
-		existing, ok := c.LatestNewAttestations[valID]
+		existing, ok := c.latestNewAttestations[valID]
 		if !ok || existing.Message.Slot < agg.Data.Slot {
-			c.LatestNewAttestations[valID] = sa
+			c.latestNewAttestations[valID] = sa
 		}
 	}
 }
