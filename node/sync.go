@@ -40,7 +40,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	const maxSyncDepth = 64
 
 	for i := 0; i < maxSyncDepth; i++ {
-		if _, ok := n.FC.Storage.GetBlock(nextRoot); ok {
+		if _, ok := n.FC.GetBlock(nextRoot); ok {
 			break // We have this block, chain is connected.
 		}
 

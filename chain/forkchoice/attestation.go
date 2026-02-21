@@ -39,27 +39,27 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 	if isFromBlock {
 		// On-chain: update known attestations if this is newer.
-		existing, ok := c.LatestKnownAttestations[validatorID]
+		existing, ok := c.latestKnownAttestations[validatorID]
 		if !ok || existing.Message.Slot < data.Slot {
-			c.LatestKnownAttestations[validatorID] = sa
+			c.latestKnownAttestations[validatorID] = sa
 		}
 		// Remove from new attestations if superseded.
-		newAtt, ok := c.LatestNewAttestations[validatorID]
+		newAtt, ok := c.latestNewAttestations[validatorID]
 		if ok && newAtt.Message.Slot <= data.Slot {
-			delete(c.LatestNewAttestations, validatorID)
+			delete(c.latestNewAttestations, validatorID)
 		}
 	} else {
 		// Network gossip attestation processing.
-		currentSlot := c.Time / types.IntervalsPerSlot
+		currentSlot := c.time / types.IntervalsPerSlot
 		if data.Slot > currentSlot {
 			metrics.AttestationsInvalid.Inc()
 			return
 		}
 
 		// Network gossip: update new attestations if this is newer.
-		existing, ok := c.LatestNewAttestations[validatorID]
+		existing, ok := c.latestNewAttestations[validatorID]
 		if !ok || existing.Message.Slot < data.Slot {
-			c.LatestNewAttestations[validatorID] = sa
+			c.latestNewAttestations[validatorID] = sa
 		}
 	}
 
@@ -68,7 +68,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 // verifyAttestationSignature verifies the XMSS signature on the attestation.
 func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
-	headState, ok := c.Storage.GetState(c.Head)
+	headState, ok := c.storage.GetState(c.head)
 	if !ok {
 		return fmt.Errorf("head state not found")
 	}
@@ -83,15 +83,15 @@ func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
 // validateAttestationData performs attestation validation checks.
 func (c *Store) validateAttestationData(data *types.AttestationData) bool {
 	// Availability check: source, target, and head blocks must exist.
-	sourceBlock, ok := c.Storage.GetBlock(data.Source.Root)
+	sourceBlock, ok := c.storage.GetBlock(data.Source.Root)
 	if !ok {
 		return false
 	}
-	targetBlock, ok := c.Storage.GetBlock(data.Target.Root)
+	targetBlock, ok := c.storage.GetBlock(data.Target.Root)
 	if !ok {
 		return false
 	}
-	if _, ok := c.Storage.GetBlock(data.Head.Root); !ok {
+	if _, ok := c.storage.GetBlock(data.Head.Root); !ok {
 		return false
 	}
 
@@ -112,7 +112,7 @@ func (c *Store) validateAttestationData(data *types.AttestationData) bool {
 	}
 
 	// Time check.
-	currentSlot := c.Time / types.IntervalsPerSlot
+	currentSlot := c.time / types.IntervalsPerSlot
 	if data.Slot > currentSlot+1 {
 		return false
 	}
