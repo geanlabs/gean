@@ -13,12 +13,12 @@ func (c *Store) AdvanceTime(time uint64, hasProposal bool) {
 }
 
 func (c *Store) advanceTimeLocked(time uint64, hasProposal bool) {
-	if time <= c.GenesisTime {
+	if time <= c.genesisTime {
 		return
 	}
-	tickInterval := (time - c.GenesisTime) / types.SecondsPerInterval
-	for c.Time < tickInterval {
-		shouldSignal := hasProposal && (c.Time+1) == tickInterval
+	tickInterval := (time - c.genesisTime) / types.SecondsPerInterval
+	for c.time < tickInterval {
+		shouldSignal := hasProposal && (c.time+1) == tickInterval
 		c.tickIntervalLocked(shouldSignal)
 	}
 }
@@ -31,8 +31,8 @@ func (c *Store) TickInterval(hasProposal bool) {
 }
 
 func (c *Store) tickIntervalLocked(hasProposal bool) {
-	c.Time++
-	currentInterval := c.Time % types.IntervalsPerSlot
+	c.time++
+	currentInterval := c.time % types.IntervalsPerSlot
 
 	switch currentInterval {
 	case 0:
@@ -56,15 +56,15 @@ func (c *Store) AcceptNewAttestations() {
 }
 
 func (c *Store) acceptNewAttestationsLocked() {
-	for id, sa := range c.LatestNewAttestations {
-		c.LatestKnownAttestations[id] = sa
+	for id, sa := range c.latestNewAttestations {
+		c.latestKnownAttestations[id] = sa
 	}
-	c.LatestNewAttestations = make(map[uint64]*types.SignedAttestation)
+	c.latestNewAttestations = make(map[uint64]*types.SignedAttestation)
 	c.updateHeadLocked()
 }
 
 func (c *Store) updateHeadLocked() {
-	c.Head = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestKnownAttestations, 0)
+	c.head = GetForkChoiceHead(c.storage, c.latestJustified.Root, c.latestKnownAttestations, 0)
 }
 
 // UpdateSafeTarget finds the head with sufficient (2/3+) vote support.
@@ -75,9 +75,9 @@ func (c *Store) UpdateSafeTarget() {
 }
 
 func (c *Store) updateSafeTargetLocked() {
-	minScore := int(ceilDiv(c.NumValidators*2, 3))
-	c.SafeTarget = GetForkChoiceHead(c.Storage, c.LatestJustified.Root, c.LatestNewAttestations, minScore)
-	if block, ok := c.Storage.GetBlock(c.SafeTarget); ok {
+	minScore := int(ceilDiv(c.numValidators*2, 3))
+	c.safeTarget = GetForkChoiceHead(c.storage, c.latestJustified.Root, c.latestNewAttestations, minScore)
+	if block, ok := c.storage.GetBlock(c.safeTarget); ok {
 		metrics.SafeTargetSlot.Set(float64(block.Slot))
 	}
 }

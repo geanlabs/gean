@@ -36,7 +36,7 @@ type ValidatorDuties struct {
 // HasProposal reports whether this node has a proposer for the slot.
 func (v *ValidatorDuties) HasProposal(slot uint64) bool {
 	for _, idx := range v.Indices {
-		if statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
+		if statetransition.IsProposer(idx, slot, v.FC.NumValidators()) {
 			return true
 		}
 	}
@@ -62,7 +62,7 @@ func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
 	}
 
 	for _, idx := range v.Indices {
-		if !statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
+		if !statetransition.IsProposer(idx, slot, v.FC.NumValidators()) {
 			continue
 		}
 
@@ -116,7 +116,7 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 	for _, idx := range v.Indices {
 		// Skip if this validator is the proposer for this slot.
 		// The proposer already attests via ProposerAttestation in its block.
-		if statetransition.IsProposer(idx, slot, v.FC.NumValidators) {
+		if statetransition.IsProposer(idx, slot, v.FC.NumValidators()) {
 			continue
 		}
 
