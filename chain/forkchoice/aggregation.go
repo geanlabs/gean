@@ -112,7 +112,8 @@ func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
 		c.advanceTimeLocked(c.NowFn(), false)
 	}
 
-	if !c.validateAttestationData(agg.Data) {
+	if reason := c.validateAttestationData(agg.Data); reason != "" {
+		log.Debug("aggregated attestation rejected", "reason", reason, "slot", agg.Data.Slot)
 		return
 	}
 

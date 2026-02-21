@@ -33,7 +33,8 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	data := sa.Message
 	validatorID := sa.ValidatorID
 
-	if !c.validateAttestationData(data) {
+	if reason := c.validateAttestationData(data); reason != "" {
+		log.Debug("attestation rejected", "reason", reason, "slot", data.Slot, "validator", validatorID)
 		metrics.AttestationsInvalid.Inc()
 		return
 	}
@@ -90,41 +91,42 @@ func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
 }
 
 // validateAttestationData performs attestation validation checks.
-func (c *Store) validateAttestationData(data *types.AttestationData) bool {
+// Returns an empty string if valid, or a rejection reason.
+func (c *Store) validateAttestationData(data *types.AttestationData) string {
 	// Availability check: source, target, and head blocks must exist.
 	sourceBlock, ok := c.storage.GetBlock(data.Source.Root)
 	if !ok {
-		return false
+		return "source block unknown"
 	}
 	targetBlock, ok := c.storage.GetBlock(data.Target.Root)
 	if !ok {
-		return false
+		return "target block unknown"
 	}
 	if _, ok := c.storage.GetBlock(data.Head.Root); !ok {
-		return false
+		return "head block unknown"
 	}
 
 	// Topology check.
 	if sourceBlock.Slot > targetBlock.Slot {
-		return false
+		return "source slot > target slot"
 	}
 	if data.Source.Slot > data.Target.Slot {
-		return false
+		return "source slot > target slot"
 	}
 
 	// Consistency check.
 	if sourceBlock.Slot != data.Source.Slot {
-		return false
+		return "source checkpoint slot mismatch"
 	}
 	if targetBlock.Slot != data.Target.Slot {
-		return false
+		return "target checkpoint slot mismatch"
 	}
 
 	// Time check.
 	currentSlot := c.time / types.IntervalsPerSlot
 	if data.Slot > currentSlot+1 {
-		return false
+		return "attestation too far in future"
 	}
 
-	return true
+	return ""
 }
