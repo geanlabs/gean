@@ -26,3 +26,49 @@ type State struct {
 	JustificationsRoots      [][32]byte   `json:"justifications_roots"       ssz-max:"262144"`
 	JustificationsValidators []byte       `json:"justifications_validators"  ssz:"bitlist" ssz-max:"1073741824"`
 }
+
+// Copy returns a deep copy of the state.
+func (s *State) Copy() *State {
+	out := &State{
+		Slot: s.Slot,
+	}
+
+	if s.Config != nil {
+		out.Config = &Config{GenesisTime: s.Config.GenesisTime}
+	}
+	if s.LatestBlockHeader != nil {
+		h := *s.LatestBlockHeader
+		out.LatestBlockHeader = &h
+	}
+	if s.LatestJustified != nil {
+		out.LatestJustified = &Checkpoint{Root: s.LatestJustified.Root, Slot: s.LatestJustified.Slot}
+	}
+	if s.LatestFinalized != nil {
+		out.LatestFinalized = &Checkpoint{Root: s.LatestFinalized.Root, Slot: s.LatestFinalized.Slot}
+	}
+	if s.HistoricalBlockHashes != nil {
+		out.HistoricalBlockHashes = make([][32]byte, len(s.HistoricalBlockHashes))
+		copy(out.HistoricalBlockHashes, s.HistoricalBlockHashes)
+	}
+	if s.JustifiedSlots != nil {
+		out.JustifiedSlots = make([]byte, len(s.JustifiedSlots))
+		copy(out.JustifiedSlots, s.JustifiedSlots)
+	}
+	if s.Validators != nil {
+		out.Validators = make([]*Validator, len(s.Validators))
+		for i, v := range s.Validators {
+			cp := *v
+			out.Validators[i] = &cp
+		}
+	}
+	if s.JustificationsRoots != nil {
+		out.JustificationsRoots = make([][32]byte, len(s.JustificationsRoots))
+		copy(out.JustificationsRoots, s.JustificationsRoots)
+	}
+	if s.JustificationsValidators != nil {
+		out.JustificationsValidators = make([]byte, len(s.JustificationsValidators))
+		copy(out.JustificationsValidators, s.JustificationsValidators)
+	}
+
+	return out
+}
