@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -14,6 +15,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/geanlabs/gean/network/gossipsub"
+	"github.com/geanlabs/gean/network/p2p"
 	"github.com/geanlabs/gean/observability/logging"
 )
 
@@ -68,17 +70,12 @@ func (h *Host) Close() error {
 	return h.P2P.Close()
 }
 
-// ConnectBootnodes dials the given multiaddrs and connects to them.
+// ConnectBootnodes dials the given addresses (multiaddr or ENR) and connects to them.
 func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) error {
 	for _, addr := range addrs {
-		ma, err := multiaddr.NewMultiaddr(addr)
+		pi, err := parseBootnode(addr)
 		if err != nil {
-			netLog.Warn("invalid bootnode multiaddr", "addr", addr, "err", err)
-			continue
-		}
-		pi, err := peer.AddrInfoFromP2pAddr(ma)
-		if err != nil {
-			netLog.Warn("invalid bootnode peer info", "addr", addr, "err", err)
+			netLog.Warn("invalid bootnode", "addr", addr, "err", err)
 			continue
 		}
 		if pi.ID == h.ID() {
@@ -96,6 +93,17 @@ func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) error {
 		)
 	}
 	return nil
+}
+
+func parseBootnode(addr string) (*peer.AddrInfo, error) {
+	if strings.HasPrefix(addr, "enr:") {
+		return p2p.ENRToAddrInfo(addr)
+	}
+	ma, err := multiaddr.NewMultiaddr(addr)
+	if err != nil {
+		return nil, err
+	}
+	return peer.AddrInfoFromP2pAddr(ma)
 }
 
 func loadOrGenerateKey(path string) (crypto.PrivKey, error) {

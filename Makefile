@@ -1,4 +1,4 @@
-.PHONY: build ffi spec-test unit-test test-race lint fmt clean docker-build run run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
+.PHONY: build ffi spec-test unit-test test-race lint fmt clean docker-build run run-quic run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
@@ -41,7 +41,11 @@ CONFIG := $(MAKEFILE_DIR)config.yaml
 
 refresh-genesis-time:
 	@NEW_TIME=$$(($$(date +%s) + 30)); \
-	sed -i '' "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" $(CONFIG); \
+	if [ "$$(uname -s)" = "Darwin" ]; then \
+		sed -i '' "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" $(CONFIG); \
+	else \
+		sed -i "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" $(CONFIG); \
+	fi; \
 	echo "Updated GENESIS_TIME to $$NEW_TIME in $(CONFIG)"
 
 run: build refresh-genesis-time

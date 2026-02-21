@@ -66,13 +66,10 @@ func main() {
 	// Load bootnodes.
 	var bootnodes []string
 	if *bootnodesPath != "" {
-		nodes, err := config.LoadBootnodes(*bootnodesPath)
+		bootnodes, err = config.LoadBootnodes(*bootnodesPath)
 		if err != nil {
 			logger.Error("failed to load bootnodes", "err", err)
 			os.Exit(1)
-		}
-		for _, n := range nodes {
-			bootnodes = append(bootnodes, n.Multiaddr)
 		}
 		if len(bootnodes) > 0 {
 			logger.Info("bootnodes loaded", "count", len(bootnodes))
