@@ -12,10 +12,12 @@ func RegisterReqResp(h host.Host, handler *ReqRespHandler) {
 		handleStatus(s, handler)
 	})
 
-	h.SetStreamHandler(BlocksByRootProtocol, func(s network.Stream) {
+	bbr := func(s network.Stream) {
 		defer s.Close()
 		handleBlocksByRoot(s, handler)
-	})
+	}
+	h.SetStreamHandler(BlocksByRootProtocol, bbr)
+	h.SetStreamHandler(BlocksByRootProtocolLegacy, bbr)
 }
 
 func handleStatus(s network.Stream, handler *ReqRespHandler) {
