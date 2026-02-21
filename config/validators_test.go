@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,5 +96,41 @@ func TestGetValidatorIndicesUnknownNode(t *testing.T) {
 	got := reg.GetValidatorIndices("node-z")
 	if got != nil {
 		t.Fatalf("expected nil for unknown node, got %v", got)
+	}
+}
+
+func TestLoadValidatorsFlatMap(t *testing.T) {
+	yaml := "ream_0:\n  - 0\n  - 1\nzeam_0:\n  - 2\n  - 3\n"
+	path := filepath.Join(t.TempDir(), "validators.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := LoadValidators(path)
+	if err != nil {
+		t.Fatalf("LoadValidators: %v", err)
+	}
+	got := reg.GetValidatorIndices("ream_0")
+	if len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Fatalf("expected [0, 1] for ream_0, got %v", got)
+	}
+	got = reg.GetValidatorIndices("zeam_0")
+	if len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("expected [2, 3] for zeam_0, got %v", got)
+	}
+}
+
+func TestLoadValidatorsLegacy(t *testing.T) {
+	yaml := "assignments:\n  - node_name: node0\n    validators: [0, 1]\n"
+	path := filepath.Join(t.TempDir(), "validators.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := LoadValidators(path)
+	if err != nil {
+		t.Fatalf("LoadValidators: %v", err)
+	}
+	got := reg.GetValidatorIndices("node0")
+	if len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Fatalf("expected [0, 1] for node0, got %v", got)
 	}
 }

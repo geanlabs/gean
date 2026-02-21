@@ -19,12 +19,29 @@ type ValidatorRegistry struct {
 }
 
 // LoadValidators loads and parses a validators.yaml file.
+// Supports both formats:
+//   - Flat map (lean-quickstart):  {node_name: [indices...], ...}
+//   - Legacy struct:               {assignments: [{node_name, validators}, ...]}
 func LoadValidators(path string) (*ValidatorRegistry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read validators: %w", err)
 	}
 
+	// Try flat map format first (lean-quickstart / cross-client standard).
+	var nodeMap map[string][]uint64
+	if err := yaml.Unmarshal(data, &nodeMap); err == nil && len(nodeMap) > 0 {
+		reg := &ValidatorRegistry{}
+		for name, indices := range nodeMap {
+			reg.Assignments = append(reg.Assignments, ValidatorAssignment{
+				NodeName:   name,
+				Validators: indices,
+			})
+		}
+		return reg, nil
+	}
+
+	// Fall back to legacy struct format.
 	var reg ValidatorRegistry
 	if err := yaml.Unmarshal(data, &reg); err != nil {
 		return nil, fmt.Errorf("parse validators: %w", err)
