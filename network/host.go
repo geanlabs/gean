@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -70,7 +71,7 @@ func (h *Host) Close() error {
 	return h.P2P.Close()
 }
 
-// ConnectBootnodes dials the given addresses (multiaddr or ENR) and connects to them.
+// ConnectBootnodes dials the given addresses once. Returns after attempting all.
 func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) error {
 	for _, addr := range addrs {
 		pi, err := parseBootnode(addr)
@@ -93,6 +94,90 @@ func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) error {
 		)
 	}
 	return nil
+}
+
+// ConnectBootnodesWithRetry dials bootnodes immediately and then keeps
+// re-dialing any that are not currently connected, with exponential backoff
+// up to maxInterval. It runs until ctx is cancelled.
+func ConnectBootnodesWithRetry(ctx context.Context, h host.Host, addrs []string) {
+	infos := make([]*peer.AddrInfo, 0, len(addrs))
+	for _, addr := range addrs {
+		pi, err := parseBootnode(addr)
+		if err != nil {
+			netLog.Warn("invalid bootnode", "addr", addr, "err", err)
+			continue
+		}
+		if pi.ID == h.ID() {
+			continue
+		}
+		infos = append(infos, pi)
+	}
+
+	if len(infos) == 0 {
+		return
+	}
+
+	// Initial connect attempt.
+	connectAll(ctx, h, infos)
+
+	go func() {
+		const (
+			minInterval = 5 * time.Second
+			maxInterval = 60 * time.Second
+		)
+		interval := minInterval
+
+		t := time.NewTimer(interval)
+		defer t.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				connected := connectAll(ctx, h, infos)
+				if connected == len(infos) {
+					// All connected — slow down polling.
+					interval = maxInterval
+				} else {
+					// Some missing — back off but not too slow.
+					interval = interval * 2
+					if interval > maxInterval {
+						interval = maxInterval
+					}
+				}
+				t.Reset(interval)
+			}
+		}
+	}()
+}
+
+// connectAll tries to connect to each peer that isn't already connected.
+// Returns the number of peers that are connected after the attempt.
+func connectAll(ctx context.Context, h host.Host, infos []*peer.AddrInfo) int {
+	connected := 0
+	for _, pi := range infos {
+		// Already connected — count it, skip dial.
+		if len(h.Network().ConnsToPeer(pi.ID)) > 0 {
+			connected++
+			continue
+		}
+		dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := h.Connect(dialCtx, *pi)
+		cancel()
+		if err != nil {
+			netLog.Warn("failed to connect to bootnode",
+				"peer_id", pi.ID.String()[:16]+"...",
+				"err", err,
+			)
+		} else {
+			netLog.Info("connected to bootnode",
+				"peer_id", pi.ID.String()[:16]+"...",
+			)
+			connected++
+		}
+	}
+	return connected
 }
 
 func parseBootnode(addr string) (*peer.AddrInfo, error) {

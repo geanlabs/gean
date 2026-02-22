@@ -82,8 +82,14 @@ func New(cfg Config) (*Node, error) {
 		return nil, err
 	}
 
+	// Register peer connect/disconnect callbacks so we sync immediately when
+	// a new peer connects and they are ahead of us.
+	n.registerPeerNotifications(host.Ctx)
+
+	// Start persistent bootnode reconnect loop instead of a one-shot dial.
+	// This means nodes that start after us will eventually be connected.
 	if len(cfg.Bootnodes) > 0 {
-		network.ConnectBootnodes(host.Ctx, host.P2P, cfg.Bootnodes)
+		network.ConnectBootnodesWithRetry(host.Ctx, host.P2P, cfg.Bootnodes)
 	}
 
 	startMetrics(log, cfg)
@@ -123,8 +129,10 @@ func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
 	}
 
 	netLog := logging.NewComponentLogger(logging.CompNetwork)
+	// Log the full peer ID so operators can verify it matches nodes.yaml.
 	netLog.Info("libp2p host started",
 		"peer_id", host.P2P.ID().String()[:16]+"...",
+		"peer_id_full", host.P2P.ID().String(),
 		"addr", cfg.ListenAddr,
 	)
 
