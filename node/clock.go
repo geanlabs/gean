@@ -38,7 +38,7 @@ func (c *Clock) CurrentInterval() uint64 {
 		return 0
 	}
 	elapsed := now - c.GenesisTime
-	return elapsed % types.IntervalsPerSlot
+	return (elapsed % types.SecondsPerSlot) / types.SecondsPerInterval
 }
 
 // CurrentTime returns the current unix time in seconds.
