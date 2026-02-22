@@ -89,6 +89,11 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		return nil, fmt.Errorf("head state not found")
 	}
 
+	advancedState, err := statetransition.ProcessSlots(headState, slot)
+	if err != nil {
+		return nil, err
+	}
+
 	var attestations []*types.Attestation
 	var collectedSigned []*types.SignedAttestation
 
@@ -102,10 +107,6 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 			Body:          &types.BlockBody{Attestations: attestations},
 		}
 
-		advancedState, err := statetransition.ProcessSlots(headState, slot)
-		if err != nil {
-			return nil, err
-		}
 		postState, err := statetransition.ProcessBlock(advancedState, candidateBlock)
 		if err != nil {
 			return nil, err
@@ -141,10 +142,6 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 	}
 
 	// Build final block with computed state root.
-	finalAdvanced, err := statetransition.ProcessSlots(headState, slot)
-	if err != nil {
-		return nil, err
-	}
 	finalBlock := &types.Block{
 		Slot:          slot,
 		ProposerIndex: validatorIndex,
@@ -152,7 +149,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		StateRoot:     types.ZeroHash,
 		Body:          &types.BlockBody{Attestations: attestations},
 	}
-	finalState, err := statetransition.ProcessBlock(finalAdvanced, finalBlock)
+	finalState, err := statetransition.ProcessBlock(advancedState, finalBlock)
 	if err != nil {
 		return nil, err
 	}
