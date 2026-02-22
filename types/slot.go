@@ -11,7 +11,7 @@ import "math"
 //  3. A pronic number n*(n+1) (e.g., 6, 12, 20, 30...)
 func IsJustifiableAfter(slot, finalizedSlot uint64) bool {
 	if slot < finalizedSlot {
-		panic("candidate slot must not be before finalized slot")
+		return false
 	}
 
 	delta := slot - finalizedSlot
