@@ -195,7 +195,7 @@ func startMetrics(log *slog.Logger, cfg Config) {
 	if cfg.MetricsPort <= 0 {
 		return
 	}
-	metrics.NodeInfo.WithLabelValues("gean", version).Set(1)
+	metrics.NodeInfo.WithLabelValues("gean", Version).Set(1)
 	metrics.NodeStartTime.Set(float64(time.Now().Unix()))
 	metrics.ValidatorsCount.Set(float64(len(cfg.ValidatorIDs)))
 	metrics.Serve(cfg.MetricsPort)

@@ -17,8 +17,6 @@ import (
 	"github.com/geanlabs/gean/observability/logging"
 )
 
-const version = "v0.1.0"
-
 func main() {
 	genesisPath := flag.String("genesis", "", "Path to config.yaml")
 	bootnodesPath := flag.String("bootnodes", "", "Path to nodes.yaml")
@@ -46,7 +44,7 @@ func main() {
 	}
 
 	// Print banner first.
-	logging.Banner(version)
+	logging.Banner(node.Version)
 
 	// Load genesis config.
 	genCfg, err := config.LoadGenesisConfig(*genesisPath)
