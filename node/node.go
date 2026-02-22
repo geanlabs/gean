@@ -11,7 +11,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-const version = "v0.1.0"
+const Version = "v0.1.0"
 
 // Node is the main gean node orchestrator.
 type Node struct {
