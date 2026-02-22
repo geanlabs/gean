@@ -162,7 +162,7 @@ func initDiscovery(log *slog.Logger, cfg Config) (*p2p.LocalNodeManager, *p2p.Di
 
 	p2pDiscovery, err := p2p.NewDiscoveryService(p2pManager, discPort, cfg.Bootnodes)
 	if err != nil {
-		log.Error("failed to start p2p discovery", "err", err)
+		log.Warn("p2p discovery unavailable", "err", err)
 	}
 
 	return p2pManager, p2pDiscovery, nil
