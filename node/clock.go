@@ -43,6 +43,6 @@ func (c *Clock) CurrentTime() uint64 {
 }
 
 // SlotTicker returns a channel that fires at the start of each interval.
-func (c *Clock) SlotTicker() <-chan time.Time {
-	return time.NewTicker(time.Second).C // 1 second per interval
+func (c *Clock) SlotTicker() *time.Ticker {
+	return time.NewTicker(time.Second) // 1 second per interval
 }

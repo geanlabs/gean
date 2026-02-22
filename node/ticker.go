@@ -20,6 +20,7 @@ func (n *Node) Run(ctx context.Context) error {
 	n.initialSync(ctx)
 
 	ticker := n.Clock.SlotTicker()
+	defer ticker.Stop()
 	var lastSlot uint64
 
 	for {
@@ -30,7 +31,7 @@ func (n *Node) Run(ctx context.Context) error {
 				n.log.Warn("host close error", "err", err)
 			}
 			return nil
-		case <-ticker:
+		case <-ticker.C:
 			if n.Clock.IsBeforeGenesis() {
 				continue
 			}
