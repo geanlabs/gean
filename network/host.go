@@ -71,7 +71,7 @@ func (h *Host) Close() error {
 }
 
 // ConnectBootnodes dials the given addresses (multiaddr or ENR) and connects to them.
-func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) error {
+func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) {
 	for _, addr := range addrs {
 		pi, err := parseBootnode(addr)
 		if err != nil {
@@ -92,7 +92,6 @@ func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) error {
 			"peer_id", pi.ID.String()[:16]+"...",
 		)
 	}
-	return nil
 }
 
 func parseBootnode(addr string) (*peer.AddrInfo, error) {
