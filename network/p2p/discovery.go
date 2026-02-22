@@ -10,8 +10,6 @@ import (
 	"github.com/geanlabs/gean/observability/logging"
 )
 
-var discLog = logging.NewComponentLogger(logging.CompNetwork)
-
 // DiscoveryService manages peer discovery using Discv5.
 type DiscoveryService struct {
 	manager *LocalNodeManager
@@ -21,6 +19,8 @@ type DiscoveryService struct {
 
 // NewDiscoveryService starts a Discv5 service.
 func NewDiscoveryService(manager *LocalNodeManager, port int, bootnodes []string) (*DiscoveryService, error) {
+	log := logging.NewComponentLogger(logging.CompNetwork)
+
 	// 1. Parse Bootnodes
 	var boots []*enode.Node
 	for _, url := range bootnodes {
@@ -29,7 +29,7 @@ func NewDiscoveryService(manager *LocalNodeManager, port int, bootnodes []string
 		}
 		node, err := enode.Parse(enode.ValidSchemes, url)
 		if err != nil {
-			discLog.Warn("invalid bootnode URL", "url", url, "err", err)
+			log.Warn("invalid bootnode URL", "url", url, "err", err)
 			continue
 		}
 		boots = append(boots, node)
@@ -57,7 +57,7 @@ func NewDiscoveryService(manager *LocalNodeManager, port int, bootnodes []string
 		return nil, fmt.Errorf("failed to start discv5: %w", err)
 	}
 
-	discLog.Info("discovery service started",
+	log.Info("discovery service started",
 		"enr", manager.Node().String(),
 		"id", manager.Node().ID().String(),
 	)
