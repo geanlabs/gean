@@ -111,7 +111,9 @@ func initGenesis(log *slog.Logger, cfg Config) *forkchoice.Store {
 		"block_root", logging.ShortHash(genesisRoot),
 	)
 
-	return forkchoice.NewStore(genesisState, genesisBlock, memory.New())
+	fc := forkchoice.NewStore(genesisState, genesisBlock, memory.New())
+	fc.NowFn = func() uint64 { return uint64(time.Now().Unix()) }
+	return fc
 }
 
 func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {

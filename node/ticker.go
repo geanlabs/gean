@@ -41,13 +41,28 @@ func (n *Node) Run(ctx context.Context) error {
 			// Advance fork choice time.
 			n.FC.AdvanceTime(n.Clock.CurrentTime(), hasProposal)
 
-			// Execute validator duties.
-			n.Validator.OnInterval(ctx, slot, interval)
+			status := n.FC.GetStatus()
+
+			// Sync before duties: if head is behind, try catching up.
+			if slot > status.HeadSlot+2 {
+				for _, pid := range n.Host.P2P.Network().Peers() {
+					if n.syncWithPeer(ctx, pid) {
+						status = n.FC.GetStatus() // refresh after sync
+						break
+					}
+				}
+			}
+
+			// Execute validator duties only when synced.
+			if slot <= status.HeadSlot+2 {
+				n.Validator.OnInterval(ctx, slot, interval)
+			}
 
 			// Update metrics and log on slot boundary.
 			if slot != lastSlot {
 				start := time.Now()
-				status := n.FC.GetStatus()
+				// Refresh status for metrics if not already current.
+				status = n.FC.GetStatus()
 
 				metrics.CurrentSlot.Set(float64(slot))
 				metrics.HeadSlot.Set(float64(status.HeadSlot))
@@ -55,15 +70,6 @@ func (n *Node) Run(ctx context.Context) error {
 				metrics.LatestJustifiedSlot.Set(float64(status.JustifiedSlot))
 				peerCount := len(n.Host.P2P.Network().Peers())
 				metrics.ConnectedPeers.Set(float64(peerCount))
-
-				// Periodic sync: if head is behind, try catching up.
-				if slot > status.HeadSlot+2 {
-					for _, pid := range n.Host.P2P.Network().Peers() {
-						if n.syncWithPeer(ctx, pid) {
-							break
-						}
-					}
-				}
 
 				n.log.Info("slot",
 					"slot", slot,
