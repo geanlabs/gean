@@ -89,11 +89,18 @@ func ProcessBlockHeader(state *types.State, block *types.Block) (*types.State, e
 
 // ProcessBlock applies full block processing: header + attestations.
 func ProcessBlock(state *types.State, block *types.Block) (*types.State, error) {
+	blockStart := time.Now()
+
 	s, err := ProcessBlockHeader(state, block)
 	if err != nil {
 		return nil, err
 	}
+	attStart := time.Now()
 	s = ProcessAttestations(s, block.Body.Attestations)
+
+	metrics.STFAttestationsProcessed.Add(float64(len(block.Body.Attestations)))
+	metrics.STFAttestationsProcessingTime.Observe(time.Since(attStart).Seconds())
+	metrics.STFBlockProcessingTime.Observe(time.Since(blockStart).Seconds())
 	return s, nil
 }
 
@@ -110,16 +117,11 @@ func StateTransition(state *types.State, block *types.Block) (*types.State, erro
 	metrics.STFSlotsProcessingTime.Observe(time.Since(slotsStart).Seconds())
 
 	// Process the block (header + attestations).
-	blockStart := time.Now()
-	s, err = ProcessBlockHeader(s, block)
+
+	s, err = ProcessBlock(s, block)
 	if err != nil {
 		return nil, fmt.Errorf("process_block: %w", err)
 	}
-	attStart := time.Now()
-	s = ProcessAttestations(s, block.Body.Attestations)
-	metrics.STFAttestationsProcessed.Add(float64(len(block.Body.Attestations)))
-	metrics.STFAttestationsProcessingTime.Observe(time.Since(attStart).Seconds())
-	metrics.STFBlockProcessingTime.Observe(time.Since(blockStart).Seconds())
 
 	// Validate state root.
 	computedRoot, _ := s.HashTreeRoot()
