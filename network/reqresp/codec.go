@@ -116,6 +116,6 @@ type byteReader struct {
 
 func (br byteReader) ReadByte() (byte, error) {
 	var buf [1]byte
-	_, err := br.Reader.Read(buf[:])
+	_, err := io.ReadFull(br.Reader, buf[:])
 	return buf[0], err
 }
