@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+
+	"github.com/geanlabs/gean/observability/logging"
 )
+
+var discLog = logging.NewComponentLogger(logging.CompNetwork)
 
 // DiscoveryService manages peer discovery using Discv5.
 type DiscoveryService struct {
@@ -26,7 +29,7 @@ func NewDiscoveryService(manager *LocalNodeManager, port int, bootnodes []string
 		}
 		node, err := enode.Parse(enode.ValidSchemes, url)
 		if err != nil {
-			log.Warn("Invalid bootnode URL", "url", url, "err", err)
+			discLog.Warn("invalid bootnode URL", "url", url, "err", err)
 			continue
 		}
 		boots = append(boots, node)
@@ -54,7 +57,10 @@ func NewDiscoveryService(manager *LocalNodeManager, port int, bootnodes []string
 		return nil, fmt.Errorf("failed to start discv5: %w", err)
 	}
 
-	log.Info("Discovery service started", "enr", manager.Node().String(), "id", manager.Node().ID().String())
+	discLog.Info("discovery service started",
+		"enr", manager.Node().String(),
+		"id", manager.Node().ID().String(),
+	)
 
 	return &DiscoveryService{
 		manager: manager,
