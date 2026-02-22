@@ -7,7 +7,7 @@ ffi:
 
 build: ffi
 	@mkdir -p bin
-	@go build -ldflags "-X main.version=$(VERSION)" -o bin/gean ./cmd/gean
+	@go build -ldflags "-X github.com/geanlabs/gean/node.Version=$(VERSION)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
 # Run the spectests with the leanSpec fixtures, skipping signature verification for faster test execution
