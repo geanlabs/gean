@@ -1,6 +1,10 @@
 package node
 
-import "time"
+import (
+	"time"
+
+	"github.com/geanlabs/gean/types"
+)
 
 // Clock tracks slot and interval timing relative to genesis.
 type Clock struct {
@@ -24,7 +28,7 @@ func (c *Clock) CurrentSlot() uint64 {
 		return 0
 	}
 	elapsed := now - c.GenesisTime
-	return elapsed / 4 // SECONDS_PER_SLOT = 4
+	return elapsed / types.SecondsPerSlot
 }
 
 // CurrentInterval returns the current interval within the slot (0-3), or 0 if before genesis.
@@ -34,7 +38,7 @@ func (c *Clock) CurrentInterval() uint64 {
 		return 0
 	}
 	elapsed := now - c.GenesisTime
-	return elapsed % 4 // INTERVALS_PER_SLOT = 4
+	return elapsed % types.IntervalsPerSlot
 }
 
 // CurrentTime returns the current unix time in seconds.
@@ -44,5 +48,5 @@ func (c *Clock) CurrentTime() uint64 {
 
 // SlotTicker returns a channel that fires at the start of each interval.
 func (c *Clock) SlotTicker() *time.Ticker {
-	return time.NewTicker(time.Second) // 1 second per interval
+	return time.NewTicker(types.SecondsPerInterval * time.Second)
 }
