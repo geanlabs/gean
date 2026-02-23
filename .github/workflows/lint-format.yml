@@ -1,0 +1,74 @@
+name: Lint & Format
+
+on:
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: "1.24"
+  RUST_VERSION: "1.88"
+
+jobs:
+  go-lint:
+    name: Go Lint & Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Install and run staticcheck
+        continue-on-error: true
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+
+      - name: Check go fmt
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "::error::The following files are not formatted:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+  rust-lint:
+    name: Rust Lint & Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            xmss/leansig-ffi/target
+          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/leansig-ffi/Cargo.lock') }}
+          restore-keys: |
+            cargo-lint-${{ runner.os }}-
+
+      - name: Check Rust formatting
+        working-directory: xmss/leansig-ffi
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        working-directory: xmss/leansig-ffi
+        run: cargo clippy -- -D warnings -A clippy::missing_safety_doc
