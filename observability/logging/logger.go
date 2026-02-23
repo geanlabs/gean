@@ -64,7 +64,8 @@ func ShortHash(h [32]byte) string {
 // prettyHandler is a custom slog.Handler that produces colored, aligned output.
 //
 // Format:
-//   2026-02-13 14:23:45.123 INF [node] message  key=value key=value
+//
+//	2026-02-13 14:23:45.123 INF [node] message  key=value key=value
 type prettyHandler struct {
 	out   io.Writer
 	level slog.Level

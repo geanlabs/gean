@@ -143,23 +143,23 @@ type StateTransitionTestCase struct {
 // PostState contains optional expected fields for selective validation.
 // Nil pointer fields are not checked.
 type PostState struct {
-	Slot                            *uint64            `json:"slot"`
-	LatestJustifiedSlot             *uint64            `json:"latestJustifiedSlot"`
-	LatestJustifiedRoot             *HexRoot           `json:"latestJustifiedRoot"`
-	LatestFinalizedSlot             *uint64            `json:"latestFinalizedSlot"`
-	LatestFinalizedRoot             *HexRoot           `json:"latestFinalizedRoot"`
-	ValidatorCount                  *uint64            `json:"validatorCount"`
-	ConfigGenesisTime               *uint64            `json:"configGenesisTime"`
-	LatestBlockHeaderSlot           *uint64            `json:"latestBlockHeaderSlot"`
-	LatestBlockHeaderProposerIndex  *uint64            `json:"latestBlockHeaderProposerIndex"`
-	LatestBlockHeaderParentRoot     *HexRoot           `json:"latestBlockHeaderParentRoot"`
-	LatestBlockHeaderStateRoot      *HexRoot           `json:"latestBlockHeaderStateRoot"`
-	LatestBlockHeaderBodyRoot       *HexRoot           `json:"latestBlockHeaderBodyRoot"`
-	HistoricalBlockHashesCount      *uint64            `json:"historicalBlockHashesCount"`
-	HistoricalBlockHashes           *Container[HexRoot] `json:"historicalBlockHashes"`
-	JustifiedSlots                  *Container[uint64] `json:"justifiedSlots"`
-	JustificationsRoots             *Container[HexRoot] `json:"justificationsRoots"`
-	JustificationsValidators        *Container[bool]   `json:"justificationsValidators"`
+	Slot                           *uint64             `json:"slot"`
+	LatestJustifiedSlot            *uint64             `json:"latestJustifiedSlot"`
+	LatestJustifiedRoot            *HexRoot            `json:"latestJustifiedRoot"`
+	LatestFinalizedSlot            *uint64             `json:"latestFinalizedSlot"`
+	LatestFinalizedRoot            *HexRoot            `json:"latestFinalizedRoot"`
+	ValidatorCount                 *uint64             `json:"validatorCount"`
+	ConfigGenesisTime              *uint64             `json:"configGenesisTime"`
+	LatestBlockHeaderSlot          *uint64             `json:"latestBlockHeaderSlot"`
+	LatestBlockHeaderProposerIndex *uint64             `json:"latestBlockHeaderProposerIndex"`
+	LatestBlockHeaderParentRoot    *HexRoot            `json:"latestBlockHeaderParentRoot"`
+	LatestBlockHeaderStateRoot     *HexRoot            `json:"latestBlockHeaderStateRoot"`
+	LatestBlockHeaderBodyRoot      *HexRoot            `json:"latestBlockHeaderBodyRoot"`
+	HistoricalBlockHashesCount     *uint64             `json:"historicalBlockHashesCount"`
+	HistoricalBlockHashes          *Container[HexRoot] `json:"historicalBlockHashes"`
+	JustifiedSlots                 *Container[uint64]  `json:"justifiedSlots"`
+	JustificationsRoots            *Container[HexRoot] `json:"justificationsRoots"`
+	JustificationsValidators       *Container[bool]    `json:"justificationsValidators"`
 }
 
 // --- Fork Choice fixture types ---
@@ -192,18 +192,18 @@ type BlockStepData struct {
 
 // StoreChecks contains optional expected fields for selective fork choice validation.
 type StoreChecks struct {
-	Time                     *uint64              `json:"time"`
-	HeadSlot                 *uint64              `json:"headSlot"`
-	HeadRoot                 *HexRoot             `json:"headRoot"`
-	HeadRootLabel            *string              `json:"headRootLabel"`
-	LatestJustifiedSlot      *uint64              `json:"latestJustifiedSlot"`
-	LatestJustifiedRoot      *HexRoot             `json:"latestJustifiedRoot"`
-	LatestJustifiedRootLabel *string              `json:"latestJustifiedRootLabel"`
-	LatestFinalizedSlot      *uint64              `json:"latestFinalizedSlot"`
-	LatestFinalizedRoot      *HexRoot             `json:"latestFinalizedRoot"`
-	LatestFinalizedRootLabel *string              `json:"latestFinalizedRootLabel"`
-	AttestationChecks        []AttestationCheck   `json:"attestationChecks"`
-	LexicographicHeadAmong   []string             `json:"lexicographicHeadAmong"`
+	Time                     *uint64            `json:"time"`
+	HeadSlot                 *uint64            `json:"headSlot"`
+	HeadRoot                 *HexRoot           `json:"headRoot"`
+	HeadRootLabel            *string            `json:"headRootLabel"`
+	LatestJustifiedSlot      *uint64            `json:"latestJustifiedSlot"`
+	LatestJustifiedRoot      *HexRoot           `json:"latestJustifiedRoot"`
+	LatestJustifiedRootLabel *string            `json:"latestJustifiedRootLabel"`
+	LatestFinalizedSlot      *uint64            `json:"latestFinalizedSlot"`
+	LatestFinalizedRoot      *HexRoot           `json:"latestFinalizedRoot"`
+	LatestFinalizedRootLabel *string            `json:"latestFinalizedRootLabel"`
+	AttestationChecks        []AttestationCheck `json:"attestationChecks"`
+	LexicographicHeadAmong   []string           `json:"lexicographicHeadAmong"`
 }
 
 type AttestationCheck struct {

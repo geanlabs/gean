@@ -12,8 +12,8 @@ import (
 
 // GenesisConfig represents the parsed config.yaml for genesis.
 type GenesisConfig struct {
-	GenesisTime uint64               `yaml:"GENESIS_TIME"`
-	Validators  []*types.Validator   // populated from GENESIS_VALIDATORS
+	GenesisTime uint64             `yaml:"GENESIS_TIME"`
+	Validators  []*types.Validator // populated from GENESIS_VALIDATORS
 }
 
 // rawGenesisConfig is the on-disk YAML shape.
