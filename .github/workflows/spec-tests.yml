@@ -1,0 +1,50 @@
+name: Spec Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "chain/**"
+      - "spectests/**"
+      - "types/**"
+      - "Makefile"
+
+env:
+  GO_VERSION: "1.24"
+  RUST_VERSION: "1.88"
+
+jobs:
+  spec-tests:
+    name: Consensus Spec Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache Cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            xmss/leansig-ffi/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/leansig-ffi/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Run spec tests
+        run: make spec-test
