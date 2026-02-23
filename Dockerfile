@@ -3,7 +3,7 @@ FROM rust:alpine AS rust-builder
 RUN apk add --no-cache musl-dev
 
 WORKDIR /build
-COPY xmss xmss/
+COPY xmss/leansig-ffi xmss/leansig-ffi/
 
 WORKDIR /build/xmss/leansig-ffi
 RUN cargo build --release
