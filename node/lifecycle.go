@@ -178,8 +178,8 @@ func loadValidatorKeys(log *slog.Logger, cfg Config) (map[uint64]forkchoice.Sign
 	}
 
 	for _, idx := range cfg.ValidatorIDs {
-		pkPath := filepath.Join(cfg.ValidatorKeysDir, fmt.Sprintf("validator_%d.pk", idx))
-		skPath := filepath.Join(cfg.ValidatorKeysDir, fmt.Sprintf("validator_%d.sk", idx))
+		pkPath := filepath.Join(cfg.ValidatorKeysDir, fmt.Sprintf("validator_%d_pk.ssz", idx))
+		skPath := filepath.Join(cfg.ValidatorKeysDir, fmt.Sprintf("validator_%d_sk.ssz", idx))
 
 		kp, err := leansig.LoadKeypair(pkPath, skPath)
 		if err != nil {
