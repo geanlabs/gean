@@ -2,8 +2,8 @@ package types
 
 // SSZ limits matching the reference spec.
 const (
-	HistoricalRootsLimit   = 1 << 18                                      // 262144
-	ValidatorRegistryLimit = 1 << 12                                      // 4096
+	HistoricalRootsLimit   = 1 << 18                                       // 262144
+	ValidatorRegistryLimit = 1 << 12                                       // 4096
 	JustificationValsLimit = HistoricalRootsLimit * ValidatorRegistryLimit // 1073741824
 )
 
