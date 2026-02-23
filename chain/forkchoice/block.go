@@ -82,8 +82,6 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		}
 	}
 
-	c.storage.PutState(blockHash, state)
-
 	// Step 1b: Verify signatures (skipped when skip_sig_verify build tag is set).
 	if c.shouldVerifySignatures() {
 		// Verify Body Attestations.
