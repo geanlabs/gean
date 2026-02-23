@@ -1,6 +1,6 @@
 // Package leansig provides Go bindings for the leansig XMSS post-quantum
 // signature scheme via CGo. It wraps the Rust leansig-ffi library which
-// targets the devnet-1 instantiation (SIGTargetSumLifetime18W1NoOff).
+// targets the devnet-1 instantiation (SIGTopLevelTargetSumLifetime32Dim64Base8).
 //
 // The library must be built before using this package:
 //

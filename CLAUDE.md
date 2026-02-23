@@ -41,7 +41,7 @@ The node starts at `cmd/gean/main.go`, which loads genesis config, bootnodes, an
 
 **Node orchestration (`node/`)**
 - `lifecycle.go` — Initialization: genesis state, P2P host, gossipsub, discovery, validator keys, metrics
-- `ticker.go` — Main event loop: slot ticker fires 4 intervals per slot (1.5s each, 6s slots). Advances fork-choice time, syncs peers, dispatches validator duties
+- `ticker.go` — Main event loop: slot ticker fires 4 intervals per slot (1s each, 4s slots). Advances fork-choice time, syncs peers, dispatches validator duties
 - `validator.go` — Validator duties by interval: propose (0), attest (1), aggregate (2)
 - `handler.go` — Gossip subscription and request/response handler registration
 - `sync.go` — Peer sync protocol
@@ -56,7 +56,7 @@ The node starts at `cmd/gean/main.go`, which loads genesis config, bootnodes, an
 **Cryptography (`xmss/`)**
 - `leansig/` — CGo bindings for XMSS post-quantum signatures
 - `leansig-ffi/` — Rust FFI library wrapping leanSig
-- Devnet-1 instantiation: `SIGTargetSumLifetime18W1NoOff`
+- Devnet-1 instantiation: `SIGTopLevelTargetSumLifetime32Dim64Base8`
 
 **Data types (`types/`)** — Consensus state, blocks, attestations, checkpoints. All types implement SSZ encoding.
 

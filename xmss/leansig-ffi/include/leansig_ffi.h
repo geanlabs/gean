@@ -53,7 +53,7 @@ extern "C" {
 // Generate a new XMSS keypair.
 //
 // # Arguments
-// * `seed` - Random seed for the RNG (will be used to seed a ChaCha RNG).
+// * `seed` - Random seed for the RNG (will be used to seed a SmallRng).
 // * `activation_epoch` - Starting epoch for which the key is active.
 // * `num_active_epochs` - Number of consecutive active epochs.
 // * `out_keypair` - Pointer to receive the opaque keypair handle.
