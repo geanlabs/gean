@@ -10,7 +10,7 @@ RUN cargo build --release
 
 # Go Builder for gean
 FROM golang:1.24-alpine AS go-builder
-RUN apk add --no-cache git build-base musl-dev gcc pkgconf
+RUN apk add --no-cache git build-base
 
 WORKDIR /build
 
