@@ -1,0 +1,5 @@
+xmss/leansig-ffi/target/
+leanSpec/
+bin/
+data/
+*.key
