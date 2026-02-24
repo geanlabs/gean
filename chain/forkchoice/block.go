@@ -118,9 +118,8 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	// Pair each body attestation with its signature from the envelope.
 	for i, att := range block.Body.Attestations {
 		sa := &types.SignedAttestation{
-			ValidatorID: att.ValidatorID,
-			Message:     att.Data,
-			Signature:   envelope.Signature[i],
+			Message:   att,
+			Signature: envelope.Signature[i],
 		}
 		c.processAttestationLocked(sa, true)
 	}
@@ -130,11 +129,9 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 
 	// Step 4: Process proposer attestation as gossip vote (is_from_block=false).
 	if envelope.Message.ProposerAttestation != nil {
-		proposerAtt := envelope.Message.ProposerAttestation
 		proposerSA := &types.SignedAttestation{
-			ValidatorID: proposerAtt.ValidatorID,
-			Message:     proposerAtt.Data,
-			Signature:   envelope.Signature[numBodyAtts], // always last
+			Message:   envelope.Message.ProposerAttestation,
+			Signature: envelope.Signature[numBodyAtts], // always last
 		}
 		c.processAttestationLocked(proposerSA, false)
 	}

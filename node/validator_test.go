@@ -74,8 +74,8 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	if publishedAtt == nil {
 		t.Fatal("expected PublishAttestation to be called")
 	}
-	if publishedAtt.ValidatorID != 1 {
-		t.Errorf("attester = %d, want 1", publishedAtt.ValidatorID)
+	if publishedAtt.Message.ValidatorID != 1 {
+		t.Errorf("attester = %d, want 1", publishedAtt.Message.ValidatorID)
 	}
 	// Verify signature
 	if publishedAtt.Signature[0] != 0xAA {

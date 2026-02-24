@@ -103,20 +103,22 @@ func convertAttestation(fa FixtureAttestation) *types.Attestation {
 // Uses a zero signature since fixture tests skip signature verification.
 func convertSignedAttestation(fa FixtureSignedAttestation) *types.SignedAttestation {
 	return &types.SignedAttestation{
-		ValidatorID: fa.ValidatorID,
-		Message: &types.AttestationData{
-			Slot: fa.Data.Slot,
-			Head: &types.Checkpoint{
-				Root: [32]byte(fa.Data.Head.Root),
-				Slot: fa.Data.Head.Slot,
-			},
-			Target: &types.Checkpoint{
-				Root: [32]byte(fa.Data.Target.Root),
-				Slot: fa.Data.Target.Slot,
-			},
-			Source: &types.Checkpoint{
-				Root: [32]byte(fa.Data.Source.Root),
-				Slot: fa.Data.Source.Slot,
+		Message: &types.Attestation{
+			ValidatorID: fa.ValidatorID,
+			Data: &types.AttestationData{
+				Slot: fa.Data.Slot,
+				Head: &types.Checkpoint{
+					Root: [32]byte(fa.Data.Head.Root),
+					Slot: fa.Data.Head.Slot,
+				},
+				Target: &types.Checkpoint{
+					Root: [32]byte(fa.Data.Target.Root),
+					Slot: fa.Data.Target.Slot,
+				},
+				Source: &types.Checkpoint{
+					Root: [32]byte(fa.Data.Source.Root),
+					Slot: fa.Data.Source.Slot,
+				},
 			},
 		},
 	}
