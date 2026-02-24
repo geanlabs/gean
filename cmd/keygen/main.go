@@ -35,8 +35,8 @@ func main() {
 		}
 		defer kp.Free()
 
-		pkPath := filepath.Join(*outDir, fmt.Sprintf("validator_%d.pk", i))
-		skPath := filepath.Join(*outDir, fmt.Sprintf("validator_%d.sk", i))
+		pkPath := filepath.Join(*outDir, fmt.Sprintf("validator_%d_pk.ssz", i))
+		skPath := filepath.Join(*outDir, fmt.Sprintf("validator_%d_sk.ssz", i))
 
 		if err := leansig.SaveKeypair(kp, pkPath, skPath); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to save keypair %d: %v\n", i, err)
