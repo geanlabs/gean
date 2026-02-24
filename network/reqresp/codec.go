@@ -72,37 +72,43 @@ func ReadResponseCode(r io.Reader) (byte, error) {
 }
 
 // ReadSnappyFrame reads a varint-length-prefixed snappy frame encoded message.
-// Wire format: varint(uncompressed_len) + snappy_frame(data)
+// Wire format: varint(snappy_framed_len) + snappy_framed(data)
+// The varint encodes the byte length of the snappy-framed (compressed) payload.
 func ReadSnappyFrame(r io.Reader) ([]byte, error) {
-	length, err := binary.ReadUvarint(byteReader{r})
+	compressedLen, err := binary.ReadUvarint(byteReader{r})
 	if err != nil {
 		return nil, err
 	}
-	if length > 10*1024*1024 {
-		return nil, fmt.Errorf("message too large: %d", length)
+	if compressedLen > 10*1024*1024 {
+		return nil, fmt.Errorf("message too large: %d", compressedLen)
 	}
-	sr := snappy.NewReader(r)
-	decoded := make([]byte, length)
-	if _, err := io.ReadFull(sr, decoded); err != nil {
+	compressed := make([]byte, compressedLen)
+	if _, err := io.ReadFull(r, compressed); err != nil {
+		return nil, fmt.Errorf("read compressed payload: %w", err)
+	}
+	sr := snappy.NewReader(bytes.NewReader(compressed))
+	decoded, err := io.ReadAll(sr)
+	if err != nil {
 		return nil, fmt.Errorf("snappy frame decode: %w", err)
 	}
 	return decoded, nil
 }
 
 // WriteSnappyFrame writes a varint-length-prefixed snappy frame encoded message.
-// Wire format: varint(uncompressed_len) + snappy_frame(data)
+// Wire format: varint(snappy_framed_len) + snappy_framed(data)
+// The varint encodes the byte length of the snappy-framed (compressed) payload.
 func WriteSnappyFrame(w io.Writer, data []byte) error {
-	var lenBuf [binary.MaxVarintLen64]byte
-	n := binary.PutUvarint(lenBuf[:], uint64(len(data)))
-	if _, err := w.Write(lenBuf[:n]); err != nil {
-		return err
-	}
 	var buf bytes.Buffer
 	sw := snappy.NewBufferedWriter(&buf)
 	if _, err := sw.Write(data); err != nil {
 		return err
 	}
 	if err := sw.Close(); err != nil {
+		return err
+	}
+	var lenBuf [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(lenBuf[:], uint64(buf.Len()))
+	if _, err := w.Write(lenBuf[:n]); err != nil {
 		return err
 	}
 	_, err := w.Write(buf.Bytes())
