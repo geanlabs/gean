@@ -3,10 +3,12 @@ package network
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
 
+	btcec "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -109,6 +111,11 @@ func loadOrGenerateKey(path string) (crypto.PrivKey, error) {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err == nil {
+			// Try hex-encoded secp256k1 key first (lean-quickstart format).
+			if key, hexErr := parseHexKey(strings.TrimSpace(string(data))); hexErr == nil {
+				return key, nil
+			}
+			// Fall back to libp2p protobuf-marshaled key.
 			return crypto.UnmarshalPrivateKey(data)
 		}
 		// File doesn't exist — generate and save.
@@ -127,4 +134,17 @@ func loadOrGenerateKey(path string) (crypto.PrivKey, error) {
 	}
 	priv, _, err := crypto.GenerateSecp256k1Key(rand.Reader)
 	return priv, err
+}
+
+// parseHexKey decodes a hex-encoded 32-byte secp256k1 private key.
+func parseHexKey(s string) (crypto.PrivKey, error) {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) != 32 {
+		return nil, fmt.Errorf("expected 32-byte key, got %d", len(b))
+	}
+	secKey := btcec.PrivKeyFromBytes(b)
+	return (*crypto.Secp256k1PrivateKey)(secKey), nil
 }
