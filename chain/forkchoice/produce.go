@@ -115,7 +115,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		var newAttestations []*types.Attestation
 		var newSigned []*types.SignedAttestation
 		for _, sa := range c.latestKnownAttestations {
-			data := sa.Message
+			data := sa.Message.Data
 			if _, ok := c.storage.GetBlock(data.Head.Root); !ok {
 				continue
 			}
@@ -124,12 +124,8 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 				data.Source.Slot != postState.LatestJustified.Slot {
 				continue
 			}
-			att := &types.Attestation{
-				ValidatorID: sa.ValidatorID,
-				Data:        data,
-			}
-			if !containsAttestation(attestations, att) {
-				newAttestations = append(newAttestations, att)
+			if !containsAttestation(attestations, sa.Message) {
+				newAttestations = append(newAttestations, sa.Message)
 				newSigned = append(newSigned, sa)
 			}
 		}
@@ -256,8 +252,7 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 	copy(sigBytes[:], sig)
 
 	return &types.SignedAttestation{
-		ValidatorID: validatorIndex,
-		Message:     data,
-		Signature:   sigBytes,
+		Message:   att,
+		Signature: sigBytes,
 	}, nil
 }
