@@ -20,6 +20,7 @@ jobs:
   build-image:
     name: Build Docker image (${{ matrix.arch }})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-latest
@@ -30,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -44,17 +45,20 @@ jobs:
 
       - name: Prepare tags
         id: prep
+        env:
+          INPUT_TAGS: ${{ inputs.tags }}
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          ARCH: ${{ matrix.arch }}
         run: |
           TAGS=""
-          IFS=',' read -ra TAG_ARRAY <<< "${{ inputs.tags }}"
+          IFS=',' read -ra TAG_ARRAY <<< "${INPUT_TAGS}"
           for t in "${TAG_ARRAY[@]}"; do
-            # Trim whitespace
             t=$(echo "$t" | xargs)
             if [ -n "$t" ]; then
-              TAGS="${TAGS}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${t}-${{ matrix.arch }},"
+              TAGS="${TAGS}${IMG}:${t}-${ARCH},"
             fi
           done
-          TAGS="${TAGS%,}"  # Remove trailing comma
+          TAGS="${TAGS%,}"
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
@@ -85,26 +89,28 @@ jobs:
       - name: Create multi-arch manifests
         env:
           SHORT_SHA: ${{ github.sha }}
+          INPUT_TAGS: ${{ inputs.tags }}
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
-          IFS=',' read -ra TAG_ARRAY <<< "${{ inputs.tags }}"
-          
+          IFS=',' read -ra TAG_ARRAY <<< "${INPUT_TAGS}"
+
           # Trim whitespace from the first tag
           FIRST_TAG=$(echo "${TAG_ARRAY[0]}" | xargs)
 
           # Create manifest for first tag with SHA tag included
           docker buildx imagetools create \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${FIRST_TAG} \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA::7} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${FIRST_TAG}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${FIRST_TAG}-arm64
+            -t ${IMG}:${FIRST_TAG} \
+            -t ${IMG}:sha-${SHORT_SHA::7} \
+            ${IMG}:${FIRST_TAG}-amd64 \
+            ${IMG}:${FIRST_TAG}-arm64
 
           # Create manifests for any remaining tags
           for t in "${TAG_ARRAY[@]:1}"; do
             t=$(echo "$t" | xargs)
             if [ -n "$t" ]; then
               docker buildx imagetools create \
-                -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${t} \
-                ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${t}-amd64 \
-                ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${t}-arm64
+                -t ${IMG}:${t} \
+                ${IMG}:${t}-amd64 \
+                ${IMG}:${t}-arm64
             fi
           done
