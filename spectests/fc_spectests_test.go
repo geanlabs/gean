@@ -109,10 +109,28 @@ func processBlockStep(t *testing.T, testName string, stepIdx int, store *forkcho
 
 	// Build the signed block envelope.
 	var proposerAtt *types.Attestation
-	sigCount := len(block.Body.Attestations)
 	if step.Block.ProposerAttestation != nil {
 		proposerAtt = convertAttestation(*step.Block.ProposerAttestation)
-		sigCount++
+	} else {
+		status := store.GetStatus()
+		proposerAtt = &types.Attestation{
+			ValidatorID: block.ProposerIndex,
+			Data: &types.AttestationData{
+				Slot: block.Slot,
+				Head: &types.Checkpoint{
+					Root: blockRoot,
+					Slot: block.Slot,
+				},
+				Target: &types.Checkpoint{
+					Root: status.JustifiedRoot,
+					Slot: status.JustifiedSlot,
+				},
+				Source: &types.Checkpoint{
+					Root: status.JustifiedRoot,
+					Slot: status.JustifiedSlot,
+				},
+			},
+		}
 	}
 
 	envelope := &types.SignedBlockWithAttestation{
@@ -120,7 +138,7 @@ func processBlockStep(t *testing.T, testName string, stepIdx int, store *forkcho
 			Block:               block,
 			ProposerAttestation: proposerAtt,
 		},
-		Signature: makeZeroSignatures(sigCount),
+		Signature: makeZeroBlockSignatures(len(block.Body.Attestations)),
 	}
 
 	err = store.ProcessBlock(envelope)
@@ -263,21 +281,21 @@ func validateStoreChecks(t *testing.T, testName string, stepIdx int, store *fork
 				continue
 			}
 
-			if ac.AttestationSlot != nil && sa.Message.Data.Slot != *ac.AttestationSlot {
+			if ac.AttestationSlot != nil && sa.Message.Slot != *ac.AttestationSlot {
 				t.Errorf("[%s] step %d: validator %d %s attestation slot: got %d, want %d",
-					testName, stepIdx, ac.Validator, locationName, sa.Message.Data.Slot, *ac.AttestationSlot)
+					testName, stepIdx, ac.Validator, locationName, sa.Message.Slot, *ac.AttestationSlot)
 			}
-			if ac.HeadSlot != nil && sa.Message.Data.Head.Slot != *ac.HeadSlot {
+			if ac.HeadSlot != nil && sa.Message.Head.Slot != *ac.HeadSlot {
 				t.Errorf("[%s] step %d: validator %d %s head slot: got %d, want %d",
-					testName, stepIdx, ac.Validator, locationName, sa.Message.Data.Head.Slot, *ac.HeadSlot)
+					testName, stepIdx, ac.Validator, locationName, sa.Message.Head.Slot, *ac.HeadSlot)
 			}
-			if ac.SourceSlot != nil && sa.Message.Data.Source.Slot != *ac.SourceSlot {
+			if ac.SourceSlot != nil && sa.Message.Source.Slot != *ac.SourceSlot {
 				t.Errorf("[%s] step %d: validator %d %s source slot: got %d, want %d",
-					testName, stepIdx, ac.Validator, locationName, sa.Message.Data.Source.Slot, *ac.SourceSlot)
+					testName, stepIdx, ac.Validator, locationName, sa.Message.Source.Slot, *ac.SourceSlot)
 			}
-			if ac.TargetSlot != nil && sa.Message.Data.Target.Slot != *ac.TargetSlot {
+			if ac.TargetSlot != nil && sa.Message.Target.Slot != *ac.TargetSlot {
 				t.Errorf("[%s] step %d: validator %d %s target slot: got %d, want %d",
-					testName, stepIdx, ac.Validator, locationName, sa.Message.Data.Target.Slot, *ac.TargetSlot)
+					testName, stepIdx, ac.Validator, locationName, sa.Message.Target.Slot, *ac.TargetSlot)
 			}
 		}
 	}
@@ -345,4 +363,10 @@ func hashGreater(a, b [32]byte) bool {
 		}
 	}
 	return false
+}
+
+func makeZeroBlockSignatures(attestationCount int) types.BlockSignatures {
+	return types.BlockSignatures{
+		AttestationSignatures: make([]*types.AggregatedSignatureProof, attestationCount),
+	}
 }

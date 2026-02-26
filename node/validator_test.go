@@ -31,7 +31,7 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	// Setup
 	numValidators := uint64(3)
 	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
-	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
 	genesisBlock := &types.Block{
 		Slot:          0,
 		ProposerIndex: 0,
@@ -74,8 +74,8 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	if publishedAtt == nil {
 		t.Fatal("expected PublishAttestation to be called")
 	}
-	if publishedAtt.Message.ValidatorID != 1 {
-		t.Errorf("attester = %d, want 1", publishedAtt.Message.ValidatorID)
+	if publishedAtt.ValidatorID != 1 {
+		t.Errorf("attester = %d, want 1", publishedAtt.ValidatorID)
 	}
 	// Verify signature
 	if publishedAtt.Signature[0] != 0xAA {
@@ -87,7 +87,7 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 	// Setup
 	numValidators := uint64(3)
 	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
-	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
 	genesisBlock := &types.Block{
 		Slot:          0,
 		ProposerIndex: 0,
@@ -135,9 +135,7 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 		t.Errorf("proposer = %d, want 1", publishedBlock.Message.Block.ProposerIndex)
 	}
 
-	// Verify signature at last index (proposer sig is set by ProduceBlock).
-	lastIdx := len(publishedBlock.Signature) - 1
-	if publishedBlock.Signature[lastIdx][0] != 0xBB {
+	if publishedBlock.Signature.ProposerSignature[0] != 0xBB {
 		t.Errorf("signature not matching mock signer output")
 	}
 }
