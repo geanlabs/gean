@@ -43,3 +43,16 @@ func TestBitlistsEqual(t *testing.T) {
 		t.Fatal("expected bitlists with different set bits to be unequal")
 	}
 }
+
+func TestBitlistsEqual_DifferentBitlistLengths(t *testing.T) {
+	onlyZero := statetransition.MakeBitlist(1)
+	onlyZero = statetransition.SetBit(onlyZero, 0, true)
+
+	zeroAndOne := statetransition.MakeBitlist(2)
+	zeroAndOne = statetransition.SetBit(zeroAndOne, 0, true)
+	zeroAndOne = statetransition.SetBit(zeroAndOne, 1, true)
+
+	if bitlistsEqual(onlyZero, zeroAndOne) {
+		t.Fatal("expected bitlists with different lengths/participants to be unequal")
+	}
+}

@@ -1,3 +1,4 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::slice;
 use std::sync::Once;
 
@@ -168,14 +169,11 @@ pub unsafe extern "C" fn leanmultisig_aggregate(
 
     setup_prover_once();
 
-    let aggregated_proof = match xmss_aggregate_signatures(
-        &decoded_pubkeys,
-        &decoded_signatures,
-        &message_hash,
-        epoch,
-    ) {
-        Ok(sig) => sig,
-        Err(_) => return LeanmultisigResult::AggregationFailed,
+    let aggregated_proof = match catch_unwind(AssertUnwindSafe(|| {
+        xmss_aggregate_signatures(&decoded_pubkeys, &decoded_signatures, &message_hash, epoch)
+    })) {
+        Ok(Ok(sig)) => sig,
+        Ok(Err(_)) | Err(_) => return LeanmultisigResult::AggregationFailed,
     };
 
     let proof_bytes = aggregated_proof.as_ssz_bytes();
@@ -222,13 +220,17 @@ pub unsafe extern "C" fn leanmultisig_verify_aggregated(
         Ok(proof) => proof,
         Err(_) => return LeanmultisigResult::DeserializationFailed,
     };
+    if decoded_pubkeys.len() != aggregated_proof.encoding_randomness.len() {
+        return LeanmultisigResult::LengthMismatch;
+    }
 
     setup_verifier_once();
 
-    match xmss_verify_aggregated_signatures(&decoded_pubkeys, &message_hash, &aggregated_proof, epoch)
-    {
-        Ok(_) => LeanmultisigResult::Ok,
-        Err(_) => LeanmultisigResult::VerificationFailed,
+    match catch_unwind(AssertUnwindSafe(|| {
+        xmss_verify_aggregated_signatures(&decoded_pubkeys, &message_hash, &aggregated_proof, epoch)
+    })) {
+        Ok(Ok(_)) => LeanmultisigResult::Ok,
+        Ok(Err(_)) | Err(_) => LeanmultisigResult::VerificationFailed,
     }
 }
 

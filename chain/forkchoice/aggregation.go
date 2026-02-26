@@ -22,11 +22,12 @@ func bitlistToValidatorIDs(bits []byte) []uint64 {
 }
 
 func bitlistsEqual(a, b []byte) bool {
-	maxLen := statetransition.BitlistLen(a)
-	if otherLen := statetransition.BitlistLen(b); otherLen > maxLen {
-		maxLen = otherLen
+	aLen := statetransition.BitlistLen(a)
+	bLen := statetransition.BitlistLen(b)
+	if aLen != bLen {
+		return false
 	}
-	for i := 0; i < maxLen; i++ {
+	for i := 0; i < aLen; i++ {
 		idx := uint64(i)
 		if statetransition.GetBit(a, idx) != statetransition.GetBit(b, idx) {
 			return false
@@ -77,10 +78,9 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 		return bytes.Compare(roots[i][:], roots[j][:]) < 0
 	})
 
-	leanmultisig.SetupProver()
-
 	aggregatedAttestations := make([]*types.AggregatedAttestation, 0, len(roots))
 	attestationProofs := make([]*types.AggregatedSignatureProof, 0, len(roots))
+	proverReady := false
 	for _, root := range roots {
 		group := grouped[root]
 		validatorIDs := make([]uint64, 0, len(group))
@@ -92,39 +92,172 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 			continue
 		}
 
-		maxValidatorID := validatorIDs[len(validatorIDs)-1]
-		bits := statetransition.MakeBitlist(maxValidatorID + 1)
+		data := dataByRoot[root]
+		bits := makeAggregationBits(validatorIDs)
+		if cached := c.findReusableAggregatedProof(data, validatorIDs, bits); cached != nil {
+			aggregatedAttestations = append(aggregatedAttestations, &types.AggregatedAttestation{
+				AggregationBits: bits,
+				Data:            data,
+			})
+			attestationProofs = append(attestationProofs, cached)
+			log.Info(
+				"attestation aggregate proof reused (leanMultisig)",
+				"slot", data.Slot,
+				"participants", len(validatorIDs),
+				"proof_size", fmt.Sprintf("%d bytes", len(cached.ProofData)),
+			)
+			continue
+		}
+
+		signerIDs := make([]uint64, 0, len(validatorIDs))
 		pubkeys := make([][]byte, 0, len(validatorIDs))
 		signatures := make([][]byte, 0, len(validatorIDs))
 		for _, validatorID := range validatorIDs {
 			if validatorID >= uint64(len(state.Validators)) {
 				return nil, nil, fmt.Errorf("validator index out of range: %d", validatorID)
 			}
-			bits = statetransition.SetBit(bits, validatorID, true)
 
 			pubkey := state.Validators[validatorID].Pubkey
-			pubkeys = append(pubkeys, pubkey[:])
-
 			sa := group[validatorID]
-			sig := make([]byte, len(sa.Signature))
-			copy(sig, sa.Signature[:])
+			if sa == nil || sa.Message == nil {
+				continue
+			}
+
+			signature := sa.Signature
+			key, keyOK := makeSignatureKey(validatorID, data)
+			if keyOK {
+				if cached, ok := c.gossipSignatures[key]; ok && (!hasNonZeroSignature(signature) || cached.slot >= sa.Message.Slot) {
+					signature = cached.signature
+				}
+			}
+			if !hasNonZeroSignature(signature) {
+				continue
+			}
+
+			signerIDs = append(signerIDs, validatorID)
+			pubkeys = append(pubkeys, pubkey[:])
+			sig := make([]byte, len(signature))
+			copy(sig, signature[:])
 			signatures = append(signatures, sig)
 		}
+		if len(signerIDs) == 0 {
+			continue
+		}
 
-		proofData, err := leanmultisig.Aggregate(pubkeys, signatures, root, uint32(dataByRoot[root].Slot))
-		if err != nil {
-			return nil, nil, fmt.Errorf("aggregate signatures: %w", err)
+		bits = makeAggregationBits(signerIDs)
+		proof := c.findReusableAggregatedProof(data, signerIDs, bits)
+		if proof == nil {
+			if !proverReady {
+				leanmultisig.SetupProver()
+				proverReady = true
+			}
+			proofData, err := leanmultisig.Aggregate(pubkeys, signatures, root, uint32(data.Slot))
+			if err != nil {
+				return nil, nil, fmt.Errorf("aggregate signatures: %w", err)
+			}
+			proof = &types.AggregatedSignatureProof{
+				Participants: append([]byte(nil), bits...),
+				ProofData:    proofData,
+			}
+			for _, validatorID := range signerIDs {
+				c.storeAggregatedPayloadLocked(validatorID, data, proof)
+			}
+			log.Info(
+				"attestation aggregate proof built (leanMultisig)",
+				"slot", data.Slot,
+				"participants", len(signerIDs),
+				"proof_size", fmt.Sprintf("%d bytes", len(proofData)),
+			)
+		} else {
+			log.Info(
+				"attestation aggregate proof reused (leanMultisig)",
+				"slot", data.Slot,
+				"participants", len(signerIDs),
+				"proof_size", fmt.Sprintf("%d bytes", len(proof.ProofData)),
+			)
 		}
 
 		aggregatedAttestations = append(aggregatedAttestations, &types.AggregatedAttestation{
 			AggregationBits: bits,
-			Data:            dataByRoot[root],
+			Data:            data,
 		})
-		attestationProofs = append(attestationProofs, &types.AggregatedSignatureProof{
-			Participants: append([]byte(nil), bits...),
-			ProofData:    proofData,
-		})
+		attestationProofs = append(attestationProofs, proof)
 	}
 
 	return aggregatedAttestations, attestationProofs, nil
+}
+
+func makeAggregationBits(validatorIDs []uint64) []byte {
+	if len(validatorIDs) == 0 {
+		return []byte{0x01}
+	}
+	maxValidatorID := validatorIDs[len(validatorIDs)-1]
+	bits := statetransition.MakeBitlist(maxValidatorID + 1)
+	for _, validatorID := range validatorIDs {
+		bits = statetransition.SetBit(bits, validatorID, true)
+	}
+	return bits
+}
+
+func hasNonZeroSignature(signature [types.XMSSSignatureSize]byte) bool {
+	for _, b := range signature {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Store) findReusableAggregatedProof(
+	data *types.AttestationData,
+	validatorIDs []uint64,
+	participants []byte,
+) *types.AggregatedSignatureProof {
+	if data == nil || len(validatorIDs) == 0 {
+		return nil
+	}
+
+	firstKey, ok := makeSignatureKey(validatorIDs[0], data)
+	if !ok {
+		return nil
+	}
+	candidates := c.aggregatedPayloads[firstKey]
+
+	for _, candidate := range candidates {
+		if candidate.proof == nil {
+			continue
+		}
+		if !bitlistsEqual(candidate.proof.Participants, participants) {
+			continue
+		}
+
+		matchAll := true
+		for _, validatorID := range validatorIDs[1:] {
+			key, keyOK := makeSignatureKey(validatorID, data)
+			if !keyOK || !containsCachedProof(c.aggregatedPayloads[key], candidate.proof) {
+				matchAll = false
+				break
+			}
+		}
+		if matchAll {
+			return cloneAggregatedSignatureProof(candidate.proof)
+		}
+	}
+
+	return nil
+}
+
+func containsCachedProof(list []storedAggregatedPayload, target *types.AggregatedSignatureProof) bool {
+	for _, candidate := range list {
+		if candidate.proof == nil {
+			continue
+		}
+		if !bitlistsEqual(candidate.proof.Participants, target.Participants) {
+			continue
+		}
+		if bytes.Equal(candidate.proof.ProofData, target.ProofData) {
+			return true
+		}
+	}
+	return false
 }
