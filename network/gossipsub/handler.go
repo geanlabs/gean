@@ -11,9 +11,8 @@ import (
 
 // GossipHandler processes decoded gossip messages.
 type GossipHandler struct {
-	OnBlock                 func(*types.SignedBlockWithAttestation)
-	OnAttestation           func(*types.SignedAttestation)
-	OnAggregatedAttestation func(*types.AggregatedAttestation)
+	OnBlock       func(*types.SignedBlockWithAttestation)
+	OnAttestation func(*types.SignedAttestation)
 }
 
 // SubscribeTopics subscribes to topics and dispatches messages to handler.
@@ -29,13 +28,6 @@ func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler
 
 	go readBlockMessages(ctx, blockSub, handler)
 	go readAttestationMessages(ctx, attSub, handler)
-	if topics.AggregateAttestation != nil && handler.OnAggregatedAttestation != nil {
-		aggSub, err := topics.AggregateAttestation.Subscribe()
-		if err != nil {
-			return err
-		}
-		go readAggregatedAttestationMessages(ctx, aggSub, handler)
-	}
 	return nil
 }
 
@@ -75,26 +67,6 @@ func readAttestationMessages(ctx context.Context, sub *pubsub.Subscription, hand
 		}
 		if handler.OnAttestation != nil {
 			handler.OnAttestation(att)
-		}
-	}
-}
-
-func readAggregatedAttestationMessages(ctx context.Context, sub *pubsub.Subscription, handler *GossipHandler) {
-	for {
-		msg, err := sub.Next(ctx)
-		if err != nil {
-			return
-		}
-		decoded, err := snappy.Decode(nil, msg.Data)
-		if err != nil {
-			continue
-		}
-		agg, err := DecodeAggregatedAttestation(decoded)
-		if err != nil {
-			continue
-		}
-		if handler.OnAggregatedAttestation != nil {
-			handler.OnAggregatedAttestation(agg)
 		}
 	}
 }
