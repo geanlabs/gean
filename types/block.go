@@ -11,7 +11,7 @@ type BlockHeader struct {
 
 // BlockBody contains the payload of a block.
 type BlockBody struct {
-	Attestations []*Attestation `ssz-max:"4096"`
+	Attestations []*AggregatedAttestation `ssz-max:"4096"`
 }
 
 // Block is a complete block including header fields and body.
@@ -29,11 +29,14 @@ type BlockWithAttestation struct {
 	ProposerAttestation *Attestation
 }
 
-// BlockSignatures is the aggregated signature list for a block envelope.
-type BlockSignatures = [][3112]byte
+// BlockSignatures contains per-aggregated-attestation proofs and proposer sig.
+type BlockSignatures struct {
+	AttestationSignatures []*AggregatedSignatureProof `ssz-max:"4096"`
+	ProposerSignature     [3112]byte                  `ssz-size:"3112"`
+}
 
 // SignedBlockWithAttestation is the gossip/wire envelope for blocks.
 type SignedBlockWithAttestation struct {
 	Message   *BlockWithAttestation
-	Signature BlockSignatures `ssz-max:"4096" ssz-size:"?,3112"`
+	Signature BlockSignatures
 }
