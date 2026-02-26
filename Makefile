@@ -4,6 +4,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 
 ffi:
 	@cd xmss/leansig-ffi && cargo build --release
+	@cd xmss/leanmultisig-ffi && cargo build --release
 
 build: ffi
 	@mkdir -p bin
@@ -66,7 +67,7 @@ run-node-2:
 	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node2 --listen-addr /ip4/0.0.0.0/tcp/9002 --node-key node2.key --data-dir data/node2 --discovery-port 9002
 
 # The commit hash of the leanSpec repository to use for testing and fixtures
-LEAN_SPEC_COMMIT_HASH := 050fa4a18881d54d7dc07601fe59e34eb20b9630
+LEAN_SPEC_COMMIT_HASH := 4edcf7bc9271e6a70ded8aff17710d68beac4266
 
 # A file to track which commit of the leanSpec fixtures have been generated, to avoid unnecessary regeneration
 LEAN_SPEC_FIXTURE_STAMP := leanSpec/.fixtures-commit
