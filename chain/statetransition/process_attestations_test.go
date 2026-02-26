@@ -20,7 +20,7 @@ func TestProcessAttestationsAggregatedSupermajority(t *testing.T) {
 			sourceRoot,
 			targetRoot,
 		},
-		JustifiedSlots:           bitlistFromBools(true, false),
+		JustifiedSlots:           bitlistFromBools(false),
 		Validators:               makeValidators(3),
 		JustificationsRoots:      [][32]byte{},
 		JustificationsValidators: []byte{0x01},
@@ -51,7 +51,7 @@ func TestProcessAttestationsAggregatedSupermajority(t *testing.T) {
 	if out.LatestJustified.Slot != 1 || out.LatestJustified.Root != targetRoot {
 		t.Fatalf("latest justified mismatch: got slot=%d root=%x", out.LatestJustified.Slot, out.LatestJustified.Root)
 	}
-	if !GetBit(out.JustifiedSlots, 1) {
+	if !isSlotJustified(out.JustifiedSlots, out.LatestFinalized.Slot, 1) {
 		t.Fatalf("target slot not marked justified: %08b", out.JustifiedSlots)
 	}
 }
@@ -70,7 +70,7 @@ func TestProcessAttestationsDeduplicatesValidatorVotes(t *testing.T) {
 			sourceRoot,
 			targetRoot,
 		},
-		JustifiedSlots:           bitlistFromBools(true, false),
+		JustifiedSlots:           bitlistFromBools(false),
 		Validators:               makeValidators(2),
 		JustificationsRoots:      [][32]byte{},
 		JustificationsValidators: []byte{0x01},
@@ -96,7 +96,7 @@ func TestProcessAttestationsDeduplicatesValidatorVotes(t *testing.T) {
 	if out.LatestJustified.Slot != 0 || out.LatestJustified.Root != sourceRoot {
 		t.Fatalf("duplicate vote should not justify target: got slot=%d root=%x", out.LatestJustified.Slot, out.LatestJustified.Root)
 	}
-	if GetBit(out.JustifiedSlots, 1) {
+	if isSlotJustified(out.JustifiedSlots, out.LatestFinalized.Slot, 1) {
 		t.Fatalf("target slot should remain unjustified after duplicate vote: %08b", out.JustifiedSlots)
 	}
 }
