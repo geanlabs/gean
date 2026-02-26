@@ -1,158 +1,130 @@
 package forkchoice
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/types"
-	"github.com/geanlabs/gean/xmss/leansig"
+	"github.com/geanlabs/gean/xmss/leanmultisig"
 )
 
-// AggregateAttestations collects attestations for the same data and
-// concatenates their XMSS signatures in ascending validator index order.
-func AggregateAttestations(attestations []*types.SignedAttestation) (*types.AggregatedAttestation, error) {
-	if len(attestations) == 0 {
-		return nil, fmt.Errorf("no attestations to aggregate")
-	}
-
-	sorted := make([]*types.SignedAttestation, len(attestations))
-	copy(sorted, attestations)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Message.ValidatorID < sorted[j].Message.ValidatorID
-	})
-
-	maxID := sorted[len(sorted)-1].Message.ValidatorID
-	bits := statetransition.MakeBitlist(maxID + 1)
-	for _, sa := range sorted {
-		bits = statetransition.SetBit(bits, sa.Message.ValidatorID, true)
-	}
-
-	aggSig := make([]byte, 0, len(sorted)*types.XMSSSignatureSize)
-	for _, sa := range sorted {
-		aggSig = append(aggSig, sa.Signature[:]...)
-	}
-
-	return &types.AggregatedAttestation{
-		Data:                sorted[0].Message.Data,
-		AggregationBits:     bits,
-		AggregatedSignature: aggSig,
-	}, nil
-}
-
-// DisaggregateAttestation splits an aggregated attestation back into
-// individual validator-signature pairs.
-func DisaggregateAttestation(agg *types.AggregatedAttestation) ([]uint64, [][types.XMSSSignatureSize]byte, error) {
-	numBits := uint64(statetransition.BitlistLen(agg.AggregationBits))
-	var validatorIDs []uint64
+func bitlistToValidatorIDs(bits []byte) []uint64 {
+	numBits := uint64(statetransition.BitlistLen(bits))
+	validatorIDs := make([]uint64, 0, numBits)
 	for i := uint64(0); i < numBits; i++ {
-		if statetransition.GetBit(agg.AggregationBits, i) {
+		if statetransition.GetBit(bits, i) {
 			validatorIDs = append(validatorIDs, i)
 		}
 	}
-
-	expectedLen := len(validatorIDs) * types.XMSSSignatureSize
-	if len(agg.AggregatedSignature) != expectedLen {
-		return nil, nil, fmt.Errorf(
-			"signature length mismatch: got %d, expected %d (%d validators × %d bytes)",
-			len(agg.AggregatedSignature), expectedLen, len(validatorIDs), types.XMSSSignatureSize,
-		)
-	}
-
-	sigs := make([][types.XMSSSignatureSize]byte, len(validatorIDs))
-	for i := range validatorIDs {
-		copy(sigs[i][:], agg.AggregatedSignature[i*types.XMSSSignatureSize:(i+1)*types.XMSSSignatureSize])
-	}
-
-	return validatorIDs, sigs, nil
+	return validatorIDs
 }
 
-// VerifyAggregatedAttestation disaggregates and verifies each XMSS signature.
-// Returns the count of valid signatures.
-func VerifyAggregatedAttestation(state *types.State, agg *types.AggregatedAttestation) (int, error) {
-	validatorIDs, sigs, err := DisaggregateAttestation(agg)
-	if err != nil {
-		return 0, fmt.Errorf("disaggregate: %w", err)
+func bitlistsEqual(a, b []byte) bool {
+	maxLen := statetransition.BitlistLen(a)
+	if otherLen := statetransition.BitlistLen(b); otherLen > maxLen {
+		maxLen = otherLen
 	}
-	verified := 0
-
-	for i, valID := range validatorIDs {
-		if valID >= uint64(len(state.Validators)) {
-			log.Warn("aggregated attestation: invalid validator index", "validator", valID)
-			continue
+	for i := 0; i < maxLen; i++ {
+		idx := uint64(i)
+		if statetransition.GetBit(a, idx) != statetransition.GetBit(b, idx) {
+			return false
 		}
-		pubkey := state.Validators[valID].Pubkey
-		att := &types.Attestation{ValidatorID: valID, Data: agg.Data}
-		messageRoot, err := att.HashTreeRoot()
-		if err != nil {
-			return 0, fmt.Errorf("hash attestation: %w", err)
-		}
-		if err := leansig.Verify(pubkey[:], uint32(agg.Data.Slot), messageRoot, sigs[i][:]); err != nil {
-			log.Warn("aggregated attestation: signature invalid",
-				"validator", valID, "slot", agg.Data.Slot, "err", err,
-			)
-			continue
-		}
-		verified++
 	}
-
-	return verified, nil
+	return true
 }
 
-// ProcessAggregatedAttestation validates and counts votes from an aggregate.
-func (c *Store) ProcessAggregatedAttestation(agg *types.AggregatedAttestation) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.NowFn != nil {
-		c.advanceTimeLocked(c.NowFn(), false)
+func (c *Store) buildAggregatedAttestationsFromSigned(
+	state *types.State,
+	attestations []*types.SignedAttestation,
+) ([]*types.AggregatedAttestation, []*types.AggregatedSignatureProof, error) {
+	if len(attestations) == 0 {
+		return []*types.AggregatedAttestation{}, []*types.AggregatedSignatureProof{}, nil
 	}
 
-	if reason := c.validateAttestationData(agg.Data); reason != "" {
-		log.Debug("aggregated attestation rejected", "reason", reason, "slot", agg.Data.Slot)
-		return
-	}
-
-	headState, ok := c.storage.GetState(c.head)
-	if !ok {
-		return
-	}
-
-	validatorIDs, sigs, err := DisaggregateAttestation(agg)
-	if err != nil {
-		log.Warn("disaggregate failed", "err", err)
-		return
-	}
-
-	currentSlot := c.time / types.IntervalsPerSlot
-
-	for i, valID := range validatorIDs {
-		if valID >= uint64(len(headState.Validators)) {
+	// Group by attestation data root and keep at most one attestation per validator per root.
+	grouped := make(map[[32]byte]map[uint64]*types.SignedAttestation)
+	dataByRoot := make(map[[32]byte]*types.AttestationData)
+	for _, sa := range attestations {
+		if sa == nil || sa.Message == nil {
 			continue
 		}
-		pubkey := headState.Validators[valID].Pubkey
-		att := &types.Attestation{ValidatorID: valID, Data: agg.Data}
-		messageRoot, err := att.HashTreeRoot()
+		dataRoot, err := sa.Message.HashTreeRoot()
 		if err != nil {
-			return
+			return nil, nil, fmt.Errorf("hash attestation data: %w", err)
 		}
-		if err := leansig.Verify(pubkey[:], uint32(agg.Data.Slot), messageRoot, sigs[i][:]); err != nil {
-			continue
+
+		if _, ok := grouped[dataRoot]; !ok {
+			grouped[dataRoot] = make(map[uint64]*types.SignedAttestation)
+			dataByRoot[dataRoot] = sa.Message
 		}
-		if agg.Data.Slot > currentSlot {
+		existing, ok := grouped[dataRoot][sa.ValidatorID]
+		if !ok || existing == nil || (existing.Message != nil && existing.Message.Slot < sa.Message.Slot) {
+			grouped[dataRoot][sa.ValidatorID] = sa
+		}
+	}
+
+	if len(grouped) == 0 {
+		return []*types.AggregatedAttestation{}, []*types.AggregatedSignatureProof{}, nil
+	}
+
+	roots := make([][32]byte, 0, len(grouped))
+	for root := range grouped {
+		roots = append(roots, root)
+	}
+	sort.Slice(roots, func(i, j int) bool {
+		return bytes.Compare(roots[i][:], roots[j][:]) < 0
+	})
+
+	leanmultisig.SetupProver()
+
+	aggregatedAttestations := make([]*types.AggregatedAttestation, 0, len(roots))
+	attestationProofs := make([]*types.AggregatedSignatureProof, 0, len(roots))
+	for _, root := range roots {
+		group := grouped[root]
+		validatorIDs := make([]uint64, 0, len(group))
+		for validatorID := range group {
+			validatorIDs = append(validatorIDs, validatorID)
+		}
+		sort.Slice(validatorIDs, func(i, j int) bool { return validatorIDs[i] < validatorIDs[j] })
+		if len(validatorIDs) == 0 {
 			continue
 		}
 
-		sa := &types.SignedAttestation{
-			Message: &types.Attestation{
-				ValidatorID: valID,
-				Data:        agg.Data,
-			},
-			Signature: sigs[i],
+		maxValidatorID := validatorIDs[len(validatorIDs)-1]
+		bits := statetransition.MakeBitlist(maxValidatorID + 1)
+		pubkeys := make([][]byte, 0, len(validatorIDs))
+		signatures := make([][]byte, 0, len(validatorIDs))
+		for _, validatorID := range validatorIDs {
+			if validatorID >= uint64(len(state.Validators)) {
+				return nil, nil, fmt.Errorf("validator index out of range: %d", validatorID)
+			}
+			bits = statetransition.SetBit(bits, validatorID, true)
+
+			pubkey := state.Validators[validatorID].Pubkey
+			pubkeys = append(pubkeys, pubkey[:])
+
+			sa := group[validatorID]
+			sig := make([]byte, len(sa.Signature))
+			copy(sig, sa.Signature[:])
+			signatures = append(signatures, sig)
 		}
-		existing, ok := c.latestNewAttestations[valID]
-		if !ok || existing.Message.Data.Slot < agg.Data.Slot {
-			c.latestNewAttestations[valID] = sa
+
+		proofData, err := leanmultisig.Aggregate(pubkeys, signatures, root, uint32(dataByRoot[root].Slot))
+		if err != nil {
+			return nil, nil, fmt.Errorf("aggregate signatures: %w", err)
 		}
+
+		aggregatedAttestations = append(aggregatedAttestations, &types.AggregatedAttestation{
+			AggregationBits: bits,
+			Data:            dataByRoot[root],
+		})
+		attestationProofs = append(attestationProofs, &types.AggregatedSignatureProof{
+			Participants: append([]byte(nil), bits...),
+			ProofData:    proofData,
+		})
 	}
+
+	return aggregatedAttestations, attestationProofs, nil
 }

@@ -13,7 +13,7 @@ import (
 // Per-validator votes are tracked via justifications_roots (sorted list of
 // block roots being voted on) and justifications_validators (flat bitlist
 // where each root's validator votes are packed consecutively).
-func ProcessAttestations(state *types.State, attestations []*types.Attestation) *types.State {
+func ProcessAttestations(state *types.State, attestations []*types.AggregatedAttestation) *types.State {
 	numValidators := uint64(len(state.Validators))
 
 	// Deserialize justifications from SSZ form into working map.
@@ -32,46 +32,49 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 	latestFinalized := &types.Checkpoint{Root: state.LatestFinalized.Root, Slot: state.LatestFinalized.Slot}
 	originalFinalizedSlot := state.LatestFinalized.Slot
 
-	for _, att := range attestations {
-		source := att.Data.Source
-		target := att.Data.Target
+	processVote := func(validatorID uint64, data *types.AttestationData) {
+		if data == nil || data.Source == nil || data.Target == nil {
+			return
+		}
+
+		source := data.Source
+		target := data.Target
 		srcSlot := source.Slot
 		tgtSlot := target.Slot
 
 		// Target must be after source (strict).
 		if tgtSlot <= srcSlot {
-			continue
+			return
 		}
 
 		// Source must be justified.
 		if srcSlot >= uint64(BitlistLen(justifiedSlots)) || !GetBit(justifiedSlots, srcSlot) {
-			continue
+			return
 		}
 
 		// Target must not already be justified.
 		if tgtSlot < uint64(BitlistLen(justifiedSlots)) && GetBit(justifiedSlots, tgtSlot) {
-			continue
+			return
 		}
 
 		// Source root must match historical block hashes.
 		if srcSlot >= uint64(len(state.HistoricalBlockHashes)) || state.HistoricalBlockHashes[srcSlot] != source.Root {
-			continue
+			return
 		}
 
 		// Target root must match historical block hashes.
 		if tgtSlot >= uint64(len(state.HistoricalBlockHashes)) || state.HistoricalBlockHashes[tgtSlot] != target.Root {
-			continue
+			return
 		}
 
 		// Target must be justifiable after the original finalized slot.
 		if !types.IsJustifiableAfter(tgtSlot, originalFinalizedSlot) {
-			continue
+			return
 		}
 
 		// Validate validator ID.
-		validatorID := att.ValidatorID
 		if validatorID >= numValidators {
-			continue
+			return
 		}
 
 		// Record vote (idempotent — skip if already voted).
@@ -79,7 +82,7 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 			justifications[target.Root] = make([]bool, numValidators)
 		}
 		if justifications[target.Root][validatorID] {
-			continue
+			return
 		}
 		justifications[target.Root][validatorID] = true
 
@@ -93,7 +96,7 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 
 		// Supermajority: 3 * count >= 2 * numValidators.
 		if 3*count < 2*numValidators {
-			continue
+			return
 		}
 
 		// Justify target.
@@ -115,6 +118,19 @@ func ProcessAttestations(state *types.State, attestations []*types.Attestation) 
 		}
 		if !hasJustifiableGap {
 			latestFinalized = &types.Checkpoint{Root: source.Root, Slot: srcSlot}
+		}
+	}
+
+	for _, aggregated := range attestations {
+		if aggregated == nil || aggregated.Data == nil {
+			continue
+		}
+		numBits := uint64(BitlistLen(aggregated.AggregationBits))
+		for validatorID := uint64(0); validatorID < numBits; validatorID++ {
+			if !GetBit(aggregated.AggregationBits, validatorID) {
+				continue
+			}
+			processVote(validatorID, aggregated.Data)
 		}
 	}
 

@@ -27,6 +27,8 @@ type Store struct {
 
 	latestKnownAttestations map[uint64]*types.SignedAttestation
 	latestNewAttestations   map[uint64]*types.SignedAttestation
+	gossipSignatures        map[signatureKey]storedSignature
+	aggregatedPayloads      map[signatureKey][]storedAggregatedPayload
 
 	NowFn func() uint64
 }
@@ -116,5 +118,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		storage:                 store,
 		latestKnownAttestations: make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:   make(map[uint64]*types.SignedAttestation),
+		gossipSignatures:        make(map[signatureKey]storedSignature),
+		aggregatedPayloads:      make(map[signatureKey][]storedAggregatedPayload),
 	}
 }
