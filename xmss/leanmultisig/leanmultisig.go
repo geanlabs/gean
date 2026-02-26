@@ -46,22 +46,25 @@ func Aggregate(pubkeys, signatures [][]byte, messageHash [MessageHashLength]byte
 		return nil, fmt.Errorf("pubkeys/signatures length mismatch: %d/%d", len(pubkeys), len(signatures))
 	}
 
-	cPubkeys, err := makeBytesViews(pubkeys)
+	cPubkeys, numPubkeys, freePubkeys, err := makeCBytesViews(pubkeys)
 	if err != nil {
 		return nil, err
 	}
-	cSignatures, err := makeBytesViews(signatures)
+	defer freePubkeys()
+
+	cSignatures, numSignatures, freeSignatures, err := makeCBytesViews(signatures)
 	if err != nil {
 		return nil, err
 	}
+	defer freeSignatures()
 
 	var outData *C.uint8_t
 	var outLen C.size_t
 	result := C.leanmultisig_aggregate(
-		(*C.LeanmultisigBytes)(unsafe.Pointer(&cPubkeys[0])),
-		C.size_t(len(cPubkeys)),
-		(*C.LeanmultisigBytes)(unsafe.Pointer(&cSignatures[0])),
-		C.size_t(len(cSignatures)),
+		cPubkeys,
+		numPubkeys,
+		cSignatures,
+		numSignatures,
 		(*C.uint8_t)(unsafe.Pointer(&messageHash[0])),
 		C.size_t(MessageHashLength),
 		C.uint32_t(epoch),
@@ -89,14 +92,15 @@ func VerifyAggregated(pubkeys [][]byte, messageHash [MessageHashLength]byte, pro
 		return fmt.Errorf("proof data must be non-empty")
 	}
 
-	cPubkeys, err := makeBytesViews(pubkeys)
+	cPubkeys, numPubkeys, freePubkeys, err := makeCBytesViews(pubkeys)
 	if err != nil {
 		return err
 	}
+	defer freePubkeys()
 
 	result := C.leanmultisig_verify_aggregated(
-		(*C.LeanmultisigBytes)(unsafe.Pointer(&cPubkeys[0])),
-		C.size_t(len(cPubkeys)),
+		cPubkeys,
+		numPubkeys,
 		(*C.uint8_t)(unsafe.Pointer(&messageHash[0])),
 		C.size_t(MessageHashLength),
 		(*C.uint8_t)(unsafe.Pointer(&proofData[0])),
@@ -109,21 +113,45 @@ func VerifyAggregated(pubkeys [][]byte, messageHash [MessageHashLength]byte, pro
 	return nil
 }
 
-func makeBytesViews(chunks [][]byte) ([]C.LeanmultisigBytes, error) {
+func makeCBytesViews(chunks [][]byte) (*C.LeanmultisigBytes, C.size_t, func(), error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("empty byte chunks")
+		return nil, 0, nil, fmt.Errorf("empty byte chunks")
 	}
-	views := make([]C.LeanmultisigBytes, len(chunks))
+
+	viewSize := unsafe.Sizeof(C.LeanmultisigBytes{})
+	viewsPtr := C.malloc(C.size_t(len(chunks)) * C.size_t(viewSize))
+	if viewsPtr == nil {
+		return nil, 0, nil, fmt.Errorf("allocate C LeanmultisigBytes array")
+	}
+	views := unsafe.Slice((*C.LeanmultisigBytes)(viewsPtr), len(chunks))
+
+	allocated := make([]unsafe.Pointer, len(chunks))
 	for i := range chunks {
 		if len(chunks[i]) == 0 {
-			return nil, fmt.Errorf("empty byte chunk at index %d", i)
+			for j := 0; j < i; j++ {
+				C.free(allocated[j])
+			}
+			C.free(viewsPtr)
+			return nil, 0, nil, fmt.Errorf("empty byte chunk at index %d", i)
 		}
+		data := C.CBytes(chunks[i])
+		allocated[i] = data
 		views[i] = C.LeanmultisigBytes{
-			data: (*C.uint8_t)(unsafe.Pointer(&chunks[i][0])),
+			data: (*C.uint8_t)(data),
 			len:  C.size_t(len(chunks[i])),
 		}
 	}
-	return views, nil
+
+	freeFn := func() {
+		for _, data := range allocated {
+			if data != nil {
+				C.free(data)
+			}
+		}
+		C.free(viewsPtr)
+	}
+
+	return (*C.LeanmultisigBytes)(viewsPtr), C.size_t(len(chunks)), freeFn, nil
 }
 
 func resultError(op string, result C.enum_LeanmultisigResult) error {
