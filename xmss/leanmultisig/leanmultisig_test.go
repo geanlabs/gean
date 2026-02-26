@@ -123,3 +123,34 @@ func TestAggregateRejectsLengthMismatch(t *testing.T) {
 		t.Fatal("expected aggregate to fail on pubkey/signature length mismatch")
 	}
 }
+
+func TestAggregateAndVerify400Signatures(t *testing.T) {
+	if os.Getenv("GEAN_RUN_400_SIG_TEST") != "1" {
+		t.Skip("set GEAN_RUN_400_SIG_TEST=1 to run 400-signature aggregation test")
+	}
+
+	const totalSignatures = 400
+	base := sharedFixture
+
+	pubkeys := make([][]byte, totalSignatures)
+	sigs := make([][]byte, totalSignatures)
+	for i := 0; i < totalSignatures; i++ {
+		src := i % len(base.pubkeys)
+		pubkeys[i] = base.pubkeys[src]
+		sigs[i] = base.sigs[src]
+	}
+
+	leanmultisig.SetupProver()
+	proof, err := leanmultisig.Aggregate(pubkeys, sigs, base.message, base.epoch)
+	if err != nil {
+		t.Fatalf("aggregate %d signatures: %v", totalSignatures, err)
+	}
+	if len(proof) == 0 {
+		t.Fatalf("aggregate %d signatures returned empty proof", totalSignatures)
+	}
+
+	leanmultisig.SetupVerifier()
+	if err := leanmultisig.VerifyAggregated(pubkeys, base.message, proof, base.epoch); err != nil {
+		t.Fatalf("verify %d signatures aggregated proof: %v", totalSignatures, err)
+	}
+}
