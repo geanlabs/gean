@@ -129,6 +129,12 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 			if err := leanmultisig.VerifyAggregated(pubkeys, messageRoot, proof.ProofData, uint32(aggregated.Data.Slot)); err != nil {
 				return fmt.Errorf("verify aggregated proof %d: %w", i, err)
 			}
+			log.Info(
+				"attestation aggregate proof verified (leanMultisig)",
+				"slot", aggregated.Data.Slot,
+				"participants", len(validatorIDs),
+				"proof_size", fmt.Sprintf("%d bytes", len(proof.ProofData)),
+			)
 		}
 
 		// Verify proposer signature (always individual XMSS).
