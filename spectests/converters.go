@@ -122,9 +122,16 @@ func convertSignedAttestation(fa FixtureSignedAttestation) *types.SignedAttestat
 	}
 }
 
-func convertAggregatedAttestation(fa FixtureAttestation) *types.AggregatedAttestation {
+func convertAggregatedAttestation(fa FixtureAggregatedAttestation) *types.AggregatedAttestation {
+	bits := []byte{0x01} // empty bitlist with sentinel
+	if fa.AggregationBits != nil {
+		bits = buildBoolBitlist(fa.AggregationBits.Data)
+	} else if fa.ValidatorID != nil {
+		bits = buildSingleBitlist(*fa.ValidatorID)
+	}
+
 	return &types.AggregatedAttestation{
-		AggregationBits: buildSingleBitlist(fa.ValidatorID),
+		AggregationBits: bits,
 		Data: &types.AttestationData{
 			Slot: fa.Data.Slot,
 			Head: &types.Checkpoint{
