@@ -2,6 +2,7 @@ package forkchoice
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/types"
@@ -61,14 +62,7 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 	return &types.Checkpoint{Root: blockHash, Slot: tBlock.Slot}, nil
 }
 
-// ProduceBlock creates a new signed block envelope for the given slot and validator.
-// The returned envelope includes:
-//   - the block with body attestations
-//   - the proposer's own attestation (head = produced block)
-//   - the signature list (body attestation sigs + proposer sig last)
-//
-// The signer is used to produce the proposer's XMSS signature over the
-// proposer attestation hash-tree-root.
+// ProduceBlock creates a new devnet-2 signed block envelope for the given slot.
 func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types.SignedBlockWithAttestation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -77,12 +71,10 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		return nil, fmt.Errorf("validator %d is not proposer for slot %d", validatorIndex, slot)
 	}
 
-	headRoot := c.head
-	// Advance and accept before proposing.
 	slotTime := c.genesisTime + slot*types.SecondsPerSlot
 	c.advanceTimeLocked(slotTime, true)
 	c.acceptNewAttestationsLocked()
-	headRoot = c.head
+	headRoot := c.head
 
 	headState, ok := c.storage.GetState(headRoot)
 	if !ok {
@@ -94,56 +86,67 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		return nil, err
 	}
 
-	var attestations []*types.Attestation
-	var collectedSigned []*types.SignedAttestation
+	selectedByValidator := make(map[uint64]*types.SignedAttestation)
+	selected := make([]*types.SignedAttestation, 0, len(c.latestKnownAttestations))
 
-	// Fixed-point attestation collection.
+	// Fixed-point collection: include votes whose source matches post-state justified.
 	for {
-		candidateBlock := &types.Block{
-			Slot:          slot,
-			ProposerIndex: validatorIndex,
-			ParentRoot:    headRoot,
-			StateRoot:     types.ZeroHash,
-			Body:          &types.BlockBody{Attestations: attestations},
-		}
-
-		postState, err := statetransition.ProcessBlock(advancedState, candidateBlock)
+		aggregatedAttestations, _, err := c.buildAggregatedAttestationsFromSigned(headState, selected)
 		if err != nil {
 			return nil, err
 		}
 
-		var newAttestations []*types.Attestation
-		var newSigned []*types.SignedAttestation
-		for _, sa := range c.latestKnownAttestations {
-			data := sa.Message.Data
-			if _, ok := c.storage.GetBlock(data.Head.Root); !ok {
-				continue
-			}
-			// Skip attestations whose source doesn't match post-state justified.
-			if data.Source.Root != postState.LatestJustified.Root ||
-				data.Source.Slot != postState.LatestJustified.Slot {
-				continue
-			}
-			if !containsAttestation(attestations, sa.Message) {
-				newAttestations = append(newAttestations, sa.Message)
-				newSigned = append(newSigned, sa)
-			}
+		candidate := &types.Block{
+			Slot:          slot,
+			ProposerIndex: validatorIndex,
+			ParentRoot:    headRoot,
+			StateRoot:     types.ZeroHash,
+			Body:          &types.BlockBody{Attestations: aggregatedAttestations},
 		}
 
-		if len(newAttestations) == 0 {
+		postState, err := statetransition.ProcessBlock(advancedState, candidate)
+		if err != nil {
+			return nil, err
+		}
+
+		added := false
+		for _, sa := range c.latestKnownAttestations {
+			if sa == nil || sa.Message == nil || sa.Message.Source == nil || sa.Message.Head == nil {
+				continue
+			}
+			if _, ok := c.storage.GetBlock(sa.Message.Head.Root); !ok {
+				continue
+			}
+			if sa.Message.Source.Root != postState.LatestJustified.Root ||
+				sa.Message.Source.Slot != postState.LatestJustified.Slot {
+				continue
+			}
+
+			existing, ok := selectedByValidator[sa.ValidatorID]
+			if ok && existing != nil && existing.Message != nil && existing.Message.Slot >= sa.Message.Slot {
+				continue
+			}
+			selectedByValidator[sa.ValidatorID] = sa
+			added = true
+		}
+
+		if !added {
 			break
 		}
-		attestations = append(attestations, newAttestations...)
-		collectedSigned = append(collectedSigned, newSigned...)
+		selected = orderedSignedAttestations(selectedByValidator)
 	}
 
-	// Build final block with computed state root.
+	finalAttestations, attestationProofs, err := c.buildAggregatedAttestationsFromSigned(headState, selected)
+	if err != nil {
+		return nil, err
+	}
+
 	finalBlock := &types.Block{
 		Slot:          slot,
 		ProposerIndex: validatorIndex,
 		ParentRoot:    headRoot,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: attestations},
+		Body:          &types.BlockBody{Attestations: finalAttestations},
 	}
 	finalState, err := statetransition.ProcessBlock(advancedState, finalBlock)
 	if err != nil {
@@ -153,26 +156,19 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 	finalBlock.StateRoot = stateRoot
 
 	blockHash, _ := finalBlock.HashTreeRoot()
+	voteTarget, err := c.getVoteTargetLocked()
+	if err != nil {
+		return nil, fmt.Errorf("vote target: %w", err)
+	}
 
-	// Build proposer attestation: the proposer attests to its own block.
 	proposerAtt := &types.Attestation{
 		ValidatorID: validatorIndex,
 		Data: &types.AttestationData{
 			Slot:   slot,
 			Head:   &types.Checkpoint{Root: blockHash, Slot: slot},
-			Source: c.latestJustified,
+			Target: voteTarget,
+			Source: &types.Checkpoint{Root: c.latestJustified.Root, Slot: c.latestJustified.Slot},
 		},
-	}
-	voteTarget, err := c.getVoteTargetLocked()
-	if err != nil {
-		return nil, fmt.Errorf("vote target: %w", err)
-	}
-	proposerAtt.Data.Target = voteTarget
-
-	// Build signature list: body attestation sigs in order, proposer sig last.
-	sigs := make([][3112]byte, len(collectedSigned)+1)
-	for i, sa := range collectedSigned {
-		sigs[i] = sa.Signature
 	}
 
 	envelope := &types.SignedBlockWithAttestation{
@@ -180,20 +176,20 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 			Block:               finalBlock,
 			ProposerAttestation: proposerAtt,
 		},
-		Signature: sigs,
+		Signature: types.BlockSignatures{
+			AttestationSignatures: attestationProofs,
+		},
 	}
 
-	// Sign proposer attestation message (validator_id + data).
-	msgRoot, err := proposerAtt.HashTreeRoot()
+	messageRoot, err := proposerAtt.Data.HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("hash proposer attestation: %w", err)
+		return nil, fmt.Errorf("hash proposer attestation data: %w", err)
 	}
-	signingSlot := uint32(proposerAtt.Data.Slot)
-	sig, err := signer.Sign(signingSlot, msgRoot)
+	sig, err := signer.Sign(uint32(proposerAtt.Data.Slot), messageRoot)
 	if err != nil {
 		return nil, fmt.Errorf("sign proposer attestation: %w", err)
 	}
-	copy(envelope.Signature[len(collectedSigned)][:], sig)
+	copy(envelope.Signature.ProposerSignature[:], sig)
 
 	c.storage.PutBlock(blockHash, finalBlock)
 	c.storage.PutSignedBlock(blockHash, envelope)
@@ -203,7 +199,6 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 }
 
 // ProduceAttestation produces a signed attestation for the given slot and validator.
-// The signer produces the XMSS signature over HashTreeRoot(Attestation).
 func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (*types.SignedAttestation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -229,21 +224,14 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 		Slot:   slot,
 		Head:   headCheckpoint,
 		Target: targetCheckpoint,
-		Source: c.latestJustified,
+		Source: &types.Checkpoint{Root: c.latestJustified.Root, Slot: c.latestJustified.Slot},
 	}
 
-	att := &types.Attestation{
-		ValidatorID: validatorIndex,
-		Data:        data,
-	}
-
-	// Sign the attestation message root (validator_id + data).
-	messageRoot, err := att.HashTreeRoot()
+	messageRoot, err := data.HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("hash attestation: %w", err)
+		return nil, fmt.Errorf("hash attestation data: %w", err)
 	}
-	signingSlot := uint32(data.Slot)
-	sig, err := signer.Sign(signingSlot, messageRoot)
+	sig, err := signer.Sign(uint32(data.Slot), messageRoot)
 	if err != nil {
 		return nil, fmt.Errorf("sign attestation: %w", err)
 	}
@@ -252,7 +240,25 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 	copy(sigBytes[:], sig)
 
 	return &types.SignedAttestation{
-		Message:   att,
-		Signature: sigBytes,
+		ValidatorID: validatorIndex,
+		Message:     data,
+		Signature:   sigBytes,
 	}, nil
+}
+
+func orderedSignedAttestations(indexed map[uint64]*types.SignedAttestation) []*types.SignedAttestation {
+	if len(indexed) == 0 {
+		return nil
+	}
+	validatorIDs := make([]uint64, 0, len(indexed))
+	for validatorID := range indexed {
+		validatorIDs = append(validatorIDs, validatorID)
+	}
+	sort.Slice(validatorIDs, func(i, j int) bool { return validatorIDs[i] < validatorIDs[j] })
+
+	out := make([]*types.SignedAttestation, 0, len(indexed))
+	for _, validatorID := range validatorIDs {
+		out = append(out, indexed[validatorID])
+	}
+	return out
 }

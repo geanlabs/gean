@@ -26,8 +26,13 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
 	}()
 
-	data := sa.Message.Data
-	validatorID := sa.Message.ValidatorID
+	data := sa.Message
+	validatorID := sa.ValidatorID
+
+	if data == nil {
+		metrics.AttestationsInvalid.Inc()
+		return
+	}
 
 	if reason := c.validateAttestationData(data); reason != "" {
 		log.Debug("attestation rejected", "reason", reason, "slot", data.Slot, "validator", validatorID)
@@ -46,12 +51,12 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	if isFromBlock {
 		// On-chain: update known attestations if this is newer.
 		existing, ok := c.latestKnownAttestations[validatorID]
-		if !ok || existing.Message.Data.Slot < data.Slot {
+		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < data.Slot {
 			c.latestKnownAttestations[validatorID] = sa
 		}
 		// Remove from new attestations if superseded.
 		newAtt, ok := c.latestNewAttestations[validatorID]
-		if ok && newAtt.Message.Data.Slot <= data.Slot {
+		if ok && newAtt != nil && newAtt.Message != nil && newAtt.Message.Slot <= data.Slot {
 			delete(c.latestNewAttestations, validatorID)
 		}
 	} else {
@@ -64,9 +69,10 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 		// Network gossip: update new attestations if this is newer.
 		existing, ok := c.latestNewAttestations[validatorID]
-		if !ok || existing.Message.Data.Slot < data.Slot {
+		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < data.Slot {
 			c.latestNewAttestations[validatorID] = sa
 		}
+		c.storeGossipSignatureLocked(sa)
 	}
 
 	metrics.AttestationsValid.Inc()
@@ -79,12 +85,16 @@ func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
 		return fmt.Errorf("head state not found")
 	}
 
-	return c.verifyAttestationSignatureWithState(headState, sa.Message, sa.Signature)
+	return c.verifyAttestationSignatureWithState(headState, sa.ValidatorID, sa.Message, sa.Signature)
 }
 
 // validateAttestationData performs attestation validation checks.
 // Returns an empty string if valid, or a rejection reason.
 func (c *Store) validateAttestationData(data *types.AttestationData) string {
+	if data == nil || data.Source == nil || data.Target == nil || data.Head == nil {
+		return "incomplete attestation data"
+	}
+
 	// Availability check: source, target, and head blocks must exist.
 	sourceBlock, ok := c.storage.GetBlock(data.Source.Root)
 	if !ok {

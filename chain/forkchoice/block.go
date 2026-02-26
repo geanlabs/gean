@@ -7,28 +7,37 @@ import (
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss/leanmultisig"
 	"github.com/geanlabs/gean/xmss/leansig"
 )
 
-func (c *Store) verifyAttestationSignatureWithState(state *types.State, att *types.Attestation, sig [3112]byte) error {
-	valID := att.ValidatorID
+func (c *Store) verifyAttestationSignatureWithState(
+	state *types.State,
+	validatorID uint64,
+	data *types.AttestationData,
+	sig [3112]byte,
+) error {
+	if data == nil {
+		return fmt.Errorf("attestation data is nil")
+	}
+	valID := validatorID
 	if valID >= uint64(len(state.Validators)) {
 		return fmt.Errorf("invalid validator index %d", valID)
 	}
 	pubkey := state.Validators[valID].Pubkey
 
-	messageRoot, err := att.HashTreeRoot()
+	messageRoot, err := data.HashTreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to hash attestation message: %w", err)
 	}
 
-	signingSlot := uint32(att.Data.Slot)
+	signingSlot := uint32(data.Slot)
 
 	if err := leansig.Verify(pubkey[:], signingSlot, messageRoot, sig[:]); err != nil {
-		log.Warn("attestation signature invalid", "slot", att.Data.Slot, "validator", valID, "err", err)
+		log.Warn("attestation signature invalid", "slot", data.Slot, "validator", valID, "err", err)
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
-	log.Info("attestation signature verified (XMSS)", "slot", att.Data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
+	log.Info("attestation signature verified (XMSS)", "slot", data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
 	return nil
 }
 
@@ -47,6 +56,9 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		c.advanceTimeLocked(c.NowFn(), false)
 	}
 
+	if envelope == nil || envelope.Message == nil || envelope.Message.Block == nil {
+		return fmt.Errorf("invalid block envelope")
+	}
 	block := envelope.Message.Block
 	blockHash, _ := block.HashTreeRoot()
 
@@ -66,38 +78,68 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		return fmt.Errorf("state_transition: %w", err)
 	}
 
-	// Validate signature list shape.
+	// Validate signature container shape.
 	numBodyAtts := len(block.Body.Attestations)
-	if envelope.Message.ProposerAttestation != nil {
-		// With proposer attestation: exactly len(body_attestations) + 1 signatures.
-		if len(envelope.Signature) != numBodyAtts+1 {
-			return fmt.Errorf("signature count mismatch: got %d, want %d (body=%d + proposer=1)",
-				len(envelope.Signature), numBodyAtts+1, numBodyAtts)
-		}
-	} else {
-		// Without proposer attestation: exactly len(body_attestations) signatures.
-		if len(envelope.Signature) != numBodyAtts {
-			return fmt.Errorf("signature count mismatch: got %d, want %d (body=%d, no proposer)",
-				len(envelope.Signature), numBodyAtts, numBodyAtts)
-		}
+	if len(envelope.Signature.AttestationSignatures) != numBodyAtts {
+		return fmt.Errorf(
+			"attestation signature proof count mismatch: got %d, want %d",
+			len(envelope.Signature.AttestationSignatures),
+			numBodyAtts,
+		)
+	}
+	if envelope.Message.ProposerAttestation == nil || envelope.Message.ProposerAttestation.Data == nil {
+		return fmt.Errorf("missing proposer attestation")
 	}
 
 	// Step 1b: Verify signatures (skipped when skip_sig_verify build tag is set).
 	if c.shouldVerifySignatures() {
-		// Verify Body Attestations.
-		for i, att := range block.Body.Attestations {
-			// Use parent state to get validator keys (static validators).
-			if err := c.verifyAttestationSignatureWithState(parentState, att, envelope.Signature[i]); err != nil {
-				return fmt.Errorf("invalid body attestation signature at index %d: %w", i, err)
+		leanmultisig.SetupVerifier()
+
+		// Verify aggregated body attestations and their matching proofs.
+		for i, aggregated := range block.Body.Attestations {
+			if aggregated == nil || aggregated.Data == nil {
+				return fmt.Errorf("invalid body attestation at index %d", i)
+			}
+			proof := envelope.Signature.AttestationSignatures[i]
+			if proof == nil {
+				return fmt.Errorf("missing attestation signature proof at index %d", i)
+			}
+			if !bitlistsEqual(aggregated.AggregationBits, proof.Participants) {
+				return fmt.Errorf("participants mismatch for attestation %d", i)
+			}
+
+			validatorIDs := bitlistToValidatorIDs(aggregated.AggregationBits)
+			if len(validatorIDs) == 0 {
+				return fmt.Errorf("empty aggregated attestation participants at index %d", i)
+			}
+
+			pubkeys := make([][]byte, 0, len(validatorIDs))
+			for _, validatorID := range validatorIDs {
+				if validatorID >= uint64(len(parentState.Validators)) {
+					return fmt.Errorf("invalid participant index %d at attestation %d", validatorID, i)
+				}
+				pubkey := parentState.Validators[validatorID].Pubkey
+				pubkeys = append(pubkeys, pubkey[:])
+			}
+
+			messageRoot, err := aggregated.Data.HashTreeRoot()
+			if err != nil {
+				return fmt.Errorf("hash aggregated attestation data %d: %w", i, err)
+			}
+			if err := leanmultisig.VerifyAggregated(pubkeys, messageRoot, proof.ProofData, uint32(aggregated.Data.Slot)); err != nil {
+				return fmt.Errorf("verify aggregated proof %d: %w", i, err)
 			}
 		}
 
-		// Verify proposer attestation signature (only when a proposer attestation is present).
-		if envelope.Message.ProposerAttestation != nil {
-			proposerSig := envelope.Signature[numBodyAtts] // Last signature
-			if err := c.verifyAttestationSignatureWithState(parentState, envelope.Message.ProposerAttestation, proposerSig); err != nil {
-				return fmt.Errorf("invalid proposer attestation signature: %w", err)
-			}
+		// Verify proposer signature (always individual XMSS).
+		proposerAtt := envelope.Message.ProposerAttestation
+		if err := c.verifyAttestationSignatureWithState(
+			parentState,
+			proposerAtt.ValidatorID,
+			proposerAtt.Data,
+			envelope.Signature.ProposerSignature,
+		); err != nil {
+			return fmt.Errorf("invalid proposer attestation signature: %w", err)
 		}
 	}
 
@@ -115,26 +157,31 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	}
 
 	// Step 2: Process body attestations as on-chain votes.
-	// Pair each body attestation with its signature from the envelope.
-	for i, att := range block.Body.Attestations {
-		sa := &types.SignedAttestation{
-			Message:   att,
-			Signature: envelope.Signature[i],
+	for i, aggregated := range block.Body.Attestations {
+		if aggregated == nil || aggregated.Data == nil {
+			continue
 		}
-		c.processAttestationLocked(sa, true)
+		proof := envelope.Signature.AttestationSignatures[i]
+		for _, validatorID := range bitlistToValidatorIDs(aggregated.AggregationBits) {
+			sa := &types.SignedAttestation{
+				ValidatorID: validatorID,
+				Message:     aggregated.Data,
+			}
+			c.processAttestationLocked(sa, true)
+			c.storeAggregatedPayloadLocked(validatorID, aggregated.Data, proof)
+		}
 	}
 
 	// Step 3: Update head.
 	c.updateHeadLocked()
 
 	// Step 4: Process proposer attestation as gossip vote (is_from_block=false).
-	if envelope.Message.ProposerAttestation != nil {
-		proposerSA := &types.SignedAttestation{
-			Message:   envelope.Message.ProposerAttestation,
-			Signature: envelope.Signature[numBodyAtts], // always last
-		}
-		c.processAttestationLocked(proposerSA, false)
+	proposerSA := &types.SignedAttestation{
+		ValidatorID: envelope.Message.ProposerAttestation.ValidatorID,
+		Message:     envelope.Message.ProposerAttestation.Data,
+		Signature:   envelope.Signature.ProposerSignature,
 	}
+	c.processAttestationLocked(proposerSA, false)
 
 	metrics.ForkChoiceBlockProcessingTime.Observe(time.Since(start).Seconds())
 	return nil
