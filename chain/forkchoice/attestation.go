@@ -36,7 +36,11 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 
 	if reason := c.validateAttestationData(data); reason != "" {
 		log.Debug("attestation rejected", "reason", reason, "slot", data.Slot, "validator", validatorID)
-		metrics.AttestationsInvalid.Inc()
+		// Unknown/future references are common during gossip races and sync lag.
+		// Keep invalid metric for deterministic/protocol-invalid cases.
+		if !isTransientAttestationRejection(reason) {
+			metrics.AttestationsInvalid.Inc()
+		}
 		return
 	}
 
@@ -63,7 +67,6 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		// Network gossip attestation processing.
 		currentSlot := c.time / types.IntervalsPerSlot
 		if data.Slot > currentSlot {
-			metrics.AttestationsInvalid.Inc()
 			return
 		}
 
@@ -76,6 +79,15 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	}
 
 	metrics.AttestationsValid.Inc()
+}
+
+func isTransientAttestationRejection(reason string) bool {
+	switch reason {
+	case "source block unknown", "target block unknown", "head block unknown", "attestation too far in future":
+		return true
+	default:
+		return false
+	}
 }
 
 // verifyAttestationSignature verifies the XMSS signature on the attestation.
