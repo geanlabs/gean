@@ -33,10 +33,13 @@ func (c *Store) verifyAttestationSignatureWithState(
 
 	signingSlot := uint32(data.Slot)
 
+	verifyStart := time.Now()
 	if err := leansig.Verify(pubkey[:], signingSlot, messageRoot, sig[:]); err != nil {
+		metrics.PQSigAttestationVerificationTime.Observe(time.Since(verifyStart).Seconds())
 		log.Warn("attestation signature invalid", "slot", data.Slot, "validator", valID, "err", err)
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
+	metrics.PQSigAttestationVerificationTime.Observe(time.Since(verifyStart).Seconds())
 	log.Info("attestation signature verified (XMSS)", "slot", data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
 	return nil
 }
@@ -126,9 +129,14 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 			if err != nil {
 				return fmt.Errorf("hash aggregated attestation data %d: %w", i, err)
 			}
+			verifyStart := time.Now()
 			if err := leanmultisig.VerifyAggregated(pubkeys, messageRoot, proof.ProofData, uint32(aggregated.Data.Slot)); err != nil {
+				metrics.PQSigAggregatedVerificationTime.Observe(time.Since(verifyStart).Seconds())
+				metrics.PQSigAggregatedInvalidTotal.Inc()
 				return fmt.Errorf("verify aggregated proof %d: %w", i, err)
 			}
+			metrics.PQSigAggregatedVerificationTime.Observe(time.Since(verifyStart).Seconds())
+			metrics.PQSigAggregatedValidTotal.Inc()
 			log.Info(
 				"attestation aggregate proof verified (leanMultisig)",
 				"slot", aggregated.Data.Slot,
