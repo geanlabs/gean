@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/geanlabs/gean/chain/statetransition"
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss/leanmultisig"
 )
@@ -151,7 +153,9 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 				leanmultisig.SetupProver()
 				proverReady = true
 			}
+			buildStart := time.Now()
 			proofData, err := leanmultisig.Aggregate(pubkeys, signatures, root, uint32(data.Slot))
+			metrics.PQSigSignaturesBuildingTime.Observe(time.Since(buildStart).Seconds())
 			if err != nil {
 				return nil, nil, fmt.Errorf("aggregate signatures: %w", err)
 			}
@@ -182,6 +186,8 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 			Data:            data,
 		})
 		attestationProofs = append(attestationProofs, proof)
+		metrics.PQSigAggregatedSignaturesTotal.Inc()
+		metrics.PQSigAttestationsInAggregatedTotal.Add(float64(len(signerIDs)))
 	}
 
 	return aggregatedAttestations, attestationProofs, nil

@@ -119,7 +119,7 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 		signStart := time.Now()
 		sa, err := v.FC.ProduceAttestation(slot, idx, kp)
 		signDuration := time.Since(signStart)
-		metrics.SigningTime.Observe(signDuration.Seconds())
+		metrics.PQSigAttestationSigningTime.Observe(signDuration.Seconds())
 
 		if err != nil {
 			v.Log.Error("attestation failed",

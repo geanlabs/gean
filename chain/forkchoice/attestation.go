@@ -25,12 +25,16 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	defer func() {
 		metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
 	}()
+	sourceLabel := "gossip"
+	if isFromBlock {
+		sourceLabel = "block"
+	}
 
 	data := sa.Message
 	validatorID := sa.ValidatorID
 
 	if data == nil {
-		metrics.AttestationsInvalid.Inc()
+		metrics.AttestationsInvalid.WithLabelValues(sourceLabel).Inc()
 		return
 	}
 
@@ -39,7 +43,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		// Unknown/future references are common during gossip races and sync lag.
 		// Keep invalid metric for deterministic/protocol-invalid cases.
 		if !isTransientAttestationRejection(reason) {
-			metrics.AttestationsInvalid.Inc()
+			metrics.AttestationsInvalid.WithLabelValues(sourceLabel).Inc()
 		}
 		return
 	}
@@ -47,7 +51,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	// Verify signature (skip for on-chain attestations; already verified in ProcessBlock).
 	if !isFromBlock && c.shouldVerifySignatures() {
 		if err := c.verifyAttestationSignature(sa); err != nil {
-			metrics.AttestationsInvalid.Inc()
+			metrics.AttestationsInvalid.WithLabelValues(sourceLabel).Inc()
 			return
 		}
 	}
@@ -78,7 +82,7 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		c.storeGossipSignatureLocked(sa)
 	}
 
-	metrics.AttestationsValid.Inc()
+	metrics.AttestationsValid.WithLabelValues(sourceLabel).Inc()
 }
 
 func isTransientAttestationRejection(reason string) bool {
