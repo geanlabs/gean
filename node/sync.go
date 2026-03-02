@@ -2,7 +2,9 @@ package node
 
 import (
 	"context"
+	"time"
 
+	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/network/reqresp"
@@ -100,4 +102,37 @@ func (n *Node) initialSync(ctx context.Context) {
 	for _, pid := range peers {
 		n.syncWithPeer(ctx, pid)
 	}
+}
+
+// isBehindPeerFinalization reports whether local head/finalized is behind the
+// highest finalized slot advertised by connected peers.
+func (n *Node) isBehindPeerFinalization(ctx context.Context, status forkchoice.ChainStatus) (bool, uint64) {
+	maxPeerFinalizedSlot := status.FinalizedSlot
+	peers := n.Host.P2P.Network().Peers()
+	if len(peers) == 0 {
+		return false, maxPeerFinalizedSlot
+	}
+
+	ourStatus := reqresp.Status{
+		Finalized: &types.Checkpoint{Root: status.FinalizedRoot, Slot: status.FinalizedSlot},
+		Head:      &types.Checkpoint{Root: status.Head, Slot: status.HeadSlot},
+	}
+
+	for _, pid := range peers {
+		peerCtx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
+		peerStatus, err := reqresp.RequestStatus(peerCtx, n.Host.P2P, pid, ourStatus)
+		cancel()
+		if err != nil || peerStatus.Finalized == nil {
+			continue
+		}
+		if peerStatus.Finalized.Slot > maxPeerFinalizedSlot {
+			maxPeerFinalizedSlot = peerStatus.Finalized.Slot
+		}
+	}
+
+	// Gate duties only when our head is behind peer finalization, meaning we
+	// are missing finalized chain blocks. Do not gate solely on finalized-slot
+	// lag, which can transiently trail while head is already caught up.
+	behind := status.HeadSlot < maxPeerFinalizedSlot
+	return behind, maxPeerFinalizedSlot
 }
