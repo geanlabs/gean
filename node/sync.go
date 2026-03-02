@@ -30,14 +30,27 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		"peer_finalized_slot", peerStatus.Finalized.Slot,
 	)
 
-	if peerStatus.Head.Slot <= status.HeadSlot {
+	// If peer is strictly behind us, or at the same slot with the same head root,
+	// there is nothing to sync from this peer.
+	if peerStatus.Head.Slot < status.HeadSlot ||
+		(peerStatus.Head.Slot == status.HeadSlot && peerStatus.Head.Root == status.Head) {
 		return false
 	}
 
 	// Walk backwards: request blocks we don't have, collecting roots to fetch.
 	var pending []*types.SignedBlockWithAttestation
 	nextRoot := peerStatus.Head.Root
-	const maxSyncDepth = 64
+	// Late-join nodes can be hundreds of slots behind. Use a backlog-sized walk
+	// rather than a fixed depth, otherwise we only fetch a disconnected suffix.
+	backlog := uint64(1)
+	if peerStatus.Head.Slot > status.HeadSlot {
+		backlog = peerStatus.Head.Slot - status.HeadSlot
+	}
+	maxSyncDepth := int(backlog + 16)
+	const maxSyncDepthCap = 32768
+	if maxSyncDepth > maxSyncDepthCap {
+		maxSyncDepth = maxSyncDepthCap
+	}
 
 	for i := 0; i < maxSyncDepth; i++ {
 		if _, ok := n.FC.GetBlock(nextRoot); ok {
@@ -53,6 +66,17 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		sb := blocks[0]
 		pending = append(pending, sb)
 		nextRoot = sb.Message.Block.ParentRoot
+	}
+
+	// If we could not reach any known ancestor, imported blocks would remain
+	// disconnected and fail with "parent state not found".
+	if _, ok := n.FC.GetBlock(nextRoot); !ok {
+		n.log.Debug("sync walk did not reach known ancestor",
+			"peer", pid.String()[:16],
+			"fetched", len(pending),
+			"max_depth", maxSyncDepth,
+		)
+		return false
 	}
 
 	// Process in forward order (oldest first).
