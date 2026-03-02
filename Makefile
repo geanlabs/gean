@@ -3,8 +3,8 @@
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 ffi:
-	@cd xmss/leansig-ffi && cargo build --release
-	@cd xmss/leanmultisig-ffi && cargo build --release
+	@cd xmss/leansig-ffi && cargo +nightly build --release --locked
+	@cd xmss/leanmultisig-ffi && cargo +nightly build --release --locked
 
 build: ffi
 	@mkdir -p bin

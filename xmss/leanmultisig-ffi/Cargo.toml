@@ -15,6 +15,3 @@ ssz = { package = "ethereum_ssz", version = "0.10.0" }
 
 [build-dependencies]
 cbindgen = "0.29"
-
-[patch."https://github.com/leanEthereum/leanMultisig.git"]
-lookup = { path = "vendor/lookup" }
