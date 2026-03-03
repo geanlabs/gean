@@ -45,8 +45,8 @@ func (n *Node) Close() {
 	}
 }
 
-// Config holds node configuration.
-type Config struct {
+// NodeConfig holds node configuration.
+type NodeConfig struct {
 	GenesisTime      uint64
 	Validators       []*types.Validator
 	ListenAddr       string

@@ -21,7 +21,7 @@ import (
 )
 
 // New creates and wires up a new Node.
-func New(cfg Config) (*Node, error) {
+func New(cfg NodeConfig) (*Node, error) {
 	log := logging.NewComponentLogger(logging.CompNode)
 
 	fc := initGenesis(log, cfg)
@@ -91,7 +91,7 @@ func New(cfg Config) (*Node, error) {
 	return n, nil
 }
 
-func initGenesis(log *slog.Logger, cfg Config) *forkchoice.Store {
+func initGenesis(log *slog.Logger, cfg NodeConfig) *forkchoice.Store {
 	genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)
 
 	genesisBlock := &types.Block{
@@ -116,7 +116,7 @@ func initGenesis(log *slog.Logger, cfg Config) *forkchoice.Store {
 	return fc
 }
 
-func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
+func initP2P(cfg NodeConfig) (*network.Host, *gossipsub.Topics, error) {
 	host, err := network.NewHost(cfg.ListenAddr, cfg.NodeKeyPath, cfg.Bootnodes)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create host: %w", err)
@@ -144,7 +144,7 @@ func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
 	return host, topics, nil
 }
 
-func initDiscovery(log *slog.Logger, cfg Config) (*p2p.LocalNodeManager, *p2p.DiscoveryService, error) {
+func initDiscovery(log *slog.Logger, cfg NodeConfig) (*p2p.LocalNodeManager, *p2p.DiscoveryService, error) {
 	discPort := cfg.DiscoveryPort
 	if discPort == 0 {
 		discPort = 9000
@@ -168,7 +168,7 @@ func initDiscovery(log *slog.Logger, cfg Config) (*p2p.LocalNodeManager, *p2p.Di
 	return p2pManager, p2pDiscovery, nil
 }
 
-func loadValidatorKeys(log *slog.Logger, cfg Config) (map[uint64]forkchoice.Signer, error) {
+func loadValidatorKeys(log *slog.Logger, cfg NodeConfig) (map[uint64]forkchoice.Signer, error) {
 	keys := make(map[uint64]forkchoice.Signer)
 	if cfg.ValidatorKeysDir == "" {
 		if len(cfg.ValidatorIDs) > 0 {
@@ -191,7 +191,7 @@ func loadValidatorKeys(log *slog.Logger, cfg Config) (map[uint64]forkchoice.Sign
 	return keys, nil
 }
 
-func startMetrics(log *slog.Logger, cfg Config) {
+func startMetrics(log *slog.Logger, cfg NodeConfig) {
 	if cfg.MetricsPort <= 0 {
 		return
 	}

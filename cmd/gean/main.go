@@ -97,7 +97,7 @@ func main() {
 		}
 	}
 
-	nodeCfg := node.Config{
+	nodeCfg := node.NodeConfig{
 		GenesisTime:      genCfg.GenesisTime,
 		Validators:       genCfg.Validators,
 		ListenAddr:       *listenAddr,
