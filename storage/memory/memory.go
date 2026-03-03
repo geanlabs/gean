@@ -3,66 +3,69 @@ package memory
 import (
 	"sync"
 
+	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 )
 
-// Store is an in-memory implementation of storage.Store.
-type Store struct {
+// MemoryStore is an in-memory implementation of storage.Store.
+type MemoryStore struct {
 	mu           sync.RWMutex
 	blocks       map[[32]byte]*types.Block
 	signedBlocks map[[32]byte]*types.SignedBlockWithAttestation
 	states       map[[32]byte]*types.State
 }
 
+var _ storage.Store = (*MemoryStore)(nil)
+
 // New creates a new in-memory store.
-func New() *Store {
-	return &Store{
+func New() *MemoryStore {
+	return &MemoryStore{
 		blocks:       make(map[[32]byte]*types.Block),
 		signedBlocks: make(map[[32]byte]*types.SignedBlockWithAttestation),
 		states:       make(map[[32]byte]*types.State),
 	}
 }
 
-func (m *Store) GetBlock(root [32]byte) (*types.Block, bool) {
+func (m *MemoryStore) GetBlock(root [32]byte) (*types.Block, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	b, ok := m.blocks[root]
 	return b, ok
 }
 
-func (m *Store) PutBlock(root [32]byte, block *types.Block) {
+func (m *MemoryStore) PutBlock(root [32]byte, block *types.Block) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.blocks[root] = block
 }
 
-func (m *Store) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
+func (m *MemoryStore) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	sb, ok := m.signedBlocks[root]
 	return sb, ok
 }
 
-func (m *Store) PutSignedBlock(root [32]byte, sb *types.SignedBlockWithAttestation) {
+func (m *MemoryStore) PutSignedBlock(root [32]byte, sb *types.SignedBlockWithAttestation) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.signedBlocks[root] = sb
 }
 
-func (m *Store) GetState(root [32]byte) (*types.State, bool) {
+func (m *MemoryStore) GetState(root [32]byte) (*types.State, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	s, ok := m.states[root]
 	return s, ok
 }
 
-func (m *Store) PutState(root [32]byte, state *types.State) {
+func (m *MemoryStore) PutState(root [32]byte, state *types.State) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.states[root] = state
 }
 
-func (m *Store) GetAllBlocks() map[[32]byte]*types.Block {
+func (m *MemoryStore) GetAllBlocks() map[[32]byte]*types.Block {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	cp := make(map[[32]byte]*types.Block, len(m.blocks))
@@ -72,7 +75,7 @@ func (m *Store) GetAllBlocks() map[[32]byte]*types.Block {
 	return cp
 }
 
-func (m *Store) GetAllStates() map[[32]byte]*types.State {
+func (m *MemoryStore) GetAllStates() map[[32]byte]*types.State {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	cp := make(map[[32]byte]*types.State, len(m.states))
