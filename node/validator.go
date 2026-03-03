@@ -26,6 +26,7 @@ type ValidatorDuties struct {
 	PublishBlock       func(context.Context, *pubsub.Topic, *types.SignedBlockWithAttestation) error
 	PublishAttestation func(context.Context, *pubsub.Topic, *types.SignedAttestation) error
 	Log                *slog.Logger
+	lastProposedSlot   map[uint64]uint64
 }
 
 // HasProposal reports whether this node has a proposer for the slot.
@@ -53,11 +54,18 @@ func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
 	if slot == 0 {
 		return
 	}
+	if v.lastProposedSlot == nil {
+		v.lastProposedSlot = make(map[uint64]uint64)
+	}
 
 	for _, idx := range v.Indices {
 		if !statetransition.IsProposer(idx, slot, v.FC.NumValidators()) {
 			continue
 		}
+		if lastSlot, ok := v.lastProposedSlot[idx]; ok && lastSlot == slot {
+			continue
+		}
+		v.lastProposedSlot[idx] = slot
 
 		kp, ok := v.Keys[idx]
 		if !ok {

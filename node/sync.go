@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
@@ -10,6 +11,10 @@ import (
 	"github.com/geanlabs/gean/network/reqresp"
 	"github.com/geanlabs/gean/types"
 )
+
+func isMissingParentStateErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "parent state not found")
+}
 
 // syncWithPeer exchanges status and fetches missing blocks from a single peer.
 // It walks backwards from the peer's head to find blocks we're missing, then
@@ -93,6 +98,22 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		}
 	}
 	return synced > 0
+}
+
+// recoverMissingParentSync attempts to fill a missing parent chain by syncing with
+// connected peers, then checks whether the requested parent root became available.
+func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte) bool {
+	if _, ok := n.FC.GetBlock(parentRoot); ok {
+		return true
+	}
+
+	for _, pid := range n.Host.P2P.Network().Peers() {
+		n.syncWithPeer(ctx, pid)
+		if _, ok := n.FC.GetBlock(parentRoot); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // initialSync exchanges status with connected peers and requests any blocks
