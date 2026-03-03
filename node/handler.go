@@ -45,6 +45,30 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 				"block_root", logging.ShortHash(blockRoot),
 			)
 			if err := fc.ProcessBlock(sb); err != nil {
+				if isMissingParentStateErr(err) {
+					gossipLog.Warn("parent state missing for gossip block, attempting recovery",
+						"slot", block.Slot,
+						"block_root", logging.ShortHash(blockRoot),
+						"parent_root", logging.ShortHash(block.ParentRoot),
+					)
+					if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
+						if retryErr := fc.ProcessBlock(sb); retryErr == nil {
+							gossipLog.Info("accepted gossip block after parent recovery",
+								"slot", block.Slot,
+								"block_root", logging.ShortHash(blockRoot),
+							)
+							return
+						} else {
+							err = retryErr
+						}
+					} else {
+						gossipLog.Warn("parent recovery did not find missing parent",
+							"slot", block.Slot,
+							"block_root", logging.ShortHash(blockRoot),
+							"parent_root", logging.ShortHash(block.ParentRoot),
+						)
+					}
+				}
 				gossipLog.Warn("rejected gossip block",
 					"slot", block.Slot,
 					"err", err,

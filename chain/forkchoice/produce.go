@@ -191,10 +191,6 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 	}
 	copy(envelope.Signature.ProposerSignature[:], sig)
 
-	c.storage.PutBlock(blockHash, finalBlock)
-	c.storage.PutSignedBlock(blockHash, envelope)
-	c.storage.PutState(blockHash, finalState)
-
 	return envelope, nil
 }
 
