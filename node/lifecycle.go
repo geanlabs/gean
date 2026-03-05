@@ -15,7 +15,7 @@ import (
 	"github.com/geanlabs/gean/network/p2p"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
-	"github.com/geanlabs/gean/storage/memory"
+	boltstore "github.com/geanlabs/gean/storage/bolt"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss/leansig"
 )
@@ -24,16 +24,21 @@ import (
 func New(cfg Config) (*Node, error) {
 	log := logging.NewComponentLogger(logging.CompNode)
 
-	fc := initGenesis(log, cfg)
+	fc, db, err := initChain(log, cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	host, topics, err := initP2P(cfg)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	p2pManager, p2pDiscovery, err2 := initDiscovery(log, cfg)
 	if err2 != nil {
 		host.Close()
+		db.Close()
 		return nil, err2
 	}
 
@@ -46,6 +51,7 @@ func New(cfg Config) (*Node, error) {
 			p2pManager.Close()
 		}
 		host.Close()
+		db.Close()
 		return nil, err
 	}
 
@@ -67,6 +73,7 @@ func New(cfg Config) (*Node, error) {
 		Validator:    validator,
 		P2PManager:   p2pManager,
 		P2PDiscovery: p2pDiscovery,
+		dbCloser:     db,
 		log:          log,
 	}
 
@@ -78,6 +85,7 @@ func New(cfg Config) (*Node, error) {
 			p2pManager.Close()
 		}
 		host.Close()
+		db.Close()
 		return nil, err
 	}
 
@@ -90,29 +98,117 @@ func New(cfg Config) (*Node, error) {
 	return n, nil
 }
 
-func initGenesis(log *slog.Logger, cfg Config) *forkchoice.Store {
-	genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)
-
-	genesisBlock := &types.Block{
-		Slot:          0,
-		ProposerIndex: 0,
-		ParentRoot:    types.ZeroHash,
-		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.AggregatedAttestation{}},
+func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Store, error) {
+	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
+		return nil, nil, fmt.Errorf("create data dir: %w", err)
+	}
+	dbPath := filepath.Join(cfg.DataDir, "gean.db")
+	db, err := boltstore.New(dbPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
 
-	stateRoot, _ := genesisState.HashTreeRoot()
-	genesisBlock.StateRoot = stateRoot
+	meta, err := db.LoadFCMetadata()
+	if err != nil {
+		db.Close()
+		return nil, nil, fmt.Errorf("load fc metadata: %w", err)
+	}
 
-	genesisRoot, _ := genesisBlock.HashTreeRoot()
-	log.Info("genesis state initialized",
-		"state_root", logging.ShortHash(stateRoot),
-		"block_root", logging.ShortHash(genesisRoot),
-	)
+	var fc *forkchoice.Store
 
-	fc := forkchoice.NewStore(genesisState, genesisBlock, memory.New())
+	if meta != nil {
+		// Restore from persisted state.
+		atts, err := db.LoadAttestations()
+		if err != nil {
+			db.Close()
+			return nil, nil, fmt.Errorf("load attestations: %w", err)
+		}
+		snap := &forkchoice.FCSnapshot{
+			Head:          meta.Head,
+			SafeTarget:    meta.SafeTarget,
+			JustifiedRoot: meta.JustifiedRoot,
+			JustifiedSlot: meta.JustifiedSlot,
+			FinalizedRoot: meta.FinalizedRoot,
+			FinalizedSlot: meta.FinalizedSlot,
+			GenesisTime:   meta.GenesisTime,
+			Time:          meta.Time,
+			NumValidators: meta.NumValidators,
+			Attestations:  atts,
+		}
+		fc = forkchoice.RestoreStore(snap, db)
+
+		headSlot := uint64(0)
+		if hb, ok := db.GetBlock(meta.Head); ok {
+			headSlot = hb.Slot
+		}
+		log.Info("chain restored from database",
+			"head", logging.ShortHash(meta.Head),
+			"head_slot", headSlot,
+			"justified_slot", meta.JustifiedSlot,
+			"finalized_slot", meta.FinalizedSlot,
+		)
+	} else {
+		// Fresh start: generate genesis.
+		genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)
+
+		genesisBlock := &types.Block{
+			Slot:          0,
+			ProposerIndex: 0,
+			ParentRoot:    types.ZeroHash,
+			StateRoot:     types.ZeroHash,
+			Body:          &types.BlockBody{Attestations: []*types.AggregatedAttestation{}},
+		}
+
+		stateRoot, _ := genesisState.HashTreeRoot()
+		genesisBlock.StateRoot = stateRoot
+
+		genesisRoot, _ := genesisBlock.HashTreeRoot()
+		log.Info("genesis state initialized",
+			"state_root", logging.ShortHash(stateRoot),
+			"block_root", logging.ShortHash(genesisRoot),
+		)
+
+		fc = forkchoice.NewStore(genesisState, genesisBlock, db)
+
+		// Persist initial FC metadata so the next restart restores.
+		snap := fc.GetSnapshot()
+		if err := db.PersistFCState(&boltstore.FCMetadata{
+			Head:          snap.Head,
+			SafeTarget:    snap.SafeTarget,
+			JustifiedRoot: snap.JustifiedRoot,
+			JustifiedSlot: snap.JustifiedSlot,
+			FinalizedRoot: snap.FinalizedRoot,
+			FinalizedSlot: snap.FinalizedSlot,
+			GenesisTime:   snap.GenesisTime,
+			Time:          snap.Time,
+			NumValidators: snap.NumValidators,
+		}, snap.Attestations); err != nil {
+			db.Close()
+			return nil, nil, fmt.Errorf("persist initial fc state: %w", err)
+		}
+	}
+
 	fc.NowFn = func() uint64 { return uint64(time.Now().Unix()) }
-	return fc
+
+	// Wire persistence callback: after every ProcessBlock, persist FC state.
+	fc.OnBlockProcessed = func() {
+		snap := fc.GetSnapshotLocked()
+		if err := db.PersistFCState(&boltstore.FCMetadata{
+			Head:          snap.Head,
+			SafeTarget:    snap.SafeTarget,
+			JustifiedRoot: snap.JustifiedRoot,
+			JustifiedSlot: snap.JustifiedSlot,
+			FinalizedRoot: snap.FinalizedRoot,
+			FinalizedSlot: snap.FinalizedSlot,
+			GenesisTime:   snap.GenesisTime,
+			Time:          snap.Time,
+			NumValidators: snap.NumValidators,
+		}, snap.Attestations); err != nil {
+			log.Error("failed to persist fc state", "err", err)
+		}
+	}
+
+	return fc, db, nil
 }
 
 func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {

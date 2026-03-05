@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"io"
 	"log/slog"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
@@ -25,8 +26,9 @@ type Node struct {
 	P2PManager   *p2p.LocalNodeManager
 	P2PDiscovery *p2p.DiscoveryService
 
-	Clock *Clock
-	log   *slog.Logger
+	Clock    *Clock
+	dbCloser io.Closer
+	log      *slog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -34,6 +36,9 @@ type Node struct {
 
 func (n *Node) Close() {
 	n.cancel()
+	if n.dbCloser != nil {
+		n.dbCloser.Close()
+	}
 	if n.P2PDiscovery != nil {
 		n.P2PDiscovery.Close()
 	}
