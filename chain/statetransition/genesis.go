@@ -10,7 +10,7 @@ func GenerateGenesis(genesisTime uint64, validators []*types.Validator) *types.S
 		GenesisTime: genesisTime,
 	}
 
-	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
 	bodyRoot, _ := emptyBody.HashTreeRoot()
 
 	genesisHeader := &types.BlockHeader{

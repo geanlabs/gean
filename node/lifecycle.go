@@ -50,14 +50,13 @@ func New(cfg Config) (*Node, error) {
 	}
 
 	validator := &ValidatorDuties{
-		Indices:                      cfg.ValidatorIDs,
-		Keys:                         validatorKeys,
-		FC:                           fc,
-		Topics:                       topics,
-		PublishBlock:                 gossipsub.PublishBlock,
-		PublishAttestation:           gossipsub.PublishAttestation,
-		PublishAggregatedAttestation: gossipsub.PublishAggregatedAttestation,
-		Log:                          logging.NewComponentLogger(logging.CompValidator),
+		Indices:            cfg.ValidatorIDs,
+		Keys:               validatorKeys,
+		FC:                 fc,
+		Topics:             topics,
+		PublishBlock:       gossipsub.PublishBlock,
+		PublishAttestation: gossipsub.PublishAttestation,
+		Log:                logging.NewComponentLogger(logging.CompValidator),
 	}
 
 	n := &Node{
@@ -99,7 +98,7 @@ func initGenesis(log *slog.Logger, cfg Config) *forkchoice.Store {
 		ProposerIndex: 0,
 		ParentRoot:    types.ZeroHash,
 		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.Attestation{}},
+		Body:          &types.BlockBody{Attestations: []*types.AggregatedAttestation{}},
 	}
 
 	stateRoot, _ := genesisState.HashTreeRoot()

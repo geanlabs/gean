@@ -1,11 +1,15 @@
-# Rust Builder for leansig-ffi
+# Rust Builder for XMSS FFI crates
 FROM rust:alpine AS rust-builder
 RUN apk add --no-cache musl-dev
 
 WORKDIR /build
 COPY xmss/leansig-ffi xmss/leansig-ffi/
+COPY xmss/leanmultisig-ffi xmss/leanmultisig-ffi/
 
 WORKDIR /build/xmss/leansig-ffi
+RUN cargo build --release
+
+WORKDIR /build/xmss/leanmultisig-ffi
 RUN cargo build --release
 
 # Go Builder for gean
@@ -25,6 +29,9 @@ COPY . .
 # leansig.go expects the header in ../leansig-ffi/include and the lib in ../leansig-ffi/target/release/deps/
 COPY --from=rust-builder /build/xmss/leansig-ffi/target/release/deps/libleansig_ffi.a xmss/leansig-ffi/target/release/deps/
 COPY --from=rust-builder /build/xmss/leansig-ffi/include xmss/leansig-ffi/include/
+# leanmultisig.go expects the header in ../leanmultisig-ffi/include and the lib in ../leanmultisig-ffi/target/release/deps/
+COPY --from=rust-builder /build/xmss/leanmultisig-ffi/target/release/deps/libleanmultisig_ffi.a xmss/leanmultisig-ffi/target/release/deps/
+COPY --from=rust-builder /build/xmss/leanmultisig-ffi/include xmss/leanmultisig-ffi/include/
 
 # Build Go binary including CGO binding
 RUN CGO_ENABLED=1 go build -o /build/gean ./cmd/gean

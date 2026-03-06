@@ -21,7 +21,10 @@ func (n *Node) Run(ctx context.Context) error {
 
 	ticker := n.Clock.SlotTicker()
 	defer ticker.Stop()
-	var lastSlot uint64
+	var lastSyncCheckSlot uint64 = ^uint64(0)
+	var lastLogSlot uint64 = ^uint64(0)
+	behindPeers := false
+	maxPeerFinalizedSlot := uint64(0)
 
 	for {
 		select {
@@ -44,23 +47,36 @@ func (n *Node) Run(ctx context.Context) error {
 
 			status := n.FC.GetStatus()
 
-			// Sync before duties: if head is behind, try catching up.
-			if slot > status.HeadSlot+2 {
-				for _, pid := range n.Host.P2P.Network().Peers() {
-					if n.syncWithPeer(ctx, pid) {
-						status = n.FC.GetStatus() // refresh after sync
-						break
+			// Re-evaluate sync gating once per slot using peer finalization status.
+			if slot != lastSyncCheckSlot {
+				behindPeers, maxPeerFinalizedSlot = n.isBehindPeerFinalization(ctx, status)
+				if behindPeers {
+					for _, pid := range n.Host.P2P.Network().Peers() {
+						if n.syncWithPeer(ctx, pid) {
+							status = n.FC.GetStatus()
+						}
+					}
+					behindPeers, maxPeerFinalizedSlot = n.isBehindPeerFinalization(ctx, status)
+					if behindPeers {
+						n.log.Warn(
+							"skipping validator duties while behind peer finalization",
+							"slot", slot,
+							"head_slot", status.HeadSlot,
+							"finalized_slot", status.FinalizedSlot,
+							"max_peer_finalized_slot", maxPeerFinalizedSlot,
+						)
 					}
 				}
+				lastSyncCheckSlot = slot
 			}
 
-			// Execute validator duties only when synced.
-			if slot <= status.HeadSlot+2 {
+			// Execute validator duties unless we are behind peers' finalized checkpoint.
+			if !behindPeers {
 				n.Validator.OnInterval(ctx, slot, interval)
 			}
 
 			// Update metrics and log on slot boundary.
-			if slot != lastSlot {
+			if slot != lastLogSlot {
 				start := time.Now()
 				// Refresh status for metrics if not already current.
 				status = n.FC.GetStatus()
@@ -77,10 +93,12 @@ func (n *Node) Run(ctx context.Context) error {
 					"head", status.HeadSlot,
 					"finalized", status.FinalizedSlot,
 					"justified", status.JustifiedSlot,
+					"behind_peer_finalization", behindPeers,
+					"max_peer_finalized", maxPeerFinalizedSlot,
 					"peers", peerCount,
 					"elapsed", logging.TimeSince(start),
 				)
-				lastSlot = slot
+				lastLogSlot = slot
 			}
 		}
 	}

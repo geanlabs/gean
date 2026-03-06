@@ -11,8 +11,9 @@ import (
 
 // Histogram bucket presets from leanMetrics spec.
 var (
-	fastBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1}
-	stfBuckets  = []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4}
+	fastBuckets  = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1}
+	stfBuckets   = []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4}
+	reorgBuckets = []float64{1, 2, 3, 5, 7, 10, 20, 30, 50, 100}
 )
 
 // --- Node Info ---
@@ -25,6 +26,52 @@ var NodeInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 var NodeStartTime = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "lean_node_start_time_seconds",
 	Help: "Start timestamp",
+})
+
+// --- PQ Signature Metrics ---
+
+var PQSigAttestationSigningTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_pq_sig_attestation_signing_time_seconds",
+	Help:    "Time taken to sign an attestation",
+	Buckets: fastBuckets,
+})
+
+var PQSigAttestationVerificationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_pq_sig_attestation_verification_time_seconds",
+	Help:    "Time taken to verify an attestation signature",
+	Buckets: fastBuckets,
+})
+
+var PQSigAggregatedSignaturesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_aggregated_signatures_total",
+	Help: "Total number of aggregated signatures",
+})
+
+var PQSigAttestationsInAggregatedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_attestations_in_aggregated_signatures_total",
+	Help: "Total number of attestations included into aggregated signatures",
+})
+
+var PQSigSignaturesBuildingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_pq_sig_attestation_signatures_building_time_seconds",
+	Help:    "Time taken to build aggregated attestation signatures",
+	Buckets: fastBuckets,
+})
+
+var PQSigAggregatedVerificationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_pq_sig_aggregated_signatures_verification_time_seconds",
+	Help:    "Time taken to verify an aggregated attestation signature",
+	Buckets: fastBuckets,
+})
+
+var PQSigAggregatedValidTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_aggregated_signatures_valid_total",
+	Help: "Total number of valid aggregated signatures",
+})
+
+var PQSigAggregatedInvalidTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_aggregated_signatures_invalid_total",
+	Help: "Total number of invalid aggregated signatures",
 })
 
 // --- Fork-Choice ---
@@ -50,20 +97,31 @@ var ForkChoiceBlockProcessingTime = prometheus.NewHistogram(prometheus.Histogram
 	Buckets: fastBuckets,
 })
 
-var AttestationsValid = prometheus.NewCounter(prometheus.CounterOpts{
+var AttestationsValid = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Name: "lean_attestations_valid_total",
 	Help: "Total number of valid attestations",
-})
+}, []string{"source"})
 
-var AttestationsInvalid = prometheus.NewCounter(prometheus.CounterOpts{
+var AttestationsInvalid = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Name: "lean_attestations_invalid_total",
 	Help: "Total number of invalid attestations",
-})
+}, []string{"source"})
 
 var AttestationValidationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_attestation_validation_time_seconds",
 	Help:    "Time taken to validate attestation",
 	Buckets: fastBuckets,
+})
+
+var ForkChoiceReorgsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_fork_choice_reorgs_total",
+	Help: "Total number of fork choice reorgs",
+})
+
+var ForkChoiceReorgDepth = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_fork_choice_reorg_depth",
+	Help:    "Depth of fork choice reorgs (in blocks)",
+	Buckets: reorgBuckets,
 })
 
 // --- State Transition ---
@@ -77,6 +135,11 @@ var LatestFinalizedSlot = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "lean_latest_finalized_slot",
 	Help: "Latest finalized slot",
 })
+
+var FinalizationsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "lean_finalizations_total",
+	Help: "Total number of finalization attempts",
+}, []string{"result"})
 
 var StateTransitionTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_state_transition_time_seconds",
@@ -126,30 +189,30 @@ var ConnectedPeers = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of connected peers",
 })
 
-// --- Devnet-1 Baseline Metrics ---
+var PeerConnectionEventsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "lean_peer_connection_events_total",
+	Help: "Total number of peer connection events",
+}, []string{"direction", "result"})
 
-var SignatureVerificationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
-	Name:    "lean_signature_verification_time_seconds",
-	Help:    "Time to verify a single XMSS signature",
-	Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1},
-})
-
-var SigningTime = prometheus.NewHistogram(prometheus.HistogramOpts{
-	Name:    "lean_signing_time_seconds",
-	Help:    "Time to produce a single XMSS signature",
-	Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.5},
-})
-
-var AggregateSizeBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "lean_aggregate_size_bytes",
-	Help: "Size in bytes of the latest aggregated signature",
-})
+var PeerDisconnectionEventsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "lean_peer_disconnection_events_total",
+	Help: "Total number of peer disconnection events",
+}, []string{"direction", "reason"})
 
 func init() {
 	prometheus.MustRegister(
 		// Node info
 		NodeInfo,
 		NodeStartTime,
+		// PQ signatures
+		PQSigAttestationSigningTime,
+		PQSigAttestationVerificationTime,
+		PQSigAggregatedSignaturesTotal,
+		PQSigAttestationsInAggregatedTotal,
+		PQSigSignaturesBuildingTime,
+		PQSigAggregatedVerificationTime,
+		PQSigAggregatedValidTotal,
+		PQSigAggregatedInvalidTotal,
 		// Fork choice
 		HeadSlot,
 		CurrentSlot,
@@ -158,9 +221,12 @@ func init() {
 		AttestationsValid,
 		AttestationsInvalid,
 		AttestationValidationTime,
+		ForkChoiceReorgsTotal,
+		ForkChoiceReorgDepth,
 		// State transition
 		LatestJustifiedSlot,
 		LatestFinalizedSlot,
+		FinalizationsTotal,
 		StateTransitionTime,
 		STFSlotsProcessed,
 		STFSlotsProcessingTime,
@@ -171,10 +237,8 @@ func init() {
 		ValidatorsCount,
 		// Network
 		ConnectedPeers,
-		// Devnet-1 baselines
-		SignatureVerificationTime,
-		SigningTime,
-		AggregateSizeBytes,
+		PeerConnectionEventsTotal,
+		PeerDisconnectionEventsTotal,
 	)
 }
 

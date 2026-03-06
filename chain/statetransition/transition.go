@@ -64,15 +64,16 @@ func ProcessBlockHeader(state *types.State, block *types.Block) (*types.State, e
 	// Append parent root to historical hashes (already cloned by Copy).
 	out.HistoricalBlockHashes = append(out.HistoricalBlockHashes, parentRoot)
 
-	// Append justified bit for parent: true only for genesis slot (already cloned by Copy).
-	out.JustifiedSlots = AppendBit(out.JustifiedSlots, state.LatestBlockHeader.Slot == 0)
-
 	// Fill empty slots between parent and this block.
 	numEmpty := block.Slot - state.LatestBlockHeader.Slot - 1
 	for i := uint64(0); i < numEmpty; i++ {
 		out.HistoricalBlockHashes = append(out.HistoricalBlockHashes, types.ZeroHash)
-		out.JustifiedSlots = AppendBit(out.JustifiedSlots, false)
 	}
+
+	// Extend justified-slots tracking up to the last materialized slot
+	// (the parent slot). Tracking is relative to the finalized slot.
+	lastMaterializedSlot := block.Slot - 1
+	out.JustifiedSlots = extendJustifiedSlotsToSlot(out.JustifiedSlots, out.LatestFinalized.Slot, lastMaterializedSlot)
 
 	// Build new latest block header with zero state_root (filled on next process_slot).
 	bodyRoot, _ := block.Body.HashTreeRoot()

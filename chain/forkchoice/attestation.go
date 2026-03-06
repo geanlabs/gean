@@ -25,20 +25,33 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	defer func() {
 		metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
 	}()
+	sourceLabel := "gossip"
+	if isFromBlock {
+		sourceLabel = "block"
+	}
 
-	data := sa.Message.Data
-	validatorID := sa.Message.ValidatorID
+	data := sa.Message
+	validatorID := sa.ValidatorID
+
+	if data == nil {
+		metrics.AttestationsInvalid.WithLabelValues(sourceLabel).Inc()
+		return
+	}
 
 	if reason := c.validateAttestationData(data); reason != "" {
 		log.Debug("attestation rejected", "reason", reason, "slot", data.Slot, "validator", validatorID)
-		metrics.AttestationsInvalid.Inc()
+		// Unknown/future references are common during gossip races and sync lag.
+		// Keep invalid metric for deterministic/protocol-invalid cases.
+		if !isTransientAttestationRejection(reason) {
+			metrics.AttestationsInvalid.WithLabelValues(sourceLabel).Inc()
+		}
 		return
 	}
 
 	// Verify signature (skip for on-chain attestations; already verified in ProcessBlock).
 	if !isFromBlock && c.shouldVerifySignatures() {
 		if err := c.verifyAttestationSignature(sa); err != nil {
-			metrics.AttestationsInvalid.Inc()
+			metrics.AttestationsInvalid.WithLabelValues(sourceLabel).Inc()
 			return
 		}
 	}
@@ -46,30 +59,39 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 	if isFromBlock {
 		// On-chain: update known attestations if this is newer.
 		existing, ok := c.latestKnownAttestations[validatorID]
-		if !ok || existing.Message.Data.Slot < data.Slot {
+		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < data.Slot {
 			c.latestKnownAttestations[validatorID] = sa
 		}
 		// Remove from new attestations if superseded.
 		newAtt, ok := c.latestNewAttestations[validatorID]
-		if ok && newAtt.Message.Data.Slot <= data.Slot {
+		if ok && newAtt != nil && newAtt.Message != nil && newAtt.Message.Slot <= data.Slot {
 			delete(c.latestNewAttestations, validatorID)
 		}
 	} else {
 		// Network gossip attestation processing.
 		currentSlot := c.time / types.IntervalsPerSlot
 		if data.Slot > currentSlot {
-			metrics.AttestationsInvalid.Inc()
 			return
 		}
 
 		// Network gossip: update new attestations if this is newer.
 		existing, ok := c.latestNewAttestations[validatorID]
-		if !ok || existing.Message.Data.Slot < data.Slot {
+		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < data.Slot {
 			c.latestNewAttestations[validatorID] = sa
 		}
+		c.storeGossipSignatureLocked(sa)
 	}
 
-	metrics.AttestationsValid.Inc()
+	metrics.AttestationsValid.WithLabelValues(sourceLabel).Inc()
+}
+
+func isTransientAttestationRejection(reason string) bool {
+	switch reason {
+	case "source block unknown", "target block unknown", "head block unknown", "attestation too far in future":
+		return true
+	default:
+		return false
+	}
 }
 
 // verifyAttestationSignature verifies the XMSS signature on the attestation.
@@ -79,12 +101,16 @@ func (c *Store) verifyAttestationSignature(sa *types.SignedAttestation) error {
 		return fmt.Errorf("head state not found")
 	}
 
-	return c.verifyAttestationSignatureWithState(headState, sa.Message, sa.Signature)
+	return c.verifyAttestationSignatureWithState(headState, sa.ValidatorID, sa.Message, sa.Signature)
 }
 
 // validateAttestationData performs attestation validation checks.
 // Returns an empty string if valid, or a rejection reason.
 func (c *Store) validateAttestationData(data *types.AttestationData) string {
+	if data == nil || data.Source == nil || data.Target == nil || data.Head == nil {
+		return "incomplete attestation data"
+	}
+
 	// Availability check: source, target, and head blocks must exist.
 	sourceBlock, ok := c.storage.GetBlock(data.Source.Root)
 	if !ok {

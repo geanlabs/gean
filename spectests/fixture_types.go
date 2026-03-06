@@ -98,7 +98,7 @@ type FixtureState struct {
 }
 
 type FixtureBlockBody struct {
-	Attestations Container[FixtureAttestation] `json:"attestations"`
+	Attestations Container[FixtureAggregatedAttestation] `json:"attestations"`
 }
 
 type FixtureBlock struct {
@@ -119,6 +119,14 @@ type FixtureAttestationData struct {
 type FixtureAttestation struct {
 	ValidatorID uint64                 `json:"validatorId"`
 	Data        FixtureAttestationData `json:"data"`
+}
+
+// FixtureAggregatedAttestation supports devnet-2 aggregated attestation fixtures.
+// Some fixture sources may still provide a single validator_id instead of aggregation_bits.
+type FixtureAggregatedAttestation struct {
+	AggregationBits *Container[bool]       `json:"aggregationBits"`
+	ValidatorID     *uint64                `json:"validatorId"`
+	Data            FixtureAttestationData `json:"data"`
 }
 
 type FixtureSignedAttestation struct {

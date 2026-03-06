@@ -36,7 +36,10 @@ func GetForkChoiceHead(
 	// Count votes for each block. Votes for descendants count toward ancestors.
 	voteWeights := make(map[[32]byte]int)
 	for _, sa := range latestAttestations {
-		headRoot := sa.Message.Data.Head.Root
+		if sa == nil || sa.Message == nil || sa.Message.Head == nil {
+			continue
+		}
+		headRoot := sa.Message.Head.Root
 		if _, ok := blocks[headRoot]; !ok {
 			continue
 		}

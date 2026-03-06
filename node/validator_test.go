@@ -31,7 +31,7 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	// Setup
 	numValidators := uint64(3)
 	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
-	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
 	genesisBlock := &types.Block{
 		Slot:          0,
 		ProposerIndex: 0,
@@ -74,8 +74,8 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	if publishedAtt == nil {
 		t.Fatal("expected PublishAttestation to be called")
 	}
-	if publishedAtt.Message.ValidatorID != 1 {
-		t.Errorf("attester = %d, want 1", publishedAtt.Message.ValidatorID)
+	if publishedAtt.ValidatorID != 1 {
+		t.Errorf("attester = %d, want 1", publishedAtt.ValidatorID)
 	}
 	// Verify signature
 	if publishedAtt.Signature[0] != 0xAA {
@@ -87,7 +87,7 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 	// Setup
 	numValidators := uint64(3)
 	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
-	emptyBody := &types.BlockBody{Attestations: []*types.Attestation{}}
+	emptyBody := &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
 	genesisBlock := &types.Block{
 		Slot:          0,
 		ProposerIndex: 0,
@@ -135,10 +135,61 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 		t.Errorf("proposer = %d, want 1", publishedBlock.Message.Block.ProposerIndex)
 	}
 
-	// Verify signature at last index (proposer sig is set by ProduceBlock).
-	lastIdx := len(publishedBlock.Signature) - 1
-	if publishedBlock.Signature[lastIdx][0] != 0xBB {
+	if publishedBlock.Signature.ProposerSignature[0] != 0xBB {
 		t.Errorf("signature not matching mock signer output")
+	}
+
+	// Proposed blocks must not be inserted into forkchoice storage until they are
+	// processed through the normal block import path (gossip/reqresp/sync).
+	blockRoot, _ := publishedBlock.Message.Block.HashTreeRoot()
+	if _, ok := fc.GetSignedBlock(blockRoot); ok {
+		t.Fatalf("unexpected pre-inserted proposed block %x", blockRoot)
+	}
+}
+
+func TestValidatorDuties_TryPropose_DuplicateIndexProposesOncePerSlot(t *testing.T) {
+	// Setup
+	numValidators := uint64(3)
+	state := statetransition.GenerateGenesis(1000, makeTestValidators(numValidators))
+	emptyBody := &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
+	genesisBlock := &types.Block{
+		Slot:          0,
+		ProposerIndex: 0,
+		ParentRoot:    types.ZeroHash,
+		StateRoot:     types.ZeroHash,
+		Body:          emptyBody,
+	}
+	stateRoot, _ := state.HashTreeRoot()
+	genesisBlock.StateRoot = stateRoot
+
+	store := memory.New()
+	fc := forkchoice.NewStore(state, genesisBlock, store)
+
+	keys := make(map[uint64]forkchoice.Signer)
+	expectedSig := make([]byte, 3112)
+	expectedSig[0] = 0xCC
+	keys[1] = &testSigner{sig: expectedSig}
+
+	publishCount := 0
+	publishFunc := func(ctx context.Context, topic *pubsub.Topic, sb *types.SignedBlockWithAttestation) error {
+		publishCount++
+		return nil
+	}
+
+	duties := &node.ValidatorDuties{
+		Indices:      []uint64{1, 1},
+		Keys:         keys,
+		FC:           fc,
+		Topics:       &gossipsub.Topics{Block: &pubsub.Topic{}},
+		PublishBlock: publishFunc,
+		Log:          logging.NewComponentLogger(logging.CompValidator),
+	}
+
+	// Action: slot 1 proposer should run once even if index appears twice.
+	duties.TryPropose(context.Background(), 1)
+
+	if publishCount != 1 {
+		t.Fatalf("publish count = %d, want 1", publishCount)
 	}
 }
 

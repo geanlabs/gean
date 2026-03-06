@@ -15,8 +15,9 @@ type Attestation struct {
 }
 
 // SignedAttestation is the gossip envelope for attestations.
-// Per devnet-1 spec, Message is a nested *Attestation (not flattened).
+// Devnet-2 format is flattened: validator_id + attestation_data + signature.
 type SignedAttestation struct {
-	Message   *Attestation
-	Signature [3112]byte `ssz-size:"3112"`
+	ValidatorID uint64
+	Message     *AttestationData
+	Signature   [3112]byte `ssz-size:"3112"`
 }

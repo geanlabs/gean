@@ -64,9 +64,9 @@ func convertState(fs FixtureState) *types.State {
 
 // convertBlock converts a fixture JSON block to a domain Block.
 func convertBlock(fb FixtureBlock) *types.Block {
-	atts := make([]*types.Attestation, len(fb.Body.Attestations.Data))
+	atts := make([]*types.AggregatedAttestation, len(fb.Body.Attestations.Data))
 	for i, a := range fb.Body.Attestations.Data {
-		atts[i] = convertAttestation(a)
+		atts[i] = convertAggregatedAttestation(a)
 	}
 	return &types.Block{
 		Slot:          fb.Slot,
@@ -103,22 +103,48 @@ func convertAttestation(fa FixtureAttestation) *types.Attestation {
 // Uses a zero signature since fixture tests skip signature verification.
 func convertSignedAttestation(fa FixtureSignedAttestation) *types.SignedAttestation {
 	return &types.SignedAttestation{
-		Message: &types.Attestation{
-			ValidatorID: fa.ValidatorID,
-			Data: &types.AttestationData{
-				Slot: fa.Data.Slot,
-				Head: &types.Checkpoint{
-					Root: [32]byte(fa.Data.Head.Root),
-					Slot: fa.Data.Head.Slot,
-				},
-				Target: &types.Checkpoint{
-					Root: [32]byte(fa.Data.Target.Root),
-					Slot: fa.Data.Target.Slot,
-				},
-				Source: &types.Checkpoint{
-					Root: [32]byte(fa.Data.Source.Root),
-					Slot: fa.Data.Source.Slot,
-				},
+		ValidatorID: fa.ValidatorID,
+		Message: &types.AttestationData{
+			Slot: fa.Data.Slot,
+			Head: &types.Checkpoint{
+				Root: [32]byte(fa.Data.Head.Root),
+				Slot: fa.Data.Head.Slot,
+			},
+			Target: &types.Checkpoint{
+				Root: [32]byte(fa.Data.Target.Root),
+				Slot: fa.Data.Target.Slot,
+			},
+			Source: &types.Checkpoint{
+				Root: [32]byte(fa.Data.Source.Root),
+				Slot: fa.Data.Source.Slot,
+			},
+		},
+	}
+}
+
+func convertAggregatedAttestation(fa FixtureAggregatedAttestation) *types.AggregatedAttestation {
+	bits := []byte{0x01} // empty bitlist with sentinel
+	if fa.AggregationBits != nil {
+		bits = buildBoolBitlist(fa.AggregationBits.Data)
+	} else if fa.ValidatorID != nil {
+		bits = buildSingleBitlist(*fa.ValidatorID)
+	}
+
+	return &types.AggregatedAttestation{
+		AggregationBits: bits,
+		Data: &types.AttestationData{
+			Slot: fa.Data.Slot,
+			Head: &types.Checkpoint{
+				Root: [32]byte(fa.Data.Head.Root),
+				Slot: fa.Data.Head.Slot,
+			},
+			Target: &types.Checkpoint{
+				Root: [32]byte(fa.Data.Target.Root),
+				Slot: fa.Data.Target.Slot,
+			},
+			Source: &types.Checkpoint{
+				Root: [32]byte(fa.Data.Source.Root),
+				Slot: fa.Data.Source.Slot,
 			},
 		},
 	}
@@ -142,8 +168,10 @@ func buildBoolBitlist(bits []bool) []byte {
 	return bl
 }
 
-// makeZeroSignatures creates a slice of zero-valued 3112-byte XMSS signatures.
-func makeZeroSignatures(count int) [][3112]byte {
-	sigs := make([][3112]byte, count)
-	return sigs
+func buildSingleBitlist(index uint64) []byte {
+	bl := []byte{0x01} // empty bitlist with sentinel
+	for i := uint64(0); i <= index; i++ {
+		bl = statetransition.AppendBit(bl, i == index)
+	}
+	return bl
 }
