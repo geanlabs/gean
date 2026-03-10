@@ -197,10 +197,6 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	}
 	c.processAttestationLocked(proposerSA, false)
 
-	if c.OnBlockProcessed != nil {
-		c.OnBlockProcessed()
-	}
-
 	metrics.ForkChoiceBlockProcessingTime.Observe(time.Since(start).Seconds())
 	return nil
 }

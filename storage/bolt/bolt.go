@@ -1,7 +1,6 @@
 package bolt
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log"
 
@@ -13,14 +12,7 @@ var (
 	blocksBucket      = []byte("blocks")
 	signedBlockBucket = []byte("signed_blocks")
 	statesBucket      = []byte("states")
-	fcMetaBucket      = []byte("fc_meta")
-	attestBucket      = []byte("attestations")
-
-	fcMetaKey = []byte("meta")
 )
-
-// FCMetadataSize is the fixed binary size of persisted fork-choice metadata.
-const FCMetadataSize = 168
 
 // Store is a bbolt-backed implementation of storage.Store.
 type Store struct {
@@ -35,7 +27,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, b := range [][]byte{blocksBucket, signedBlockBucket, statesBucket, fcMetaBucket, attestBucket} {
+		for _, b := range [][]byte{blocksBucket, signedBlockBucket, statesBucket} {
 			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
 				return err
 			}
@@ -175,127 +167,3 @@ func (s *Store) get(bucket, key []byte, dst sszUnmarshaler) bool {
 	return found
 }
 
-// --- Fork-choice metadata persistence ---
-
-// FCMetadata holds the fork-choice state that must survive restarts.
-type FCMetadata struct {
-	Head          [32]byte
-	SafeTarget    [32]byte
-	JustifiedRoot [32]byte
-	JustifiedSlot uint64
-	FinalizedRoot [32]byte
-	FinalizedSlot uint64
-	GenesisTime   uint64
-	Time          uint64
-	NumValidators uint64
-}
-
-// MarshalBinary encodes FCMetadata into a 168-byte fixed-size buffer.
-func (m *FCMetadata) MarshalBinary() []byte {
-	buf := make([]byte, FCMetadataSize)
-	off := 0
-	copy(buf[off:], m.Head[:])
-	off += 32
-	copy(buf[off:], m.SafeTarget[:])
-	off += 32
-	copy(buf[off:], m.JustifiedRoot[:])
-	off += 32
-	binary.BigEndian.PutUint64(buf[off:], m.JustifiedSlot)
-	off += 8
-	copy(buf[off:], m.FinalizedRoot[:])
-	off += 32
-	binary.BigEndian.PutUint64(buf[off:], m.FinalizedSlot)
-	off += 8
-	binary.BigEndian.PutUint64(buf[off:], m.GenesisTime)
-	off += 8
-	binary.BigEndian.PutUint64(buf[off:], m.Time)
-	off += 8
-	binary.BigEndian.PutUint64(buf[off:], m.NumValidators)
-	return buf
-}
-
-// UnmarshalBinary decodes FCMetadata from a 168-byte buffer.
-func (m *FCMetadata) UnmarshalBinary(buf []byte) error {
-	if len(buf) != FCMetadataSize {
-		return fmt.Errorf("fc metadata: expected %d bytes, got %d", FCMetadataSize, len(buf))
-	}
-	off := 0
-	copy(m.Head[:], buf[off:])
-	off += 32
-	copy(m.SafeTarget[:], buf[off:])
-	off += 32
-	copy(m.JustifiedRoot[:], buf[off:])
-	off += 32
-	m.JustifiedSlot = binary.BigEndian.Uint64(buf[off:])
-	off += 8
-	copy(m.FinalizedRoot[:], buf[off:])
-	off += 32
-	m.FinalizedSlot = binary.BigEndian.Uint64(buf[off:])
-	off += 8
-	m.GenesisTime = binary.BigEndian.Uint64(buf[off:])
-	off += 8
-	m.Time = binary.BigEndian.Uint64(buf[off:])
-	off += 8
-	m.NumValidators = binary.BigEndian.Uint64(buf[off:])
-	return nil
-}
-
-// PersistFCState writes fork-choice metadata and latest attestations in a single transaction.
-func (s *Store) PersistFCState(meta *FCMetadata, attestations map[uint64]*types.SignedAttestation) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
-		// Write FC metadata.
-		if err := tx.Bucket(fcMetaBucket).Put(fcMetaKey, meta.MarshalBinary()); err != nil {
-			return err
-		}
-
-		// Write attestations.
-		ab := tx.Bucket(attestBucket)
-		for vid, sa := range attestations {
-			data, err := sa.MarshalSSZ()
-			if err != nil {
-				return fmt.Errorf("marshal attestation %d: %w", vid, err)
-			}
-			key := make([]byte, 8)
-			binary.BigEndian.PutUint64(key, vid)
-			if err := ab.Put(key, data); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-// LoadFCMetadata reads persisted fork-choice metadata. Returns nil if the DB is fresh.
-func (s *Store) LoadFCMetadata() (*FCMetadata, error) {
-	var meta *FCMetadata
-	err := s.db.View(func(tx *bolt.Tx) error {
-		v := tx.Bucket(fcMetaBucket).Get(fcMetaKey)
-		if v == nil {
-			return nil
-		}
-		buf := make([]byte, len(v))
-		copy(buf, v)
-		meta = &FCMetadata{}
-		return meta.UnmarshalBinary(buf)
-	})
-	return meta, err
-}
-
-// LoadAttestations reads all persisted attestations keyed by validator ID.
-func (s *Store) LoadAttestations() (map[uint64]*types.SignedAttestation, error) {
-	result := make(map[uint64]*types.SignedAttestation)
-	err := s.db.View(func(tx *bolt.Tx) error {
-		return tx.Bucket(attestBucket).ForEach(func(k, v []byte) error {
-			vid := binary.BigEndian.Uint64(k)
-			var sa types.SignedAttestation
-			buf := make([]byte, len(v))
-			copy(buf, v)
-			if err := sa.UnmarshalSSZ(buf); err != nil {
-				return fmt.Errorf("unmarshal attestation %d: %w", vid, err)
-			}
-			result[vid] = &sa
-			return nil
-		})
-	})
-	return result, err
-}
