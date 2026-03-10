@@ -56,13 +56,15 @@ func New(cfg Config) (*Node, error) {
 	}
 
 	validator := &ValidatorDuties{
-		Indices:            cfg.ValidatorIDs,
-		Keys:               validatorKeys,
-		FC:                 fc,
-		Topics:             topics,
-		PublishBlock:       gossipsub.PublishBlock,
-		PublishAttestation: gossipsub.PublishAttestation,
-		Log:                logging.NewComponentLogger(logging.CompValidator),
+		Indices:                      cfg.ValidatorIDs,
+		Keys:                         validatorKeys,
+		FC:                           fc,
+		Topics:                       topics,
+		PublishBlock:                 gossipsub.PublishBlock,
+		PublishAttestation:           gossipsub.PublishAttestation,
+		PublishAggregatedAttestation: gossipsub.PublishAggregatedAttestation,
+		IsAggregator:                 cfg.IsAggregator,
+		Log:                          logging.NewComponentLogger(logging.CompValidator),
 	}
 
 	n := &Node{

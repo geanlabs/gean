@@ -63,4 +63,5 @@ type Config struct {
 	ValidatorKeysDir string
 	MetricsPort      int
 	DevnetID         string
+	IsAggregator     bool
 }

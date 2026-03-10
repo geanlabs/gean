@@ -17,16 +17,18 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// ValidatorDuties handles proposer and attester duties.
+// ValidatorDuties handles proposer, attester, and aggregator duties.
 type ValidatorDuties struct {
-	Indices            []uint64
-	Keys               map[uint64]forkchoice.Signer
-	FC                 *forkchoice.Store
-	Topics             *gossipsub.Topics
-	PublishBlock       func(context.Context, *pubsub.Topic, *types.SignedBlockWithAttestation) error
-	PublishAttestation func(context.Context, *pubsub.Topic, *types.SignedAttestation) error
-	Log                *slog.Logger
-	lastProposedSlot   map[uint64]uint64
+	Indices                      []uint64
+	Keys                         map[uint64]forkchoice.Signer
+	FC                           *forkchoice.Store
+	Topics                       *gossipsub.Topics
+	PublishBlock                 func(context.Context, *pubsub.Topic, *types.SignedBlockWithAttestation) error
+	PublishAttestation           func(context.Context, *pubsub.Topic, *types.SignedAttestation) error
+	PublishAggregatedAttestation func(context.Context, *pubsub.Topic, *types.SignedAggregatedAttestation) error
+	IsAggregator                 bool
+	Log                          *slog.Logger
+	lastProposedSlot             map[uint64]uint64
 }
 
 // HasProposal reports whether this node has a proposer for the slot.

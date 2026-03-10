@@ -29,6 +29,7 @@ func main() {
 	discoveryPort := flag.Int("discovery-port", 9000, "Discovery v5 UDP port")
 	dataDir := flag.String("data-dir", ".", "Data directory for node database and keys")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
+	isAggregator := flag.Bool("is-aggregator", false, "Enable aggregator role for this node")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
 
@@ -109,6 +110,7 @@ func main() {
 		DiscoveryPort:    *discoveryPort,
 		DataDir:          *dataDir,
 		DevnetID:         *devnetID,
+		IsAggregator:     *isAggregator,
 	}
 
 	n, err := node.New(nodeCfg)
