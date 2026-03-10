@@ -166,4 +166,3 @@ func (s *Store) get(bucket, key []byte, dst sszUnmarshaler) bool {
 	})
 	return found
 }
-
