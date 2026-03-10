@@ -30,6 +30,7 @@ func main() {
 	dataDir := flag.String("data-dir", ".", "Data directory for node database and keys")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
 	isAggregator := flag.Bool("is-aggregator", false, "Enable aggregator role for this node")
+	attCommCount := flag.Int("attestation-committee-count", 1, "Number of attestation committees (must be 1 for devnet-3)")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
 
@@ -41,6 +42,11 @@ func main() {
 
 	if *genesisPath == "" {
 		logger.Error("--genesis flag is required")
+		os.Exit(1)
+	}
+
+	if *attCommCount != 1 {
+		logger.Error("--attestation-committee-count must be 1 for devnet-3", "value", *attCommCount)
 		os.Exit(1)
 	}
 
