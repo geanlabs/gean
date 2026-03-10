@@ -76,7 +76,7 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 			}
 		},
 		OnAttestation: func(sa *types.SignedAttestation) {
-			fc.ProcessAttestation(sa)
+			fc.ProcessSubnetAttestation(sa)
 		},
 	}); err != nil {
 		return fmt.Errorf("subscribe topics: %w", err)

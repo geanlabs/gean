@@ -149,9 +149,6 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			"signing_time", signDuration,
 		)
 
-		// Process locally so the vote counts even without gossip self-delivery.
-		v.FC.ProcessAttestation(sa)
-
 		if err := v.PublishAttestation(ctx, v.Topics.SubnetAttestation, sa); err != nil {
 			v.Log.Error("failed to publish attestation",
 				"slot", slot,
