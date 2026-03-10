@@ -182,6 +182,29 @@ var ValidatorsCount = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of validators managed by a node",
 })
 
+// --- Devnet-3 Aggregator ---
+
+var IsAggregator = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_is_aggregator",
+	Help: "Whether the node is acting as an aggregator (1 = yes, 0 = no)",
+})
+
+var AttestationCommitteeCount = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_attestation_committee_count",
+	Help: "Number of attestation committees",
+})
+
+var AttestationCommitteeSubnet = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_attestation_committee_subnet",
+	Help: "Subnet ID assigned to this node's validators",
+})
+
+var CommitteeSignaturesAggregationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_committee_signatures_aggregation_time_seconds",
+	Help:    "Time taken to aggregate committee signatures",
+	Buckets: fastBuckets,
+})
+
 // --- Network ---
 
 var ConnectedPeers = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -235,6 +258,11 @@ func init() {
 		STFAttestationsProcessingTime,
 		// Validator
 		ValidatorsCount,
+		// Devnet-3 aggregator
+		IsAggregator,
+		AttestationCommitteeCount,
+		AttestationCommitteeSubnet,
+		CommitteeSignaturesAggregationTime,
 		// Network
 		ConnectedPeers,
 		PeerConnectionEventsTotal,

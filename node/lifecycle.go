@@ -232,6 +232,16 @@ func startMetrics(log *slog.Logger, cfg Config) {
 	metrics.NodeInfo.WithLabelValues("gean", Version).Set(1)
 	metrics.NodeStartTime.Set(float64(time.Now().Unix()))
 	metrics.ValidatorsCount.Set(float64(len(cfg.ValidatorIDs)))
+
+	// Devnet-3 aggregator metrics.
+	if cfg.IsAggregator {
+		metrics.IsAggregator.Set(1)
+	} else {
+		metrics.IsAggregator.Set(0)
+	}
+	metrics.AttestationCommitteeCount.Set(1)  // Always 1 for devnet-3.
+	metrics.AttestationCommitteeSubnet.Set(0) // Always subnet 0 for devnet-3.
+
 	metrics.Serve(cfg.MetricsPort)
 	log.Info("metrics server started", "port", cfg.MetricsPort)
 }
