@@ -36,6 +36,15 @@ func PublishAttestation(ctx context.Context, topic *pubsub.Topic, sa *types.Sign
 	return topic.Publish(ctx, snappy.Encode(nil, data))
 }
 
+// PublishAggregatedAttestation SSZ-encodes, snappy-compresses, and publishes a signed aggregated attestation.
+func PublishAggregatedAttestation(ctx context.Context, topic *pubsub.Topic, saa *types.SignedAggregatedAttestation) error {
+	data, err := saa.MarshalSSZ()
+	if err != nil {
+		return err
+	}
+	return topic.Publish(ctx, snappy.Encode(nil, data))
+}
+
 // ComputeMessageID computes SHA256(domain + uint64_le(topic_len) + topic + data)[:20].
 func ComputeMessageID(pmsg *pb.Message) string {
 	topic := pmsg.GetTopic()

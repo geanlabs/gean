@@ -62,7 +62,7 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 		Indices:            []uint64{1},
 		Keys:               keys,
 		FC:                 fc,
-		Topics:             &gossipsub.Topics{Attestation: &pubsub.Topic{}}, // Dummy topic
+		Topics:             &gossipsub.Topics{SubnetAttestation: &pubsub.Topic{}}, // Dummy topic
 		PublishAttestation: publishFunc,
 		Log:                logging.NewComponentLogger(logging.CompValidator),
 	}

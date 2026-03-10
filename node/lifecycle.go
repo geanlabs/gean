@@ -143,7 +143,7 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 		fc = forkchoice.NewStore(genesisState, genesisBlock, db)
 	}
 
-	fc.NowFn = func() uint64 { return uint64(time.Now().Unix()) }
+	fc.NowFn = func() uint64 { return uint64(time.Now().UnixMilli()) }
 
 	return fc, db, nil
 }
@@ -164,7 +164,7 @@ func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
 	if devnetID == "" {
 		devnetID = "devnet0"
 	}
-	topics, err := gossipsub.JoinTopics(host.PubSub, devnetID)
+	topics, err := gossipsub.JoinTopics(host.PubSub, devnetID, 0)
 	if err != nil {
 		host.Close()
 		return nil, nil, fmt.Errorf("join topics: %w", err)
