@@ -27,20 +27,14 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 	// Collect full attestations from gossip signatures.
 	var attestations []*types.SignedAttestation
 	for key, stored := range c.gossipSignatures {
-		// Reconstruct full AttestationData via known or new attestations.
-		if sa, ok := c.latestKnownAttestations[key.validatorID]; ok && sa != nil && sa.Message != nil && sa.Message.Slot == stored.slot {
-			attestations = append(attestations, &types.SignedAttestation{
-				ValidatorID: key.validatorID,
-				Message:     sa.Message,
-				Signature:   stored.signature,
-			})
-		} else if sa, ok := c.latestNewAttestations[key.validatorID]; ok && sa != nil && sa.Message != nil && sa.Message.Slot == stored.slot {
-			attestations = append(attestations, &types.SignedAttestation{
-				ValidatorID: key.validatorID,
-				Message:     sa.Message,
-				Signature:   stored.signature,
-			})
+		if stored.data == nil {
+			continue
 		}
+		attestations = append(attestations, &types.SignedAttestation{
+			ValidatorID: key.validatorID,
+			Message:     stored.data,
+			Signature:   stored.signature,
+		})
 	}
 
 	if len(attestations) == 0 {
