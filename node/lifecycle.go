@@ -15,7 +15,7 @@ import (
 	"github.com/geanlabs/gean/network/p2p"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
-	"github.com/geanlabs/gean/storage/memory"
+	boltstore "github.com/geanlabs/gean/storage/bolt"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss/leansig"
 )
@@ -24,16 +24,21 @@ import (
 func New(cfg Config) (*Node, error) {
 	log := logging.NewComponentLogger(logging.CompNode)
 
-	fc := initGenesis(log, cfg)
+	fc, db, err := initChain(log, cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	host, topics, err := initP2P(cfg)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	p2pManager, p2pDiscovery, err2 := initDiscovery(log, cfg)
 	if err2 != nil {
 		host.Close()
+		db.Close()
 		return nil, err2
 	}
 
@@ -46,6 +51,7 @@ func New(cfg Config) (*Node, error) {
 			p2pManager.Close()
 		}
 		host.Close()
+		db.Close()
 		return nil, err
 	}
 
@@ -67,6 +73,7 @@ func New(cfg Config) (*Node, error) {
 		Validator:    validator,
 		P2PManager:   p2pManager,
 		P2PDiscovery: p2pDiscovery,
+		dbCloser:     db,
 		log:          log,
 	}
 
@@ -78,6 +85,7 @@ func New(cfg Config) (*Node, error) {
 			p2pManager.Close()
 		}
 		host.Close()
+		db.Close()
 		return nil, err
 	}
 
@@ -90,29 +98,54 @@ func New(cfg Config) (*Node, error) {
 	return n, nil
 }
 
-func initGenesis(log *slog.Logger, cfg Config) *forkchoice.Store {
-	genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)
-
-	genesisBlock := &types.Block{
-		Slot:          0,
-		ProposerIndex: 0,
-		ParentRoot:    types.ZeroHash,
-		StateRoot:     types.ZeroHash,
-		Body:          &types.BlockBody{Attestations: []*types.AggregatedAttestation{}},
+func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Store, error) {
+	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
+		return nil, nil, fmt.Errorf("create data dir: %w", err)
+	}
+	dbPath := filepath.Join(cfg.DataDir, "gean.db")
+	db, err := boltstore.New(dbPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
 
-	stateRoot, _ := genesisState.HashTreeRoot()
-	genesisBlock.StateRoot = stateRoot
+	// Try to restore from persisted blocks and states.
+	fc := forkchoice.RestoreFromDB(db)
 
-	genesisRoot, _ := genesisBlock.HashTreeRoot()
-	log.Info("genesis state initialized",
-		"state_root", logging.ShortHash(stateRoot),
-		"block_root", logging.ShortHash(genesisRoot),
-	)
+	if fc != nil {
+		status := fc.GetStatus()
+		log.Info("chain restored from database",
+			"head", logging.ShortHash(status.Head),
+			"head_slot", status.HeadSlot,
+			"justified_slot", status.JustifiedSlot,
+			"finalized_slot", status.FinalizedSlot,
+		)
+	} else {
+		// Fresh start: generate genesis.
+		genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)
 
-	fc := forkchoice.NewStore(genesisState, genesisBlock, memory.New())
+		genesisBlock := &types.Block{
+			Slot:          0,
+			ProposerIndex: 0,
+			ParentRoot:    types.ZeroHash,
+			StateRoot:     types.ZeroHash,
+			Body:          &types.BlockBody{Attestations: []*types.AggregatedAttestation{}},
+		}
+
+		stateRoot, _ := genesisState.HashTreeRoot()
+		genesisBlock.StateRoot = stateRoot
+
+		genesisRoot, _ := genesisBlock.HashTreeRoot()
+		log.Info("genesis state initialized",
+			"state_root", logging.ShortHash(stateRoot),
+			"block_root", logging.ShortHash(genesisRoot),
+		)
+
+		fc = forkchoice.NewStore(genesisState, genesisBlock, db)
+	}
+
 	fc.NowFn = func() uint64 { return uint64(time.Now().Unix()) }
-	return fc
+
+	return fc, db, nil
 }
 
 func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {

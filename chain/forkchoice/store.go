@@ -92,6 +92,46 @@ func (c *Store) GetNewAttestation(validator uint64) (*types.SignedAttestation, b
 	return sa, ok
 }
 
+// RestoreFromDB reconstructs a fork-choice store from persisted blocks and states.
+// It finds the highest-slot block as the head and derives checkpoints from its state.
+// Returns nil if the database is empty.
+func RestoreFromDB(store storage.Store) *Store {
+	allBlocks := store.GetAllBlocks()
+	if len(allBlocks) == 0 {
+		return nil
+	}
+
+	// Find the block with the highest slot (chain head).
+	var headRoot [32]byte
+	var headBlock *types.Block
+	for root, blk := range allBlocks {
+		if headBlock == nil || blk.Slot > headBlock.Slot {
+			headRoot = root
+			headBlock = blk
+		}
+	}
+
+	headState, ok := store.GetState(headRoot)
+	if !ok {
+		return nil
+	}
+
+	return &Store{
+		time:                    headBlock.Slot * types.SecondsPerSlot,
+		genesisTime:             headState.Config.GenesisTime,
+		numValidators:           uint64(len(headState.Validators)),
+		head:                    headRoot,
+		safeTarget:              headState.LatestFinalized.Root,
+		latestJustified:         headState.LatestJustified,
+		latestFinalized:         headState.LatestFinalized,
+		storage:                 store,
+		latestKnownAttestations: make(map[uint64]*types.SignedAttestation),
+		latestNewAttestations:   make(map[uint64]*types.SignedAttestation),
+		gossipSignatures:        make(map[signatureKey]storedSignature),
+		aggregatedPayloads:      make(map[signatureKey][]storedAggregatedPayload),
+	}
+}
+
 // NewStore initializes a store from an anchor state and block.
 func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store) *Store {
 	stateRoot, _ := state.HashTreeRoot()
