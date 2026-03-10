@@ -72,6 +72,22 @@ func (c *Store) AcceptNewAttestations() {
 }
 
 func (c *Store) acceptNewAttestationsLocked() {
+	// Expand aggregated payloads into per-validator votes.
+	for _, saa := range c.latestNewAggregatedPayloads {
+		if saa == nil || saa.Data == nil || saa.Proof == nil {
+			continue
+		}
+		for _, vid := range bitlistToValidatorIDs(saa.Proof.Participants) {
+			sa := &types.SignedAttestation{ValidatorID: vid, Message: saa.Data}
+			existing, ok := c.latestNewAttestations[vid]
+			if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < saa.Data.Slot {
+				c.latestNewAttestations[vid] = sa
+			}
+		}
+	}
+	c.latestNewAggregatedPayloads = nil
+
+	// Move new → known and update head.
 	for id, sa := range c.latestNewAttestations {
 		c.latestKnownAttestations[id] = sa
 	}

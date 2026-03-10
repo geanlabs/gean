@@ -69,8 +69,10 @@ func (c *Store) processSubnetAttestationLocked(sa *types.SignedAttestation) {
 		return
 	}
 
-	// Store gossip signature for aggregation — do NOT update forkchoice attestations.
-	c.storeGossipSignatureLocked(sa)
+	// Store gossip signature for aggregation — only if this node is an aggregator.
+	if c.isAggregator {
+		c.storeGossipSignatureLocked(sa)
+	}
 	metrics.AttestationsValid.WithLabelValues("subnet").Inc()
 }
 
@@ -286,18 +288,12 @@ func (c *Store) processAggregatedAttestationLocked(saa *types.SignedAggregatedAt
 		log.Info("aggregated attestation proof verified", "slot", data.Slot, "participants", len(validatorIDs))
 	}
 
-	// Expand participants into per-validator votes for forkchoice.
+	// Store into the aggregated payloads buffer.
+	// Attestations are expanded into per-validator votes during acceptNewAttestationsLocked.
+	c.latestNewAggregatedPayloads = append(c.latestNewAggregatedPayloads, saa)
+
+	// Also cache per-validator proof in aggregatedPayloads for proposer reuse.
 	for _, vid := range validatorIDs {
-		sa := &types.SignedAttestation{
-			ValidatorID: vid,
-			Message:     data,
-		}
-		// Update new attestations for forkchoice consideration.
-		existing, ok := c.latestNewAttestations[vid]
-		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < data.Slot {
-			c.latestNewAttestations[vid] = sa
-		}
-		// Cache proof for proposer reuse.
 		c.storeAggregatedPayloadLocked(vid, data, proof)
 	}
 

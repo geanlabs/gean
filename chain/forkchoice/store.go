@@ -24,11 +24,13 @@ type Store struct {
 	latestJustified *types.Checkpoint
 	latestFinalized *types.Checkpoint
 	storage         storage.Store
+	isAggregator    bool
 
-	latestKnownAttestations map[uint64]*types.SignedAttestation
-	latestNewAttestations   map[uint64]*types.SignedAttestation
-	gossipSignatures        map[signatureKey]storedSignature
-	aggregatedPayloads      map[signatureKey][]storedAggregatedPayload
+	latestKnownAttestations     map[uint64]*types.SignedAttestation
+	latestNewAttestations       map[uint64]*types.SignedAttestation
+	latestNewAggregatedPayloads []*types.SignedAggregatedAttestation
+	gossipSignatures            map[signatureKey]storedSignature
+	aggregatedPayloads          map[signatureKey][]storedAggregatedPayload
 
 	NowFn func() uint64
 }
@@ -90,6 +92,13 @@ func (c *Store) GetNewAttestation(validator uint64) (*types.SignedAttestation, b
 	defer c.mu.Unlock()
 	sa, ok := c.latestNewAttestations[validator]
 	return sa, ok
+}
+
+// SetIsAggregator configures whether this store's node acts as an aggregator.
+func (c *Store) SetIsAggregator(isAggregator bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.isAggregator = isAggregator
 }
 
 // RestoreFromDB reconstructs a fork-choice store from persisted blocks and states.

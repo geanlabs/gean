@@ -12,9 +12,9 @@ import (
 	"github.com/geanlabs/gean/xmss/leanmultisig"
 )
 
-// AggregateCommitteeSignatures collects gossip signatures from subnet attestations,
-// builds aggregated proofs, and returns SignedAggregatedAttestation objects ready
-// for publishing on the aggregation gossip topic. Called by aggregators at interval 2.
+// AggregateCommitteeSignatures collects gossip signatures, builds aggregated
+// proofs, and returns SignedAggregatedAttestation objects ready for publishing.
+// Called by aggregators at interval 2.
 func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttestation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -24,65 +24,30 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 		return nil, fmt.Errorf("head state not found")
 	}
 
-	// Collect all gossip-stored attestations.
-	seen := make(map[signatureKey]bool)
+	// Collect full attestations from gossip signatures.
 	var attestations []*types.SignedAttestation
 	for key, stored := range c.gossipSignatures {
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		attestations = append(attestations, &types.SignedAttestation{
-			ValidatorID: key.validatorID,
-			Message: &types.AttestationData{
-				Slot: stored.slot,
-			},
-			Signature: stored.signature,
-		})
-	}
-
-	// Reconstruct full attestation data from latestNewAttestations where available.
-	// The gossip signature cache only stores the signatureKey (validatorID + dataRoot),
-	// but we need the full AttestationData for the aggregated output.
-	// Collect the complete attestation envelopes from gossipSignatures + latestNewAttestations.
-	var fullAttestations []*types.SignedAttestation
-	for _, sa := range c.latestNewAttestations {
-		if sa == nil || sa.Message == nil {
-			continue
-		}
-		fullAttestations = append(fullAttestations, sa)
-	}
-	// Also look for attestations in gossipSignatures that have attestation data
-	// from known attestations. We use latestNew + latestKnown as data source.
-	for key, stored := range c.gossipSignatures {
-		// Check if we already have this in fullAttestations.
-		found := false
-		for _, fa := range fullAttestations {
-			if fa.ValidatorID == key.validatorID && fa.Message != nil && fa.Message.Slot == stored.slot {
-				found = true
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		// Try to reconstruct from known attestations.
-		if known, ok := c.latestKnownAttestations[key.validatorID]; ok && known != nil && known.Message != nil {
-			if known.Message.Slot == stored.slot {
-				fullAttestations = append(fullAttestations, &types.SignedAttestation{
-					ValidatorID: key.validatorID,
-					Message:     known.Message,
-					Signature:   stored.signature,
-				})
-			}
+		// Reconstruct full AttestationData via known or new attestations.
+		if sa, ok := c.latestKnownAttestations[key.validatorID]; ok && sa != nil && sa.Message != nil && sa.Message.Slot == stored.slot {
+			attestations = append(attestations, &types.SignedAttestation{
+				ValidatorID: key.validatorID,
+				Message:     sa.Message,
+				Signature:   stored.signature,
+			})
+		} else if sa, ok := c.latestNewAttestations[key.validatorID]; ok && sa != nil && sa.Message != nil && sa.Message.Slot == stored.slot {
+			attestations = append(attestations, &types.SignedAttestation{
+				ValidatorID: key.validatorID,
+				Message:     sa.Message,
+				Signature:   stored.signature,
+			})
 		}
 	}
 
-	if len(fullAttestations) == 0 {
+	if len(attestations) == 0 {
 		return nil, nil
 	}
 
-	aggAtts, aggProofs, err := c.buildAggregatedAttestationsFromSigned(headState, fullAttestations)
+	aggAtts, aggProofs, err := c.buildAggregatedAttestationsFromSigned(headState, attestations)
 	if err != nil {
 		return nil, fmt.Errorf("build aggregated attestations: %w", err)
 	}
@@ -97,6 +62,9 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 			Proof: aggProofs[i],
 		})
 	}
+
+	// Clear consumed gossip signatures (spec: remove aggregated entries).
+	c.gossipSignatures = make(map[signatureKey]storedSignature)
 
 	return result, nil
 }
