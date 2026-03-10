@@ -48,7 +48,48 @@ func (v *ValidatorDuties) OnInterval(ctx context.Context, slot, interval uint64)
 		v.TryPropose(ctx, slot)
 	case 1:
 		v.TryAttest(ctx, slot)
+	case 2:
+		if v.IsAggregator {
+			v.TryAggregate(ctx, slot)
+		}
 	}
+}
+
+// TryAggregate aggregates collected subnet attestation signatures and publishes
+// SignedAggregatedAttestation messages on the aggregation gossip topic.
+// Called at interval 2 only by aggregator nodes.
+func (v *ValidatorDuties) TryAggregate(ctx context.Context, slot uint64) {
+	start := time.Now()
+	aggregated, err := v.FC.AggregateCommitteeSignatures()
+	if err != nil {
+		v.Log.Error("aggregation failed", "slot", slot, "err", err)
+		return
+	}
+
+	if len(aggregated) == 0 {
+		v.Log.Debug("no attestations to aggregate", "slot", slot)
+		return
+	}
+
+	for _, saa := range aggregated {
+		if err := v.PublishAggregatedAttestation(ctx, v.Topics.Aggregation, saa); err != nil {
+			v.Log.Error("failed to publish aggregated attestation",
+				"slot", slot,
+				"err", err,
+			)
+		} else {
+			v.Log.Info("published aggregated attestation",
+				"slot", slot,
+				"att_slot", saa.Data.Slot,
+			)
+		}
+	}
+	metrics.PQSigAggregatedSignaturesTotal.Add(float64(len(aggregated)))
+	v.Log.Info("aggregation complete",
+		"slot", slot,
+		"count", len(aggregated),
+		"duration", time.Since(start),
+	)
 }
 
 func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {

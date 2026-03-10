@@ -12,6 +12,95 @@ import (
 	"github.com/geanlabs/gean/xmss/leanmultisig"
 )
 
+// AggregateCommitteeSignatures collects gossip signatures from subnet attestations,
+// builds aggregated proofs, and returns SignedAggregatedAttestation objects ready
+// for publishing on the aggregation gossip topic. Called by aggregators at interval 2.
+func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttestation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	headState, ok := c.storage.GetState(c.head)
+	if !ok {
+		return nil, fmt.Errorf("head state not found")
+	}
+
+	// Collect all gossip-stored attestations.
+	seen := make(map[signatureKey]bool)
+	var attestations []*types.SignedAttestation
+	for key, stored := range c.gossipSignatures {
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		attestations = append(attestations, &types.SignedAttestation{
+			ValidatorID: key.validatorID,
+			Message: &types.AttestationData{
+				Slot: stored.slot,
+			},
+			Signature: stored.signature,
+		})
+	}
+
+	// Reconstruct full attestation data from latestNewAttestations where available.
+	// The gossip signature cache only stores the signatureKey (validatorID + dataRoot),
+	// but we need the full AttestationData for the aggregated output.
+	// Collect the complete attestation envelopes from gossipSignatures + latestNewAttestations.
+	var fullAttestations []*types.SignedAttestation
+	for _, sa := range c.latestNewAttestations {
+		if sa == nil || sa.Message == nil {
+			continue
+		}
+		fullAttestations = append(fullAttestations, sa)
+	}
+	// Also look for attestations in gossipSignatures that have attestation data
+	// from known attestations. We use latestNew + latestKnown as data source.
+	for key, stored := range c.gossipSignatures {
+		// Check if we already have this in fullAttestations.
+		found := false
+		for _, fa := range fullAttestations {
+			if fa.ValidatorID == key.validatorID && fa.Message != nil && fa.Message.Slot == stored.slot {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		// Try to reconstruct from known attestations.
+		if known, ok := c.latestKnownAttestations[key.validatorID]; ok && known != nil && known.Message != nil {
+			if known.Message.Slot == stored.slot {
+				fullAttestations = append(fullAttestations, &types.SignedAttestation{
+					ValidatorID: key.validatorID,
+					Message:     known.Message,
+					Signature:   stored.signature,
+				})
+			}
+		}
+	}
+
+	if len(fullAttestations) == 0 {
+		return nil, nil
+	}
+
+	aggAtts, aggProofs, err := c.buildAggregatedAttestationsFromSigned(headState, fullAttestations)
+	if err != nil {
+		return nil, fmt.Errorf("build aggregated attestations: %w", err)
+	}
+
+	result := make([]*types.SignedAggregatedAttestation, 0, len(aggAtts))
+	for i, att := range aggAtts {
+		if i >= len(aggProofs) || aggProofs[i] == nil {
+			continue
+		}
+		result = append(result, &types.SignedAggregatedAttestation{
+			Data:  att.Data,
+			Proof: aggProofs[i],
+		})
+	}
+
+	return result, nil
+}
+
 func bitlistToValidatorIDs(bits []byte) []uint64 {
 	numBits := uint64(statetransition.BitlistLen(bits))
 	validatorIDs := make([]uint64, 0, numBits)
