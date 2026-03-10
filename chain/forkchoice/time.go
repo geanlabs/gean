@@ -5,18 +5,32 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// AdvanceTime advances the chain to the given wall-clock time.
-func (c *Store) AdvanceTime(time uint64, hasProposal bool) {
+// AdvanceTime advances the chain to the given unix time in seconds.
+//
+// This wrapper is kept for second-based callers.
+func (c *Store) AdvanceTime(unixSeconds uint64, hasProposal bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.advanceTimeLocked(time, hasProposal)
+	c.advanceTimeLocked(unixSeconds, hasProposal)
 }
 
-func (c *Store) advanceTimeLocked(time uint64, hasProposal bool) {
-	if time <= c.genesisTime {
+// AdvanceTimeMillis advances the chain to the given unix time in milliseconds.
+func (c *Store) AdvanceTimeMillis(unixMillis uint64, hasProposal bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.advanceTimeLockedMillis(unixMillis, hasProposal)
+}
+
+func (c *Store) advanceTimeLocked(unixSeconds uint64, hasProposal bool) {
+	c.advanceTimeLockedMillis(unixSeconds*1000, hasProposal)
+}
+
+func (c *Store) advanceTimeLockedMillis(unixMillis uint64, hasProposal bool) {
+	genesisTimeMillis := c.genesisTime * 1000
+	if unixMillis <= genesisTimeMillis {
 		return
 	}
-	tickInterval := (time - c.genesisTime) / types.SecondsPerInterval
+	tickInterval := (unixMillis - genesisTimeMillis) / types.MillisecondsPerInterval
 	for c.time < tickInterval {
 		shouldSignal := hasProposal && (c.time+1) == tickInterval
 		c.tickIntervalLocked(shouldSignal)
@@ -42,8 +56,10 @@ func (c *Store) tickIntervalLocked(hasProposal bool) {
 	case 1:
 		// Validator voting interval — no action.
 	case 2:
-		c.updateSafeTargetLocked()
+		// Committee aggregation interval — handled outside the store.
 	case 3:
+		c.updateSafeTargetLocked()
+	case 4:
 		c.acceptNewAttestationsLocked()
 	}
 }

@@ -117,7 +117,7 @@ func RestoreFromDB(store storage.Store) *Store {
 	}
 
 	return &Store{
-		time:                    headBlock.Slot * types.SecondsPerSlot,
+		time:                    headBlock.Slot * types.IntervalsPerSlot,
 		genesisTime:             headState.Config.GenesisTime,
 		numValidators:           uint64(len(headState.Validators)),
 		head:                    headRoot,
@@ -148,7 +148,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 	store.PutState(anchorRoot, state)
 
 	return &Store{
-		time:                    anchorBlock.Slot * types.SecondsPerSlot,
+		time:                    anchorBlock.Slot * types.IntervalsPerSlot,
 		genesisTime:             state.Config.GenesisTime,
 		numValidators:           uint64(len(state.Validators)),
 		head:                    anchorRoot,
