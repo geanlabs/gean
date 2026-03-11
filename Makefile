@@ -50,7 +50,7 @@ refresh-genesis-time:
 	echo "Updated GENESIS_TIME to $$NEW_TIME in $(CONFIG)"
 
 run: build refresh-genesis-time
-	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0 --listen-addr /ip4/0.0.0.0/tcp/9001 --node-key node0.key --data-dir data/node0 --is-aggregator
+	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0 --listen-addr /ip4/0.0.0.0/tcp/9000 --node-key node0.key --data-dir data/node0 --is-aggregator
  
 run-devnet:
 	@if [ ! -d "../lean-quickstart" ]; then \
