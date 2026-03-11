@@ -305,6 +305,22 @@ func init() {
 		PeerConnectionEventsTotal,
 		PeerDisconnectionEventsTotal,
 	)
+
+	// Pre-initialize vector counters to 0 to ensure they appear in metrics output
+	// before any events occur, preventing "No data" in Grafana panels.
+	for _, source := range []string{"gossip", "block", "subnet", "aggregation"} {
+		AttestationsValid.WithLabelValues(source).Add(0)
+		AttestationsInvalid.WithLabelValues(source).Add(0)
+	}
+
+	for _, dir := range []string{"inbound", "outbound"} {
+		PeerConnectionEventsTotal.WithLabelValues(dir, "success").Add(0)
+		PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Add(0)
+	}
+
+	PQSigAttestationSignaturesTotal.Add(0)
+	PQSigAttestationSignaturesValidTotal.Add(0)
+	PQSigAttestationSignaturesInvalidTotal.Add(0)
 }
 
 // Serve starts the Prometheus metrics HTTP server on the given port.
