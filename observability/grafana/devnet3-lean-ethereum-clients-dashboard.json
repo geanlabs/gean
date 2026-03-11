@@ -2093,7 +2093,7 @@
           "editorMode": "code",
           "expr": "sum by (job) (\n    increase(lean_peer_connection_events_total{job=~\"$job\"}[$__rate_interval])\n  )",
           "interval": "",
-          "legendFormat": "{{job}} {{source}}",
+          "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
         }
@@ -2193,7 +2193,7 @@
           "editorMode": "code",
           "expr": "sum by (job) (\n    increase(lean_peer_disconnection_events_total{job=~\"$job\"}[$__rate_interval])\n  )",
           "interval": "",
-          "legendFormat": "{{job}} {{source}}",
+          "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
         }
@@ -3672,7 +3672,7 @@
           "editorMode": "code",
           "expr": "sum by (job) (\n  increase(lean_fork_choice_reorgs_total{job=~\"$job\"}[$__rate_interval])\n)",
           "interval": "",
-          "legendFormat": "{{job}} {{source}}",
+          "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
         }
@@ -3772,7 +3772,7 @@
           "editorMode": "code",
           "expr": "sum by (job) (\n  increase(lean_fork_choice_reorg_depth_bucket{job=~\"$job\"}[$__rate_interval])\n)",
           "interval": "",
-          "legendFormat": "{{job}} {{source}}",
+          "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
         }
@@ -4189,9 +4189,9 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "avg_over_time(\n  sum by (job) (\n    increase(lean_attestations_valid_total{job=~\"$job\", source=~\"$source\"}[$__rate_interval])\n  )[5m:]\n)",
+          "expr": "avg_over_time(\n  sum by (job) (\n    increase(lean_attestations_valid_total{job=~\"$job\"}[$__rate_interval])\n  )[5m:]\n)",
           "interval": "",
-          "legendFormat": "{{job}} {{source}}",
+          "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
         }
@@ -4289,7 +4289,7 @@
           },
           "editorMode": "code",
           "expr": "avg_over_time(\n  sum by (job) (increase(lean_attestations_invalid_total{job=~\"$job\"}[$__rate_interval]))[5m:]\n)",
-          "legendFormat": "{{job}} {{source}}",
+          "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
         }
@@ -4787,9 +4787,9 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "avg_over_time(\n  sum by (job) (\n    increase(lean_attestations_valid_total{job=~\"$job\", source=~\"$source\"}[$__rate_interval])\n  )[5m:]\n)",
+          "expr": "avg_over_time(\n  sum by (job) (\n    increase(lean_attestations_valid_total{job=~\"$job\"}[$__rate_interval])\n  )[5m:]\n)",
           "interval": "",
-          "legendFormat": "{{job}} {{source}}",
+          "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
         }
@@ -5466,6 +5466,11 @@
             "value": "ethlambda"
           },
           {
+            "selected": false,
+            "text": "gean",
+            "value": "gean"
+          },
+          {
             "selected": true,
             "text": "grandine",
             "value": "grandine"
@@ -5496,7 +5501,7 @@
             "value": "zeam"
           }
         ],
-        "query": "ethlambda,grandine,lantern,lighthouse,qlean,ream,zeam",
+        "query": "ethlambda,gean,grandine,lantern,lighthouse,qlean,ream,zeam",
         "type": "custom"
       }
     ]
