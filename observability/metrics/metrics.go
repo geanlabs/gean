@@ -74,6 +74,21 @@ var PQSigAggregatedInvalidTotal = prometheus.NewCounter(prometheus.CounterOpts{
 	Help: "Total number of invalid aggregated signatures",
 })
 
+var PQSigAttestationSignaturesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_attestation_signatures_total",
+	Help: "Total number of individual attestation signatures",
+})
+
+var PQSigAttestationSignaturesValidTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_attestation_signatures_valid_total",
+	Help: "Total number of valid individual attestation signatures",
+})
+
+var PQSigAttestationSignaturesInvalidTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_attestation_signatures_invalid_total",
+	Help: "Total number of invalid individual attestation signatures",
+})
+
 // --- Fork-Choice ---
 
 var HeadSlot = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -205,6 +220,21 @@ var CommitteeSignaturesAggregationTime = prometheus.NewHistogram(prometheus.Hist
 	Buckets: fastBuckets,
 })
 
+var GossipSignaturesCount = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_gossip_signatures",
+	Help: "Number of gossip signatures in fork-choice store",
+})
+
+var LatestNewAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_latest_new_aggregated_payloads",
+	Help: "Number of new aggregated payload items",
+})
+
+var LatestKnownAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_latest_known_aggregated_payloads",
+	Help: "Number of known aggregated payload items",
+})
+
 // --- Network ---
 
 var ConnectedPeers = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -263,6 +293,13 @@ func init() {
 		AttestationCommitteeCount,
 		AttestationCommitteeSubnet,
 		CommitteeSignaturesAggregationTime,
+		GossipSignaturesCount,
+		LatestNewAggregatedPayloads,
+		LatestKnownAggregatedPayloads,
+		// PQ attestation signatures
+		PQSigAttestationSignaturesTotal,
+		PQSigAttestationSignaturesValidTotal,
+		PQSigAttestationSignaturesInvalidTotal,
 		// Network
 		ConnectedPeers,
 		PeerConnectionEventsTotal,
