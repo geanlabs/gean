@@ -3,6 +3,7 @@ package forkchoice
 import (
 	"bytes"
 
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -62,6 +63,7 @@ func (c *Store) storeGossipSignatureLocked(sa *types.SignedAttestation) {
 			signature: sa.Signature,
 		}
 	}
+	metrics.GossipSignaturesCount.Set(float64(len(c.gossipSignatures)))
 }
 
 func (c *Store) storeAggregatedPayloadLocked(

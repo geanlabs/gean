@@ -86,12 +86,14 @@ func (c *Store) acceptNewAttestationsLocked() {
 		}
 	}
 	c.latestNewAggregatedPayloads = nil
+	metrics.LatestNewAggregatedPayloads.Set(0)
 
 	// Move new → known and update head.
 	for id, sa := range c.latestNewAttestations {
 		c.latestKnownAttestations[id] = sa
 	}
 	c.latestNewAttestations = make(map[uint64]*types.SignedAttestation)
+	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAttestations)))
 	c.updateHeadLocked()
 }
 
