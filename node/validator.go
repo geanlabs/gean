@@ -182,6 +182,7 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 		}
 
 		// Log signing confirmation.
+		metrics.PQSigAttestationSignaturesTotal.Inc()
 		v.Log.Info("attestation signed (XMSS)",
 			"slot", slot,
 			"validator", idx,
