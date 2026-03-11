@@ -37,6 +37,9 @@ func (n *Node) Run(ctx context.Context) error {
 				}
 			}
 			n.log.Info("node shutting down")
+			if n.API != nil {
+				n.API.Stop()
+			}
 			if err := n.Host.Close(); err != nil {
 				n.log.Warn("host close error", "err", err)
 			}

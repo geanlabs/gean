@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	apiserver "github.com/geanlabs/gean/api/server"
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/chain/statetransition"
 	"github.com/geanlabs/gean/network"
@@ -96,6 +97,19 @@ func New(cfg Config) (*Node, error) {
 	}
 
 	startMetrics(log, cfg)
+	apiServer, err := startAPI(cfg, fc)
+	if err != nil {
+		if p2pDiscovery != nil {
+			p2pDiscovery.Close()
+		}
+		if p2pManager != nil {
+			p2pManager.Close()
+		}
+		host.Close()
+		db.Close()
+		return nil, err
+	}
+	n.API = apiServer
 
 	return n, nil
 }
@@ -201,6 +215,22 @@ func initDiscovery(log *slog.Logger, cfg Config) (*p2p.LocalNodeManager, *p2p.Di
 	}
 
 	return p2pManager, p2pDiscovery, nil
+}
+
+func startAPI(cfg Config, fc *forkchoice.Store) (*apiserver.Server, error) {
+	apiCfg := apiserver.Config{
+		Host:    cfg.APIHost,
+		Port:    cfg.APIPort,
+		Enabled: cfg.APIEnabled,
+	}
+	apiServer := apiserver.New(apiCfg, func() *forkchoice.Store { return fc })
+	if err := apiServer.Start(); err != nil {
+		return nil, err
+	}
+	if !cfg.APIEnabled {
+		return nil, nil
+	}
+	return apiServer, nil
 }
 
 func loadValidatorKeys(log *slog.Logger, cfg Config) (map[uint64]forkchoice.Signer, error) {

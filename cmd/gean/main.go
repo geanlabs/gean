@@ -26,6 +26,9 @@ func main() {
 	validatorKeys := flag.String("validator-keys", "", "Path to directory containing validator keys")
 	listenAddr := flag.String("listen-addr", "/ip4/0.0.0.0/udp/9000/quic-v1", "QUIC listen address")
 	metricsPort := flag.Int("metrics-port", 8080, "Prometheus metrics port (0 = disabled)")
+	apiHost := flag.String("api-host", "0.0.0.0", "API server host")
+	apiPort := flag.Int("api-port", 5052, "API server port (0 = disabled)")
+	apiEnabled := flag.Bool("api-enabled", true, "Enable API server")
 	discoveryPort := flag.Int("discovery-port", 9000, "Discovery v5 UDP port")
 	dataDir := flag.String("data-dir", ".", "Data directory for node database and keys")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
@@ -104,6 +107,9 @@ func main() {
 		}
 	}
 
+	if *apiPort == 0 {
+		*apiEnabled = false
+	}
 	nodeCfg := node.Config{
 		GenesisTime:      genCfg.GenesisTime,
 		Validators:       genCfg.Validators,
@@ -117,6 +123,9 @@ func main() {
 		DataDir:          *dataDir,
 		DevnetID:         *devnetID,
 		IsAggregator:     *isAggregator,
+		APIHost:          *apiHost,
+		APIPort:          *apiPort,
+		APIEnabled:       *apiEnabled,
 	}
 
 	n, err := node.New(nodeCfg)
