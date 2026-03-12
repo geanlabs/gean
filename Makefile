@@ -34,7 +34,7 @@ clean:
 	go clean
 
 docker-build:
-	docker build -t gean:$(VERSION) .
+	docker build -t gean:$(VERSION) -t ghcr.io/geanlabs/gean:devnet3 .
 
 # Resolve the directory this Makefile lives in
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
