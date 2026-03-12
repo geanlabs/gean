@@ -13,12 +13,14 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	libp2pnetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/network/p2p"
 	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/observability/metrics"
 )
 
 var netLog = logging.NewComponentLogger(logging.CompNetwork)
@@ -67,6 +69,24 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 		cancel()
 		return nil, fmt.Errorf("gossipsub: %w", err)
 	}
+
+	// Register peer connection/disconnection notification handler for metrics.
+	h.Network().Notify(&libp2pnetwork.NotifyBundle{
+		ConnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
+			dir := "inbound"
+			if conn.Stat().Direction == libp2pnetwork.DirOutbound {
+				dir = "outbound"
+			}
+			metrics.PeerConnectionEventsTotal.WithLabelValues(dir, "success").Inc()
+		},
+		DisconnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
+			dir := "inbound"
+			if conn.Stat().Direction == libp2pnetwork.DirOutbound {
+				dir = "outbound"
+			}
+			metrics.PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Inc()
+		},
+	})
 
 	return &Host{P2P: h, PubSub: gs, Ctx: ctx, Cancel: cancel}, nil
 }

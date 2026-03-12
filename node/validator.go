@@ -17,16 +17,18 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// ValidatorDuties handles proposer and attester duties.
+// ValidatorDuties handles proposer, attester, and aggregator duties.
 type ValidatorDuties struct {
-	Indices            []uint64
-	Keys               map[uint64]forkchoice.Signer
-	FC                 *forkchoice.Store
-	Topics             *gossipsub.Topics
-	PublishBlock       func(context.Context, *pubsub.Topic, *types.SignedBlockWithAttestation) error
-	PublishAttestation func(context.Context, *pubsub.Topic, *types.SignedAttestation) error
-	Log                *slog.Logger
-	lastProposedSlot   map[uint64]uint64
+	Indices                      []uint64
+	Keys                         map[uint64]forkchoice.Signer
+	FC                           *forkchoice.Store
+	Topics                       *gossipsub.Topics
+	PublishBlock                 func(context.Context, *pubsub.Topic, *types.SignedBlockWithAttestation) error
+	PublishAttestation           func(context.Context, *pubsub.Topic, *types.SignedAttestation) error
+	PublishAggregatedAttestation func(context.Context, *pubsub.Topic, *types.SignedAggregatedAttestation) error
+	IsAggregator                 bool
+	Log                          *slog.Logger
+	lastProposedSlot             map[uint64]uint64
 }
 
 // HasProposal reports whether this node has a proposer for the slot.
@@ -46,7 +48,48 @@ func (v *ValidatorDuties) OnInterval(ctx context.Context, slot, interval uint64)
 		v.TryPropose(ctx, slot)
 	case 1:
 		v.TryAttest(ctx, slot)
+	case 2:
+		if v.IsAggregator {
+			v.TryAggregate(ctx, slot)
+		}
 	}
+}
+
+// TryAggregate aggregates collected subnet attestation signatures and publishes
+// SignedAggregatedAttestation messages on the aggregation gossip topic.
+// Called at interval 2 only by aggregator nodes.
+func (v *ValidatorDuties) TryAggregate(ctx context.Context, slot uint64) {
+	start := time.Now()
+	aggregated, err := v.FC.AggregateCommitteeSignatures()
+	if err != nil {
+		v.Log.Error("aggregation failed", "slot", slot, "err", err)
+		return
+	}
+
+	if len(aggregated) == 0 {
+		v.Log.Debug("no attestations to aggregate", "slot", slot)
+		return
+	}
+
+	for _, saa := range aggregated {
+		if err := v.PublishAggregatedAttestation(ctx, v.Topics.Aggregation, saa); err != nil {
+			v.Log.Error("failed to publish aggregated attestation",
+				"slot", slot,
+				"err", err,
+			)
+		} else {
+			v.Log.Info("published aggregated attestation",
+				"slot", slot,
+				"att_slot", saa.Data.Slot,
+			)
+		}
+	}
+	metrics.PQSigAggregatedSignaturesTotal.Add(float64(len(aggregated)))
+	v.Log.Info("aggregation complete",
+		"slot", slot,
+		"count", len(aggregated),
+		"duration", time.Since(start),
+	)
 }
 
 func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
@@ -139,6 +182,7 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 		}
 
 		// Log signing confirmation.
+		metrics.PQSigAttestationSignaturesTotal.Inc()
 		v.Log.Info("attestation signed (XMSS)",
 			"slot", slot,
 			"validator", idx,
@@ -147,10 +191,7 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			"signing_time", signDuration,
 		)
 
-		// Process locally so the vote counts even without gossip self-delivery.
-		v.FC.ProcessAttestation(sa)
-
-		if err := v.PublishAttestation(ctx, v.Topics.Attestation, sa); err != nil {
+		if err := v.PublishAttestation(ctx, v.Topics.SubnetAttestation, sa); err != nil {
 			v.Log.Error("failed to publish attestation",
 				"slot", slot,
 				"validator", idx,

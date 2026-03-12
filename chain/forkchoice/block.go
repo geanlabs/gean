@@ -36,10 +36,12 @@ func (c *Store) verifyAttestationSignatureWithState(
 	verifyStart := time.Now()
 	if err := leansig.Verify(pubkey[:], signingSlot, messageRoot, sig[:]); err != nil {
 		metrics.PQSigAttestationVerificationTime.Observe(time.Since(verifyStart).Seconds())
+		metrics.PQSigAttestationSignaturesInvalidTotal.Inc()
 		log.Warn("attestation signature invalid", "slot", data.Slot, "validator", valID, "err", err)
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
 	metrics.PQSigAttestationVerificationTime.Observe(time.Since(verifyStart).Seconds())
+	metrics.PQSigAttestationSignaturesValidTotal.Inc()
 	log.Info("attestation signature verified (XMSS)", "slot", data.Slot, "validator", valID, "sig_size", fmt.Sprintf("%d bytes", len(sig)))
 	return nil
 }
@@ -56,7 +58,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	defer c.mu.Unlock()
 
 	if c.NowFn != nil {
-		c.advanceTimeLocked(c.NowFn(), false)
+		c.advanceTimeLockedMillis(c.NowFn(), false)
 	}
 
 	if envelope == nil || envelope.Message == nil || envelope.Message.Block == nil {
@@ -168,6 +170,8 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	// Update finalized checkpoint from this block's post-state (monotonic).
 	if state.LatestFinalized.Slot > c.latestFinalized.Slot {
 		c.latestFinalized = state.LatestFinalized
+		metrics.FinalizationsTotal.WithLabelValues("success").Inc()
+		metrics.LatestFinalizedSlot.Set(float64(state.LatestFinalized.Slot))
 	}
 
 	// Step 2: Process body attestations as on-chain votes.
@@ -176,6 +180,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 			continue
 		}
 		proof := envelope.Signature.AttestationSignatures[i]
+		addAggregatedPayload(c.latestKnownAggregatedPayloads, aggregated.Data, proof)
 		for _, validatorID := range bitlistToValidatorIDs(aggregated.AggregationBits) {
 			sa := &types.SignedAttestation{
 				ValidatorID: validatorID,
@@ -196,6 +201,9 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		Signature:   envelope.Signature.ProposerSignature,
 	}
 	c.processAttestationLocked(proposerSA, false)
+	if c.isAggregator {
+		c.storeGossipSignatureLocked(proposerSA)
+	}
 
 	metrics.ForkChoiceBlockProcessingTime.Observe(time.Since(start).Seconds())
 	return nil

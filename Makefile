@@ -34,7 +34,7 @@ clean:
 	go clean
 
 docker-build:
-	docker build -t gean:$(VERSION) .
+	docker build -t gean:$(VERSION) -t ghcr.io/geanlabs/gean:devnet3 .
 
 # Resolve the directory this Makefile lives in
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -50,8 +50,8 @@ refresh-genesis-time:
 	echo "Updated GENESIS_TIME to $$NEW_TIME in $(CONFIG)"
 
 run: build refresh-genesis-time
-	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0 --listen-addr /ip4/0.0.0.0/tcp/9000 --node-key node0.key --data-dir data/node0
-
+	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0 --listen-addr /ip4/0.0.0.0/tcp/9000 --node-key node0.key --data-dir data/node0 --is-aggregator
+ 
 run-devnet:
 	@if [ ! -d "../lean-quickstart" ]; then \
 		echo "Cloning lean-quickstart..."; \
@@ -67,7 +67,7 @@ run-node-2:
 	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node2 --listen-addr /ip4/0.0.0.0/tcp/9002 --node-key node2.key --data-dir data/node2 --discovery-port 9002
 
 # The commit hash of the leanSpec repository to use for testing and fixtures
-LEAN_SPEC_COMMIT_HASH := 4edcf7bc9271e6a70ded8aff17710d68beac4266
+LEAN_SPEC_COMMIT_HASH := 8b7636bb8a95fe4bec414cc4c24e74079e6256b6
 
 # A file to track which commit of the leanSpec fixtures have been generated, to avoid unnecessary regeneration
 LEAN_SPEC_FIXTURE_STAMP := leanSpec/.fixtures-commit

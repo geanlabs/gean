@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 
+	apiserver "github.com/geanlabs/gean/api/server"
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/network"
 	"github.com/geanlabs/gean/network/gossipsub"
@@ -16,10 +17,10 @@ var Version = "v0.1.0"
 
 // Node is the main gean node orchestrator.
 type Node struct {
-	FC     *forkchoice.Store
-	Host   *network.Host
-	Topics *gossipsub.Topics
-	// API       *api.Service // Temporary disable until found
+	FC        *forkchoice.Store
+	Host      *network.Host
+	Topics    *gossipsub.Topics
+	API       *apiserver.Server
 	Validator *ValidatorDuties
 
 	// P2P Services
@@ -36,6 +37,9 @@ type Node struct {
 
 func (n *Node) Close() {
 	n.cancel()
+	if n.API != nil {
+		n.API.Stop()
+	}
 	if n.dbCloser != nil {
 		n.dbCloser.Close()
 	}
@@ -63,4 +67,8 @@ type Config struct {
 	ValidatorKeysDir string
 	MetricsPort      int
 	DevnetID         string
+	IsAggregator     bool
+	APIHost          string
+	APIPort          int
+	APIEnabled       bool
 }

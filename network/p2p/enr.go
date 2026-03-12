@@ -61,6 +61,11 @@ func (m *LocalNodeManager) Node() *enode.Node {
 	return m.local.Node()
 }
 
+// LocalNode exposes the underlying enode.LocalNode for setting ENR entries.
+func (m *LocalNodeManager) LocalNode() *enode.LocalNode {
+	return m.local
+}
+
 func (m *LocalNodeManager) Database() *enode.DB {
 	return m.db
 }

@@ -76,7 +76,13 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 			}
 		},
 		OnAttestation: func(sa *types.SignedAttestation) {
-			fc.ProcessAttestation(sa)
+			fc.ProcessSubnetAttestation(sa)
+		},
+		OnAggregatedAttestation: func(saa *types.SignedAggregatedAttestation) {
+			gossipLog.Debug("received aggregated attestation via gossip",
+				"slot", saa.Data.Slot,
+			)
+			fc.ProcessAggregatedAttestation(saa)
 		},
 	}); err != nil {
 		return fmt.Errorf("subscribe topics: %w", err)

@@ -74,6 +74,21 @@ var PQSigAggregatedInvalidTotal = prometheus.NewCounter(prometheus.CounterOpts{
 	Help: "Total number of invalid aggregated signatures",
 })
 
+var PQSigAttestationSignaturesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_attestation_signatures_total",
+	Help: "Total number of individual attestation signatures",
+})
+
+var PQSigAttestationSignaturesValidTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_attestation_signatures_valid_total",
+	Help: "Total number of valid individual attestation signatures",
+})
+
+var PQSigAttestationSignaturesInvalidTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_pq_sig_attestation_signatures_invalid_total",
+	Help: "Total number of invalid individual attestation signatures",
+})
+
 // --- Fork-Choice ---
 
 var HeadSlot = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -182,6 +197,44 @@ var ValidatorsCount = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of validators managed by a node",
 })
 
+// --- Devnet-3 Aggregator ---
+
+var IsAggregator = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_is_aggregator",
+	Help: "Whether the node is acting as an aggregator (1 = yes, 0 = no)",
+})
+
+var AttestationCommitteeCount = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_attestation_committee_count",
+	Help: "Number of attestation committees",
+})
+
+var AttestationCommitteeSubnet = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_attestation_committee_subnet",
+	Help: "Subnet ID assigned to this node's validators",
+})
+
+var CommitteeSignaturesAggregationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_committee_signatures_aggregation_time_seconds",
+	Help:    "Time taken to aggregate committee signatures",
+	Buckets: fastBuckets,
+})
+
+var GossipSignaturesCount = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_gossip_signatures",
+	Help: "Number of gossip signatures in fork-choice store",
+})
+
+var LatestNewAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_latest_new_aggregated_payloads",
+	Help: "Number of new aggregated payload items",
+})
+
+var LatestKnownAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_latest_known_aggregated_payloads",
+	Help: "Number of known aggregated payload items",
+})
+
 // --- Network ---
 
 var ConnectedPeers = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -235,11 +288,39 @@ func init() {
 		STFAttestationsProcessingTime,
 		// Validator
 		ValidatorsCount,
+		// Devnet-3 aggregator
+		IsAggregator,
+		AttestationCommitteeCount,
+		AttestationCommitteeSubnet,
+		CommitteeSignaturesAggregationTime,
+		GossipSignaturesCount,
+		LatestNewAggregatedPayloads,
+		LatestKnownAggregatedPayloads,
+		// PQ attestation signatures
+		PQSigAttestationSignaturesTotal,
+		PQSigAttestationSignaturesValidTotal,
+		PQSigAttestationSignaturesInvalidTotal,
 		// Network
 		ConnectedPeers,
 		PeerConnectionEventsTotal,
 		PeerDisconnectionEventsTotal,
 	)
+
+	// Pre-initialize vector counters to 0 to ensure they appear in metrics output
+	// before any events occur, preventing "No data" in Grafana panels.
+	for _, source := range []string{"gossip", "block", "subnet", "aggregation"} {
+		AttestationsValid.WithLabelValues(source).Add(0)
+		AttestationsInvalid.WithLabelValues(source).Add(0)
+	}
+
+	for _, dir := range []string{"inbound", "outbound"} {
+		PeerConnectionEventsTotal.WithLabelValues(dir, "success").Add(0)
+		PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Add(0)
+	}
+
+	PQSigAttestationSignaturesTotal.Add(0)
+	PQSigAttestationSignaturesValidTotal.Add(0)
+	PQSigAttestationSignaturesInvalidTotal.Add(0)
 }
 
 // Serve starts the Prometheus metrics HTTP server on the given port.

@@ -24,3 +24,4 @@ node*.key
 
 # Data
 data/
+finalized_states.ssz
