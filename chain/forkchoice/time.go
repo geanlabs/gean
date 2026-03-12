@@ -73,19 +73,15 @@ func (c *Store) AcceptNewAttestations() {
 
 func (c *Store) acceptNewAttestationsLocked() {
 	// Expand aggregated payloads into per-validator votes.
-	for _, saa := range c.latestNewAggregatedPayloads {
-		if saa == nil || saa.Data == nil || saa.Proof == nil {
-			continue
-		}
-		for _, vid := range bitlistToValidatorIDs(saa.Proof.Participants) {
-			sa := &types.SignedAttestation{ValidatorID: vid, Message: saa.Data}
-			existing, ok := c.latestNewAttestations[vid]
-			if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < saa.Data.Slot {
-				c.latestNewAttestations[vid] = sa
-			}
+	newAggAttestations := extractAttestationsFromAggregatedPayloads(c.latestNewAggregatedPayloads)
+	for vid, sa := range newAggAttestations {
+		existing, ok := c.latestNewAttestations[vid]
+		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < sa.Message.Slot {
+			c.latestNewAttestations[vid] = sa
 		}
 	}
-	c.latestNewAggregatedPayloads = nil
+	c.latestKnownAggregatedPayloads = mergeAggregatedPayloads(c.latestKnownAggregatedPayloads, c.latestNewAggregatedPayloads)
+	c.latestNewAggregatedPayloads = make(map[[32]byte]aggregatedPayload)
 	metrics.LatestNewAggregatedPayloads.Set(0)
 
 	// Move new → known and update head.
@@ -93,7 +89,7 @@ func (c *Store) acceptNewAttestationsLocked() {
 		c.latestKnownAttestations[id] = sa
 	}
 	c.latestNewAttestations = make(map[uint64]*types.SignedAttestation)
-	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAttestations)))
+	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAggregatedPayloads)))
 	c.updateHeadLocked()
 }
 
@@ -110,7 +106,11 @@ func (c *Store) UpdateSafeTarget() {
 
 func (c *Store) updateSafeTargetLocked() {
 	minScore := int(ceilDiv(c.numValidators*2, 3))
-	c.safeTarget = GetForkChoiceHead(c.storage, c.latestJustified.Root, c.latestNewAttestations, minScore)
+	mergedPayloads := make(map[[32]byte]aggregatedPayload)
+	mergedPayloads = mergeAggregatedPayloads(mergedPayloads, c.latestKnownAggregatedPayloads)
+	mergedPayloads = mergeAggregatedPayloads(mergedPayloads, c.latestNewAggregatedPayloads)
+	attestations := extractAttestationsFromAggregatedPayloads(mergedPayloads)
+	c.safeTarget = GetForkChoiceHead(c.storage, c.latestJustified.Root, attestations, minScore)
 	if block, ok := c.storage.GetBlock(c.safeTarget); ok {
 		metrics.SafeTargetSlot.Set(float64(block.Slot))
 	}

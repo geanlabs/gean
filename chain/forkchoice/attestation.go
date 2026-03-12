@@ -19,6 +19,9 @@ func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 	}
 
 	c.processAttestationLocked(sa, false)
+	if c.isAggregator {
+		c.storeGossipSignatureLocked(sa)
+	}
 }
 
 // ProcessSubnetAttestation processes an individual attestation from the subnet gossip topic.
@@ -290,7 +293,7 @@ func (c *Store) processAggregatedAttestationLocked(saa *types.SignedAggregatedAt
 
 	// Store into the aggregated payloads buffer.
 	// Attestations are expanded into per-validator votes during acceptNewAttestationsLocked.
-	c.latestNewAggregatedPayloads = append(c.latestNewAggregatedPayloads, saa)
+	addAggregatedPayload(c.latestNewAggregatedPayloads, data, proof)
 	metrics.LatestNewAggregatedPayloads.Set(float64(len(c.latestNewAggregatedPayloads)))
 
 	// Also cache per-validator proof in aggregatedPayloads for proposer reuse.

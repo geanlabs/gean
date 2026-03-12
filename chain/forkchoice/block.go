@@ -180,6 +180,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 			continue
 		}
 		proof := envelope.Signature.AttestationSignatures[i]
+		addAggregatedPayload(c.latestKnownAggregatedPayloads, aggregated.Data, proof)
 		for _, validatorID := range bitlistToValidatorIDs(aggregated.AggregationBits) {
 			sa := &types.SignedAttestation{
 				ValidatorID: validatorID,
@@ -200,6 +201,9 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		Signature:   envelope.Signature.ProposerSignature,
 	}
 	c.processAttestationLocked(proposerSA, false)
+	if c.isAggregator {
+		c.storeGossipSignatureLocked(proposerSA)
+	}
 
 	metrics.ForkChoiceBlockProcessingTime.Observe(time.Since(start).Seconds())
 	return nil
