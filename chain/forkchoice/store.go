@@ -79,6 +79,14 @@ func (c *Store) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation
 	return c.storage.GetSignedBlock(root)
 }
 
+// HasState returns true if the state for the given block root exists.
+// This is used by sync to verify chain connectivity: ProcessBlock requires
+// the parent state, not just the parent block, to succeed.
+func (c *Store) HasState(root [32]byte) bool {
+	_, ok := c.storage.GetState(root)
+	return ok
+}
+
 // GetKnownAttestation returns the latest known attestation for a validator.
 func (c *Store) GetKnownAttestation(validator uint64) (*types.SignedAttestation, bool) {
 	c.mu.Lock()

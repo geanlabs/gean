@@ -23,7 +23,7 @@ type LocalNodeManager struct {
 
 // NewLocalNodeManager creates a new local node manager.
 // It loads the node key from the given path (or generates one) and opens the node DB.
-func NewLocalNodeManager(dbPath string, nodeKeyPath string, ip net.IP, udpPort int, tcpPort int) (*LocalNodeManager, error) {
+func NewLocalNodeManager(dbPath string, nodeKeyPath string, ip net.IP, udpPort int, tcpPort int, quicPort int) (*LocalNodeManager, error) {
 	// 1. Load or generate node key
 	privKey, err := loadOrGenerateNodeKey(nodeKeyPath)
 	if err != nil {
@@ -46,9 +46,10 @@ func NewLocalNodeManager(dbPath string, nodeKeyPath string, ip net.IP, udpPort i
 	if tcpPort != 0 {
 		local.Set(enr.TCP(tcpPort))
 	}
-
-	// Add a custom field to identify "gean" nodes?
-	// local.Set(enr.WithEntry("client", "gean"))
+	// Advertise QUIC port for libp2p QUIC transport (required for inbound connections)
+	if quicPort != 0 {
+		local.Set(enr.QUIC(quicPort))
+	}
 
 	return &LocalNodeManager{
 		db:      db,

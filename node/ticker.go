@@ -16,13 +16,21 @@ func (n *Node) Run(ctx context.Context) error {
 		"peers", len(n.Host.P2P.Network().Peers()),
 	)
 
-	// Attempt initial sync with connected peers.
+	// Register gossip handlers before syncing so blocks produced by peers
+	// during initial sync are not silently dropped. leanSpec requires nodes
+	// to subscribe to topics before connecting to peers.
+	if err := n.registerGossipHandlers(); err != nil {
+		n.log.Error("failed to register gossip handlers", "err", err)
+		return err
+	}
+	n.log.Info("gossip handlers registered, starting initial sync")
 	n.initialSync(ctx)
+	n.log.Info("initial sync completed")
 
 	var lastSyncCheckSlot uint64 = ^uint64(0)
 	var lastLogSlot uint64 = ^uint64(0)
 	behindPeers := false
-	maxPeerFinalizedSlot := uint64(0)
+	maxPeerHeadSlot := uint64(0)
 
 	for {
 		wait := n.Clock.DurationUntilNextInterval()
@@ -59,30 +67,30 @@ func (n *Node) Run(ctx context.Context) error {
 
 		status := n.FC.GetStatus()
 
-		// Re-evaluate sync gating once per slot using peer finalization status.
+		// Re-evaluate sync gating once per slot using peer head status.
 		if slot != lastSyncCheckSlot {
-			behindPeers, maxPeerFinalizedSlot = n.isBehindPeerFinalization(ctx, status)
+			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 			if behindPeers {
 				for _, pid := range n.Host.P2P.Network().Peers() {
 					if n.syncWithPeer(ctx, pid) {
 						status = n.FC.GetStatus()
 					}
 				}
-				behindPeers, maxPeerFinalizedSlot = n.isBehindPeerFinalization(ctx, status)
+				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 				if behindPeers {
 					n.log.Warn(
-						"skipping validator duties while behind peer finalization",
+						"skipping validator duties while behind peers",
 						"slot", slot,
 						"head_slot", status.HeadSlot,
 						"finalized_slot", status.FinalizedSlot,
-						"max_peer_finalized_slot", maxPeerFinalizedSlot,
+						"max_peer_head_slot", maxPeerHeadSlot,
 					)
 				}
 			}
 			lastSyncCheckSlot = slot
 		}
 
-		// Execute validator duties unless we are behind peers' finalized checkpoint.
+		// Execute validator duties unless we are behind peers' head.
 		if !behindPeers {
 			n.Validator.OnInterval(ctx, slot, interval)
 		}
@@ -105,8 +113,8 @@ func (n *Node) Run(ctx context.Context) error {
 				"head", status.HeadSlot,
 				"finalized", status.FinalizedSlot,
 				"justified", status.JustifiedSlot,
-				"behind_peer_finalization", behindPeers,
-				"max_peer_finalized", maxPeerFinalizedSlot,
+				"behind_peers", behindPeers,
+				"max_peer_head", maxPeerHeadSlot,
 				"peers", peerCount,
 				"elapsed", logging.TimeSince(start),
 			)

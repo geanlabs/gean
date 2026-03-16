@@ -6,11 +6,11 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Protocol IDs matching cross-client convention (ssz_snappy encoding suffix).
+// Protocol IDs matching the leanSpec networking specification.
 const (
 	StatusProtocol             = "/leanconsensus/req/status/1/ssz_snappy"
-	BlocksByRootProtocol       = "/leanconsensus/req/lean_blocks_by_root/1/ssz_snappy"
-	BlocksByRootProtocolLegacy = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+	BlocksByRootProtocol       = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+	BlocksByRootProtocolLegacy = "/leanconsensus/req/lean_blocks_by_root/1/ssz_snappy"
 )
 
 // Response status codes.

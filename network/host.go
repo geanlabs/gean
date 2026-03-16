@@ -14,7 +14,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2pnetwork "github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/peer"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/geanlabs/gean/network/gossipsub"
@@ -27,6 +29,19 @@ var netLog = logging.NewComponentLogger(logging.CompNetwork)
 
 // ErrUnsupportedKeyFormat is returned when a node key file cannot be parsed.
 var ErrUnsupportedKeyFormat = errors.New("unsupported key format")
+
+// allowAllGater is a connection gater that allows all connections (devnet: no filtering).
+type allowAllGater struct{}
+
+func (g *allowAllGater) InterceptPeerDial(p peer.ID) bool                              { return true }
+func (g *allowAllGater) InterceptAddrDial(id peer.ID, m multiaddr.Multiaddr) bool      { return true }
+func (g *allowAllGater) InterceptAccept(cm libp2pnetwork.ConnMultiaddrs) bool          { return true }
+func (g *allowAllGater) InterceptSecured(d libp2pnetwork.Direction, id peer.ID, cm libp2pnetwork.ConnMultiaddrs) bool {
+	return true
+}
+func (g *allowAllGater) InterceptUpgraded(c libp2pnetwork.Conn) (bool, control.DisconnectReason) {
+	return true, 0
+}
 
 const nodeKeyFilePerms = 0600
 
@@ -54,16 +69,41 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 		return nil, fmt.Errorf("parse listen addr: %w", err)
 	}
 
+	// Configure resource manager with no limits (for devnet compatibility)
+	rmgr, err := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(rcmgr.InfiniteLimits))
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("create resource manager: %w", err)
+	}
+
 	h, err := libp2p.New(
 		libp2p.Identity(privKey),
 		libp2p.ListenAddrs(addr),
+		libp2p.DefaultTransports,
+		libp2p.ResourceManager(rmgr),
+		libp2p.ConnectionGater(&allowAllGater{}),
+		libp2p.DisableRelay(),
 	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("new host: %w", err)
 	}
 
-	gs, err := gossipsub.NewGossipSub(ctx, h)
+	// Log actual listen addresses for debugging
+	for _, a := range h.Addrs() {
+		netLog.Info("listening on", "addr", a.String())
+	}
+
+	var directPeers []peer.AddrInfo
+	for _, addr := range bootnodes {
+		pi, err := parseBootnode(addr)
+		if err != nil || pi.ID == h.ID() {
+			continue
+		}
+		directPeers = append(directPeers, *pi)
+	}
+
+	gs, err := gossipsub.NewGossipSub(ctx, h, directPeers)
 	if err != nil {
 		h.Close()
 		cancel()

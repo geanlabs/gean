@@ -27,6 +27,9 @@ type Node struct {
 	P2PManager   *p2p.LocalNodeManager
 	P2PDiscovery *p2p.DiscoveryService
 
+	// PendingBlocks caches blocks awaiting parent availability.
+	PendingBlocks *PendingBlockCache
+
 	Clock    *Clock
 	dbCloser io.Closer
 	log      *slog.Logger

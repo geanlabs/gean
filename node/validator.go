@@ -191,6 +191,14 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			"signing_time", signDuration,
 		)
 
+		// Warn if no peers are subscribed — publish will be silently dropped with no error.
+		if topicPeerCount(v.Topics.SubnetAttestation) == 0 {
+			v.Log.Warn("attestation topic has 0 peers — published attestation will not be delivered",
+				"slot", slot,
+				"validator", idx,
+			)
+		}
+
 		if err := v.PublishAttestation(ctx, v.Topics.SubnetAttestation, sa); err != nil {
 			v.Log.Error("failed to publish attestation",
 				"slot", slot,
@@ -201,4 +209,14 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			v.Log.Debug("published attestation", "slot", slot, "validator", idx, "target_slot", sa.Message.Target.Slot)
 		}
 	}
+}
+
+// topicPeerCount safely returns the number of peers subscribed to a pubsub topic.
+// Returns 0 if the topic is nil or has no backing PubSub instance (e.g. in tests).
+func topicPeerCount(topic *pubsub.Topic) (n int) {
+	if topic == nil {
+		return 0
+	}
+	defer func() { recover() }() //nolint:errcheck
+	return len(topic.ListPeers())
 }

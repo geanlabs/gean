@@ -45,31 +45,28 @@ func writeSignedBlock(w io.Writer, block *types.SignedBlockWithAttestation) erro
 	return WriteSnappyFrame(w, data)
 }
 
+// readBlocksByRootRequest decodes a BlocksByRootRequest from the wire.
+// The spec defines BlocksByRootRequest as an SSZ Container with one
+// variable-size field, so the encoding is always:
+//
+//	[offset=4 (4 bytes LE)][root_0 (32 bytes)]...[root_N (32 bytes)]
 func readBlocksByRootRequest(r io.Reader) ([][32]byte, error) {
 	data, err := ReadSnappyFrame(r)
 	if err != nil {
 		return nil, err
 	}
-	// devnet-2 canonical format: raw SSZList[Bytes32] payload.
-	if len(data)%32 == 0 {
-		return decodeRootsRaw(data)
+	if len(data) < 4 {
+		return nil, fmt.Errorf("BlocksByRootRequest too short: %d bytes", len(data))
 	}
-
-	// Interop fallback: some clients may encode BlocksByRootRequest as a
-	// single-field container with a 4-byte offset, then the raw roots list.
-	// Container layout for one dynamic field is:
-	//   [offset(4 bytes little-endian)][roots-bytes...]
-	if len(data) >= 4 {
-		offset := binary.LittleEndian.Uint32(data[:4])
-		if offset == 4 {
-			rootsData := data[4:]
-			if len(rootsData)%32 == 0 {
-				return decodeRootsRaw(rootsData)
-			}
-		}
+	offset := binary.LittleEndian.Uint32(data[:4])
+	if offset != 4 {
+		return nil, fmt.Errorf("BlocksByRootRequest invalid offset: got %d, want 4", offset)
 	}
-
-	return nil, fmt.Errorf("invalid roots length: %d", len(data))
+	rootsData := data[4:]
+	if len(rootsData)%32 != 0 {
+		return nil, fmt.Errorf("BlocksByRootRequest roots length %d is not a multiple of 32", len(rootsData))
+	}
+	return decodeRootsRaw(rootsData)
 }
 
 func decodeRootsRaw(data []byte) ([][32]byte, error) {
