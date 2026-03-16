@@ -56,7 +56,7 @@ func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo)
 		}),
 		pubsub.WithSeenMessagesTTL(24*time.Second),
 		pubsub.WithMessageIdFn(ComputeMessageID),
-		pubsub.WithFloodPublish(true), // Send to all subscribed peers, bypassing mesh for small devnets
+		pubsub.WithFloodPublish(true),       // Send to all subscribed peers, bypassing mesh for small devnets
 		pubsub.WithDirectPeers(directPeers), // Always message bootnodes regardless of mesh/subscription state
 	)
 }

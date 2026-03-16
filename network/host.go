@@ -11,10 +11,10 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2pnetwork "github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/peer"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/multiformats/go-multiaddr"
@@ -33,9 +33,9 @@ var ErrUnsupportedKeyFormat = errors.New("unsupported key format")
 // allowAllGater is a connection gater that allows all connections (devnet: no filtering).
 type allowAllGater struct{}
 
-func (g *allowAllGater) InterceptPeerDial(p peer.ID) bool                              { return true }
-func (g *allowAllGater) InterceptAddrDial(id peer.ID, m multiaddr.Multiaddr) bool      { return true }
-func (g *allowAllGater) InterceptAccept(cm libp2pnetwork.ConnMultiaddrs) bool          { return true }
+func (g *allowAllGater) InterceptPeerDial(p peer.ID) bool                         { return true }
+func (g *allowAllGater) InterceptAddrDial(id peer.ID, m multiaddr.Multiaddr) bool { return true }
+func (g *allowAllGater) InterceptAccept(cm libp2pnetwork.ConnMultiaddrs) bool     { return true }
 func (g *allowAllGater) InterceptSecured(d libp2pnetwork.Direction, id peer.ID, cm libp2pnetwork.ConnMultiaddrs) bool {
 	return true
 }
