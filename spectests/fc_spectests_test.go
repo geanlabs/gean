@@ -96,7 +96,13 @@ func runForkChoiceFixture(t *testing.T, path string) {
 
 func newBoltStore(t *testing.T) *bolt.Store {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "fc.db")
+	dir, err := os.MkdirTemp("", "fcdb")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbPath := filepath.Join(dir, "fc.db")
 	store, err := bolt.New(dbPath)
 	if err != nil {
 		t.Fatalf("failed to create bolt store: %v", err)
@@ -377,7 +383,12 @@ func hashGreater(a, b [32]byte) bool {
 }
 
 func makeZeroBlockSignatures(attestationCount int) types.BlockSignatures {
+	sigs := make([]*types.AggregatedSignatureProof, attestationCount)
+	for i := range sigs {
+		sigs[i] = &types.AggregatedSignatureProof{}
+	}
+
 	return types.BlockSignatures{
-		AttestationSignatures: make([]*types.AggregatedSignatureProof, attestationCount),
+		AttestationSignatures: sigs,
 	}
 }
