@@ -23,7 +23,7 @@ func main() {
 
 	var pubkeys []string
 
-	fmt.Printf("Generating %d keys in %s...\n", *count, *outDir)
+	fmt.Fprintf(os.Stderr, "Generating %d keys in %s...\n", *count, *outDir)
 	for i := 0; i < *count; i++ {
 		// Deterministic seed based on index
 		seed := uint64(i)
@@ -50,11 +50,11 @@ func main() {
 		}
 		pubkeys = append(pubkeys, hex.EncodeToString(pkBytes))
 
-		fmt.Printf("Generated keypair %d\n", i)
+		fmt.Fprintf(os.Stderr, "Generated keypair %d\n", i)
 	}
 
 	if *printYAML {
-		fmt.Println("\nGENESIS_VALIDATORS:")
+		fmt.Println("GENESIS_VALIDATORS:")
 		for _, pk := range pubkeys {
 			fmt.Printf("  - \"0x%s\"\n", pk)
 		}

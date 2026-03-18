@@ -1,6 +1,9 @@
-.PHONY: build ffi spec-test unit-test test-race lint fmt clean docker-build run run-quic run-devnet refresh-genesis-time help leanSpec leanSpec/fixtures
+.PHONY: build ffi spec-test unit-test test-race lint fmt clean docker-build refresh-genesis-time run-setup run-setup-if-missing run run-quic run-devnet run-node-1 run-node-2 help leanSpec leanSpec/fixtures
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+
+# Force Go build cache into the repo to avoid sandboxed $HOME cache paths.
+export GOCACHE := $(CURDIR)/.gocache
 
 ffi:
 	@cd xmss/leansig-ffi && cargo +nightly build --release --locked
@@ -40,6 +43,11 @@ docker-build:
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 CONFIG := $(MAKEFILE_DIR)config.yaml
 
+RUN_SETUP_NODES ?= 3
+RUN_SETUP_VALIDATORS ?= 5
+RUN_SETUP_IP ?= 127.0.0.1
+RUN_SETUP_BASE_PORT ?= 9000
+
 refresh-genesis-time:
 	@NEW_TIME=$$(($$(date +%s) + 30)); \
 	if [ "$$(uname -s)" = "Darwin" ]; then \
@@ -49,7 +57,34 @@ refresh-genesis-time:
 	fi; \
 	echo "Updated GENESIS_TIME to $$NEW_TIME in $(CONFIG)"
 
-run: build refresh-genesis-time
+run-setup: build
+	@set -eu; \
+	NOW=$$(date +%s); \
+	echo "GENESIS_TIME: $$NOW" > config.yaml; \
+	./bin/keygen -validators $(RUN_SETUP_VALIDATORS) -keys-dir keys -print-yaml >> config.yaml; \
+	go run ./scripts/gen_node_keys -nodes $(RUN_SETUP_NODES) -ip $(RUN_SETUP_IP) -base-port $(RUN_SETUP_BASE_PORT) -out nodes.yaml 1>/dev/null; \
+	$(MAKE) refresh-genesis-time 1>/dev/null; \
+	echo "Generated local devnet artifacts: config.yaml, nodes.yaml, keys/, node*.key"
+
+run-setup-if-missing:
+	@set -eu; \
+	missing=0; \
+	[ -f config.yaml ] || missing=1; \
+	[ -f nodes.yaml ] || missing=1; \
+	i=0; \
+	while [ $$i -lt $(RUN_SETUP_NODES) ]; do \
+		[ -f node$$i.key ] || missing=1; \
+		i=$$(($$i + 1)); \
+	done; \
+	[ -f keys/validator_0_pk.ssz ] || missing=1; \
+	[ -f keys/validator_0_sk.ssz ] || missing=1; \
+	if [ $$missing -eq 0 ]; then \
+		echo "Using existing local devnet artifacts (config.yaml, nodes.yaml). Run 'make run-setup' to regenerate."; \
+	else \
+		$(MAKE) run-setup; \
+	fi
+
+run: build refresh-genesis-time run-setup-if-missing
 	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0 --listen-addr /ip4/0.0.0.0/tcp/9000 --node-key node0.key --data-dir data/node0 --is-aggregator
  
 run-devnet:
@@ -60,10 +95,10 @@ run-devnet:
 	$(MAKE) docker-build
 	cd ../lean-quickstart && NETWORK_DIR=local-devnet ./spin-node.sh --node gean_0 --generateGenesis --metrics
 
-run-node-1:
+run-node-1: run-setup-if-missing
 	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node1 --listen-addr /ip4/0.0.0.0/tcp/9001 --node-key node1.key --data-dir data/node1 --discovery-port 9001
 
-run-node-2:
+run-node-2: run-setup-if-missing
 	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node2 --listen-addr /ip4/0.0.0.0/tcp/9002 --node-key node2.key --data-dir data/node2 --discovery-port 9002
 
 # The commit hash of the leanSpec repository to use for testing and fixtures
