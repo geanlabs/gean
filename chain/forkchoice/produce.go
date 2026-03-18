@@ -58,6 +58,15 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 	if !ok {
 		return nil, fmt.Errorf("vote target block not found")
 	}
+
+	// Ensure target is at or after the source (latest_justified) to maintain invariant:
+	// source.slot <= target.slot. This prevents creating invalid attestations where
+	// source slot exceeds target slot. If the calculated target is older than
+	// latest_justified, use latest_justified instead.
+	if tBlock.Slot < c.latestJustified.Slot {
+		return c.latestJustified, nil
+	}
+
 	blockHash, _ := tBlock.HashTreeRoot()
 	return &types.Checkpoint{Root: blockHash, Slot: tBlock.Slot}, nil
 }
@@ -214,6 +223,13 @@ func (c *Store) ProduceAttestation(slot, validatorIndex uint64, signer Signer) (
 	targetCheckpoint, err := c.getVoteTargetLocked()
 	if err != nil {
 		return nil, fmt.Errorf("vote target: %w", err)
+	}
+
+	// Cannot produce valid attestation if target is strictly before the source.
+	// target == source is valid (e.g. genesis bootstrap where both are slot 0).
+	if targetCheckpoint.Slot < c.latestJustified.Slot {
+		return nil, fmt.Errorf("cannot produce valid attestation: target slot %d < source slot %d",
+			targetCheckpoint.Slot, c.latestJustified.Slot)
 	}
 
 	data := &types.AttestationData{

@@ -6,7 +6,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
+
+	"github.com/multiformats/go-multiaddr"
 
 	apiserver "github.com/geanlabs/gean/api/server"
 	"github.com/geanlabs/gean/chain/forkchoice"
@@ -69,28 +72,22 @@ func New(cfg Config) (*Node, error) {
 	}
 
 	n := &Node{
-		FC:           fc,
-		Host:         host,
-		Topics:       topics,
-		Clock:        NewClock(cfg.GenesisTime),
-		Validator:    validator,
-		P2PManager:   p2pManager,
-		P2PDiscovery: p2pDiscovery,
-		dbCloser:     db,
-		log:          log,
+		FC:            fc,
+		Host:          host,
+		Topics:        topics,
+		Clock:         NewClock(cfg.GenesisTime),
+		Validator:     validator,
+		P2PManager:    p2pManager,
+		P2PDiscovery:  p2pDiscovery,
+		PendingBlocks: NewPendingBlockCache(),
+		dbCloser:      db,
+		log:           log,
 	}
 
-	if err := registerHandlers(n, fc); err != nil {
-		if p2pDiscovery != nil {
-			p2pDiscovery.Close()
-		}
-		if p2pManager != nil {
-			p2pManager.Close()
-		}
-		host.Close()
-		db.Close()
-		return nil, err
-	}
+	// Register req/resp handlers for sync. Gossip handlers are registered
+	// before initial sync in ticker.go so blocks arriving during sync are
+	// not silently dropped.
+	registerReqRespHandlers(n, fc)
 
 	if len(cfg.Bootnodes) > 0 {
 		network.ConnectBootnodes(host.Ctx, host.P2P, cfg.Bootnodes)
@@ -199,12 +196,15 @@ func initDiscovery(log *slog.Logger, cfg Config) (*p2p.LocalNodeManager, *p2p.Di
 		discPort = 9000
 	}
 
+	// Parse QUIC port from listen address for ENR advertisement
+	quicPort := parseQUICPort(cfg.ListenAddr)
+
 	p2pDBPath := filepath.Join(cfg.DataDir, "p2p")
 	if err := os.MkdirAll(p2pDBPath, 0700); err != nil {
 		return nil, nil, fmt.Errorf("failed to create p2p db dir: %w", err)
 	}
 
-	p2pManager, err := p2p.NewLocalNodeManager(p2pDBPath, cfg.NodeKeyPath, net.IPv4(0, 0, 0, 0), discPort, 0)
+	p2pManager, err := p2p.NewLocalNodeManager(p2pDBPath, cfg.NodeKeyPath, net.IPv4(0, 0, 0, 0), discPort, 0, quicPort)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to init p2p manager: %w", err)
 	}
@@ -279,4 +279,25 @@ func startMetrics(log *slog.Logger, cfg Config) {
 
 	metrics.Serve(cfg.MetricsPort)
 	log.Info("metrics server started", "port", cfg.MetricsPort)
+}
+
+// parseQUICPort extracts the UDP port from a QUIC multiaddr like /ip4/0.0.0.0/udp/9008/quic-v1.
+func parseQUICPort(listenAddr string) int {
+	if listenAddr == "" {
+		return 0
+	}
+	ma, err := multiaddr.NewMultiaddr(listenAddr)
+	if err != nil {
+		return 0
+	}
+	// Extract the UDP port component (QUIC runs over UDP)
+	val, err := ma.ValueForProtocol(multiaddr.P_UDP)
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(val)
+	if err != nil {
+		return 0
+	}
+	return port
 }

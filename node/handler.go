@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/network/gossipsub"
@@ -10,11 +11,9 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// registerHandlers wires up gossip subscriptions and req/resp protocol handlers.
-func registerHandlers(n *Node, fc *forkchoice.Store) error {
-	gossipLog := logging.NewComponentLogger(logging.CompGossip)
-
-	// Register req/resp handlers.
+// registerReqRespHandlers wires up request/response protocol handlers.
+// This is called during node initialization so sync can work.
+func registerReqRespHandlers(n *Node, fc *forkchoice.Store) {
 	reqresp.RegisterReqResp(n.Host.P2P, &reqresp.ReqRespHandler{
 		OnStatus: func(req reqresp.Status) reqresp.Status {
 			status := fc.GetStatus()
@@ -33,6 +32,13 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 			return blocks
 		},
 	})
+}
+
+// registerGossipHandlers subscribes to gossip topics for blocks and attestations.
+// This is called AFTER initial sync to prevent processing gossip blocks before
+// the chain is connected to the network's canonical chain.
+func (n *Node) registerGossipHandlers() error {
+	gossipLog := logging.NewComponentLogger(logging.CompGossip)
 
 	// Subscribe to gossip.
 	if err := gossipsub.SubscribeTopics(n.Host.Ctx, n.Topics, &gossipsub.GossipHandler{
@@ -44,7 +50,7 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 				"proposer", block.ProposerIndex,
 				"block_root", logging.ShortHash(blockRoot),
 			)
-			if err := fc.ProcessBlock(sb); err != nil {
+			if err := n.FC.ProcessBlock(sb); err != nil {
 				if isMissingParentStateErr(err) {
 					gossipLog.Warn("parent state missing for gossip block, attempting recovery",
 						"slot", block.Slot,
@@ -52,41 +58,80 @@ func registerHandlers(n *Node, fc *forkchoice.Store) error {
 						"parent_root", logging.ShortHash(block.ParentRoot),
 					)
 					if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
-						if retryErr := fc.ProcessBlock(sb); retryErr == nil {
+						if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
 							gossipLog.Info("accepted gossip block after parent recovery",
 								"slot", block.Slot,
 								"block_root", logging.ShortHash(blockRoot),
 							)
+							// Process any pending children now that this block is available.
+							n.processPendingChildren(blockRoot, gossipLog)
 							return
 						} else {
 							err = retryErr
 						}
-					} else {
-						gossipLog.Warn("parent recovery did not find missing parent",
-							"slot", block.Slot,
-							"block_root", logging.ShortHash(blockRoot),
-							"parent_root", logging.ShortHash(block.ParentRoot),
-						)
 					}
+					// Cache the block for later processing when parent becomes available.
+					n.PendingBlocks.Add(sb)
+					gossipLog.Info("cached pending block awaiting parent",
+						"slot", block.Slot,
+						"block_root", logging.ShortHash(blockRoot),
+						"parent_root", logging.ShortHash(block.ParentRoot),
+						"pending_count", n.PendingBlocks.Len(),
+					)
+					return
 				}
 				gossipLog.Warn("rejected gossip block",
 					"slot", block.Slot,
 					"err", err,
 				)
+				return
 			}
+			// Block processed successfully - check for pending children.
+			n.processPendingChildren(blockRoot, gossipLog)
 		},
 		OnAttestation: func(sa *types.SignedAttestation) {
-			fc.ProcessSubnetAttestation(sa)
+			n.FC.ProcessSubnetAttestation(sa)
 		},
 		OnAggregatedAttestation: func(saa *types.SignedAggregatedAttestation) {
 			gossipLog.Debug("received aggregated attestation via gossip",
 				"slot", saa.Data.Slot,
 			)
-			fc.ProcessAggregatedAttestation(saa)
+			n.FC.ProcessAggregatedAttestation(saa)
 		},
 	}); err != nil {
 		return fmt.Errorf("subscribe topics: %w", err)
 	}
 
 	return nil
+}
+
+// processPendingChildren processes any cached blocks that were waiting for this parent.
+// This implements the leanSpec requirement to process cached blocks when their parent arrives.
+func (n *Node) processPendingChildren(parentRoot [32]byte, log *slog.Logger) {
+	children := n.PendingBlocks.GetChildrenOf(parentRoot)
+	for _, sb := range children {
+		block := sb.Message.Block
+		blockRoot, _ := block.HashTreeRoot()
+
+		if err := n.FC.ProcessBlock(sb); err != nil {
+			// Still can't process - may be missing a deeper ancestor.
+			log.Debug("pending child still not processable",
+				"slot", block.Slot,
+				"block_root", logging.ShortHash(blockRoot),
+				"err", err,
+			)
+			continue
+		}
+
+		// Successfully processed - remove from pending and recurse.
+		n.PendingBlocks.Remove(blockRoot)
+		log.Info("processed pending child block",
+			"slot", block.Slot,
+			"block_root", logging.ShortHash(blockRoot),
+			"parent_root", logging.ShortHash(parentRoot),
+		)
+
+		// Recursively process any children of this block.
+		n.processPendingChildren(blockRoot, log)
+	}
 }
