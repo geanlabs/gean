@@ -4,7 +4,7 @@ Lightweight HTTP API for Lean endpoints using Go's standard library.
 
 ## Base URL
 
-`http://<host>:<port>` (defaults to `http://0.0.0.0:5052`)
+`http://<host>:<port>` (defaults to `http://0.0.0.0:5058`)
 
 ## Routes
 
@@ -32,7 +32,7 @@ Lightweight HTTP API for Lean endpoints using Go's standard library.
 
 **Example:**
 ```sh
-curl -o finalized_states.ssz http://localhost:5052/lean/v0/states/finalized
+curl -o finalized_states.ssz http://localhost:5058/lean/v0/states/finalized
 ```
 
 ---
@@ -83,7 +83,7 @@ curl -o finalized_states.ssz http://localhost:5052/lean/v0/states/finalized
 Enable and configure via CLI flags:
 
 - `--api-host` (default `0.0.0.0`)
-- `--api-port` (default `5052`, `0` disables)
+- `--api-port` (default `5058`, `0` disables)
 - `--api-enabled` (default `true`)
 
 ## Notes
