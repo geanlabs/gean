@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
+	"github.com/geanlabs/gean/observability/logging"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/network/reqresp"
@@ -131,7 +132,7 @@ func (n *Node) initialSync(ctx context.Context) {
 		n.syncWithPeer(ctx, pid)
 	}
 	status := n.FC.GetStatus()
-	n.log.Info("initial sync completed", "head_slot", status.HeadSlot, "head_root", status.Head[:8])
+	n.log.Info("initial sync completed", "head_slot", status.HeadSlot, "head_root", logging.LongHash(status.Head))
 }
 
 // isBehindPeers reports whether our head is behind the highest head slot

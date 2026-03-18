@@ -62,6 +62,10 @@ func ShortHash(h [32]byte) string {
 	return fmt.Sprintf("%x", h[:4])
 }
 
+func LongHash(h [32]byte) string {
+	return fmt.Sprintf("0x%x", h[:])
+}
+
 // prettyHandler is a custom slog.Handler that produces colored, aligned output.
 //
 // Format:
