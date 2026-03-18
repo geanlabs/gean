@@ -57,6 +57,7 @@ func NewComponentLogger(component string) *slog.Logger {
 	return defaultLogger.With(slog.String("comp", component))
 }
 
+// ToDo: remove if not needed
 // ShortHash returns the first 8 hex chars of a [32]byte hash.
 func ShortHash(h [32]byte) string {
 	return fmt.Sprintf("%x", h[:4])
