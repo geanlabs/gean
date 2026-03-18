@@ -48,20 +48,20 @@ func (n *Node) registerGossipHandlers() error {
 			gossipLog.Info("received block via gossip",
 				"slot", block.Slot,
 				"proposer", block.ProposerIndex,
-				"block_root", logging.ShortHash(blockRoot),
+				"block_root", logging.LongHash(blockRoot),
 			)
 			if err := n.FC.ProcessBlock(sb); err != nil {
 				if isMissingParentStateErr(err) {
 					gossipLog.Warn("parent state missing for gossip block, attempting recovery",
 						"slot", block.Slot,
-						"block_root", logging.ShortHash(blockRoot),
-						"parent_root", logging.ShortHash(block.ParentRoot),
+						"block_root", logging.LongHash(blockRoot),
+						"parent_root", logging.LongHash(block.ParentRoot),
 					)
 					if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
 						if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
 							gossipLog.Info("accepted gossip block after parent recovery",
 								"slot", block.Slot,
-								"block_root", logging.ShortHash(blockRoot),
+								"block_root", logging.LongHash(blockRoot),
 							)
 							// Process any pending children now that this block is available.
 							n.processPendingChildren(blockRoot, gossipLog)
@@ -74,8 +74,8 @@ func (n *Node) registerGossipHandlers() error {
 					n.PendingBlocks.Add(sb)
 					gossipLog.Info("cached pending block awaiting parent",
 						"slot", block.Slot,
-						"block_root", logging.ShortHash(blockRoot),
-						"parent_root", logging.ShortHash(block.ParentRoot),
+						"block_root", logging.LongHash(blockRoot),
+						"parent_root", logging.LongHash(block.ParentRoot),
 						"pending_count", n.PendingBlocks.Len(),
 					)
 					return
@@ -117,7 +117,7 @@ func (n *Node) processPendingChildren(parentRoot [32]byte, log *slog.Logger) {
 			// Still can't process - may be missing a deeper ancestor.
 			log.Debug("pending child still not processable",
 				"slot", block.Slot,
-				"block_root", logging.ShortHash(blockRoot),
+				"block_root", logging.LongHash(blockRoot),
 				"err", err,
 			)
 			continue
@@ -127,8 +127,8 @@ func (n *Node) processPendingChildren(parentRoot [32]byte, log *slog.Logger) {
 		n.PendingBlocks.Remove(blockRoot)
 		log.Info("processed pending child block",
 			"slot", block.Slot,
-			"block_root", logging.ShortHash(blockRoot),
-			"parent_root", logging.ShortHash(parentRoot),
+			"block_root", logging.LongHash(blockRoot),
+			"parent_root", logging.LongHash(parentRoot),
 		)
 
 		// Recursively process any children of this block.
