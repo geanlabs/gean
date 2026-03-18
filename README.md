@@ -130,15 +130,15 @@ gean exposes a lightweight HTTP API (standard library only) for Lean endpoints.
 
 Flags:
 - `--api-host` (default `0.0.0.0`)
-- `--api-port` (default `5052`, set to `0` to disable)
+- `--api-port` (default `5058`, set to `0` to disable)
 - `--api-enabled` (default `true`)
 
 Example:
 
 ```sh
-curl http://localhost:5052/lean/v0/health
-curl http://localhost:5052/lean/v0/fork_choice
-curl -o finalized.ssz http://localhost:5052/lean/v0/states/finalized
+curl http://localhost:5058/lean/v0/health
+curl http://localhost:5058/lean/v0/fork_choice
+curl -o finalized.ssz http://localhost:5058/lean/v0/states/finalized
 ```
 
 See `api/README.md` for full route details.
