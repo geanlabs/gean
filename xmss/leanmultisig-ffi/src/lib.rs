@@ -1,6 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::slice;
 use std::sync::Once;
+use std::thread;
 
 use leansig::serialization::Serializable;
 use leansig::signature::generalized_xmss::instantiations_poseidon_top_level::lifetime_2_to_the_32::hashing_optimized::SIGTopLevelTargetSumLifetime32Dim64Base8 as SigScheme;
@@ -37,16 +38,31 @@ pub struct LeanmultisigBytes {
     pub len: usize,
 }
 
+fn setup_with_large_stack() {
+    const STACK_SIZE: usize = 64 * 1024 * 1024;
+    let builder = thread::Builder::new().name("xmss_setup".to_string()).stack_size(STACK_SIZE);
+    let run = || {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            xmss_setup_aggregation_program();
+        }));
+    };
+
+    match builder.spawn(run) {
+        Ok(handle) => {
+            let _ = handle.join();
+        }
+        Err(_) => {
+            run();
+        }
+    }
+}
+
 fn setup_prover_once() {
-    PROVER_INIT.call_once(|| {
-        xmss_setup_aggregation_program();
-    });
+    PROVER_INIT.call_once(setup_with_large_stack);
 }
 
 fn setup_verifier_once() {
-    VERIFIER_INIT.call_once(|| {
-        xmss_setup_aggregation_program();
-    });
+    VERIFIER_INIT.call_once(setup_with_large_stack);
 }
 
 unsafe fn parse_message_hash(

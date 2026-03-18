@@ -10,6 +10,7 @@ package leanmultisig
 import "C"
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 )
 
@@ -27,14 +28,24 @@ const (
 	ResultVerificationFailed    = C.LEANMULTISIG_RESULT_VERIFICATION_FAILED
 )
 
+var setupOnce sync.Once
+
+func setup() {
+	// The Rust FFI uses two separate Once guards that both call the same
+	// xmss_setup_aggregation_program() function. If both SetupProver and
+	// SetupVerifier are called, it can invoke the setup twice and crash.
+	// Guard it once on the Go side as well.
+	C.leanmultisig_setup_prover()
+}
+
 // SetupProver initializes prover-side aggregation artifacts. It is idempotent.
 func SetupProver() {
-	C.leanmultisig_setup_prover()
+	setupOnce.Do(setup)
 }
 
 // SetupVerifier initializes verifier-side aggregation artifacts. It is idempotent.
 func SetupVerifier() {
-	C.leanmultisig_setup_verifier()
+	setupOnce.Do(setup)
 }
 
 // Aggregate aggregates individual XMSS signatures into a devnet-2 proof blob.
