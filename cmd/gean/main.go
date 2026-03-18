@@ -27,7 +27,7 @@ func main() {
 	listenAddr := flag.String("listen-addr", "/ip4/0.0.0.0/udp/9000/quic-v1", "QUIC listen address")
 	metricsPort := flag.Int("metrics-port", 8080, "Prometheus metrics port (0 = disabled)")
 	apiHost := flag.String("api-host", "0.0.0.0", "API server host")
-	apiPort := flag.Int("api-port", 5052, "API server port (0 = disabled)")
+	apiPort := flag.Int("api-port", 5058, "API server port (0 = disabled)")
 	apiEnabled := flag.Bool("api-enabled", true, "Enable API server")
 	discoveryPort := flag.Int("discovery-port", 9000, "Discovery v5 UDP port")
 	dataDir := flag.String("data-dir", ".", "Data directory for node database and keys")
