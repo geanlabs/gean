@@ -6,18 +6,77 @@ import (
 
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss/leanmultisig"
 )
 
-// ProcessAttestation processes an attestation from the network.
+// ProcessAttestation processes an attestation from a block or for direct forkchoice inclusion.
 func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.NowFn != nil {
-		c.advanceTimeLocked(c.NowFn(), false)
+		c.advanceTimeLockedMillis(c.NowFn(), false)
 	}
 
 	c.processAttestationLocked(sa, false)
+	if c.isAggregator {
+		c.storeGossipSignatureLocked(sa)
+	}
+}
+
+// ProcessSubnetAttestation processes an individual attestation from the subnet gossip topic.
+// It validates and stores the gossip signature for aggregation, but does NOT update
+// latestNewAttestations or latestKnownAttestations (no direct forkchoice influence).
+func (c *Store) ProcessSubnetAttestation(sa *types.SignedAttestation) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.NowFn != nil {
+		c.advanceTimeLockedMillis(c.NowFn(), false)
+	}
+
+	c.processSubnetAttestationLocked(sa)
+}
+
+func (c *Store) processSubnetAttestationLocked(sa *types.SignedAttestation) {
+	start := time.Now()
+	defer func() {
+		metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
+	}()
+
+	data := sa.Message
+	if data == nil {
+		metrics.AttestationsInvalid.WithLabelValues("subnet").Inc()
+		return
+	}
+
+	if reason := c.validateAttestationData(data); reason != "" {
+		log.Debug("subnet attestation rejected", "reason", reason, "slot", data.Slot, "validator", sa.ValidatorID)
+		if !isTransientAttestationRejection(reason) {
+			metrics.AttestationsInvalid.WithLabelValues("subnet").Inc()
+		}
+		return
+	}
+
+	// Verify signature.
+	if c.shouldVerifySignatures() {
+		if err := c.verifyAttestationSignature(sa); err != nil {
+			metrics.AttestationsInvalid.WithLabelValues("subnet").Inc()
+			return
+		}
+	}
+
+	// Future attestation guard.
+	currentSlot := c.time / types.IntervalsPerSlot
+	if data.Slot > currentSlot {
+		return
+	}
+
+	// Store gossip signature for aggregation — only if this node is an aggregator.
+	if c.isAggregator {
+		c.storeGossipSignatureLocked(sa)
+	}
+	metrics.AttestationsValid.WithLabelValues("subnet").Inc()
 }
 
 func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBlock bool) {
@@ -68,13 +127,13 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 			delete(c.latestNewAttestations, validatorID)
 		}
 	} else {
-		// Network gossip attestation processing.
+		// Network gossip attestation processing — used by aggregated attestation path.
 		currentSlot := c.time / types.IntervalsPerSlot
 		if data.Slot > currentSlot {
 			return
 		}
 
-		// Network gossip: update new attestations if this is newer.
+		// Update new attestations for forkchoice consideration.
 		existing, ok := c.latestNewAttestations[validatorID]
 		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < data.Slot {
 			c.latestNewAttestations[validatorID] = sa
@@ -147,4 +206,101 @@ func (c *Store) validateAttestationData(data *types.AttestationData) string {
 	}
 
 	return ""
+}
+
+// ProcessAggregatedAttestation processes an aggregated attestation from the aggregation gossip topic.
+// It verifies the aggregated proof, expands participants into per-validator votes for forkchoice,
+// and caches the proof for proposer reuse in block building.
+func (c *Store) ProcessAggregatedAttestation(saa *types.SignedAggregatedAttestation) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.NowFn != nil {
+		c.advanceTimeLockedMillis(c.NowFn(), false)
+	}
+
+	c.processAggregatedAttestationLocked(saa)
+}
+
+func (c *Store) processAggregatedAttestationLocked(saa *types.SignedAggregatedAttestation) {
+	start := time.Now()
+	defer func() {
+		metrics.AttestationValidationTime.Observe(time.Since(start).Seconds())
+	}()
+
+	if saa == nil || saa.Data == nil || saa.Proof == nil {
+		metrics.AttestationsInvalid.WithLabelValues("aggregation").Inc()
+		return
+	}
+
+	data := saa.Data
+	proof := saa.Proof
+
+	// Validate attestation data references.
+	if reason := c.validateAttestationData(data); reason != "" {
+		log.Debug("aggregated attestation rejected", "reason", reason, "slot", data.Slot)
+		if !isTransientAttestationRejection(reason) {
+			metrics.AttestationsInvalid.WithLabelValues("aggregation").Inc()
+		}
+		return
+	}
+
+	// Extract validators from participants bitlist.
+	validatorIDs := bitlistToValidatorIDs(proof.Participants)
+	if len(validatorIDs) == 0 {
+		metrics.AttestationsInvalid.WithLabelValues("aggregation").Inc()
+		return
+	}
+
+	// Verify aggregated proof signature.
+	if c.shouldVerifySignatures() {
+		headState, ok := c.storage.GetState(c.head)
+		if !ok {
+			log.Warn("head state not found for aggregated proof verification")
+			metrics.AttestationsInvalid.WithLabelValues("aggregation").Inc()
+			return
+		}
+
+		pubkeys := make([][]byte, 0, len(validatorIDs))
+		for _, vid := range validatorIDs {
+			if vid >= uint64(len(headState.Validators)) {
+				metrics.AttestationsInvalid.WithLabelValues("aggregation").Inc()
+				return
+			}
+			pubkey := headState.Validators[vid].Pubkey
+			pubkeys = append(pubkeys, pubkey[:])
+		}
+
+		messageRoot, err := data.HashTreeRoot()
+		if err != nil {
+			metrics.AttestationsInvalid.WithLabelValues("aggregation").Inc()
+			return
+		}
+
+		leanmultisig.SetupVerifier()
+		verifyStart := time.Now()
+		if err := leanmultisig.VerifyAggregated(pubkeys, messageRoot, proof.ProofData, uint32(data.Slot)); err != nil {
+			metrics.PQSigAggregatedVerificationTime.Observe(time.Since(verifyStart).Seconds())
+			metrics.PQSigAggregatedInvalidTotal.Inc()
+			log.Warn("aggregated attestation proof invalid", "slot", data.Slot, "participants", len(validatorIDs), "err", err)
+			metrics.AttestationsInvalid.WithLabelValues("aggregation").Inc()
+			return
+		}
+		metrics.PQSigAggregatedVerificationTime.Observe(time.Since(verifyStart).Seconds())
+		metrics.PQSigAggregatedValidTotal.Inc()
+		log.Info("aggregated attestation proof verified", "slot", data.Slot, "participants", len(validatorIDs))
+	}
+
+	// Store into the aggregated payloads buffer.
+	// Attestations are expanded into per-validator votes during acceptNewAttestationsLocked.
+	addAggregatedPayload(c.latestNewAggregatedPayloads, data, proof)
+	metrics.LatestNewAggregatedPayloads.Set(float64(len(c.latestNewAggregatedPayloads)))
+
+	// Also cache per-validator proof in aggregatedPayloads for proposer reuse.
+	for _, vid := range validatorIDs {
+		c.storeAggregatedPayloadLocked(vid, data, proof)
+	}
+
+	metrics.AttestationsValid.WithLabelValues("aggregation").Inc()
+	log.Debug("processed aggregated attestation", "slot", data.Slot, "participants", len(validatorIDs))
 }

@@ -7,24 +7,29 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Gossip topic names.
 const (
-	BlockTopicFmt       = "/leanconsensus/%s/block/ssz_snappy"
-	AttestationTopicFmt = "/leanconsensus/%s/attestation/ssz_snappy"
+	BlockTopicFmt             = "/leanconsensus/%s/block/ssz_snappy"
+	SubnetAttestationTopicFmt = "/leanconsensus/%s/attestation_%d/ssz_snappy"
+	AggregationTopicFmt       = "/leanconsensus/%s/aggregation/ssz_snappy"
 )
 
 // Topics holds subscribed gossipsub topics.
 type Topics struct {
-	Block       *pubsub.Topic
-	Attestation *pubsub.Topic
+	Block             *pubsub.Topic
+	SubnetAttestation *pubsub.Topic
+	Aggregation       *pubsub.Topic
 }
 
 // NewGossipSub creates a configured gossipsub instance.
-func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
+// directPeers are always messaged regardless of mesh or subscription state (used for bootnodes).
+func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo) (*pubsub.PubSub, error) {
 	return pubsub.NewGossipSub(ctx, h,
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
+		pubsub.WithNoAuthor(), // Omit author (From) and sequence number for anonymous mode compatibility
 		pubsub.WithGossipSubParams(pubsub.GossipSubParams{
 			D:                         8,
 			Dlo:                       6,
@@ -51,18 +56,24 @@ func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
 		}),
 		pubsub.WithSeenMessagesTTL(24*time.Second),
 		pubsub.WithMessageIdFn(ComputeMessageID),
+		pubsub.WithFloodPublish(true),       // Send to all subscribed peers, bypassing mesh for small devnets
+		pubsub.WithDirectPeers(directPeers), // Always message bootnodes regardless of mesh/subscription state
 	)
 }
 
-// JoinTopics joins the devnet-2 block and attestation gossip topics.
-func JoinTopics(ps *pubsub.PubSub, devnetID string) (*Topics, error) {
+// JoinTopics joins the devnet-3 block, subnet attestation, and aggregation gossip topics.
+func JoinTopics(ps *pubsub.PubSub, devnetID string, subnetID uint64) (*Topics, error) {
 	blockTopic, err := ps.Join(fmt.Sprintf(BlockTopicFmt, devnetID))
 	if err != nil {
 		return nil, fmt.Errorf("join block topic: %w", err)
 	}
-	attTopic, err := ps.Join(fmt.Sprintf(AttestationTopicFmt, devnetID))
+	subnetAttTopic, err := ps.Join(fmt.Sprintf(SubnetAttestationTopicFmt, devnetID, subnetID))
 	if err != nil {
-		return nil, fmt.Errorf("join attestation topic: %w", err)
+		return nil, fmt.Errorf("join subnet attestation topic: %w", err)
 	}
-	return &Topics{Block: blockTopic, Attestation: attTopic}, nil
+	aggTopic, err := ps.Join(fmt.Sprintf(AggregationTopicFmt, devnetID))
+	if err != nil {
+		return nil, fmt.Errorf("join aggregation topic: %w", err)
+	}
+	return &Topics{Block: blockTopic, SubnetAttestation: subnetAttTopic, Aggregation: aggTopic}, nil
 }

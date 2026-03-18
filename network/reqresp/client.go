@@ -67,29 +67,7 @@ func RequestStatus(ctx context.Context, h host.Host, pid peer.ID, status Status)
 
 // RequestBlocksByRoot requests blocks by their roots from a peer.
 func RequestBlocksByRoot(ctx context.Context, h host.Host, pid peer.ID, roots [][32]byte) ([]*types.SignedBlockWithAttestation, error) {
-	// Try canonical devnet-2 raw-list request first.
-	rawPayload := encodeRootsRaw(roots)
-	blocks, err := requestBlocksByRootWithPayload(ctx, h, pid, rawPayload)
-	if err == nil && len(blocks) > 0 {
-		return blocks, nil
-	}
-
-	// Interop fallback: some peers expect a container-with-offset payload.
-	// Retry once with container encoding.
-	containerPayload := encodeRootsContainer(roots)
-	blocks2, err2 := requestBlocksByRootWithPayload(ctx, h, pid, containerPayload)
-	if err2 == nil {
-		if len(blocks2) > 0 || err == nil {
-			return blocks2, nil
-		}
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err2 != nil {
-		return nil, err2
-	}
-	return blocks2, nil
+	return requestBlocksByRootWithPayload(ctx, h, pid, encodeBlocksByRootRequest(roots))
 }
 
 func requestBlocksByRootWithPayload(
@@ -161,19 +139,21 @@ func requestBlocksByRootWithPayload(
 	return blocks, nil
 }
 
-func encodeRootsRaw(roots [][32]byte) []byte {
-	out := make([]byte, 0, len(roots)*32)
-	for _, r := range roots {
-		out = append(out, r[:]...)
-	}
-	return out
-}
-
-func encodeRootsContainer(roots [][32]byte) []byte {
-	raw := encodeRootsRaw(roots)
-	out := make([]byte, 4+len(raw))
+// encodeBlocksByRootRequest SSZ-encodes a BlocksByRootRequest container.
+// The spec defines BlocksByRootRequest as a single-field Container:
+//
+//	class BlocksByRootRequest(Container):
+//	    roots: RequestedBlockRoots  # SSZList[Bytes32]
+//
+// A variable-size field in an SSZ container is preceded by a 4-byte
+// little-endian offset. With one field the offset is always 4.
+// Wire layout: [offset=4 (4 bytes LE)][root_0 (32 bytes)]...[root_N (32 bytes)]
+func encodeBlocksByRootRequest(roots [][32]byte) []byte {
+	out := make([]byte, 4+len(roots)*32)
 	binary.LittleEndian.PutUint32(out[:4], 4)
-	copy(out[4:], raw)
+	for i, r := range roots {
+		copy(out[4+i*32:], r[:])
+	}
 	return out
 }
 

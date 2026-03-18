@@ -5,18 +5,32 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// AdvanceTime advances the chain to the given wall-clock time.
-func (c *Store) AdvanceTime(time uint64, hasProposal bool) {
+// AdvanceTime advances the chain to the given unix time in seconds.
+//
+// This wrapper is kept for second-based callers.
+func (c *Store) AdvanceTime(unixSeconds uint64, hasProposal bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.advanceTimeLocked(time, hasProposal)
+	c.advanceTimeLocked(unixSeconds, hasProposal)
 }
 
-func (c *Store) advanceTimeLocked(time uint64, hasProposal bool) {
-	if time <= c.genesisTime {
+// AdvanceTimeMillis advances the chain to the given unix time in milliseconds.
+func (c *Store) AdvanceTimeMillis(unixMillis uint64, hasProposal bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.advanceTimeLockedMillis(unixMillis, hasProposal)
+}
+
+func (c *Store) advanceTimeLocked(unixSeconds uint64, hasProposal bool) {
+	c.advanceTimeLockedMillis(unixSeconds*1000, hasProposal)
+}
+
+func (c *Store) advanceTimeLockedMillis(unixMillis uint64, hasProposal bool) {
+	genesisTimeMillis := c.genesisTime * 1000
+	if unixMillis <= genesisTimeMillis {
 		return
 	}
-	tickInterval := (time - c.genesisTime) / types.SecondsPerInterval
+	tickInterval := (unixMillis - genesisTimeMillis) / types.MillisecondsPerInterval
 	for c.time < tickInterval {
 		shouldSignal := hasProposal && (c.time+1) == tickInterval
 		c.tickIntervalLocked(shouldSignal)
@@ -42,8 +56,10 @@ func (c *Store) tickIntervalLocked(hasProposal bool) {
 	case 1:
 		// Validator voting interval — no action.
 	case 2:
-		c.updateSafeTargetLocked()
+		// Committee aggregation interval — handled outside the store.
 	case 3:
+		c.updateSafeTargetLocked()
+	case 4:
 		c.acceptNewAttestationsLocked()
 	}
 }
@@ -56,10 +72,24 @@ func (c *Store) AcceptNewAttestations() {
 }
 
 func (c *Store) acceptNewAttestationsLocked() {
+	// Expand aggregated payloads into per-validator votes.
+	newAggAttestations := extractAttestationsFromAggregatedPayloads(c.latestNewAggregatedPayloads)
+	for vid, sa := range newAggAttestations {
+		existing, ok := c.latestNewAttestations[vid]
+		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < sa.Message.Slot {
+			c.latestNewAttestations[vid] = sa
+		}
+	}
+	c.latestKnownAggregatedPayloads = mergeAggregatedPayloads(c.latestKnownAggregatedPayloads, c.latestNewAggregatedPayloads)
+	c.latestNewAggregatedPayloads = make(map[[32]byte]aggregatedPayload)
+	metrics.LatestNewAggregatedPayloads.Set(0)
+
+	// Move new → known and update head.
 	for id, sa := range c.latestNewAttestations {
 		c.latestKnownAttestations[id] = sa
 	}
 	c.latestNewAttestations = make(map[uint64]*types.SignedAttestation)
+	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAggregatedPayloads)))
 	c.updateHeadLocked()
 }
 
@@ -76,7 +106,11 @@ func (c *Store) UpdateSafeTarget() {
 
 func (c *Store) updateSafeTargetLocked() {
 	minScore := int(ceilDiv(c.numValidators*2, 3))
-	c.safeTarget = GetForkChoiceHead(c.storage, c.latestJustified.Root, c.latestNewAttestations, minScore)
+	mergedPayloads := make(map[[32]byte]aggregatedPayload)
+	mergedPayloads = mergeAggregatedPayloads(mergedPayloads, c.latestKnownAggregatedPayloads)
+	mergedPayloads = mergeAggregatedPayloads(mergedPayloads, c.latestNewAggregatedPayloads)
+	attestations := extractAttestationsFromAggregatedPayloads(mergedPayloads)
+	c.safeTarget = GetForkChoiceHead(c.storage, c.latestJustified.Root, attestations, minScore)
 	if block, ok := c.storage.GetBlock(c.safeTarget); ok {
 		metrics.SafeTargetSlot.Set(float64(block.Slot))
 	}

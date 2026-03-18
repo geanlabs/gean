@@ -12,6 +12,57 @@ import (
 	"github.com/geanlabs/gean/xmss/leanmultisig"
 )
 
+// AggregateCommitteeSignatures collects gossip signatures, builds aggregated
+// proofs, and returns SignedAggregatedAttestation objects ready for publishing.
+// Called by aggregators at interval 2.
+func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttestation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	headState, ok := c.storage.GetState(c.head)
+	if !ok {
+		return nil, fmt.Errorf("head state not found")
+	}
+
+	// Collect full attestations from gossip signatures.
+	var attestations []*types.SignedAttestation
+	for key, stored := range c.gossipSignatures {
+		if stored.data == nil {
+			continue
+		}
+		attestations = append(attestations, &types.SignedAttestation{
+			ValidatorID: key.validatorID,
+			Message:     stored.data,
+			Signature:   stored.signature,
+		})
+	}
+
+	if len(attestations) == 0 {
+		return nil, nil
+	}
+
+	aggAtts, aggProofs, err := c.buildAggregatedAttestationsFromSigned(headState, attestations)
+	if err != nil {
+		return nil, fmt.Errorf("build aggregated attestations: %w", err)
+	}
+
+	result := make([]*types.SignedAggregatedAttestation, 0, len(aggAtts))
+	for i, att := range aggAtts {
+		if i >= len(aggProofs) || aggProofs[i] == nil {
+			continue
+		}
+		result = append(result, &types.SignedAggregatedAttestation{
+			Data:  att.Data,
+			Proof: aggProofs[i],
+		})
+	}
+
+	// Clear consumed gossip signatures (spec: remove aggregated entries).
+	c.gossipSignatures = make(map[signatureKey]storedSignature)
+
+	return result, nil
+}
+
 func bitlistToValidatorIDs(bits []byte) []uint64 {
 	numBits := uint64(statetransition.BitlistLen(bits))
 	validatorIDs := make([]uint64, 0, numBits)

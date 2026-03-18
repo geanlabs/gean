@@ -31,7 +31,6 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 	latestJustified := &types.Checkpoint{Root: state.LatestJustified.Root, Slot: state.LatestJustified.Slot}
 	latestFinalized := &types.Checkpoint{Root: state.LatestFinalized.Root, Slot: state.LatestFinalized.Slot}
 	finalizedSlot := latestFinalized.Slot
-	originalFinalizedSlot := state.LatestFinalized.Slot
 
 	// Map each known root to its latest materialized slot after the finalized boundary.
 	rootToSlot := make(map[[32]byte]uint64)
@@ -78,8 +77,8 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 			return
 		}
 
-		// Target must be justifiable after the original finalized slot.
-		if !types.IsJustifiableAfter(tgtSlot, originalFinalizedSlot) {
+		// Target must be justifiable after the dynamically updated finalized slot.
+		if !types.IsJustifiableAfter(tgtSlot, finalizedSlot) {
 			return
 		}
 
@@ -120,7 +119,7 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 		// then source becomes finalized.
 		hasJustifiableGap := false
 		for s := srcSlot + 1; s < tgtSlot; s++ {
-			if types.IsJustifiableAfter(s, originalFinalizedSlot) {
+			if types.IsJustifiableAfter(s, finalizedSlot) {
 				hasJustifiableGap = true
 				break
 			}

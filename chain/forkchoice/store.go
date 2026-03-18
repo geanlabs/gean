@@ -24,11 +24,14 @@ type Store struct {
 	latestJustified *types.Checkpoint
 	latestFinalized *types.Checkpoint
 	storage         storage.Store
+	isAggregator    bool
 
-	latestKnownAttestations map[uint64]*types.SignedAttestation
-	latestNewAttestations   map[uint64]*types.SignedAttestation
-	gossipSignatures        map[signatureKey]storedSignature
-	aggregatedPayloads      map[signatureKey][]storedAggregatedPayload
+	latestKnownAttestations       map[uint64]*types.SignedAttestation
+	latestNewAttestations         map[uint64]*types.SignedAttestation
+	latestKnownAggregatedPayloads map[[32]byte]aggregatedPayload
+	latestNewAggregatedPayloads   map[[32]byte]aggregatedPayload
+	gossipSignatures              map[signatureKey]storedSignature
+	aggregatedPayloads            map[signatureKey][]storedAggregatedPayload
 
 	NowFn func() uint64
 }
@@ -76,6 +79,14 @@ func (c *Store) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation
 	return c.storage.GetSignedBlock(root)
 }
 
+// HasState returns true if the state for the given block root exists.
+// This is used by sync to verify chain connectivity: ProcessBlock requires
+// the parent state, not just the parent block, to succeed.
+func (c *Store) HasState(root [32]byte) bool {
+	_, ok := c.storage.GetState(root)
+	return ok
+}
+
 // GetKnownAttestation returns the latest known attestation for a validator.
 func (c *Store) GetKnownAttestation(validator uint64) (*types.SignedAttestation, bool) {
 	c.mu.Lock()
@@ -90,6 +101,13 @@ func (c *Store) GetNewAttestation(validator uint64) (*types.SignedAttestation, b
 	defer c.mu.Unlock()
 	sa, ok := c.latestNewAttestations[validator]
 	return sa, ok
+}
+
+// SetIsAggregator configures whether this store's node acts as an aggregator.
+func (c *Store) SetIsAggregator(isAggregator bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.isAggregator = isAggregator
 }
 
 // RestoreFromDB reconstructs a fork-choice store from persisted blocks and states.
@@ -117,18 +135,20 @@ func RestoreFromDB(store storage.Store) *Store {
 	}
 
 	return &Store{
-		time:                    headBlock.Slot * types.SecondsPerSlot,
-		genesisTime:             headState.Config.GenesisTime,
-		numValidators:           uint64(len(headState.Validators)),
-		head:                    headRoot,
-		safeTarget:              headState.LatestFinalized.Root,
-		latestJustified:         headState.LatestJustified,
-		latestFinalized:         headState.LatestFinalized,
-		storage:                 store,
-		latestKnownAttestations: make(map[uint64]*types.SignedAttestation),
-		latestNewAttestations:   make(map[uint64]*types.SignedAttestation),
-		gossipSignatures:        make(map[signatureKey]storedSignature),
-		aggregatedPayloads:      make(map[signatureKey][]storedAggregatedPayload),
+		time:                          headBlock.Slot * types.IntervalsPerSlot,
+		genesisTime:                   headState.Config.GenesisTime,
+		numValidators:                 uint64(len(headState.Validators)),
+		head:                          headRoot,
+		safeTarget:                    headState.LatestFinalized.Root,
+		latestJustified:               headState.LatestJustified,
+		latestFinalized:               headState.LatestFinalized,
+		storage:                       store,
+		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
+		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
+		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
+		latestNewAggregatedPayloads:   make(map[[32]byte]aggregatedPayload),
+		gossipSignatures:              make(map[signatureKey]storedSignature),
+		aggregatedPayloads:            make(map[signatureKey][]storedAggregatedPayload),
 	}
 }
 
@@ -148,17 +168,19 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 	store.PutState(anchorRoot, state)
 
 	return &Store{
-		time:                    anchorBlock.Slot * types.SecondsPerSlot,
-		genesisTime:             state.Config.GenesisTime,
-		numValidators:           uint64(len(state.Validators)),
-		head:                    anchorRoot,
-		safeTarget:              anchorRoot,
-		latestJustified:         &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
-		latestFinalized:         &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
-		storage:                 store,
-		latestKnownAttestations: make(map[uint64]*types.SignedAttestation),
-		latestNewAttestations:   make(map[uint64]*types.SignedAttestation),
-		gossipSignatures:        make(map[signatureKey]storedSignature),
-		aggregatedPayloads:      make(map[signatureKey][]storedAggregatedPayload),
+		time:                          anchorBlock.Slot * types.IntervalsPerSlot,
+		genesisTime:                   state.Config.GenesisTime,
+		numValidators:                 uint64(len(state.Validators)),
+		head:                          anchorRoot,
+		safeTarget:                    anchorRoot,
+		latestJustified:               &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
+		latestFinalized:               &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
+		storage:                       store,
+		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
+		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
+		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
+		latestNewAggregatedPayloads:   make(map[[32]byte]aggregatedPayload),
+		gossipSignatures:              make(map[signatureKey]storedSignature),
+		aggregatedPayloads:            make(map[signatureKey][]storedAggregatedPayload),
 	}
 }

@@ -20,6 +20,7 @@ const (
 	CompGossip     = "gossip"
 	CompReqResp    = "reqresp"
 	CompMetrics    = "metrics"
+	CompAPI        = "api"
 )
 
 // ANSI color codes.

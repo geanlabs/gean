@@ -3,6 +3,7 @@ package forkchoice
 import (
 	"bytes"
 
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -13,6 +14,7 @@ type signatureKey struct {
 
 type storedSignature struct {
 	slot      uint64
+	data      *types.AttestationData
 	signature [types.XMSSSignatureSize]byte
 }
 
@@ -57,9 +59,11 @@ func (c *Store) storeGossipSignatureLocked(sa *types.SignedAttestation) {
 	if !exists || existing.slot <= sa.Message.Slot {
 		c.gossipSignatures[key] = storedSignature{
 			slot:      sa.Message.Slot,
+			data:      sa.Message,
 			signature: sa.Signature,
 		}
 	}
+	metrics.GossipSignaturesCount.Set(float64(len(c.gossipSignatures)))
 }
 
 func (c *Store) storeAggregatedPayloadLocked(

@@ -37,10 +37,13 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		"peer_finalized_slot", peerStatus.Finalized.Slot,
 	)
 
-	// If peer is strictly behind us, or at the same slot with the same head root,
-	// there is nothing to sync from this peer.
-	if peerStatus.Head.Slot < status.HeadSlot ||
-		(peerStatus.Head.Slot == status.HeadSlot && peerStatus.Head.Root == status.Head) {
+	// Skip sync only if peer is strictly behind us, or at the exact same position.
+	// If peer is at the same slot but with a different head root, we should still
+	// sync to ensure we have their chain (potential re-org or fork).
+	if peerStatus.Head.Slot < status.HeadSlot {
+		return false
+	}
+	if peerStatus.Head.Slot == status.HeadSlot && peerStatus.Head.Root == status.Head {
 		return false
 	}
 
@@ -60,8 +63,11 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	}
 
 	for i := 0; i < maxSyncDepth; i++ {
-		if _, ok := n.FC.GetBlock(nextRoot); ok {
-			break // We have this block, chain is connected.
+		// Check for state existence, not just block. ProcessBlock requires the
+		// parent state to succeed, so we need to walk back until we find a root
+		// for which we have the state.
+		if n.FC.HasState(nextRoot) {
+			break // We have state for this block, chain is connected.
 		}
 
 		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, [][32]byte{nextRoot})
@@ -75,10 +81,10 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		nextRoot = sb.Message.Block.ParentRoot
 	}
 
-	// If we could not reach any known ancestor, imported blocks would remain
-	// disconnected and fail with "parent state not found".
-	if _, ok := n.FC.GetBlock(nextRoot); !ok {
-		n.log.Debug("sync walk did not reach known ancestor",
+	// If we could not reach any known ancestor with state, imported blocks would
+	// fail with "parent state not found".
+	if !n.FC.HasState(nextRoot) {
+		n.log.Debug("sync walk did not reach known ancestor with state",
 			"peer", pid.String()[:16],
 			"fetched", len(pending),
 			"max_depth", maxSyncDepth,
@@ -101,15 +107,15 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 }
 
 // recoverMissingParentSync attempts to fill a missing parent chain by syncing with
-// connected peers, then checks whether the requested parent root became available.
+// connected peers, then checks whether the requested parent state became available.
 func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte) bool {
-	if _, ok := n.FC.GetBlock(parentRoot); ok {
+	if n.FC.HasState(parentRoot) {
 		return true
 	}
 
 	for _, pid := range n.Host.P2P.Network().Peers() {
 		n.syncWithPeer(ctx, pid)
-		if _, ok := n.FC.GetBlock(parentRoot); ok {
+		if n.FC.HasState(parentRoot) {
 			return true
 		}
 	}
@@ -120,18 +126,22 @@ func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte
 // we're missing. This allows a node that restarts mid-devnet to catch up.
 func (n *Node) initialSync(ctx context.Context) {
 	peers := n.Host.P2P.Network().Peers()
+	n.log.Info("initial sync starting", "peer_count", len(peers))
 	for _, pid := range peers {
 		n.syncWithPeer(ctx, pid)
 	}
+	status := n.FC.GetStatus()
+	n.log.Info("initial sync completed", "head_slot", status.HeadSlot, "head_root", status.Head[:8])
 }
 
-// isBehindPeerFinalization reports whether local head/finalized is behind the
-// highest finalized slot advertised by connected peers.
-func (n *Node) isBehindPeerFinalization(ctx context.Context, status forkchoice.ChainStatus) (bool, uint64) {
-	maxPeerFinalizedSlot := status.FinalizedSlot
+// isBehindPeers reports whether our head is behind the highest head slot
+// advertised by connected peers. This fires even when finalization is stalled,
+// ensuring we sync from peers who have blocks we haven't yet received via gossip.
+func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus) (bool, uint64) {
+	maxPeerHeadSlot := status.HeadSlot
 	peers := n.Host.P2P.Network().Peers()
 	if len(peers) == 0 {
-		return false, maxPeerFinalizedSlot
+		return false, maxPeerHeadSlot
 	}
 
 	ourStatus := reqresp.Status{
@@ -143,17 +153,14 @@ func (n *Node) isBehindPeerFinalization(ctx context.Context, status forkchoice.C
 		peerCtx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
 		peerStatus, err := reqresp.RequestStatus(peerCtx, n.Host.P2P, pid, ourStatus)
 		cancel()
-		if err != nil || peerStatus.Finalized == nil {
+		if err != nil || peerStatus.Head == nil {
 			continue
 		}
-		if peerStatus.Finalized.Slot > maxPeerFinalizedSlot {
-			maxPeerFinalizedSlot = peerStatus.Finalized.Slot
+		if peerStatus.Head.Slot > maxPeerHeadSlot {
+			maxPeerHeadSlot = peerStatus.Head.Slot
 		}
 	}
 
-	// Gate duties only when our head is behind peer finalization, meaning we
-	// are missing finalized chain blocks. Do not gate solely on finalized-slot
-	// lag, which can transiently trail while head is already caught up.
-	behind := status.HeadSlot < maxPeerFinalizedSlot
-	return behind, maxPeerFinalizedSlot
+	behind := status.HeadSlot < maxPeerHeadSlot
+	return behind, maxPeerHeadSlot
 }
