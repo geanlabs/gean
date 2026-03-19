@@ -184,3 +184,74 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		aggregatedPayloads:            make(map[signatureKey][]storedAggregatedPayload),
 	}
 }
+
+// NewStoreFromCheckpointState initializes a store from a checkpoint state.
+// The checkpoint state is expected to have a latest block header whose
+// hash-tree-root matches anchorRoot after the header state root has been set.
+func NewStoreFromCheckpointState(state *types.State, anchorRoot [32]byte, store storage.Store) *Store {
+	anchorHeader := state.LatestBlockHeader
+	anchorBlock := &types.Block{
+		Slot:          anchorHeader.Slot,
+		ProposerIndex: anchorHeader.ProposerIndex,
+		ParentRoot:    checkpointParentRoot(state, anchorRoot),
+		StateRoot:     anchorHeader.StateRoot,
+		Body:          emptyCheckpointBody(),
+	}
+
+	store.PutBlock(anchorRoot, anchorBlock)
+	store.PutSignedBlock(anchorRoot, &types.SignedBlockWithAttestation{
+		Message: &types.BlockWithAttestation{Block: anchorBlock},
+	})
+	store.PutState(anchorRoot, state)
+
+	putCheckpointPlaceholder(store, state.LatestJustified.Root, state.LatestJustified.Slot, state.LatestFinalized.Root)
+	putCheckpointPlaceholder(store, state.LatestFinalized.Root, state.LatestFinalized.Slot, types.ZeroHash)
+
+	return &Store{
+		time:                          state.Slot * types.IntervalsPerSlot,
+		genesisTime:                   state.Config.GenesisTime,
+		numValidators:                 uint64(len(state.Validators)),
+		head:                          anchorRoot,
+		safeTarget:                    state.LatestFinalized.Root,
+		latestJustified:               &types.Checkpoint{Root: state.LatestJustified.Root, Slot: state.LatestJustified.Slot},
+		latestFinalized:               &types.Checkpoint{Root: state.LatestFinalized.Root, Slot: state.LatestFinalized.Slot},
+		storage:                       store,
+		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
+		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
+		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
+		latestNewAggregatedPayloads:   make(map[[32]byte]aggregatedPayload),
+		gossipSignatures:              make(map[signatureKey]storedSignature),
+		aggregatedPayloads:            make(map[signatureKey][]storedAggregatedPayload),
+	}
+}
+
+func putCheckpointPlaceholder(store storage.Store, root [32]byte, slot uint64, parentRoot [32]byte) {
+	if root == types.ZeroHash {
+		return
+	}
+	if _, ok := store.GetBlock(root); ok {
+		return
+	}
+	store.PutBlock(root, &types.Block{
+		Slot:          slot,
+		ProposerIndex: 0,
+		ParentRoot:    parentRoot,
+		StateRoot:     types.ZeroHash,
+		Body:          emptyCheckpointBody(),
+	})
+}
+
+func checkpointParentRoot(state *types.State, anchorRoot [32]byte) [32]byte {
+	switch {
+	case state.LatestJustified != nil && state.LatestJustified.Root != types.ZeroHash && state.LatestJustified.Root != anchorRoot:
+		return state.LatestJustified.Root
+	case state.LatestFinalized != nil && state.LatestFinalized.Root != types.ZeroHash && state.LatestFinalized.Root != anchorRoot:
+		return state.LatestFinalized.Root
+	default:
+		return state.LatestBlockHeader.ParentRoot
+	}
+}
+
+func emptyCheckpointBody() *types.BlockBody {
+	return &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
+}

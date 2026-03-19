@@ -141,6 +141,26 @@ curl http://localhost:5058/lean/v0/fork_choice
 curl -o finalized.ssz http://localhost:5058/lean/v0/states/finalized
 ```
 
+Checkpoint sync example:
+
+```sh
+curl -I http://127.0.0.1:5058/lean/v0/states/finalized
+
+./bin/gean \
+  --genesis config.yaml \
+  --bootnodes nodes.yaml \
+  --validator-registry-path validators.yaml \
+  --validator-keys keys \
+  --node-id node1 \
+  --listen-addr /ip4/0.0.0.0/tcp/9001 \
+  --node-key node1.key \
+  --data-dir data/node1 \
+  --discovery-port 9001 \
+  --api-port 5053 \
+  --metrics-port 8081 \
+  --checkpoint-sync-url http://127.0.0.1:5058/lean/v0/states/finalized
+```
+
 See `api/README.md` for full route details.
 
 ## Running in a devnet

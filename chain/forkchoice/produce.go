@@ -67,8 +67,7 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 		return c.latestJustified, nil
 	}
 
-	blockHash, _ := tBlock.HashTreeRoot()
-	return &types.Checkpoint{Root: blockHash, Slot: tBlock.Slot}, nil
+	return &types.Checkpoint{Root: targetRoot, Slot: tBlock.Slot}, nil
 }
 
 // ProduceBlock creates a new devnet-2 signed block envelope for the given slot.

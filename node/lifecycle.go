@@ -121,10 +121,39 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Try to restore from persisted blocks and states.
-	fc := forkchoice.RestoreFromDB(db)
+	var (
+		fc                      *forkchoice.Store
+		checkpointSyncSucceeded bool
+	)
 
-	if fc != nil {
+	if cfg.CheckpointSyncURL != "" {
+		log.Info("checkpoint sync enabled, downloading state from", "url", cfg.CheckpointSyncURL)
+
+		state, err := downloadCheckpointState(cfg.CheckpointSyncURL)
+		if err != nil {
+			log.Warn("checkpoint sync failed, falling back to database/genesis", "err", err)
+		} else {
+			preparedState, stateRoot, blockRoot, err := verifyCheckpointState(state, cfg.GenesisTime, cfg.Validators)
+			if err != nil {
+				log.Warn("checkpoint state verification failed, falling back to database/genesis", "err", err)
+			} else {
+				log.Info("checkpoint state verified",
+					"slot", preparedState.Slot,
+					"state_root", logging.ShortHash(stateRoot),
+					"block_root", logging.ShortHash(blockRoot),
+				)
+				fc = forkchoice.NewStoreFromCheckpointState(preparedState, blockRoot, db)
+				checkpointSyncSucceeded = true
+				log.Info("checkpoint sync completed successfully, using state as anchor", "slot", preparedState.Slot)
+			}
+		}
+	}
+
+	if fc == nil {
+		fc = forkchoice.RestoreFromDB(db)
+	}
+
+	if fc != nil && !checkpointSyncSucceeded {
 		status := fc.GetStatus()
 		log.Info("chain restored from database",
 			"head", logging.ShortHash(status.Head),
@@ -132,8 +161,15 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 			"justified_slot", status.JustifiedSlot,
 			"finalized_slot", status.FinalizedSlot,
 		)
+	} else if fc != nil {
+		status := fc.GetStatus()
+		log.Info("chain initialized from checkpoint state",
+			"head", logging.ShortHash(status.Head),
+			"head_slot", status.HeadSlot,
+			"justified_slot", status.JustifiedSlot,
+			"finalized_slot", status.FinalizedSlot,
+		)
 	} else {
-		// Fresh start: generate genesis.
 		genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)
 
 		genesisBlock := &types.Block{
