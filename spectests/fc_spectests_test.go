@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
-	"github.com/geanlabs/gean/storage/memory"
+	"github.com/geanlabs/gean/storage/bolt"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -52,7 +52,7 @@ func runForkChoiceFixture(t *testing.T, path string) {
 			anchorState := convertState(tc.AnchorState)
 			anchorBlock := convertBlock(tc.AnchorBlock)
 
-			store := forkchoice.NewStore(anchorState, anchorBlock, memory.New())
+			store := forkchoice.NewStore(anchorState, anchorBlock, newBoltStore(t))
 			genesisTime := anchorState.Config.GenesisTime
 
 			// Block registry for label→root resolution.
@@ -92,6 +92,23 @@ func runForkChoiceFixture(t *testing.T, path string) {
 			}
 		})
 	}
+}
+
+func newBoltStore(t *testing.T) *bolt.Store {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "fcdb")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbPath := filepath.Join(dir, "fc.db")
+	store, err := bolt.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create bolt store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
 }
 
 func processBlockStep(t *testing.T, testName string, stepIdx int, store *forkchoice.Store, step ForkChoiceStep, blockRegistry map[string][32]byte, genesisTime uint64) [32]byte {
@@ -366,7 +383,12 @@ func hashGreater(a, b [32]byte) bool {
 }
 
 func makeZeroBlockSignatures(attestationCount int) types.BlockSignatures {
+	sigs := make([]*types.AggregatedSignatureProof, attestationCount)
+	for i := range sigs {
+		sigs[i] = &types.AggregatedSignatureProof{}
+	}
+
 	return types.BlockSignatures{
-		AttestationSignatures: make([]*types.AggregatedSignatureProof, attestationCount),
+		AttestationSignatures: sigs,
 	}
 }

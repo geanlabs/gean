@@ -2,6 +2,7 @@ package node_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
@@ -9,7 +10,7 @@ import (
 	"github.com/geanlabs/gean/network/gossipsub"
 	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/observability/logging"
-	"github.com/geanlabs/gean/storage/memory"
+	"github.com/geanlabs/gean/storage/bolt"
 	"github.com/geanlabs/gean/types"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
@@ -42,7 +43,7 @@ func TestValidatorDuties_TryAttest_SignsAndPublishes(t *testing.T) {
 	stateRoot, _ := state.HashTreeRoot()
 	genesisBlock.StateRoot = stateRoot
 
-	store := memory.New()
+	store := newBoltStore(t)
 	fc := forkchoice.NewStore(state, genesisBlock, store)
 
 	// Mock keys
@@ -98,7 +99,7 @@ func TestValidatorDuties_TryPropose_SignsAndPublishes(t *testing.T) {
 	stateRoot, _ := state.HashTreeRoot()
 	genesisBlock.StateRoot = stateRoot
 
-	store := memory.New()
+	store := newBoltStore(t)
 	fc := forkchoice.NewStore(state, genesisBlock, store)
 
 	// Mock keys
@@ -162,7 +163,7 @@ func TestValidatorDuties_TryPropose_DuplicateIndexProposesOncePerSlot(t *testing
 	stateRoot, _ := state.HashTreeRoot()
 	genesisBlock.StateRoot = stateRoot
 
-	store := memory.New()
+	store := newBoltStore(t)
 	fc := forkchoice.NewStore(state, genesisBlock, store)
 
 	keys := make(map[uint64]forkchoice.Signer)
@@ -191,6 +192,17 @@ func TestValidatorDuties_TryPropose_DuplicateIndexProposesOncePerSlot(t *testing
 	if publishCount != 1 {
 		t.Fatalf("publish count = %d, want 1", publishCount)
 	}
+}
+
+func newBoltStore(t testing.TB) *bolt.Store {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "bolt.db")
+	store, err := bolt.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create bolt store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
 }
 
 // Helpers
