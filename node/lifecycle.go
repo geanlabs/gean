@@ -121,7 +121,7 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Try to restore from persisted blocks and states.
+	// Priority: 1) DB restore, 2) checkpoint sync, 3) genesis.
 	fc := forkchoice.RestoreFromDB(db)
 
 	if fc != nil {
@@ -132,6 +132,41 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 			"justified_slot", status.JustifiedSlot,
 			"finalized_slot", status.FinalizedSlot,
 		)
+	} else if cfg.CheckpointSyncURL != "" {
+		log.Info("fetching checkpoint state", "url", cfg.CheckpointSyncURL)
+
+		state, err := fetchCheckpointState(cfg.CheckpointSyncURL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("checkpoint sync: %w", err)
+		}
+
+		if err := verifyCheckpointState(state, cfg.GenesisTime, cfg.Validators); err != nil {
+			return nil, nil, fmt.Errorf("checkpoint state verification: %w", err)
+		}
+
+		// Compute state root with zeroed header state_root (canonical form).
+		state.LatestBlockHeader.StateRoot = types.ZeroHash
+		stateRoot, _ := state.HashTreeRoot()
+		state.LatestBlockHeader.StateRoot = stateRoot
+
+		// Build anchor block from the latest block header.
+		anchorBlock := &types.Block{
+			Slot:          state.LatestBlockHeader.Slot,
+			ProposerIndex: state.LatestBlockHeader.ProposerIndex,
+			ParentRoot:    state.LatestBlockHeader.ParentRoot,
+			StateRoot:     stateRoot,
+			Body:          &types.BlockBody{Attestations: []*types.AggregatedAttestation{}},
+		}
+
+		anchorRoot, _ := anchorBlock.HashTreeRoot()
+		log.Info("checkpoint sync initialized",
+			"slot", state.Slot,
+			"state_root", logging.ShortHash(stateRoot),
+			"block_root", logging.ShortHash(anchorRoot),
+			"finalized_slot", state.LatestFinalized.Slot,
+		)
+
+		fc = forkchoice.NewStore(state, anchorBlock, db)
 	} else {
 		// Fresh start: generate genesis.
 		genesisState := statetransition.GenerateGenesis(cfg.GenesisTime, cfg.Validators)

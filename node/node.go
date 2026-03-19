@@ -71,7 +71,8 @@ type Config struct {
 	MetricsPort      int
 	DevnetID         string
 	IsAggregator     bool
-	APIHost          string
-	APIPort          int
-	APIEnabled       bool
+	APIHost           string
+	APIPort           int
+	APIEnabled        bool
+	CheckpointSyncURL string
 }

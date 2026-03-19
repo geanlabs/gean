@@ -34,6 +34,7 @@ func main() {
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
 	isAggregator := flag.Bool("is-aggregator", false, "Enable aggregator role for this node")
 	attCommCount := flag.Int("attestation-committee-count", 1, "Number of attestation committees (must be 1 for devnet-3)")
+	checkpointSyncURL := flag.String("checkpoint-sync-url", "", "URL to fetch finalized checkpoint state (e.g., http://peer:5058/lean/v0/states/finalized)")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
 
@@ -123,9 +124,10 @@ func main() {
 		DataDir:          *dataDir,
 		DevnetID:         *devnetID,
 		IsAggregator:     *isAggregator,
-		APIHost:          *apiHost,
-		APIPort:          *apiPort,
-		APIEnabled:       *apiEnabled,
+		APIHost:           *apiHost,
+		APIPort:           *apiPort,
+		APIEnabled:        *apiEnabled,
+		CheckpointSyncURL: *checkpointSyncURL,
 	}
 
 	n, err := node.New(nodeCfg)
