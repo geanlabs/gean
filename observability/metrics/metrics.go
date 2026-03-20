@@ -61,7 +61,7 @@ var PQSigSignaturesBuildingTime = prometheus.NewHistogram(prometheus.HistogramOp
 var PQSigAggregatedVerificationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_pq_sig_aggregated_signatures_verification_time_seconds",
 	Help:    "Time taken to verify an aggregated attestation signature",
-	Buckets: fastBuckets,
+	Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
 })
 
 var PQSigAggregatedValidTotal = prometheus.NewCounter(prometheus.CounterOpts{
