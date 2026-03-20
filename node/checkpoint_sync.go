@@ -97,6 +97,60 @@ func verifyCheckpointState(state *types.State, genesisTime uint64, genesisValida
 	if err != nil {
 		return nil, types.ZeroHash, types.ZeroHash, fmt.Errorf("hash checkpoint block header: %w", err)
 	}
+	if err := verifyCheckpointHistory(preparedState, blockRoot); err != nil {
+		return nil, types.ZeroHash, types.ZeroHash, err
+	}
 
 	return preparedState, stateRoot, blockRoot, nil
+}
+
+func verifyCheckpointHistory(state *types.State, anchorRoot [32]byte) error {
+	if state.LatestBlockHeader.Slot > state.Slot {
+		return fmt.Errorf("checkpoint latest block header slot %d exceeds state slot %d", state.LatestBlockHeader.Slot, state.Slot)
+	}
+	if state.LatestBlockHeader.Slot > 0 {
+		parentSlot, ok := checkpointRootSlot(state, anchorRoot, state.LatestBlockHeader.ParentRoot)
+		if !ok {
+			return fmt.Errorf("checkpoint parent root not found in canonical history")
+		}
+		if parentSlot >= state.LatestBlockHeader.Slot {
+			return fmt.Errorf("checkpoint parent slot %d is invalid for header slot %d", parentSlot, state.LatestBlockHeader.Slot)
+		}
+	}
+	if err := verifyCheckpointRootAtSlot(state, anchorRoot, state.LatestJustified, "justified"); err != nil {
+		return err
+	}
+	if err := verifyCheckpointRootAtSlot(state, anchorRoot, state.LatestFinalized, "finalized"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func verifyCheckpointRootAtSlot(state *types.State, anchorRoot [32]byte, checkpoint *types.Checkpoint, label string) error {
+	if checkpoint == nil || checkpoint.Root == types.ZeroHash {
+		return nil
+	}
+	slot, ok := checkpointRootSlot(state, anchorRoot, checkpoint.Root)
+	if !ok {
+		return fmt.Errorf("checkpoint %s root not found in canonical history", label)
+	}
+	if slot != checkpoint.Slot {
+		return fmt.Errorf("checkpoint %s slot mismatch: expected %d, got %d", label, checkpoint.Slot, slot)
+	}
+	return nil
+}
+
+func checkpointRootSlot(state *types.State, anchorRoot, root [32]byte) (uint64, bool) {
+	if root == types.ZeroHash || state == nil || state.LatestBlockHeader == nil {
+		return 0, false
+	}
+	if root == anchorRoot {
+		return state.LatestBlockHeader.Slot, true
+	}
+	for slot, historicalRoot := range state.HistoricalBlockHashes {
+		if historicalRoot == root {
+			return uint64(slot), true
+		}
+	}
+	return 0, false
 }

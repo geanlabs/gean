@@ -1,19 +1,14 @@
 package forkchoice
 
-import (
-	"github.com/geanlabs/gean/storage"
-	"github.com/geanlabs/gean/types"
-)
+import "github.com/geanlabs/gean/types"
 
 // GetForkChoiceHead uses LMD GHOST to find the head block from a given root.
 func GetForkChoiceHead(
-	store storage.Store,
+	blocks map[[32]byte]blockSummary,
 	root [32]byte,
 	latestAttestations map[uint64]*types.SignedAttestation,
 	minScore int,
 ) [32]byte {
-	blocks := store.GetAllBlocks()
-
 	// Start at earliest block if root is zero hash.
 	if root == types.ZeroHash {
 		var earliest [32]byte

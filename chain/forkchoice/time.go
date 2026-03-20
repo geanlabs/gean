@@ -94,7 +94,7 @@ func (c *Store) acceptNewAttestationsLocked() {
 }
 
 func (c *Store) updateHeadLocked() {
-	c.head = GetForkChoiceHead(c.storage, c.latestJustified.Root, c.latestKnownAttestations, 0)
+	c.head = GetForkChoiceHead(c.allKnownBlockSummaries(), c.latestJustified.Root, c.latestKnownAttestations, 0)
 }
 
 // UpdateSafeTarget finds the head with sufficient (2/3+) vote support.
@@ -110,8 +110,8 @@ func (c *Store) updateSafeTargetLocked() {
 	mergedPayloads = mergeAggregatedPayloads(mergedPayloads, c.latestKnownAggregatedPayloads)
 	mergedPayloads = mergeAggregatedPayloads(mergedPayloads, c.latestNewAggregatedPayloads)
 	attestations := extractAttestationsFromAggregatedPayloads(mergedPayloads)
-	c.safeTarget = GetForkChoiceHead(c.storage, c.latestJustified.Root, attestations, minScore)
-	if block, ok := c.storage.GetBlock(c.safeTarget); ok {
+	c.safeTarget = GetForkChoiceHead(c.allKnownBlockSummaries(), c.latestJustified.Root, attestations, minScore)
+	if block, ok := c.lookupBlockSummary(c.safeTarget); ok {
 		metrics.SafeTargetSlot.Set(float64(block.Slot))
 	}
 }

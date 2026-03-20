@@ -14,6 +14,13 @@ func TestNewStoreFromCheckpointState(t *testing.T) {
 
 	fc := NewStoreFromCheckpointState(state, anchorRoot, store)
 
+	if _, ok := store.GetBlock(state.LatestJustified.Root); ok {
+		t.Fatal("expected no stored placeholder for justified checkpoint root")
+	}
+	if _, ok := store.GetBlock(state.LatestFinalized.Root); ok {
+		t.Fatal("expected no stored placeholder for finalized checkpoint root")
+	}
+
 	if proposalHead := fc.GetProposalHead(state.Slot + 1); proposalHead != anchorRoot {
 		t.Fatalf("proposal head = %x, want %x", proposalHead, anchorRoot)
 	}
@@ -24,6 +31,16 @@ func TestNewStoreFromCheckpointState(t *testing.T) {
 	}
 	if target.Root != state.LatestJustified.Root {
 		t.Fatalf("vote target root = %x, want %x", target.Root, state.LatestJustified.Root)
+	}
+
+	valid := fc.validateAttestationData(&types.AttestationData{
+		Slot:   3,
+		Head:   &types.Checkpoint{Root: anchorRoot, Slot: 3},
+		Source: &types.Checkpoint{Root: state.LatestJustified.Root, Slot: state.LatestJustified.Slot},
+		Target: &types.Checkpoint{Root: anchorRoot, Slot: 3},
+	})
+	if valid != "" {
+		t.Fatalf("validateAttestationData returned %q, want success", valid)
 	}
 }
 
@@ -63,13 +80,13 @@ func makeCheckpointState() *types.State {
 		LatestBlockHeader: &types.BlockHeader{
 			Slot:          3,
 			ProposerIndex: 0,
-			ParentRoot:    [32]byte{0xAA},
+			ParentRoot:    [32]byte{0x11},
 			StateRoot:     types.ZeroHash,
 			BodyRoot:      bodyRoot,
 		},
 		LatestJustified:          &types.Checkpoint{Root: [32]byte{0x11}, Slot: 2},
 		LatestFinalized:          &types.Checkpoint{Root: [32]byte{0x22}, Slot: 1},
-		HistoricalBlockHashes:    [][32]byte{},
+		HistoricalBlockHashes:    [][32]byte{{0x33}, {0x22}, {0x11}},
 		JustifiedSlots:           []byte{0x01},
 		Validators:               validators,
 		JustificationsRoots:      [][32]byte{},

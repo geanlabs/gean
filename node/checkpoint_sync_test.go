@@ -35,6 +35,17 @@ func TestVerifyCheckpointStateRejectsValidatorMismatch(t *testing.T) {
 	}
 }
 
+func TestVerifyCheckpointStateRejectsMissingCanonicalHistory(t *testing.T) {
+	genesisValidators := makeCheckpointValidators(2)
+	state := makeCheckpointState(1234, genesisValidators)
+	state.HistoricalBlockHashes = nil
+
+	_, _, _, err := verifyCheckpointState(state, 1234, genesisValidators)
+	if err == nil {
+		t.Fatal("expected missing canonical history error")
+	}
+}
+
 func TestDownloadCheckpointState(t *testing.T) {
 	state := makeCheckpointState(1234, makeCheckpointValidators(2))
 	payload, err := state.MarshalSSZ()
@@ -72,13 +83,13 @@ func makeCheckpointState(genesisTime uint64, validators []*types.Validator) *typ
 		LatestBlockHeader: &types.BlockHeader{
 			Slot:          3,
 			ProposerIndex: 0,
-			ParentRoot:    [32]byte{0xCC},
+			ParentRoot:    [32]byte{0x11},
 			StateRoot:     types.ZeroHash,
 			BodyRoot:      bodyRoot,
 		},
 		LatestJustified:          &types.Checkpoint{Root: [32]byte{0x11}, Slot: 2},
 		LatestFinalized:          &types.Checkpoint{Root: [32]byte{0x22}, Slot: 1},
-		HistoricalBlockHashes:    [][32]byte{},
+		HistoricalBlockHashes:    [][32]byte{{0x33}, {0x22}, {0x11}},
 		JustifiedSlots:           []byte{0x01},
 		Validators:               stateValidators,
 		JustificationsRoots:      [][32]byte{},
