@@ -1,6 +1,7 @@
 package forkchoice
 
 import (
+	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )
@@ -94,7 +95,54 @@ func (c *Store) acceptNewAttestationsLocked() {
 }
 
 func (c *Store) updateHeadLocked() {
+	oldHead := c.head
 	c.head = GetForkChoiceHead(c.allKnownBlockSummaries(), c.latestJustified.Root, c.latestKnownAttestations, 0)
+
+	if depth, reorged := c.reorgDepth(oldHead, c.head); reorged {
+		metrics.ForkChoiceReorgsTotal.Inc()
+		metrics.ForkChoiceReorgDepth.Observe(float64(depth))
+		log.Warn("fork choice reorg detected", "old_head", logging.ShortHash(oldHead), "new_head", logging.ShortHash(c.head), "depth", depth)
+	}
+}
+
+// reorgDepth checks if a head change is a reorg (chain divergence, not a simple extension).
+// Returns (depth, true) if reorg, (0, false) otherwise.
+func (c *Store) reorgDepth(oldHead, newHead [32]byte) (uint64, bool) {
+	if oldHead == newHead {
+		return 0, false
+	}
+	oldSummary, oldOk := c.lookupBlockSummary(oldHead)
+	newSummary, newOk := c.lookupBlockSummary(newHead)
+	if !oldOk || !newOk {
+		return 0, false
+	}
+
+	// Walk back from the higher-slot head to the lower-slot head's slot.
+	var current [32]byte
+	var targetSlot uint64
+	var targetRoot [32]byte
+	if newSummary.Slot >= oldSummary.Slot {
+		current, targetSlot, targetRoot = newHead, oldSummary.Slot, oldHead
+	} else {
+		current, targetSlot, targetRoot = oldHead, newSummary.Slot, newHead
+	}
+
+	const maxDepth = 128
+	var depth uint64
+	for {
+		summary, ok := c.lookupBlockSummary(current)
+		if !ok {
+			return 0, false
+		}
+		if summary.Slot <= targetSlot {
+			return depth, current != targetRoot
+		}
+		current = summary.ParentRoot
+		depth++
+		if depth >= maxDepth {
+			return depth, true
+		}
+	}
 }
 
 // UpdateSafeTarget finds the head with sufficient (2/3+) vote support.
