@@ -84,11 +84,13 @@ func (v *ValidatorDuties) TryAggregate(ctx context.Context, slot uint64) {
 			)
 		}
 	}
+	duration := time.Since(start)
 	metrics.PQSigAggregatedSignaturesTotal.Add(float64(len(aggregated)))
+	metrics.CommitteeSignaturesAggregationTime.Observe(duration.Seconds())
 	v.Log.Info("aggregation complete",
 		"slot", slot,
 		"count", len(aggregated),
-		"duration", time.Since(start),
+		"duration", duration,
 	)
 }
 

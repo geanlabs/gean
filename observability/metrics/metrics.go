@@ -217,7 +217,7 @@ var AttestationCommitteeSubnet = prometheus.NewGauge(prometheus.GaugeOpts{
 var CommitteeSignaturesAggregationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_committee_signatures_aggregation_time_seconds",
 	Help:    "Time taken to aggregate committee signatures",
-	Buckets: fastBuckets,
+	Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1},
 })
 
 var GossipSignaturesCount = prometheus.NewGauge(prometheus.GaugeOpts{
