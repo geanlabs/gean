@@ -109,7 +109,7 @@ var SafeTargetSlot = prometheus.NewGauge(prometheus.GaugeOpts{
 var ForkChoiceBlockProcessingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_fork_choice_block_processing_time_seconds",
 	Help:    "Time taken to process block in fork choice",
-	Buckets: fastBuckets,
+	Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1, 1.25, 1.5, 2, 4},
 })
 
 var AttestationsValid = prometheus.NewCounterVec(prometheus.CounterOpts{
