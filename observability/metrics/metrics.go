@@ -321,6 +321,9 @@ func init() {
 	PQSigAttestationSignaturesTotal.Add(0)
 	PQSigAttestationSignaturesValidTotal.Add(0)
 	PQSigAttestationSignaturesInvalidTotal.Add(0)
+
+	FinalizationsTotal.WithLabelValues("success").Add(0)
+	FinalizationsTotal.WithLabelValues("error").Add(0)
 }
 
 // Serve starts the Prometheus metrics HTTP server on the given port.
