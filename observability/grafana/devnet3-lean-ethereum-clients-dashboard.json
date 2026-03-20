@@ -3227,7 +3227,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "histogram_quantile(0.99, (rate(lean_pq_sig_attestation_signatures_building_time_seconds_bucket{job=~\"$job\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, (rate(lean_pq_sig_aggregated_signatures_building_time_seconds_bucket{job=~\"$job\"}[$__rate_interval])))",
           "instant": false,
           "legendFormat": "{{job}}",
           "range": true,
