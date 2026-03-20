@@ -171,15 +171,15 @@ func (c *Store) validateAttestationData(data *types.AttestationData) string {
 	}
 
 	// Availability check: source, target, and head blocks must exist.
-	sourceBlock, ok := c.storage.GetBlock(data.Source.Root)
+	sourceBlock, ok := c.lookupBlockSummary(data.Source.Root)
 	if !ok {
 		return "source block unknown"
 	}
-	targetBlock, ok := c.storage.GetBlock(data.Target.Root)
+	targetBlock, ok := c.lookupBlockSummary(data.Target.Root)
 	if !ok {
 		return "target block unknown"
 	}
-	if _, ok := c.storage.GetBlock(data.Head.Root); !ok {
+	if _, ok := c.lookupBlockSummary(data.Head.Root); !ok {
 		return "head block unknown"
 	}
 

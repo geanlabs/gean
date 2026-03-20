@@ -31,6 +31,7 @@ func main() {
 	apiEnabled := flag.Bool("api-enabled", true, "Enable API server")
 	discoveryPort := flag.Int("discovery-port", 9000, "Discovery v5 UDP port")
 	dataDir := flag.String("data-dir", ".", "Data directory for node database and keys")
+	checkpointSyncURL := flag.String("checkpoint-sync-url", "", "URL to fetch finalized checkpoint state from for checkpoint sync")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
 	isAggregator := flag.Bool("is-aggregator", false, "Enable aggregator role for this node")
 	attCommCount := flag.Int("attestation-committee-count", 1, "Number of attestation committees (must be 1 for devnet-3)")
@@ -111,21 +112,22 @@ func main() {
 		*apiEnabled = false
 	}
 	nodeCfg := node.Config{
-		GenesisTime:      genCfg.GenesisTime,
-		Validators:       genCfg.Validators,
-		ListenAddr:       *listenAddr,
-		NodeKeyPath:      *nodeKey,
-		Bootnodes:        bootnodes,
-		ValidatorIDs:     validatorIDs,
-		ValidatorKeysDir: *validatorKeys,
-		MetricsPort:      *metricsPort,
-		DiscoveryPort:    *discoveryPort,
-		DataDir:          *dataDir,
-		DevnetID:         *devnetID,
-		IsAggregator:     *isAggregator,
-		APIHost:          *apiHost,
-		APIPort:          *apiPort,
-		APIEnabled:       *apiEnabled,
+		GenesisTime:       genCfg.GenesisTime,
+		Validators:        genCfg.Validators,
+		ListenAddr:        *listenAddr,
+		NodeKeyPath:       *nodeKey,
+		Bootnodes:         bootnodes,
+		ValidatorIDs:      validatorIDs,
+		ValidatorKeysDir:  *validatorKeys,
+		MetricsPort:       *metricsPort,
+		DiscoveryPort:     *discoveryPort,
+		DataDir:           *dataDir,
+		CheckpointSyncURL: *checkpointSyncURL,
+		DevnetID:          *devnetID,
+		IsAggregator:      *isAggregator,
+		APIHost:           *apiHost,
+		APIPort:           *apiPort,
+		APIEnabled:        *apiEnabled,
 	}
 
 	n, err := node.New(nodeCfg)

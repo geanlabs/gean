@@ -34,9 +34,9 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 	targetRoot := c.head
 
 	// Walk back up to JustificationLookback steps if safe target is newer.
-	safeBlock, safeOK := c.storage.GetBlock(c.safeTarget)
+	safeBlock, safeOK := c.lookupBlockSummary(c.safeTarget)
 	for i := 0; i < types.JustificationLookback; i++ {
-		tBlock, ok := c.storage.GetBlock(targetRoot)
+		tBlock, ok := c.lookupBlockSummary(targetRoot)
 		if ok && safeOK && tBlock.Slot > safeBlock.Slot {
 			targetRoot = tBlock.ParentRoot
 		}
@@ -44,7 +44,7 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 
 	// Ensure target is in justifiable slot range.
 	for {
-		tBlock, ok := c.storage.GetBlock(targetRoot)
+		tBlock, ok := c.lookupBlockSummary(targetRoot)
 		if !ok {
 			break
 		}
@@ -54,7 +54,7 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 		targetRoot = tBlock.ParentRoot
 	}
 
-	tBlock, ok := c.storage.GetBlock(targetRoot)
+	tBlock, ok := c.lookupBlockSummary(targetRoot)
 	if !ok {
 		return nil, fmt.Errorf("vote target block not found")
 	}
@@ -67,8 +67,7 @@ func (c *Store) getVoteTargetLocked() (*types.Checkpoint, error) {
 		return c.latestJustified, nil
 	}
 
-	blockHash, _ := tBlock.HashTreeRoot()
-	return &types.Checkpoint{Root: blockHash, Slot: tBlock.Slot}, nil
+	return &types.Checkpoint{Root: targetRoot, Slot: tBlock.Slot}, nil
 }
 
 // ProduceBlock creates a new devnet-2 signed block envelope for the given slot.

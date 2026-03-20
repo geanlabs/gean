@@ -11,6 +11,12 @@ import (
 
 var log = logging.NewComponentLogger(logging.CompForkChoice)
 
+type blockSummary struct {
+	Slot          uint64
+	ParentRoot    [32]byte
+	ProposerIndex uint64
+}
+
 // Store tracks chain state and validator votes for the LMD GHOST algorithm.
 type Store struct {
 	mu sync.Mutex
@@ -24,6 +30,7 @@ type Store struct {
 	latestJustified *types.Checkpoint
 	latestFinalized *types.Checkpoint
 	storage         storage.Store
+	checkpointRoots map[[32]byte]blockSummary
 	isAggregator    bool
 
 	latestKnownAttestations       map[uint64]*types.SignedAttestation
@@ -51,8 +58,8 @@ func (c *Store) GetStatus() ChainStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	headSlot := uint64(0)
-	if hb, ok := c.storage.GetBlock(c.head); ok {
-		headSlot = hb.Slot
+	if head, ok := c.lookupBlockSummary(c.head); ok {
+		headSlot = head.Slot
 	}
 	return ChainStatus{
 		Head:          c.head,
@@ -143,6 +150,7 @@ func RestoreFromDB(store storage.Store) *Store {
 		latestJustified:               headState.LatestJustified,
 		latestFinalized:               headState.LatestFinalized,
 		storage:                       store,
+		checkpointRoots:               buildCheckpointRootIndex(headState, headRoot),
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
 		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
@@ -176,6 +184,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		latestJustified:               &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
 		latestFinalized:               &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
 		storage:                       store,
+		checkpointRoots:               nil,
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
 		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
@@ -183,4 +192,105 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		gossipSignatures:              make(map[signatureKey]storedSignature),
 		aggregatedPayloads:            make(map[signatureKey][]storedAggregatedPayload),
 	}
+}
+
+// NewStoreFromCheckpointState initializes a store from a checkpoint state.
+// The checkpoint state is expected to have a latest block header whose
+// hash-tree-root matches anchorRoot after the header state root has been set.
+func NewStoreFromCheckpointState(state *types.State, anchorRoot [32]byte, store storage.Store) *Store {
+	anchorHeader := state.LatestBlockHeader
+	anchorBlock := &types.Block{
+		Slot:          anchorHeader.Slot,
+		ProposerIndex: anchorHeader.ProposerIndex,
+		ParentRoot:    anchorHeader.ParentRoot,
+		StateRoot:     anchorHeader.StateRoot,
+		Body:          emptyCheckpointBody(),
+	}
+
+	store.PutBlock(anchorRoot, anchorBlock)
+	store.PutSignedBlock(anchorRoot, &types.SignedBlockWithAttestation{
+		Message: &types.BlockWithAttestation{Block: anchorBlock},
+	})
+	store.PutState(anchorRoot, state)
+
+	return &Store{
+		time:                          state.Slot * types.IntervalsPerSlot,
+		genesisTime:                   state.Config.GenesisTime,
+		numValidators:                 uint64(len(state.Validators)),
+		head:                          anchorRoot,
+		safeTarget:                    state.LatestFinalized.Root,
+		latestJustified:               &types.Checkpoint{Root: state.LatestJustified.Root, Slot: state.LatestJustified.Slot},
+		latestFinalized:               &types.Checkpoint{Root: state.LatestFinalized.Root, Slot: state.LatestFinalized.Slot},
+		storage:                       store,
+		checkpointRoots:               buildCheckpointRootIndex(state, anchorRoot),
+		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
+		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
+		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
+		latestNewAggregatedPayloads:   make(map[[32]byte]aggregatedPayload),
+		gossipSignatures:              make(map[signatureKey]storedSignature),
+		aggregatedPayloads:            make(map[signatureKey][]storedAggregatedPayload),
+	}
+}
+
+func emptyCheckpointBody() *types.BlockBody {
+	return &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
+}
+
+func summarizeBlock(block *types.Block) blockSummary {
+	return blockSummary{
+		Slot:          block.Slot,
+		ParentRoot:    block.ParentRoot,
+		ProposerIndex: block.ProposerIndex,
+	}
+}
+
+func buildCheckpointRootIndex(state *types.State, anchorRoot [32]byte) map[[32]byte]blockSummary {
+	if state == nil || state.LatestBlockHeader == nil {
+		return nil
+	}
+
+	refs := make(map[[32]byte]blockSummary, len(state.HistoricalBlockHashes)+1)
+	lastNonZeroRoot := types.ZeroHash
+	for slot, root := range state.HistoricalBlockHashes {
+		if root == types.ZeroHash {
+			continue
+		}
+		refs[root] = blockSummary{
+			Slot:       uint64(slot),
+			ParentRoot: lastNonZeroRoot,
+		}
+		lastNonZeroRoot = root
+	}
+
+	refs[anchorRoot] = blockSummary{
+		Slot:          state.LatestBlockHeader.Slot,
+		ParentRoot:    state.LatestBlockHeader.ParentRoot,
+		ProposerIndex: state.LatestBlockHeader.ProposerIndex,
+	}
+	return refs
+}
+
+func (c *Store) lookupBlockSummary(root [32]byte) (blockSummary, bool) {
+	if block, ok := c.storage.GetBlock(root); ok {
+		return summarizeBlock(block), true
+	}
+	if c.checkpointRoots == nil {
+		return blockSummary{}, false
+	}
+	summary, ok := c.checkpointRoots[root]
+	return summary, ok
+}
+
+func (c *Store) allKnownBlockSummaries() map[[32]byte]blockSummary {
+	blocks := c.storage.GetAllBlocks()
+	summaries := make(map[[32]byte]blockSummary, len(blocks)+len(c.checkpointRoots))
+	for root, block := range blocks {
+		summaries[root] = summarizeBlock(block)
+	}
+	for root, summary := range c.checkpointRoots {
+		if _, ok := summaries[root]; !ok {
+			summaries[root] = summary
+		}
+	}
+	return summaries
 }

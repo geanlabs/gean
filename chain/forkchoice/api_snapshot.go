@@ -30,7 +30,7 @@ func (c *Store) ForkChoiceSnapshot() ForkChoiceSnapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	blocks := c.storage.GetAllBlocks()
+	blocks := c.allKnownBlockSummaries()
 	weights := computeBlockWeights(blocks, c.latestKnownAttestations)
 
 	finalized := types.Checkpoint{}
@@ -101,7 +101,7 @@ func (c *Store) FinalizedStateSSZ() ([]byte, bool, error) {
 	return sszBytes, true, nil
 }
 
-func computeBlockWeights(blocks map[[32]byte]*types.Block, latestAttestations map[uint64]*types.SignedAttestation) map[[32]byte]int {
+func computeBlockWeights(blocks map[[32]byte]blockSummary, latestAttestations map[uint64]*types.SignedAttestation) map[[32]byte]int {
 	weights := make(map[[32]byte]int, len(blocks))
 	for _, sa := range latestAttestations {
 		if sa == nil || sa.Message == nil || sa.Message.Head == nil {
