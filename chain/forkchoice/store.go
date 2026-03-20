@@ -150,7 +150,7 @@ func RestoreFromDB(store storage.Store) *Store {
 		latestJustified:               headState.LatestJustified,
 		latestFinalized:               headState.LatestFinalized,
 		storage:                       store,
-		checkpointRoots:               nil,
+		checkpointRoots:               buildCheckpointRootIndex(headState, headRoot),
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
 		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
