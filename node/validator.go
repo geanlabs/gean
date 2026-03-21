@@ -81,6 +81,8 @@ func (v *ValidatorDuties) TryAggregate(ctx context.Context, slot uint64) {
 			v.Log.Info("published aggregated attestation",
 				"slot", slot,
 				"att_slot", saa.Data.Slot,
+				"participants", len(saa.Proof.Participants),
+				"proof_size", len(saa.Proof.ProofData),
 			)
 		}
 	}
@@ -120,10 +122,13 @@ func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
 
 		envelope, err := v.FC.ProduceBlock(slot, idx, kp)
 		if err != nil {
+			status := v.FC.GetStatus()
 			v.Log.Error("block proposal failed",
 				"slot", slot,
 				"proposer", idx,
 				"err", err,
+				"head_slot", status.HeadSlot,
+				"finalized_slot", status.FinalizedSlot,
 			)
 			continue
 		}
@@ -143,13 +148,17 @@ func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
 			v.Log.Error("failed to publish block",
 				"slot", slot,
 				"proposer", idx,
+				"block_root", logging.LongHash(blockRoot),
 				"err", err,
 			)
 		} else {
 			v.Log.Info("proposed block",
 				"slot", slot,
 				"proposer", idx,
-				"block_root", logging.ShortHash(blockRoot),
+				"block_root", logging.LongHash(blockRoot),
+				"parent_root", logging.ShortHash(envelope.Message.Block.ParentRoot),
+				"state_root", logging.ShortHash(envelope.Message.Block.StateRoot),
+				"attestations", len(envelope.Message.Block.Body.Attestations),
 			)
 		}
 	}
@@ -175,10 +184,13 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 		metrics.PQSigAttestationSigningTime.Observe(signDuration.Seconds())
 
 		if err != nil {
+			status := v.FC.GetStatus()
 			v.Log.Error("attestation failed",
 				"slot", slot,
 				"validator", idx,
 				"err", err,
+				"head_slot", status.HeadSlot,
+				"finalized_slot", status.FinalizedSlot,
 			)
 			continue
 		}
@@ -208,7 +220,15 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 				"err", err,
 			)
 		} else {
-			v.Log.Debug("published attestation", "slot", slot, "validator", idx, "target_slot", sa.Message.Target.Slot)
+			v.Log.Debug("published attestation",
+				"slot", slot,
+				"validator", idx,
+				"head_root", logging.ShortHash(sa.Message.Head.Root),
+				"target_slot", sa.Message.Target.Slot,
+				"target_root", logging.ShortHash(sa.Message.Target.Root),
+				"source_slot", sa.Message.Source.Slot,
+				"source_root", logging.ShortHash(sa.Message.Source.Root),
+			)
 		}
 	}
 }

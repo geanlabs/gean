@@ -110,7 +110,7 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 		return nil, fmt.Errorf("gossipsub: %w", err)
 	}
 
-	// Register peer connection/disconnection notification handler for metrics.
+	// Register peer connection/disconnection notification handler for metrics and logging.
 	h.Network().Notify(&libp2pnetwork.NotifyBundle{
 		ConnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
 			dir := "inbound"
@@ -118,6 +118,11 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 				dir = "outbound"
 			}
 			metrics.PeerConnectionEventsTotal.WithLabelValues(dir, "success").Inc()
+			netLog.Info("peer connected",
+				"peer_id", conn.RemotePeer().String()[:16]+"...",
+				"direction", dir,
+				"peers", len(n.Peers()),
+			)
 		},
 		DisconnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
 			dir := "inbound"
@@ -125,6 +130,11 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 				dir = "outbound"
 			}
 			metrics.PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Inc()
+			netLog.Info("peer disconnected",
+				"peer_id", conn.RemotePeer().String()[:16]+"...",
+				"direction", dir,
+				"peers", len(n.Peers()),
+			)
 		},
 	})
 

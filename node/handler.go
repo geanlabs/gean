@@ -49,13 +49,19 @@ func (n *Node) registerGossipHandlers() error {
 				"slot", block.Slot,
 				"proposer", block.ProposerIndex,
 				"block_root", logging.LongHash(blockRoot),
+				"parent_root", logging.ShortHash(block.ParentRoot),
+				"state_root", logging.ShortHash(block.StateRoot),
+				"attestations", len(block.Body.Attestations),
 			)
 			if err := n.FC.ProcessBlock(sb); err != nil {
+				status := n.FC.GetStatus()
 				if isMissingParentStateErr(err) {
 					gossipLog.Warn("parent state missing for gossip block, attempting recovery",
 						"slot", block.Slot,
 						"block_root", logging.LongHash(blockRoot),
 						"parent_root", logging.LongHash(block.ParentRoot),
+						"head_slot", status.HeadSlot,
+						"finalized_slot", status.FinalizedSlot,
 					)
 					if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
 						if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
@@ -82,14 +88,36 @@ func (n *Node) registerGossipHandlers() error {
 				}
 				gossipLog.Warn("rejected gossip block",
 					"slot", block.Slot,
+					"block_root", logging.LongHash(blockRoot),
 					"err", err,
+					"head_slot", status.HeadSlot,
+					"finalized_slot", status.FinalizedSlot,
 				)
 				return
 			}
-			// Block processed successfully - check for pending children.
+			// Block accepted.
+			gossipLog.Info("block accepted",
+				"slot", block.Slot,
+				"proposer", block.ProposerIndex,
+				"block_root", logging.LongHash(blockRoot),
+				"parent_root", logging.ShortHash(block.ParentRoot),
+				"state_root", logging.ShortHash(block.StateRoot),
+				"attestations", len(block.Body.Attestations),
+			)
 			n.processPendingChildren(blockRoot, gossipLog)
 		},
 		OnAttestation: func(sa *types.SignedAttestation) {
+			if sa.Message != nil {
+				gossipLog.Debug("received attestation from gossip",
+					"slot", sa.Message.Slot,
+					"validator", sa.ValidatorID,
+					"head_root", logging.ShortHash(sa.Message.Head.Root),
+					"target_slot", sa.Message.Target.Slot,
+					"target_root", logging.ShortHash(sa.Message.Target.Root),
+					"source_slot", sa.Message.Source.Slot,
+					"source_root", logging.ShortHash(sa.Message.Source.Root),
+				)
+			}
 			n.FC.ProcessSubnetAttestation(sa)
 		},
 		OnAggregatedAttestation: func(saa *types.SignedAggregatedAttestation) {

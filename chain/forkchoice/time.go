@@ -98,11 +98,31 @@ func (c *Store) updateHeadLocked() {
 	oldHead := c.head
 	c.head = GetForkChoiceHead(c.allKnownBlockSummaries(), c.latestJustified.Root, c.latestKnownAttestations, 0)
 
+	if oldHead == c.head {
+		return
+	}
+
 	if depth, reorged := c.reorgDepth(oldHead, c.head); reorged {
 		metrics.ForkChoiceReorgsTotal.Inc()
 		metrics.ForkChoiceReorgDepth.Observe(float64(depth))
 		log.Warn("fork choice reorg detected", "old_head", logging.ShortHash(oldHead), "new_head", logging.ShortHash(c.head), "depth", depth)
 	}
+
+	var oldSlot, newSlot uint64
+	if s, ok := c.lookupBlockSummary(oldHead); ok {
+		oldSlot = s.Slot
+	}
+	if s, ok := c.lookupBlockSummary(c.head); ok {
+		newSlot = s.Slot
+	}
+	log.Info("fork choice head updated",
+		"head_slot", newSlot,
+		"head_root", logging.ShortHash(c.head),
+		"previous_head_slot", oldSlot,
+		"previous_head_root", logging.ShortHash(oldHead),
+		"justified_slot", c.latestJustified.Slot,
+		"finalized_slot", c.latestFinalized.Slot,
+	)
 }
 
 // reorgDepth checks if a head change is a reorg (chain divergence, not a simple extension).

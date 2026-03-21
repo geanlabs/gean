@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -95,13 +96,23 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 
 	// Process in forward order (oldest first).
 	synced := 0
+	total := len(pending)
 	for i := len(pending) - 1; i >= 0; i-- {
 		sb := pending[i]
+		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		if err := n.FC.ProcessBlock(sb); err != nil {
-			n.log.Debug("sync block rejected", "slot", sb.Message.Block.Slot, "err", err)
+			n.log.Debug("sync block rejected",
+				"slot", sb.Message.Block.Slot,
+				"block_root", logging.LongHash(blockRoot),
+				"err", err,
+			)
 		} else {
-			n.log.Info("synced block", "slot", sb.Message.Block.Slot)
 			synced++
+			n.log.Info("synced block",
+				"slot", sb.Message.Block.Slot,
+				"block_root", logging.ShortHash(blockRoot),
+				"progress", fmt.Sprintf("%d/%d", synced, total),
+			)
 		}
 	}
 	return synced > 0
