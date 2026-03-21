@@ -317,7 +317,9 @@ func init() {
 		for _, result := range []string{"success", "timeout", "error"} {
 			PeerConnectionEventsTotal.WithLabelValues(dir, result).Add(0)
 		}
-		PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Add(0)
+		for _, reason := range []string{"timeout", "remote_close", "local_close", "error"} {
+			PeerDisconnectionEventsTotal.WithLabelValues(dir, reason).Add(0)
+		}
 	}
 
 	PQSigAttestationSignaturesTotal.Add(0)
