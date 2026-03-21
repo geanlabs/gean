@@ -314,7 +314,9 @@ func init() {
 	}
 
 	for _, dir := range []string{"inbound", "outbound"} {
-		PeerConnectionEventsTotal.WithLabelValues(dir, "success").Add(0)
+		for _, result := range []string{"success", "timeout", "error"} {
+			PeerConnectionEventsTotal.WithLabelValues(dir, result).Add(0)
+		}
 		PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Add(0)
 	}
 

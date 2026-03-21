@@ -150,6 +150,11 @@ func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) {
 		}
 
 		if err := h.Connect(ctx, *pi); err != nil {
+			result := "error"
+			if ctx.Err() != nil {
+				result = "timeout"
+			}
+			metrics.PeerConnectionEventsTotal.WithLabelValues("outbound", result).Inc()
 			netLog.Warn("failed to connect to bootnode",
 				"peer_id", pi.ID.String()[:16]+"...",
 				"err", err,
