@@ -49,8 +49,8 @@ func (n *Node) registerGossipHandlers() error {
 				"slot", block.Slot,
 				"proposer", block.ProposerIndex,
 				"block_root", logging.LongHash(blockRoot),
-				"parent_root", logging.ShortHash(block.ParentRoot),
-				"state_root", logging.ShortHash(block.StateRoot),
+				"parent_root", logging.LongHash(block.ParentRoot),
+				"state_root", logging.LongHash(block.StateRoot),
 				"attestations", len(block.Body.Attestations),
 			)
 			if err := n.FC.ProcessBlock(sb); err != nil {
@@ -100,8 +100,8 @@ func (n *Node) registerGossipHandlers() error {
 				"slot", block.Slot,
 				"proposer", block.ProposerIndex,
 				"block_root", logging.LongHash(blockRoot),
-				"parent_root", logging.ShortHash(block.ParentRoot),
-				"state_root", logging.ShortHash(block.StateRoot),
+				"parent_root", logging.LongHash(block.ParentRoot),
+				"state_root", logging.LongHash(block.StateRoot),
 				"attestations", len(block.Body.Attestations),
 			)
 			n.processPendingChildren(blockRoot, gossipLog)
@@ -111,11 +111,11 @@ func (n *Node) registerGossipHandlers() error {
 				gossipLog.Debug("received attestation from gossip",
 					"slot", sa.Message.Slot,
 					"validator", sa.ValidatorID,
-					"head_root", logging.ShortHash(sa.Message.Head.Root),
+					"head_root", logging.LongHash(sa.Message.Head.Root),
 					"target_slot", sa.Message.Target.Slot,
-					"target_root", logging.ShortHash(sa.Message.Target.Root),
+					"target_root", logging.LongHash(sa.Message.Target.Root),
 					"source_slot", sa.Message.Source.Slot,
-					"source_root", logging.ShortHash(sa.Message.Source.Root),
+					"source_root", logging.LongHash(sa.Message.Source.Root),
 				)
 			}
 			n.FC.ProcessSubnetAttestation(sa)

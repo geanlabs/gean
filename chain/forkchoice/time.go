@@ -102,12 +102,6 @@ func (c *Store) updateHeadLocked() {
 		return
 	}
 
-	if depth, reorged := c.reorgDepth(oldHead, c.head); reorged {
-		metrics.ForkChoiceReorgsTotal.Inc()
-		metrics.ForkChoiceReorgDepth.Observe(float64(depth))
-		log.Warn("fork choice reorg detected", "old_head", logging.ShortHash(oldHead), "new_head", logging.ShortHash(c.head), "depth", depth)
-	}
-
 	var oldSlot, newSlot uint64
 	if s, ok := c.lookupBlockSummary(oldHead); ok {
 		oldSlot = s.Slot
@@ -115,13 +109,27 @@ func (c *Store) updateHeadLocked() {
 	if s, ok := c.lookupBlockSummary(c.head); ok {
 		newSlot = s.Slot
 	}
+
+	if depth, reorged := c.reorgDepth(oldHead, c.head); reorged {
+		metrics.ForkChoiceReorgsTotal.Inc()
+		metrics.ForkChoiceReorgDepth.Observe(float64(depth))
+		log.Warn("fork choice reorg detected",
+			"old_head_slot", oldSlot,
+			"old_head_root", logging.LongHash(oldHead),
+			"new_head_slot", newSlot,
+			"new_head_root", logging.LongHash(c.head),
+			"depth", depth,
+		)
+	}
 	log.Info("fork choice head updated",
 		"head_slot", newSlot,
-		"head_root", logging.ShortHash(c.head),
+		"head_root", logging.LongHash(c.head),
 		"previous_head_slot", oldSlot,
-		"previous_head_root", logging.ShortHash(oldHead),
+		"previous_head_root", logging.LongHash(oldHead),
 		"justified_slot", c.latestJustified.Slot,
+		"justified_root", logging.LongHash(c.latestJustified.Root),
 		"finalized_slot", c.latestFinalized.Slot,
+		"finalized_root", logging.LongHash(c.latestFinalized.Root),
 	)
 }
 
@@ -131,38 +139,46 @@ func (c *Store) reorgDepth(oldHead, newHead [32]byte) (uint64, bool) {
 	if oldHead == newHead {
 		return 0, false
 	}
-	oldSummary, oldOk := c.lookupBlockSummary(oldHead)
-	newSummary, newOk := c.lookupBlockSummary(newHead)
-	if !oldOk || !newOk {
-		return 0, false
-	}
 
-	// Walk back from the higher-slot head to the lower-slot head's slot.
-	var current [32]byte
-	var targetSlot uint64
-	var targetRoot [32]byte
-	if newSummary.Slot >= oldSummary.Slot {
-		current, targetSlot, targetRoot = newHead, oldSummary.Slot, oldHead
-	} else {
-		current, targetSlot, targetRoot = oldHead, newSummary.Slot, newHead
-	}
-
-	const maxDepth = 128
-	var depth uint64
+	// Collect the full ancestor chain of the new head. If the old head is in
+	// this ancestry, the head change is a normal extension, not a reorg.
+	newHeadAncestors := make(map[[32]byte]struct{})
+	current := newHead
 	for {
+		newHeadAncestors[current] = struct{}{}
+		if current == oldHead {
+			return 0, false
+		}
 		summary, ok := c.lookupBlockSummary(current)
 		if !ok {
 			return 0, false
 		}
-		if summary.Slot <= targetSlot {
-			return depth, current != targetRoot
+		if summary.Slot == 0 {
+			break
+		}
+		current = summary.ParentRoot
+	}
+
+	// Walk back from the old head until we reach the common ancestor with the
+	// new head. The number of replaced blocks is the reorg depth.
+	current = oldHead
+	var depth uint64
+	for {
+		if _, ok := newHeadAncestors[current]; ok {
+			return depth, true
+		}
+		summary, ok := c.lookupBlockSummary(current)
+		if !ok {
+			return 0, false
+		}
+		if summary.Slot == 0 {
+			break
 		}
 		current = summary.ParentRoot
 		depth++
-		if depth >= maxDepth {
-			return depth, true
-		}
 	}
+
+	return 0, false
 }
 
 // UpdateSafeTarget finds the head with sufficient (2/3+) vote support.

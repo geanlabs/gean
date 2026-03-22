@@ -119,8 +119,9 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 			}
 			metrics.PeerConnectionEventsTotal.WithLabelValues(dir, "success").Inc()
 			netLog.Info("peer connected",
-				"peer_id", conn.RemotePeer().String()[:16]+"...",
+				"peer_id", conn.RemotePeer().String(),
 				"direction", dir,
+				"remote_addr", conn.RemoteMultiaddr().String(),
 				"peers", len(n.Peers()),
 			)
 		},
@@ -131,8 +132,9 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 			}
 			metrics.PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Inc()
 			netLog.Info("peer disconnected",
-				"peer_id", conn.RemotePeer().String()[:16]+"...",
+				"peer_id", conn.RemotePeer().String(),
 				"direction", dir,
+				"remote_addr", conn.RemoteMultiaddr().String(),
 				"peers", len(n.Peers()),
 			)
 		},
@@ -166,13 +168,15 @@ func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) {
 			}
 			metrics.PeerConnectionEventsTotal.WithLabelValues("outbound", result).Inc()
 			netLog.Warn("failed to connect to bootnode",
-				"peer_id", pi.ID.String()[:16]+"...",
+				"peer_id", pi.ID.String(),
+				"addr", addr,
 				"err", err,
 			)
 			continue
 		}
 		netLog.Info("connected to bootnode",
-			"peer_id", pi.ID.String()[:16]+"...",
+			"peer_id", pi.ID.String(),
+			"addr", addr,
 		)
 	}
 }

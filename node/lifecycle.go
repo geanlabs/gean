@@ -127,7 +127,7 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 	)
 
 	if cfg.CheckpointSyncURL != "" {
-		log.Info("checkpoint sync enabled, downloading state from", "url", cfg.CheckpointSyncURL)
+		log.Info("checkpoint sync enabled", "checkpoint_sync_url", cfg.CheckpointSyncURL)
 
 		state, err := downloadCheckpointState(cfg.CheckpointSyncURL)
 		if err != nil {
@@ -139,12 +139,19 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 			} else {
 				log.Info("checkpoint state verified",
 					"slot", preparedState.Slot,
-					"state_root", logging.ShortHash(stateRoot),
-					"block_root", logging.ShortHash(blockRoot),
+					"state_root", logging.LongHash(stateRoot),
+					"block_root", logging.LongHash(blockRoot),
+					"justified_slot", preparedState.LatestJustified.Slot,
+					"justified_root", logging.LongHash(preparedState.LatestJustified.Root),
+					"finalized_slot", preparedState.LatestFinalized.Slot,
+					"finalized_root", logging.LongHash(preparedState.LatestFinalized.Root),
 				)
 				fc = forkchoice.NewStoreFromCheckpointState(preparedState, blockRoot, db)
 				checkpointSyncSucceeded = true
-				log.Info("checkpoint sync completed successfully, using state as anchor", "slot", preparedState.Slot)
+				log.Info("checkpoint sync completed successfully, using state as anchor",
+					"slot", preparedState.Slot,
+					"anchor_block_root", logging.LongHash(blockRoot),
+				)
 			}
 		}
 	}
@@ -156,17 +163,21 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 	if fc != nil && !checkpointSyncSucceeded {
 		status := fc.GetStatus()
 		log.Info("chain restored from database",
-			"head", logging.ShortHash(status.Head),
+			"head_root", logging.LongHash(status.Head),
 			"head_slot", status.HeadSlot,
+			"justified_root", logging.LongHash(status.JustifiedRoot),
 			"justified_slot", status.JustifiedSlot,
+			"finalized_root", logging.LongHash(status.FinalizedRoot),
 			"finalized_slot", status.FinalizedSlot,
 		)
 	} else if fc != nil {
 		status := fc.GetStatus()
 		log.Info("chain initialized from checkpoint state",
-			"head", logging.ShortHash(status.Head),
+			"head_root", logging.LongHash(status.Head),
 			"head_slot", status.HeadSlot,
+			"justified_root", logging.LongHash(status.JustifiedRoot),
 			"justified_slot", status.JustifiedSlot,
+			"finalized_root", logging.LongHash(status.FinalizedRoot),
 			"finalized_slot", status.FinalizedSlot,
 		)
 	} else {
@@ -185,8 +196,8 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 
 		genesisRoot, _ := genesisBlock.HashTreeRoot()
 		log.Info("genesis state initialized",
-			"state_root", logging.ShortHash(stateRoot),
-			"block_root", logging.ShortHash(genesisRoot),
+			"state_root", logging.LongHash(stateRoot),
+			"block_root", logging.LongHash(genesisRoot),
 		)
 
 		fc = forkchoice.NewStore(genesisState, genesisBlock, db)
@@ -206,7 +217,7 @@ func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
 
 	netLog := logging.NewComponentLogger(logging.CompNetwork)
 	netLog.Info("libp2p host started",
-		"peer_id", host.P2P.ID().String()[:16]+"...",
+		"peer_id", host.P2P.ID().String(),
 		"addr", cfg.ListenAddr,
 	)
 
