@@ -53,15 +53,15 @@ var PQSigAttestationsInAggregatedTotal = prometheus.NewCounter(prometheus.Counte
 })
 
 var PQSigSignaturesBuildingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
-	Name:    "lean_pq_sig_attestation_signatures_building_time_seconds",
+	Name:    "lean_pq_sig_aggregated_signatures_building_time_seconds",
 	Help:    "Time taken to build aggregated attestation signatures",
-	Buckets: fastBuckets,
+	Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
 })
 
 var PQSigAggregatedVerificationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_pq_sig_aggregated_signatures_verification_time_seconds",
 	Help:    "Time taken to verify an aggregated attestation signature",
-	Buckets: fastBuckets,
+	Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
 })
 
 var PQSigAggregatedValidTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -109,7 +109,7 @@ var SafeTargetSlot = prometheus.NewGauge(prometheus.GaugeOpts{
 var ForkChoiceBlockProcessingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_fork_choice_block_processing_time_seconds",
 	Help:    "Time taken to process block in fork choice",
-	Buckets: fastBuckets,
+	Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1, 1.25, 1.5, 2, 4},
 })
 
 var AttestationsValid = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -217,7 +217,7 @@ var AttestationCommitteeSubnet = prometheus.NewGauge(prometheus.GaugeOpts{
 var CommitteeSignaturesAggregationTime = prometheus.NewHistogram(prometheus.HistogramOpts{
 	Name:    "lean_committee_signatures_aggregation_time_seconds",
 	Help:    "Time taken to aggregate committee signatures",
-	Buckets: fastBuckets,
+	Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1},
 })
 
 var GossipSignaturesCount = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -237,10 +237,10 @@ var LatestKnownAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
 
 // --- Network ---
 
-var ConnectedPeers = prometheus.NewGauge(prometheus.GaugeOpts{
+var ConnectedPeers = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "lean_connected_peers",
 	Help: "Number of connected peers",
-})
+}, []string{"client"})
 
 var PeerConnectionEventsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Name: "lean_peer_connection_events_total",
@@ -314,13 +314,22 @@ func init() {
 	}
 
 	for _, dir := range []string{"inbound", "outbound"} {
-		PeerConnectionEventsTotal.WithLabelValues(dir, "success").Add(0)
-		PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Add(0)
+		for _, result := range []string{"success", "timeout", "error"} {
+			PeerConnectionEventsTotal.WithLabelValues(dir, result).Add(0)
+		}
+		for _, reason := range []string{"timeout", "remote_close", "local_close", "error"} {
+			PeerDisconnectionEventsTotal.WithLabelValues(dir, reason).Add(0)
+		}
 	}
+
+	ConnectedPeers.WithLabelValues("gean").Set(0)
 
 	PQSigAttestationSignaturesTotal.Add(0)
 	PQSigAttestationSignaturesValidTotal.Add(0)
 	PQSigAttestationSignaturesInvalidTotal.Add(0)
+
+	FinalizationsTotal.WithLabelValues("success").Add(0)
+	FinalizationsTotal.WithLabelValues("error").Add(0)
 }
 
 // Serve starts the Prometheus metrics HTTP server on the given port.

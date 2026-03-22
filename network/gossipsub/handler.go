@@ -71,9 +71,6 @@ func readBlockMessages(ctx context.Context, sub *pubsub.Subscription, topic *pub
 
 		// Log source peer to help debug mesh issues.
 		fromPeer := msg.ReceivedFrom.String()
-		if len(fromPeer) > 16 {
-			fromPeer = fromPeer[:16]
-		}
 
 		decoded, err := snappy.Decode(nil, msg.Data)
 		if err != nil {

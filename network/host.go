@@ -110,7 +110,7 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 		return nil, fmt.Errorf("gossipsub: %w", err)
 	}
 
-	// Register peer connection/disconnection notification handler for metrics.
+	// Register peer connection/disconnection notification handler for metrics and logging.
 	h.Network().Notify(&libp2pnetwork.NotifyBundle{
 		ConnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
 			dir := "inbound"
@@ -118,6 +118,12 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 				dir = "outbound"
 			}
 			metrics.PeerConnectionEventsTotal.WithLabelValues(dir, "success").Inc()
+			netLog.Info("peer connected",
+				"peer_id", conn.RemotePeer().String(),
+				"direction", dir,
+				"remote_addr", conn.RemoteMultiaddr().String(),
+				"peers", len(n.Peers()),
+			)
 		},
 		DisconnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
 			dir := "inbound"
@@ -125,6 +131,12 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 				dir = "outbound"
 			}
 			metrics.PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Inc()
+			netLog.Info("peer disconnected",
+				"peer_id", conn.RemotePeer().String(),
+				"direction", dir,
+				"remote_addr", conn.RemoteMultiaddr().String(),
+				"peers", len(n.Peers()),
+			)
 		},
 	})
 
@@ -150,14 +162,21 @@ func ConnectBootnodes(ctx context.Context, h host.Host, addrs []string) {
 		}
 
 		if err := h.Connect(ctx, *pi); err != nil {
+			result := "error"
+			if ctx.Err() != nil {
+				result = "timeout"
+			}
+			metrics.PeerConnectionEventsTotal.WithLabelValues("outbound", result).Inc()
 			netLog.Warn("failed to connect to bootnode",
-				"peer_id", pi.ID.String()[:16]+"...",
+				"peer_id", pi.ID.String(),
+				"addr", addr,
 				"err", err,
 			)
 			continue
 		}
 		netLog.Info("connected to bootnode",
-			"peer_id", pi.ID.String()[:16]+"...",
+			"peer_id", pi.ID.String(),
+			"addr", addr,
 		)
 	}
 }

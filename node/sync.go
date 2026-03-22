@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -29,13 +30,19 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 
 	peerStatus, err := reqresp.RequestStatus(ctx, n.Host.P2P, pid, ourStatus)
 	if err != nil {
-		n.log.Debug("status exchange failed", "peer", pid.String()[:16], "err", err)
+		n.log.Debug("status exchange failed", "peer_id", pid.String(), "err", err)
 		return false
 	}
 	n.log.Info("status exchanged",
-		"peer", pid.String()[:16],
+		"peer_id", pid.String(),
+		"local_head_slot", status.HeadSlot,
+		"local_head_root", logging.LongHash(status.Head),
+		"local_finalized_slot", status.FinalizedSlot,
+		"local_finalized_root", logging.LongHash(status.FinalizedRoot),
 		"peer_head_slot", peerStatus.Head.Slot,
+		"peer_head_root", logging.LongHash(peerStatus.Head.Root),
 		"peer_finalized_slot", peerStatus.Finalized.Slot,
+		"peer_finalized_root", logging.LongHash(peerStatus.Finalized.Root),
 	)
 
 	// Skip sync only if peer is strictly behind us, or at the exact same position.
@@ -73,7 +80,11 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 
 		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, [][32]byte{nextRoot})
 		if err != nil || len(blocks) == 0 {
-			n.log.Debug("blocks_by_root failed during sync walk", "peer", pid.String()[:16], "err", err)
+			n.log.Debug("blocks_by_root failed during sync walk",
+				"peer_id", pid.String(),
+				"requested_root", logging.LongHash(nextRoot),
+				"err", err,
+			)
 			break
 		}
 
@@ -86,7 +97,8 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	// fail with "parent state not found".
 	if !n.FC.HasState(nextRoot) {
 		n.log.Debug("sync walk did not reach known ancestor with state",
-			"peer", pid.String()[:16],
+			"peer_id", pid.String(),
+			"ancestor_root", logging.LongHash(nextRoot),
 			"fetched", len(pending),
 			"max_depth", maxSyncDepth,
 		)
@@ -95,13 +107,24 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 
 	// Process in forward order (oldest first).
 	synced := 0
+	total := len(pending)
 	for i := len(pending) - 1; i >= 0; i-- {
 		sb := pending[i]
+		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		if err := n.FC.ProcessBlock(sb); err != nil {
-			n.log.Debug("sync block rejected", "slot", sb.Message.Block.Slot, "err", err)
+			n.log.Debug("sync block rejected",
+				"slot", sb.Message.Block.Slot,
+				"block_root", logging.LongHash(blockRoot),
+				"err", err,
+			)
 		} else {
-			n.log.Info("synced block", "slot", sb.Message.Block.Slot)
 			synced++
+			n.log.Info("synced block",
+				"slot", sb.Message.Block.Slot,
+				"block_root", logging.LongHash(blockRoot),
+				"peer_id", pid.String(),
+				"progress", fmt.Sprintf("%d/%d", synced, total),
+			)
 		}
 	}
 	return synced > 0
@@ -132,7 +155,14 @@ func (n *Node) initialSync(ctx context.Context) {
 		n.syncWithPeer(ctx, pid)
 	}
 	status := n.FC.GetStatus()
-	n.log.Info("initial sync completed", "head_slot", status.HeadSlot, "head_root", logging.LongHash(status.Head))
+	n.log.Info("initial sync completed",
+		"head_slot", status.HeadSlot,
+		"head_root", logging.LongHash(status.Head),
+		"justified_slot", status.JustifiedSlot,
+		"justified_root", logging.LongHash(status.JustifiedRoot),
+		"finalized_slot", status.FinalizedSlot,
+		"finalized_root", logging.LongHash(status.FinalizedRoot),
+	)
 }
 
 // isBehindPeers reports whether our head is behind the highest head slot
