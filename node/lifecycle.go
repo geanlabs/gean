@@ -314,6 +314,7 @@ func startMetrics(log *slog.Logger, cfg Config) {
 	metrics.NodeInfo.WithLabelValues("gean", Version).Set(1)
 	metrics.NodeStartTime.Set(float64(time.Now().Unix()))
 	metrics.ValidatorsCount.Set(float64(len(cfg.ValidatorIDs)))
+	metrics.ConnectedPeers.WithLabelValues("gean").Set(0)
 
 	// Devnet-3 aggregator metrics.
 	if cfg.IsAggregator {

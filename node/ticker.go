@@ -106,7 +106,7 @@ func (n *Node) Run(ctx context.Context) error {
 			metrics.LatestFinalizedSlot.Set(float64(status.FinalizedSlot))
 			metrics.LatestJustifiedSlot.Set(float64(status.JustifiedSlot))
 			peerCount := len(n.Host.P2P.Network().Peers())
-			metrics.ConnectedPeers.Set(float64(peerCount))
+			metrics.ConnectedPeers.WithLabelValues("gean").Set(float64(peerCount))
 
 			n.log.Info("slot",
 				"slot", slot,

@@ -237,10 +237,10 @@ var LatestKnownAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
 
 // --- Network ---
 
-var ConnectedPeers = prometheus.NewGauge(prometheus.GaugeOpts{
+var ConnectedPeers = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "lean_connected_peers",
 	Help: "Number of connected peers",
-})
+}, []string{"client"})
 
 var PeerConnectionEventsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Name: "lean_peer_connection_events_total",
@@ -321,6 +321,8 @@ func init() {
 			PeerDisconnectionEventsTotal.WithLabelValues(dir, reason).Add(0)
 		}
 	}
+
+	ConnectedPeers.WithLabelValues("gean").Set(0)
 
 	PQSigAttestationSignaturesTotal.Add(0)
 	PQSigAttestationSignaturesValidTotal.Add(0)
