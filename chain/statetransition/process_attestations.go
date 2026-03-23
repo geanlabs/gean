@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"sort"
 
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -124,7 +125,9 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 				break
 			}
 		}
-		if !hasJustifiableGap {
+		if hasJustifiableGap {
+			metrics.FinalizationsTotal.WithLabelValues("error").Inc()
+		} else {
 			oldFinalizedSlot := finalizedSlot
 			latestFinalized = &types.Checkpoint{Root: source.Root, Slot: srcSlot}
 			finalizedSlot = latestFinalized.Slot
