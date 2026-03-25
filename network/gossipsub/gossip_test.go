@@ -67,10 +67,10 @@ func TestComputeMessageIDInvalidSnappy(t *testing.T) {
 	}
 }
 
-// Test vectors from zeam (Zig client) at zeam/rust/src/libp2p_bridge.rs.
+// Test vectors for message ID computation.
 
 func TestComputeMessageIDValidSnappyVectors(t *testing.T) {
-	// zeam test: snappy-compress "hello", topic "test"
+	// Test: snappy-compress "hello", topic "test"
 	// Expected: "2e40c861545cc5b46d2220062e7440b9190bc383"
 	compressed := snappy.Encode(nil, []byte("hello"))
 	topic := "test"
@@ -89,7 +89,7 @@ func TestComputeMessageIDValidSnappyVectors(t *testing.T) {
 }
 
 func TestComputeMessageIDInvalidSnappyVectors(t *testing.T) {
-	// zeam test: raw "hello" (not snappy compressed), topic "test"
+	// Test: raw "hello" (not snappy compressed), topic "test"
 	// Expected: "a7f41aaccd241477955c981714eb92244c2efc98"
 	topic := "test"
 

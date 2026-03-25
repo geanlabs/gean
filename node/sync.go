@@ -16,18 +16,26 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// syncDeduplication tracks recently requested roots to prevent duplicate requests.
-// Per leanSpec: nodes should not request the same blocks multiple times.
+// syncDeduplication tracks recently requested roots with exponential backoff.
+// Implements instant dedup + exponential backoff on retry.
 type syncDeduplication struct {
-	mu      sync.Mutex
-	roots   map[[32]byte]time.Time
-	cleanup time.Duration
+	mu       sync.Mutex
+	roots    map[[32]byte]time.Time
+	attempts map[[32]byte]int
+	cleanup  time.Duration
 }
+
+const (
+	initialBackoffMs = 5
+	backoffMult      = 2
+	maxRetries       = 10
+)
 
 func newSyncDeduplication() *syncDeduplication {
 	return &syncDeduplication{
-		roots:   make(map[[32]byte]time.Time),
-		cleanup: 30 * time.Second,
+		roots:    make(map[[32]byte]time.Time),
+		attempts: make(map[[32]byte]int),
+		cleanup:  5 * time.Minute,
 	}
 }
 
@@ -35,25 +43,95 @@ func (s *syncDeduplication) shouldRequest(root [32]byte) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Clean up old entries
 	now := time.Now()
+
+	// Clean up old entries
 	for r, t := range s.roots {
 		if now.Sub(t) > s.cleanup {
 			delete(s.roots, r)
+			delete(s.attempts, r)
 		}
 	}
 
-	// Check if already requested recently
-	if _, exists := s.roots[root]; exists {
-		return false
+	// Check if already requested
+	if t, exists := s.roots[root]; exists {
+		// Exponential backoff: wait before retry
+		attempt := s.attempts[root]
+		backoff := time.Duration(initialBackoffMs*powInt(backoffMult, attempt)) * time.Millisecond
+		if now.Sub(t) < backoff {
+			return false
+		}
+		// Backoff expired, increment attempt
+		s.attempts[root] = attempt + 1
+		if s.attempts[root] > maxRetries {
+			return false
+		}
 	}
 
 	s.roots[root] = now
 	return true
 }
 
-// globalSyncDedup prevents duplicate block requests across all sync operations
+func (s *syncDeduplication) recordSuccess(root [32]byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.roots, root)
+	delete(s.attempts, root)
+}
+
+func powInt(base, exp int) int {
+	result := 1
+	for i := 0; i < exp; i++ {
+		result *= base
+	}
+	return result
+}
+
+// peerFailureTracker prevents requesting from peers that failed recently.
+// Tracks failed peers per root to avoid retrying the same peer.
+type peerFailureTracker struct {
+	mu      sync.Mutex
+	failed  map[[32]byte]map[peer.ID]struct{}
+	cleanup time.Duration
+}
+
+func newPeerFailureTracker() *peerFailureTracker {
+	return &peerFailureTracker{
+		failed:  make(map[[32]byte]map[peer.ID]struct{}),
+		cleanup: 5 * time.Minute,
+	}
+}
+
+func (p *peerFailureTracker) shouldTryPeer(root [32]byte, pid peer.ID) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if peers, ok := p.failed[root]; ok {
+		if _, failed := peers[pid]; failed {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *peerFailureTracker) recordFailure(root [32]byte, pid peer.ID) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.failed[root] == nil {
+		p.failed[root] = make(map[peer.ID]struct{})
+	}
+	p.failed[root][pid] = struct{}{}
+}
+
+func (p *peerFailureTracker) recordSuccess(root [32]byte) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.failed, root)
+}
+
 var globalSyncDedup = newSyncDeduplication()
+var globalPeerFailures = newPeerFailureTracker()
 
 func isMissingParentStateErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "parent state not found")
@@ -112,9 +190,8 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		return false
 	}
 
-	// Phase 1: Walk backwards collecting roots we need (for batched request)
-	// Per leanSpec: nodes should batch block requests when syncing
-	var neededRoots [][32]byte
+	// Walk backwards fetching blocks, collecting for forward processing
+	var pending []*types.SignedBlockWithAttestation
 	nextRoot := peerStatus.Head.Root
 	backlog := uint64(1)
 	if peerStatus.Head.Slot > status.HeadSlot {
@@ -141,16 +218,34 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			break
 		}
 
-		// Skip if already requested (deduplication per leanSpec)
+		// Skip if already requested (instant dedup + backoff)
 		if !globalSyncDedup.shouldRequest(nextRoot) {
-			n.log.Debug("skipping already-requested root",
+			n.log.Debug("skipping root due to dedup/backoff",
 				"peer_id", pid.String(),
 				"root", logging.LongHash(nextRoot),
 			)
 			break
 		}
 
-		neededRoots = append(neededRoots, nextRoot)
+		// Skip if already in pending blocks cache
+		if n.PendingBlocks.Has(nextRoot) {
+			n.log.Debug("skipping root already pending",
+				"peer_id", pid.String(),
+				"root", logging.LongHash(nextRoot),
+			)
+			nextRoot = [32]byte{}
+			break
+		}
+
+		// Skip if peer previously failed for this root
+		if !globalPeerFailures.shouldTryPeer(nextRoot, pid) {
+			n.log.Debug("skipping peer that failed for this root",
+				"peer_id", pid.String(),
+				"root", logging.LongHash(nextRoot),
+			)
+			break
+		}
+
 		n.log.Info("blocks_by_root requesting for parent chain",
 			"peer_id", pid.String(),
 			"root", logging.LongHash(nextRoot),
@@ -167,6 +262,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 				"requested_root", logging.LongHash(nextRoot),
 				"err", err,
 			)
+			globalPeerFailures.recordFailure(nextRoot, pid)
 			break
 		}
 		if len(blocks) == 0 {
@@ -174,56 +270,19 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 				"peer_id", pid.String(),
 				"requested_root", logging.LongHash(nextRoot),
 			)
+			globalPeerFailures.recordFailure(nextRoot, pid)
 			break
 		}
+
+		// Collect the fetched block for processing
+		pending = append(pending, blocks[0])
+		globalSyncDedup.recordSuccess(nextRoot)
 		nextRoot = blocks[0].Message.Block.ParentRoot
 	}
 
-	// If we couldn't collect any roots, nothing to sync
-	if len(neededRoots) == 0 {
+	// If we couldn't collect any blocks, nothing to sync
+	if len(pending) == 0 {
 		return false
-	}
-
-	// Phase 2: Request all collected roots in a batch
-	// Per leanSpec: batch requests reduce network overhead
-	n.log.Info("blocks_by_root batch request",
-		"peer_id", pid.String(),
-		"roots_count", len(neededRoots),
-		"first_slot", func() uint64 {
-			if len(neededRoots) > 0 {
-				return peerStatus.Head.Slot - uint64(len(neededRoots)-1)
-			}
-			return 0
-		}(),
-		"last_slot", peerStatus.Head.Slot,
-	)
-
-	startTime := time.Now()
-	blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, neededRoots)
-	metrics.BlocksByRootRequestsTotal.WithLabelValues("outbound").Inc()
-	duration := time.Since(startTime)
-	metrics.BlocksByRootResponseDuration.Observe(duration.Seconds())
-
-	if err != nil {
-		n.log.Warn("blocks_by_root batch request failed",
-			"peer_id", pid.String(),
-			"roots_count", len(neededRoots),
-			"err", err,
-		)
-		return false
-	}
-
-	n.log.Info("blocks_by_root batch response received",
-		"peer_id", pid.String(),
-		"requested", len(neededRoots),
-		"received", len(blocks),
-		"duration_ms", duration.Milliseconds(),
-	)
-
-	// Build pending list from batched response
-	var pending []*types.SignedBlockWithAttestation
-	for _, sb := range blocks {
-		pending = append(pending, sb)
 	}
 
 	if !n.FC.HasState(nextRoot) {
