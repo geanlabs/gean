@@ -76,32 +76,32 @@ Package-level metrics are declared using `prometheus.New*` constructors and regi
 
 ```go
 var HeadSlot = prometheus.NewGauge(prometheus.GaugeOpts{
-    Name: "gean_fork_choice_head_slot",
+    Name: "lean_head_slot",
     Help: "Latest slot of the canonical head",
 })
 
-var StateTransitionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-    Name:    "gean_state_transition_duration_seconds",
-    Help:    "Time taken to process state transition",
+var StateTransitionTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+    Name:    "lean_state_transition_time_seconds",
+    Help:    "Time to process state transition",
     Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
 })
 
-var BlocksProcessedTotal = prometheus.NewCounter(prometheus.CounterOpts{
-    Name: "gean_blocks_processed_total",
-    Help: "Total number of blocks processed",
+var STFAttestationsProcessed = prometheus.NewCounter(prometheus.CounterOpts{
+    Name: "lean_state_transition_attestations_processed_total",
+    Help: "Total number of processed attestations",
 })
 
 func init() {
-    prometheus.MustRegister(HeadSlot, StateTransitionDuration, BlocksProcessedTotal)
+    prometheus.MustRegister(HeadSlot, StateTransitionTime, STFAttestationsProcessed)
 }
 ```
 
 ### Naming Convention
 
-- All metric names must be prefixed with `gean_`
+- All metric names must be prefixed with `lean_`
 - Component segments: `fork_choice_`, `state_transition_`, `network_`, `validator_`
 - Suffix: `_total` for counters, `_seconds` for durations
-- Examples: `gean_fork_choice_head_slot`, `gean_state_transition_duration_seconds`, `gean_blocks_processed_total`
+- Examples: `lean_head_slot`, `lean_state_transition_time_seconds`, `lean_state_transition_attestations_processed_total`
 
 ### Timing Helper Pattern
 
@@ -111,7 +111,7 @@ Use a deferred closure to measure operation duration:
 func timeStateTransition() func() {
     start := time.Now()
     return func() {
-        StateTransitionDuration.Observe(time.Since(start).Seconds())
+        StateTransitionTime.Observe(time.Since(start).Seconds())
     }
 }
 
