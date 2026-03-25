@@ -1,30 +1,60 @@
 package node
 
 import (
+	"log/slog"
 	"slices"
 	"sync"
 
+	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 )
 
 const maxPendingBlocks = 1024
 
 // PendingBlockCache stores blocks awaiting parent availability.
-// Per leanSpec sync requirements, blocks with missing parents should be cached,
-// not discarded, allowing the node to process them once the parent arrives.
+// Blocks are persisted to the database so they survive restarts.
 type PendingBlockCache struct {
 	mu       sync.Mutex
 	blocks   map[[32]byte]*types.SignedBlockWithAttestation
 	byParent map[[32]byte][][32]byte // parent root -> child block roots
 	order    [][32]byte              // insertion order for eviction
+	store    storage.Store
 }
 
-// NewPendingBlockCache creates an empty pending block cache.
-func NewPendingBlockCache() *PendingBlockCache {
+// NewPendingBlockCache creates an empty pending block cache backed by the given store.
+func NewPendingBlockCache(store storage.Store) *PendingBlockCache {
 	return &PendingBlockCache{
 		blocks:   make(map[[32]byte]*types.SignedBlockWithAttestation),
 		byParent: make(map[[32]byte][][32]byte),
+		store:    store,
 	}
+}
+
+// LoadFromDB populates the in-memory cache from persisted pending blocks.
+// Called once during startup to restore state after a restart.
+func (c *PendingBlockCache) LoadFromDB(log *slog.Logger) {
+	all := c.store.GetAllPendingBlocks()
+	if len(all) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for root, sb := range all {
+		if sb == nil || sb.Message == nil || sb.Message.Block == nil {
+			continue
+		}
+		if _, ok := c.blocks[root]; ok {
+			continue
+		}
+		c.blocks[root] = sb
+		parentRoot := sb.Message.Block.ParentRoot
+		c.byParent[parentRoot] = append(c.byParent[parentRoot], root)
+		c.order = append(c.order, root)
+	}
+
+	log.Info("restored pending blocks from database", "count", len(c.blocks))
 }
 
 // Add stores a block that is awaiting its parent.
@@ -54,12 +84,14 @@ func (c *PendingBlockCache) Add(sb *types.SignedBlockWithAttestation) {
 			delete(c.blocks, oldest)
 			oldParent := oldBlock.Message.Block.ParentRoot
 			c.removeFromParentIndex(oldParent, oldest)
+			c.store.DeletePendingBlock(oldest)
 		}
 	}
 
 	c.blocks[blockRoot] = sb
 	c.byParent[parentRoot] = append(c.byParent[parentRoot], blockRoot)
 	c.order = append(c.order, blockRoot)
+	c.store.PutPendingBlock(blockRoot, sb)
 }
 
 // GetChildrenOf returns all pending blocks that have the given root as their parent.
@@ -102,6 +134,36 @@ func (c *PendingBlockCache) Remove(blockRoot [32]byte) {
 			break
 		}
 	}
+
+	c.store.DeletePendingBlock(blockRoot)
+}
+
+// PruneFinalized removes all pending blocks at or before the given slot.
+func (c *PendingBlockCache) PruneFinalized(finalizedSlot uint64) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	pruned := 0
+	for root, sb := range c.blocks {
+		if sb.Message.Block.Slot <= finalizedSlot {
+			delete(c.blocks, root)
+			c.removeFromParentIndex(sb.Message.Block.ParentRoot, root)
+			c.store.DeletePendingBlock(root)
+			pruned++
+		}
+	}
+
+	// Rebuild order slice if anything was pruned.
+	if pruned > 0 {
+		newOrder := c.order[:0]
+		for _, r := range c.order {
+			if _, ok := c.blocks[r]; ok {
+				newOrder = append(newOrder, r)
+			}
+		}
+		c.order = newOrder
+	}
+	return pruned
 }
 
 // removeFromParentIndex removes a block root from the byParent index.

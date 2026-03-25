@@ -79,10 +79,13 @@ func New(cfg Config) (*Node, error) {
 		Validator:     validator,
 		P2PManager:    p2pManager,
 		P2PDiscovery:  p2pDiscovery,
-		PendingBlocks: NewPendingBlockCache(),
+		PendingBlocks: NewPendingBlockCache(db),
 		dbCloser:      db,
 		log:           log,
 	}
+
+	// Restore any pending blocks persisted from a previous session.
+	n.PendingBlocks.LoadFromDB(log)
 
 	// Register req/resp handlers for sync. Gossip handlers are registered
 	// before initial sync in ticker.go so blocks arriving during sync are
