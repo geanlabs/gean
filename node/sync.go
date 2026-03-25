@@ -289,11 +289,14 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	}
 
 	if !n.FC.HasState(nextRoot) {
-		n.log.Debug("sync walk did not reach known ancestor with state",
+		// Cache all fetched blocks for later processing when parent arrives.
+		for _, sb := range pending {
+			n.PendingBlocks.Add(sb)
+		}
+		n.log.Info("cached blocks from incomplete sync walk",
 			"peer_id", pid.String(),
-			"ancestor_root", logging.LongHash(nextRoot),
-			"fetched", len(pending),
-			"max_depth", maxSyncDepth,
+			"count", len(pending),
+			"missing_ancestor", logging.LongHash(nextRoot),
 		)
 		return false
 	}

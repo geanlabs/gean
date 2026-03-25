@@ -75,6 +75,7 @@ func (n *Node) Run(ctx context.Context) error {
 
 	var lastSyncCheckSlot uint64 = ^uint64(0)
 	var lastLogSlot uint64 = ^uint64(0)
+	var lastFinalizedSlot uint64
 	behindPeers := false
 	maxPeerHeadSlot := uint64(0)
 
@@ -117,17 +118,29 @@ func (n *Node) Run(ctx context.Context) error {
 		if slot != lastSyncCheckSlot {
 			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 			if behindPeers {
-				globalSyncProgress.recordSkippedSlot()
-				_, skipped, _, _ := globalSyncProgress.getStats()
-				n.log.Warn(
-					"skipping validator duties while behind peers",
-					"slot", slot,
-					"head_slot", status.HeadSlot,
-					"finalized_slot", status.FinalizedSlot,
-					"max_peer_head_slot", maxPeerHeadSlot,
-					"gap_slots", maxPeerHeadSlot-status.HeadSlot,
-					"consecutive_skipped_slots", skipped,
-				)
+				// Proactively sync with peers when behind.
+				for _, pid := range n.Host.P2P.Network().Peers() {
+					if n.syncWithPeer(ctx, pid) {
+						break // re-evaluate on next slot
+					}
+				}
+				// Re-check after sync attempt.
+				status = n.FC.GetStatus()
+				behindPeers = status.HeadSlot < maxPeerHeadSlot
+
+				if behindPeers {
+					globalSyncProgress.recordSkippedSlot()
+					_, skipped, _, _ := globalSyncProgress.getStats()
+					n.log.Warn(
+						"skipping validator duties while behind peers",
+						"slot", slot,
+						"head_slot", status.HeadSlot,
+						"finalized_slot", status.FinalizedSlot,
+						"max_peer_head_slot", maxPeerHeadSlot,
+						"gap_slots", maxPeerHeadSlot-status.HeadSlot,
+						"consecutive_skipped_slots", skipped,
+					)
+				}
 			}
 			lastSyncCheckSlot = slot
 		}
@@ -164,6 +177,17 @@ func (n *Node) Run(ctx context.Context) error {
 				"elapsed", logging.TimeSince(start),
 			)
 			lastLogSlot = slot
+		}
+
+		// Prune pending blocks when finalization advances.
+		if status.FinalizedSlot > lastFinalizedSlot {
+			if pruned := n.PendingBlocks.PruneFinalized(status.FinalizedSlot); pruned > 0 {
+				n.log.Info("pruned finalized pending blocks",
+					"pruned", pruned,
+					"finalized_slot", status.FinalizedSlot,
+				)
+			}
+			lastFinalizedSlot = status.FinalizedSlot
 		}
 	}
 }
