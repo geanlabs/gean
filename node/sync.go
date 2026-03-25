@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
@@ -13,6 +14,45 @@ import (
 	"github.com/geanlabs/gean/network/reqresp"
 	"github.com/geanlabs/gean/types"
 )
+
+// syncDeduplication tracks recently requested roots to prevent duplicate requests.
+// Per leanSpec: nodes should not request the same blocks multiple times.
+type syncDeduplication struct {
+	mu      sync.Mutex
+	roots   map[[32]byte]time.Time
+	cleanup time.Duration
+}
+
+func newSyncDeduplication() *syncDeduplication {
+	return &syncDeduplication{
+		roots:   make(map[[32]byte]time.Time),
+		cleanup: 30 * time.Second,
+	}
+}
+
+func (s *syncDeduplication) shouldRequest(root [32]byte) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Clean up old entries
+	now := time.Now()
+	for r, t := range s.roots {
+		if now.Sub(t) > s.cleanup {
+			delete(s.roots, r)
+		}
+	}
+
+	// Check if already requested recently
+	if _, exists := s.roots[root]; exists {
+		return false
+	}
+
+	s.roots[root] = now
+	return true
+}
+
+// globalSyncDedup prevents duplicate block requests across all sync operations
+var globalSyncDedup = newSyncDeduplication()
 
 func isMissingParentStateErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "parent state not found")
@@ -55,9 +95,8 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		return false
 	}
 
-	// Walk backwards: request blocks we don't have, collecting roots to fetch.
-	var pending []*types.SignedBlockWithAttestation
-	nextRoot := peerStatus.Head.Root
+	// Phase 1: Walk backwards collecting roots we need (for batched request)
+	// Per leanSpec: nodes should batch block requests when syncing
 	// Late-join nodes can be hundreds of slots behind. Use a backlog-sized walk
 	// rather than a fixed depth, otherwise we only fetch a disconnected suffix.
 	backlog := uint64(1)
@@ -70,6 +109,9 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		maxSyncDepth = maxSyncDepthCap
 	}
 
+	var neededRoots [][32]byte
+	nextRoot := peerStatus.Head.Root
+
 	for i := 0; i < maxSyncDepth; i++ {
 		// Check for state existence, not just block. ProcessBlock requires the
 		// parent state to succeed, so we need to walk back until we find a root
@@ -78,19 +120,78 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			break // We have state for this block, chain is connected.
 		}
 
+		// Skip if already requested (deduplication per leanSpec)
+		if !globalSyncDedup.shouldRequest(nextRoot) {
+			n.log.Debug("skipping already-requested root",
+				"peer_id", pid.String(),
+				"root", logging.LongHash(nextRoot),
+			)
+			break
+		}
+
+		neededRoots = append(neededRoots, nextRoot)
+		// We need to know the parent root to continue walking back.
+		// Request this single block first to get the parent.
+		n.log.Info("blocks_by_root requesting for parent chain",
+			"peer_id", pid.String(),
+			"root", logging.LongHash(nextRoot),
+			"walk_depth", i+1,
+		)
 		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, [][32]byte{nextRoot})
 		if err != nil || len(blocks) == 0 {
-			n.log.Debug("blocks_by_root failed during sync walk",
+			n.log.Warn("blocks_by_root failed during sync walk",
 				"peer_id", pid.String(),
 				"requested_root", logging.LongHash(nextRoot),
 				"err", err,
 			)
 			break
 		}
+		nextRoot = blocks[0].Message.Block.ParentRoot
+	}
 
-		sb := blocks[0]
+	// If we couldn't collect any roots, nothing to sync
+	if len(neededRoots) == 0 {
+		return false
+	}
+
+	// Phase 2: Request all collected roots in a batch
+	// Per leanSpec: batch requests reduce network overhead
+	n.log.Info("blocks_by_root batch request",
+		"peer_id", pid.String(),
+		"roots_count", len(neededRoots),
+		"first_slot", func() uint64 {
+			if len(neededRoots) > 0 {
+				return peerStatus.Head.Slot - uint64(len(neededRoots)-1)
+			}
+			return 0
+		}(),
+		"last_slot", peerStatus.Head.Slot,
+	)
+
+	startTime := time.Now()
+	blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, neededRoots)
+	duration := time.Since(startTime)
+
+	if err != nil {
+		n.log.Warn("blocks_by_root batch request failed",
+			"peer_id", pid.String(),
+			"roots_count", len(neededRoots),
+			"err", err,
+		)
+		return false
+	}
+
+	n.log.Info("blocks_by_root batch response received",
+		"peer_id", pid.String(),
+		"requested", len(neededRoots),
+		"received", len(blocks),
+		"duration_ms", duration.Milliseconds(),
+	)
+
+	// Build pending list from batched response
+	var pending []*types.SignedBlockWithAttestation
+	for _, sb := range blocks {
 		pending = append(pending, sb)
-		nextRoot = sb.Message.Block.ParentRoot
 	}
 
 	// If we could not reach any known ancestor with state, imported blocks would
