@@ -9,6 +9,7 @@ import (
 
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/network/reqresp"
@@ -69,8 +70,14 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	}
 
 	peerStatus, err := reqresp.RequestStatus(ctx, n.Host.P2P, pid, ourStatus)
+	metrics.SyncStatusExchangesTotal.WithLabelValues("success").Inc()
 	if err != nil {
-		n.log.Debug("status exchange failed", "peer_id", pid.String(), "err", err)
+		n.log.Debug("status exchange failed",
+			"peer_id", pid.String(),
+			"local_head_slot", status.HeadSlot,
+			"err", err,
+		)
+		metrics.SyncStatusExchangesTotal.WithLabelValues("error").Inc()
 		return false
 	}
 	n.log.Info("status exchanged",
@@ -89,16 +96,26 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	// If peer is at the same slot but with a different head root, we should still
 	// sync to ensure we have their chain (potential re-org or fork).
 	if peerStatus.Head.Slot < status.HeadSlot {
+		n.log.Debug("peer behind us, skipping",
+			"peer_id", pid.String(),
+			"peer_head_slot", peerStatus.Head.Slot,
+			"our_head_slot", status.HeadSlot,
+		)
 		return false
 	}
 	if peerStatus.Head.Slot == status.HeadSlot && peerStatus.Head.Root == status.Head {
+		n.log.Debug("peer at same head, skipping",
+			"peer_id", pid.String(),
+			"head_slot", status.HeadSlot,
+			"head_root", logging.LongHash(status.Head),
+		)
 		return false
 	}
 
 	// Phase 1: Walk backwards collecting roots we need (for batched request)
 	// Per leanSpec: nodes should batch block requests when syncing
-	// Late-join nodes can be hundreds of slots behind. Use a backlog-sized walk
-	// rather than a fixed depth, otherwise we only fetch a disconnected suffix.
+	var neededRoots [][32]byte
+	nextRoot := peerStatus.Head.Root
 	backlog := uint64(1)
 	if peerStatus.Head.Slot > status.HeadSlot {
 		backlog = peerStatus.Head.Slot - status.HeadSlot
@@ -109,15 +126,19 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		maxSyncDepth = maxSyncDepthCap
 	}
 
-	var neededRoots [][32]byte
-	nextRoot := peerStatus.Head.Root
+	n.log.Info("starting sync walk",
+		"peer_id", pid.String(),
+		"peer_head_slot", peerStatus.Head.Slot,
+		"peer_head_root", logging.LongHash(peerStatus.Head.Root),
+		"our_head_slot", status.HeadSlot,
+		"gap_slots", backlog,
+		"max_depth", maxSyncDepth,
+	)
+	metrics.SyncGapSlots.Set(float64(backlog))
 
 	for i := 0; i < maxSyncDepth; i++ {
-		// Check for state existence, not just block. ProcessBlock requires the
-		// parent state to succeed, so we need to walk back until we find a root
-		// for which we have the state.
 		if n.FC.HasState(nextRoot) {
-			break // We have state for this block, chain is connected.
+			break
 		}
 
 		// Skip if already requested (deduplication per leanSpec)
@@ -130,19 +151,28 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		}
 
 		neededRoots = append(neededRoots, nextRoot)
-		// We need to know the parent root to continue walking back.
-		// Request this single block first to get the parent.
 		n.log.Info("blocks_by_root requesting for parent chain",
 			"peer_id", pid.String(),
 			"root", logging.LongHash(nextRoot),
 			"walk_depth", i+1,
 		)
+		reqStart := time.Now()
 		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, [][32]byte{nextRoot})
-		if err != nil || len(blocks) == 0 {
+		metrics.BlocksByRootRequestsTotal.WithLabelValues("outbound").Inc()
+		metrics.BlocksByRootResponseDuration.Observe(time.Since(reqStart).Seconds())
+
+		if err != nil {
 			n.log.Warn("blocks_by_root failed during sync walk",
 				"peer_id", pid.String(),
 				"requested_root", logging.LongHash(nextRoot),
 				"err", err,
+			)
+			break
+		}
+		if len(blocks) == 0 {
+			n.log.Debug("blocks_by_root returned empty",
+				"peer_id", pid.String(),
+				"requested_root", logging.LongHash(nextRoot),
 			)
 			break
 		}
@@ -170,7 +200,9 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 
 	startTime := time.Now()
 	blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, neededRoots)
+	metrics.BlocksByRootRequestsTotal.WithLabelValues("outbound").Inc()
 	duration := time.Since(startTime)
+	metrics.BlocksByRootResponseDuration.Observe(duration.Seconds())
 
 	if err != nil {
 		n.log.Warn("blocks_by_root batch request failed",
@@ -194,8 +226,6 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		pending = append(pending, sb)
 	}
 
-	// If we could not reach any known ancestor with state, imported blocks would
-	// fail with "parent state not found".
 	if !n.FC.HasState(nextRoot) {
 		n.log.Debug("sync walk did not reach known ancestor with state",
 			"peer_id", pid.String(),
@@ -213,21 +243,39 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		sb := pending[i]
 		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		if err := n.FC.ProcessBlock(sb); err != nil {
-			n.log.Debug("sync block rejected",
+			n.log.Warn("sync block rejected",
 				"slot", sb.Message.Block.Slot,
 				"block_root", logging.LongHash(blockRoot),
+				"peer_id", pid.String(),
 				"err", err,
 			)
 		} else {
 			synced++
-			n.log.Info("synced block",
-				"slot", sb.Message.Block.Slot,
-				"block_root", logging.LongHash(blockRoot),
-				"peer_id", pid.String(),
-				"progress", fmt.Sprintf("%d/%d", synced, total),
-			)
+			metrics.SyncBlocksDownloadedTotal.Inc()
+			if synced == 1 || synced == total || synced%10 == 0 {
+				n.log.Info("synced block",
+					"slot", sb.Message.Block.Slot,
+					"block_root", logging.LongHash(blockRoot),
+					"parent_root", logging.LongHash(sb.Message.Block.ParentRoot),
+					"proposer", sb.Message.Block.ProposerIndex,
+					"peer_id", pid.String(),
+					"progress", fmt.Sprintf("%d/%d", synced, total),
+				)
+			}
 		}
 	}
+
+	finalStatus := n.FC.GetStatus()
+	n.log.Info("sync with peer completed",
+		"peer_id", pid.String(),
+		"blocks_synced", synced,
+		"total_requested", total,
+		"new_head_slot", finalStatus.HeadSlot,
+		"new_head_root", logging.LongHash(finalStatus.Head),
+		"justified_slot", finalStatus.JustifiedSlot,
+		"finalized_slot", finalStatus.FinalizedSlot,
+	)
+
 	return synced > 0
 }
 
@@ -251,11 +299,21 @@ func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte
 // we're missing. This allows a node that restarts mid-devnet to catch up.
 func (n *Node) initialSync(ctx context.Context) {
 	peers := n.Host.P2P.Network().Peers()
-	n.log.Info("initial sync starting", "peer_count", len(peers))
+	n.log.Info("initial sync starting",
+		"peer_count", len(peers),
+		"head_slot", n.FC.GetStatus().HeadSlot,
+	)
+
+	syncStart := time.Now()
+	successCount := 0
 	for _, pid := range peers {
-		n.syncWithPeer(ctx, pid)
+		if n.syncWithPeer(ctx, pid) {
+			successCount++
+		}
 	}
+
 	status := n.FC.GetStatus()
+	elapsed := time.Since(syncStart)
 	n.log.Info("initial sync completed",
 		"head_slot", status.HeadSlot,
 		"head_root", logging.LongHash(status.Head),
@@ -263,6 +321,9 @@ func (n *Node) initialSync(ctx context.Context) {
 		"justified_root", logging.LongHash(status.JustifiedRoot),
 		"finalized_slot", status.FinalizedSlot,
 		"finalized_root", logging.LongHash(status.FinalizedRoot),
+		"peers_synced", successCount,
+		"total_peers", len(peers),
+		"elapsed_ms", elapsed.Milliseconds(),
 	)
 }
 

@@ -235,6 +235,39 @@ var LatestKnownAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of known aggregated payload items",
 })
 
+// --- Sync Metrics ---
+
+var BlocksByRootRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "lean_blocksbyroot_requests_total",
+	Help: "Total number of BlocksByRoot requests",
+}, []string{"direction"})
+
+var BlocksByRootResponseDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Name:    "lean_blocksbyroot_response_duration_seconds",
+	Help:    "Time taken to receive BlocksByRoot response",
+	Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 4},
+})
+
+var SyncGapSlots = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_sync_gap_slots",
+	Help: "Number of slots between head and peers",
+})
+
+var SyncBlocksDownloadedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "lean_sync_blocks_downloaded_total",
+	Help: "Total number of blocks downloaded during sync",
+})
+
+var SyncStatusExchangesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "lean_sync_status_exchanges_total",
+	Help: "Total number of status exchanges",
+}, []string{"result"})
+
+var SyncPeersBehindCount = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_sync_peers_behind_count",
+	Help: "Number of peers that are behind us",
+})
+
 // --- Network ---
 
 var ConnectedPeers = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -300,6 +333,13 @@ func init() {
 		PQSigAttestationSignaturesTotal,
 		PQSigAttestationSignaturesValidTotal,
 		PQSigAttestationSignaturesInvalidTotal,
+		// Sync
+		BlocksByRootRequestsTotal,
+		BlocksByRootResponseDuration,
+		SyncGapSlots,
+		SyncBlocksDownloadedTotal,
+		SyncStatusExchangesTotal,
+		SyncPeersBehindCount,
 		// Network
 		ConnectedPeers,
 		PeerConnectionEventsTotal,
@@ -330,6 +370,11 @@ func init() {
 
 	FinalizationsTotal.WithLabelValues("success").Add(0)
 	FinalizationsTotal.WithLabelValues("error").Add(0)
+
+	BlocksByRootRequestsTotal.WithLabelValues("inbound").Add(0)
+	BlocksByRootRequestsTotal.WithLabelValues("outbound").Add(0)
+	SyncStatusExchangesTotal.WithLabelValues("success").Add(0)
+	SyncStatusExchangesTotal.WithLabelValues("error").Add(0)
 }
 
 // Serve starts the Prometheus metrics HTTP server on the given port.
