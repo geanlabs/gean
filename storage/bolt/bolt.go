@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	blocksBucket        = []byte("blocks")
-	signedBlockBucket   = []byte("signed_blocks")
-	statesBucket        = []byte("states")
-	pendingBlockBucket  = []byte("pending_blocks")
+	blocksBucket       = []byte("blocks")
+	signedBlockBucket  = []byte("signed_blocks")
+	statesBucket       = []byte("states")
+	pendingBlockBucket = []byte("pending_blocks")
 )
 
 // Store is a bbolt-backed implementation of storage.Store.
