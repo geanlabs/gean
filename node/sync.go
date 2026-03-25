@@ -29,6 +29,7 @@ const (
 	initialBackoffMs = 5
 	backoffMult      = 2
 	maxRetries       = 10
+	requestTimeout   = 8 * time.Second
 )
 
 func newSyncDeduplication() *syncDeduplication {
@@ -252,7 +253,9 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			"walk_depth", i+1,
 		)
 		reqStart := time.Now()
-		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, [][32]byte{nextRoot})
+		reqCtx, reqCancel := context.WithTimeout(ctx, requestTimeout)
+		blocks, err := reqresp.RequestBlocksByRoot(reqCtx, n.Host.P2P, pid, [][32]byte{nextRoot})
+		reqCancel()
 		metrics.BlocksByRootRequestsTotal.WithLabelValues("outbound").Inc()
 		metrics.BlocksByRootResponseDuration.Observe(time.Since(reqStart).Seconds())
 
