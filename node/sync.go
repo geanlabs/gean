@@ -190,9 +190,8 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		return false
 	}
 
-	// Phase 1: Walk backwards collecting roots we need (for batched request)
-	// Per leanSpec: nodes should batch block requests when syncing
-	var neededRoots [][32]byte
+	// Walk backwards fetching blocks, collecting for forward processing
+	var pending []*types.SignedBlockWithAttestation
 	nextRoot := peerStatus.Head.Root
 	backlog := uint64(1)
 	if peerStatus.Head.Slot > status.HeadSlot {
@@ -228,7 +227,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			break
 		}
 
-		// Skip if already in pending blocks cache (claim #7)
+		// Skip if already in pending blocks cache
 		if n.PendingBlocks.Has(nextRoot) {
 			n.log.Debug("skipping root already pending",
 				"peer_id", pid.String(),
@@ -247,7 +246,6 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			break
 		}
 
-		neededRoots = append(neededRoots, nextRoot)
 		n.log.Info("blocks_by_root requesting for parent chain",
 			"peer_id", pid.String(),
 			"root", logging.LongHash(nextRoot),
@@ -275,54 +273,16 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			globalPeerFailures.recordFailure(nextRoot, pid)
 			break
 		}
+
+		// Collect the fetched block for processing
+		pending = append(pending, blocks[0])
+		globalSyncDedup.recordSuccess(nextRoot)
 		nextRoot = blocks[0].Message.Block.ParentRoot
 	}
 
-	// If we couldn't collect any roots, nothing to sync
-	if len(neededRoots) == 0 {
+	// If we couldn't collect any blocks, nothing to sync
+	if len(pending) == 0 {
 		return false
-	}
-
-	// Phase 2: Request all collected roots in a batch
-	// Per leanSpec: batch requests reduce network overhead
-	n.log.Info("blocks_by_root batch request",
-		"peer_id", pid.String(),
-		"roots_count", len(neededRoots),
-		"first_slot", func() uint64 {
-			if len(neededRoots) > 0 {
-				return peerStatus.Head.Slot - uint64(len(neededRoots)-1)
-			}
-			return 0
-		}(),
-		"last_slot", peerStatus.Head.Slot,
-	)
-
-	startTime := time.Now()
-	blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, neededRoots)
-	metrics.BlocksByRootRequestsTotal.WithLabelValues("outbound").Inc()
-	duration := time.Since(startTime)
-	metrics.BlocksByRootResponseDuration.Observe(duration.Seconds())
-
-	if err != nil {
-		n.log.Warn("blocks_by_root batch request failed",
-			"peer_id", pid.String(),
-			"roots_count", len(neededRoots),
-			"err", err,
-		)
-		return false
-	}
-
-	n.log.Info("blocks_by_root batch response received",
-		"peer_id", pid.String(),
-		"requested", len(neededRoots),
-		"received", len(blocks),
-		"duration_ms", duration.Milliseconds(),
-	)
-
-	// Build pending list from batched response
-	var pending []*types.SignedBlockWithAttestation
-	for _, sb := range blocks {
-		pending = append(pending, sb)
 	}
 
 	if !n.FC.HasState(nextRoot) {
