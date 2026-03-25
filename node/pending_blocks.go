@@ -124,3 +124,11 @@ func (c *PendingBlockCache) Len() int {
 	defer c.mu.Unlock()
 	return len(c.blocks)
 }
+
+// Has returns true if the block with the given root is in the cache.
+func (c *PendingBlockCache) Has(blockRoot [32]byte) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.blocks[blockRoot]
+	return ok
+}

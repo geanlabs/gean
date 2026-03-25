@@ -115,42 +115,19 @@ func (n *Node) Run(ctx context.Context) error {
 
 		// Re-evaluate sync gating once per slot using peer head status.
 		if slot != lastSyncCheckSlot {
-			gap := status.HeadSlot < maxPeerHeadSlot
-			if gap {
-				gapSlots := maxPeerHeadSlot - status.HeadSlot
-				globalSyncProgress.recordSyncAttempt(gapSlots)
-
-				// Log sync progress at intervals
-				syncAttempts, skippedSlots, maxGap, _ := globalSyncProgress.getStats()
-				n.log.Info("sync progress",
+			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
+			if behindPeers {
+				globalSyncProgress.recordSkippedSlot()
+				_, skipped, _, _ := globalSyncProgress.getStats()
+				n.log.Warn(
+					"skipping validator duties while behind peers",
+					"slot", slot,
 					"head_slot", status.HeadSlot,
-					"target_slot", maxPeerHeadSlot,
-					"gap_slots", gapSlots,
-					"consecutive_sync_attempts", syncAttempts,
-					"consecutive_skipped_slots", skippedSlots,
-					"max_gap_observed", maxGap,
+					"finalized_slot", status.FinalizedSlot,
+					"max_peer_head_slot", maxPeerHeadSlot,
+					"gap_slots", maxPeerHeadSlot-status.HeadSlot,
+					"consecutive_skipped_slots", skipped,
 				)
-
-				for _, pid := range n.Host.P2P.Network().Peers() {
-					if n.syncWithPeer(ctx, pid) {
-						status = n.FC.GetStatus()
-						globalSyncProgress.recordSynced(status.HeadSlot)
-					}
-				}
-				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
-				if behindPeers {
-					globalSyncProgress.recordSkippedSlot()
-					_, skipped, _, _ := globalSyncProgress.getStats()
-					n.log.Warn(
-						"skipping validator duties while behind peers",
-						"slot", slot,
-						"head_slot", status.HeadSlot,
-						"finalized_slot", status.FinalizedSlot,
-						"max_peer_head_slot", maxPeerHeadSlot,
-						"gap_slots", maxPeerHeadSlot-status.HeadSlot,
-						"consecutive_skipped_slots", skipped,
-					)
-				}
 			}
 			lastSyncCheckSlot = slot
 		}
