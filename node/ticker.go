@@ -3,11 +3,57 @@ package node
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
 )
+
+// syncProgress tracks sync state for logging and metrics
+type syncProgress struct {
+	mu                      sync.Mutex
+	consecutiveSyncAttempts int
+	consecutiveSkippedSlots int
+	lastSyncedSlot          uint64
+	lastSyncGapMax          uint64
+}
+
+func newSyncProgress() *syncProgress {
+	return &syncProgress{}
+}
+
+func (s *syncProgress) recordSyncAttempt(gap uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.consecutiveSyncAttempts++
+	s.consecutiveSkippedSlots = 0
+	if gap > s.lastSyncGapMax {
+		s.lastSyncGapMax = gap
+	}
+}
+
+func (s *syncProgress) recordSkippedSlot() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.consecutiveSkippedSlots++
+}
+
+func (s *syncProgress) recordSynced(slot uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastSyncedSlot = slot
+	s.consecutiveSkippedSlots = 0
+	s.consecutiveSyncAttempts = 0
+}
+
+func (s *syncProgress) getStats() (int, int, uint64, uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.consecutiveSyncAttempts, s.consecutiveSkippedSlots, s.lastSyncGapMax, s.lastSyncedSlot
+}
+
+var globalSyncProgress = newSyncProgress()
 
 // Run starts the main event loop.
 func (n *Node) Run(ctx context.Context) error {
@@ -69,21 +115,40 @@ func (n *Node) Run(ctx context.Context) error {
 
 		// Re-evaluate sync gating once per slot using peer head status.
 		if slot != lastSyncCheckSlot {
-			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
-			if behindPeers {
+			gap := status.HeadSlot < maxPeerHeadSlot
+			if gap {
+				gapSlots := maxPeerHeadSlot - status.HeadSlot
+				globalSyncProgress.recordSyncAttempt(gapSlots)
+
+				// Log sync progress at intervals
+				syncAttempts, skippedSlots, maxGap, _ := globalSyncProgress.getStats()
+				n.log.Info("sync progress",
+					"head_slot", status.HeadSlot,
+					"target_slot", maxPeerHeadSlot,
+					"gap_slots", gapSlots,
+					"consecutive_sync_attempts", syncAttempts,
+					"consecutive_skipped_slots", skippedSlots,
+					"max_gap_observed", maxGap,
+				)
+
 				for _, pid := range n.Host.P2P.Network().Peers() {
 					if n.syncWithPeer(ctx, pid) {
 						status = n.FC.GetStatus()
+						globalSyncProgress.recordSynced(status.HeadSlot)
 					}
 				}
 				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 				if behindPeers {
+					globalSyncProgress.recordSkippedSlot()
+					_, skipped, _, _ := globalSyncProgress.getStats()
 					n.log.Warn(
 						"skipping validator duties while behind peers",
 						"slot", slot,
 						"head_slot", status.HeadSlot,
 						"finalized_slot", status.FinalizedSlot,
 						"max_peer_head_slot", maxPeerHeadSlot,
+						"gap_slots", maxPeerHeadSlot-status.HeadSlot,
+						"consecutive_skipped_slots", skipped,
 					)
 				}
 			}
