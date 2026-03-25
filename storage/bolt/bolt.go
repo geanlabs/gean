@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	blocksBucket      = []byte("blocks")
-	signedBlockBucket = []byte("signed_blocks")
-	statesBucket      = []byte("states")
+	blocksBucket        = []byte("blocks")
+	signedBlockBucket   = []byte("signed_blocks")
+	statesBucket        = []byte("states")
+	pendingBlockBucket  = []byte("pending_blocks")
 )
 
 // Store is a bbolt-backed implementation of storage.Store.
@@ -27,7 +28,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, b := range [][]byte{blocksBucket, signedBlockBucket, statesBucket} {
+		for _, b := range [][]byte{blocksBucket, signedBlockBucket, statesBucket, pendingBlockBucket} {
 			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
 				return err
 			}
@@ -118,6 +119,42 @@ func (s *Store) GetAllStates() map[[32]byte]*types.State {
 			var key [32]byte
 			copy(key[:], k)
 			result[key] = &st
+			return nil
+		})
+	})
+	return result
+}
+
+func (s *Store) PutPendingBlock(root [32]byte, sb *types.SignedBlockWithAttestation) {
+	s.put(pendingBlockBucket, root[:], sb)
+}
+
+func (s *Store) GetPendingBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
+	var sb types.SignedBlockWithAttestation
+	if !s.get(pendingBlockBucket, root[:], &sb) {
+		return nil, false
+	}
+	return &sb, true
+}
+
+func (s *Store) DeletePendingBlock(root [32]byte) {
+	s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(pendingBlockBucket).Delete(root[:])
+	})
+}
+
+func (s *Store) GetAllPendingBlocks() map[[32]byte]*types.SignedBlockWithAttestation {
+	result := make(map[[32]byte]*types.SignedBlockWithAttestation)
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(pendingBlockBucket)
+		return b.ForEach(func(k, v []byte) error {
+			var sb types.SignedBlockWithAttestation
+			if err := sb.UnmarshalSSZ(v); err != nil {
+				return nil // skip corrupt entries
+			}
+			var key [32]byte
+			copy(key[:], k)
+			result[key] = &sb
 			return nil
 		})
 	})

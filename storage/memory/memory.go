@@ -8,18 +8,20 @@ import (
 
 // Store is an in-memory implementation of storage.Store.
 type Store struct {
-	mu           sync.RWMutex
-	blocks       map[[32]byte]*types.Block
-	signedBlocks map[[32]byte]*types.SignedBlockWithAttestation
-	states       map[[32]byte]*types.State
+	mu            sync.RWMutex
+	blocks        map[[32]byte]*types.Block
+	signedBlocks  map[[32]byte]*types.SignedBlockWithAttestation
+	states        map[[32]byte]*types.State
+	pendingBlocks map[[32]byte]*types.SignedBlockWithAttestation
 }
 
 // New creates a new in-memory store.
 func New() *Store {
 	return &Store{
-		blocks:       make(map[[32]byte]*types.Block),
-		signedBlocks: make(map[[32]byte]*types.SignedBlockWithAttestation),
-		states:       make(map[[32]byte]*types.State),
+		blocks:        make(map[[32]byte]*types.Block),
+		signedBlocks:  make(map[[32]byte]*types.SignedBlockWithAttestation),
+		states:        make(map[[32]byte]*types.State),
+		pendingBlocks: make(map[[32]byte]*types.SignedBlockWithAttestation),
 	}
 }
 
@@ -77,6 +79,35 @@ func (m *Store) GetAllStates() map[[32]byte]*types.State {
 	defer m.mu.RUnlock()
 	cp := make(map[[32]byte]*types.State, len(m.states))
 	for k, v := range m.states {
+		cp[k] = v
+	}
+	return cp
+}
+
+func (m *Store) PutPendingBlock(root [32]byte, sb *types.SignedBlockWithAttestation) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pendingBlocks[root] = sb
+}
+
+func (m *Store) GetPendingBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sb, ok := m.pendingBlocks[root]
+	return sb, ok
+}
+
+func (m *Store) DeletePendingBlock(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.pendingBlocks, root)
+}
+
+func (m *Store) GetAllPendingBlocks() map[[32]byte]*types.SignedBlockWithAttestation {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cp := make(map[[32]byte]*types.SignedBlockWithAttestation, len(m.pendingBlocks))
+	for k, v := range m.pendingBlocks {
 		cp[k] = v
 	}
 	return cp

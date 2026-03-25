@@ -12,4 +12,10 @@ type Store interface {
 	PutState(root [32]byte, state *types.State)
 	GetAllBlocks() map[[32]byte]*types.Block
 	GetAllStates() map[[32]byte]*types.State
+
+	// Pending block persistence for restart recovery.
+	PutPendingBlock(root [32]byte, sb *types.SignedBlockWithAttestation)
+	GetPendingBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool)
+	DeletePendingBlock(root [32]byte)
+	GetAllPendingBlocks() map[[32]byte]*types.SignedBlockWithAttestation
 }
