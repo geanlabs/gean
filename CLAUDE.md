@@ -66,6 +66,70 @@ The node starts at `cmd/gean/main.go`, which loads genesis config, bootnodes, an
 
 **Observability (`observability/`)** — Structured logging with component tags and color output. Prometheus metrics for fork-choice, attestations, state transitions, validators, and network.
 
+## Metrics
+
+All metrics are defined in `observability/metrics/metrics.go` and exposed via HTTP on `/metrics`.
+
+### Registration Patterns
+
+Package-level metrics are declared using `prometheus.New*` constructors and registered in `init()`:
+
+```go
+var HeadSlot = prometheus.NewGauge(prometheus.GaugeOpts{
+    Name: "gean_fork_choice_head_slot",
+    Help: "Latest slot of the canonical head",
+})
+
+var StateTransitionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+    Name:    "gean_state_transition_duration_seconds",
+    Help:    "Time taken to process state transition",
+    Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
+})
+
+var BlocksProcessedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+    Name: "gean_blocks_processed_total",
+    Help: "Total number of blocks processed",
+})
+
+func init() {
+    prometheus.MustRegister(HeadSlot, StateTransitionDuration, BlocksProcessedTotal)
+}
+```
+
+### Naming Convention
+
+- All metric names must be prefixed with `gean_`
+- Component segments: `fork_choice_`, `state_transition_`, `network_`, `validator_`
+- Suffix: `_total` for counters, `_seconds` for durations
+- Examples: `gean_fork_choice_head_slot`, `gean_state_transition_duration_seconds`, `gean_blocks_processed_total`
+
+### Timing Helper Pattern
+
+Use a deferred closure to measure operation duration:
+
+```go
+func timeStateTransition() func() {
+    start := time.Now()
+    return func() {
+        StateTransitionDuration.Observe(time.Since(start).Seconds())
+    }
+}
+
+// Usage:
+func ProcessStateTransition() {
+    defer timeStateTransition()()
+    // ... operation to time
+}
+```
+
+### Metric Types
+
+- **Gauge** — Current values that can go up or down (e.g., head slot, peer count, current slot)
+- **Counter** — Cumulative counts that only increase (e.g., blocks processed, attestations validated)
+- **Histogram** — Distributions of values (e.g., latencies, processing times, payload sizes)
+
+Use `prometheus.ExponentialBuckets(start, factor, count)` for duration histograms, or define custom buckets for specific ranges.
+
 ## Design Principles
 
 - Readable over clever — explicit naming, linear control flow
