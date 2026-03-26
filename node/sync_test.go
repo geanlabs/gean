@@ -201,22 +201,23 @@ func TestPendingBlockCache_MissingParents(t *testing.T) {
 func TestPendingBlockCache_MissingParents_ExcludesCached(t *testing.T) {
 	cache := NewPendingBlockCache()
 
-	parentRoot := [32]byte{0xCC}
+	parentParent := [32]byte{0xDD}
+	parentBlock := makeTestBlock(19, parentParent)
+	parentRoot, err := parentBlock.Message.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash parent block: %v", err)
+	}
 	childBlock := makeTestBlock(20, parentRoot)
-	// Add a block that would be the "parent" in the cache.
-	parentBlock := makeTestBlock(19, [32]byte{0xDD})
-	// Manually set parentBlock's root to match parentRoot by adjusting slot
-	// so its hash is deterministic. Instead, add parent first, then child
-	// that references a root in the cache.
-	cache.Add(parentBlock)
 
-	// The child references parentRoot which is NOT the hash of parentBlock,
-	// so it should show up as missing.
+	cache.Add(parentBlock)
 	cache.Add(childBlock)
 
 	missing := cache.MissingParents()
-	if len(missing) != 2 {
-		t.Fatalf("expected 2 missing parents (both blocks have unknown parents), got %d", len(missing))
+	if len(missing) != 1 {
+		t.Fatalf("expected 1 missing parent, got %d", len(missing))
+	}
+	if missing[0] != parentParent {
+		t.Fatalf("expected missing parent %x, got %x", parentParent, missing[0])
 	}
 }
 

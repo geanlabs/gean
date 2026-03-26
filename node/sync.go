@@ -359,8 +359,17 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	// Walk backwards: request blocks we don't have.
 	var pending []*types.SignedBlockWithAttestation
 	nextRoot := peerStatus.Head.Root
+	backlog := uint64(1)
+	if peerStatus.Head.Slot > status.HeadSlot {
+		backlog = peerStatus.Head.Slot - status.HeadSlot
+	}
+	maxSyncDepth := int(backlog + 16)
+	const maxSyncDepthCap = 32768
+	if maxSyncDepth > maxSyncDepthCap {
+		maxSyncDepth = maxSyncDepthCap
+	}
 
-	for depth := 0; depth < maxBackfillDepth; depth++ {
+	for depth := 0; depth < maxSyncDepth; depth++ {
 		if n.FC.HasState(nextRoot) {
 			break
 		}
@@ -396,7 +405,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			"peer_id", pid.String(),
 			"ancestor_root", logging.LongHash(nextRoot),
 			"fetched", len(pending),
-			"max_depth", maxBackfillDepth,
+			"max_depth", maxSyncDepth,
 		)
 		return false
 	}
