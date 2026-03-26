@@ -12,6 +12,7 @@ type Store struct {
 	blocks       map[[32]byte]*types.Block
 	signedBlocks map[[32]byte]*types.SignedBlockWithAttestation
 	states       map[[32]byte]*types.State
+	meta         map[string][]byte
 }
 
 // New creates a new in-memory store.
@@ -20,6 +21,7 @@ func New() *Store {
 		blocks:       make(map[[32]byte]*types.Block),
 		signedBlocks: make(map[[32]byte]*types.SignedBlockWithAttestation),
 		states:       make(map[[32]byte]*types.State),
+		meta:         make(map[string][]byte),
 	}
 }
 
@@ -97,4 +99,32 @@ func (m *Store) DeleteStates(roots [][32]byte) {
 	for _, root := range roots {
 		delete(m.states, root)
 	}
+}
+
+func (m *Store) GetMeta(key string) ([]byte, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	value, ok := m.meta[key]
+	if !ok {
+		return nil, false
+	}
+	cp := make([]byte, len(value))
+	copy(cp, value)
+	return cp, true
+}
+
+func (m *Store) PutMeta(key string, value []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := make([]byte, len(value))
+	copy(cp, value)
+	m.meta[key] = cp
+	return nil
+}
+
+func (m *Store) DeleteMeta(key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.meta, key)
+	return nil
 }

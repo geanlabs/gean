@@ -12,6 +12,7 @@ var (
 	blocksBucket      = []byte("blocks")
 	signedBlockBucket = []byte("signed_blocks")
 	statesBucket      = []byte("states")
+	metaBucket        = []byte("meta")
 )
 
 // Store is a bbolt-backed implementation of storage.Store.
@@ -27,7 +28,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, b := range [][]byte{blocksBucket, signedBlockBucket, statesBucket} {
+		for _, b := range [][]byte{blocksBucket, signedBlockBucket, statesBucket, metaBucket} {
 			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
 				return err
 			}
@@ -130,6 +131,41 @@ func (s *Store) DeleteBlocks(roots [][32]byte) {
 
 func (s *Store) DeleteStates(roots [][32]byte) {
 	s.deleteRoots(roots, statesBucket)
+}
+
+func (s *Store) GetMeta(key string) ([]byte, bool) {
+	var value []byte
+	err := s.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(metaBucket).Get([]byte(key))
+		if v == nil {
+			return nil
+		}
+		value = make([]byte, len(v))
+		copy(value, v)
+		return nil
+	})
+	if err != nil {
+		log.Printf("bolt: read meta %q: %v", key, err)
+		return nil, false
+	}
+	if value == nil {
+		return nil, false
+	}
+	return value, true
+}
+
+func (s *Store) PutMeta(key string, value []byte) error {
+	buf := make([]byte, len(value))
+	copy(buf, value)
+	return s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(metaBucket).Put([]byte(key), buf)
+	})
+}
+
+func (s *Store) DeleteMeta(key string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(metaBucket).Delete([]byte(key))
+	})
 }
 
 // --- SSZ helpers ---

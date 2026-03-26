@@ -14,4 +14,7 @@ type Store interface {
 	GetAllStates() map[[32]byte]*types.State
 	DeleteBlocks(roots [][32]byte)
 	DeleteStates(roots [][32]byte)
+	GetMeta(key string) ([]byte, bool)
+	PutMeta(key string, value []byte) error
+	DeleteMeta(key string) error
 }

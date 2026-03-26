@@ -191,3 +191,42 @@ func TestDeleteStatesRemovesOnlyStates(t *testing.T) {
 		t.Fatal("expected block to remain after deleting state")
 	}
 }
+
+func TestMetaRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.PutMeta("forkchoice/head", []byte{0x01, 0x02}); err != nil {
+		t.Fatalf("PutMeta returned error: %v", err)
+	}
+
+	value, ok := s.GetMeta("forkchoice/head")
+	if !ok {
+		t.Fatal("expected metadata to be present")
+	}
+	if len(value) != 2 || value[0] != 0x01 || value[1] != 0x02 {
+		t.Fatalf("unexpected metadata value: %x", value)
+	}
+
+	value[0] = 0xFF
+	value2, ok := s.GetMeta("forkchoice/head")
+	if !ok {
+		t.Fatal("expected metadata to remain present")
+	}
+	if value2[0] != 0x01 {
+		t.Fatal("expected GetMeta to return a copy")
+	}
+}
+
+func TestDeleteMeta(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.PutMeta("forkchoice/head", []byte{0x01}); err != nil {
+		t.Fatalf("PutMeta returned error: %v", err)
+	}
+	if err := s.DeleteMeta("forkchoice/head"); err != nil {
+		t.Fatalf("DeleteMeta returned error: %v", err)
+	}
+	if _, ok := s.GetMeta("forkchoice/head"); ok {
+		t.Fatal("expected metadata to be deleted")
+	}
+}
