@@ -27,6 +27,7 @@ type ValidatorDuties struct {
 	PublishAttestation           func(context.Context, *pubsub.Topic, *types.SignedAttestation) error
 	PublishAggregatedAttestation func(context.Context, *pubsub.Topic, *types.SignedAggregatedAttestation) error
 	IsAggregator                 bool
+	AttestationCommitteeCount    uint64
 	Log                          *slog.Logger
 	lastProposedSlot             map[uint64]uint64
 }
@@ -205,24 +206,35 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			"signing_time", signDuration,
 		)
 
+		// Route to the correct subnet topic for this validator.
+		committeeCount := v.AttestationCommitteeCount
+		if committeeCount == 0 {
+			committeeCount = 1
+		}
+		subnetID := idx % committeeCount
+		subnetTopic := v.Topics.GetSubnetTopic(subnetID)
+
 		// Warn if no peers are subscribed — publish will be silently dropped with no error.
-		if topicPeerCount(v.Topics.SubnetAttestation) == 0 {
+		if topicPeerCount(subnetTopic) == 0 {
 			v.Log.Warn("attestation topic has 0 peers — published attestation will not be delivered",
 				"slot", slot,
 				"validator", idx,
+				"subnet_id", subnetID,
 			)
 		}
 
-		if err := v.PublishAttestation(ctx, v.Topics.SubnetAttestation, sa); err != nil {
+		if err := v.PublishAttestation(ctx, subnetTopic, sa); err != nil {
 			v.Log.Error("failed to publish attestation",
 				"slot", slot,
 				"validator", idx,
+				"subnet_id", subnetID,
 				"err", err,
 			)
 		} else {
 			v.Log.Debug("published attestation",
 				"slot", slot,
 				"validator", idx,
+				"subnet_id", subnetID,
 				"head_root", logging.LongHash(sa.Message.Head.Root),
 				"target_slot", sa.Message.Target.Slot,
 				"target_root", logging.LongHash(sa.Message.Target.Root),

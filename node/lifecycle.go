@@ -68,6 +68,7 @@ func New(cfg Config) (*Node, error) {
 		PublishAttestation:           gossipsub.PublishAttestation,
 		PublishAggregatedAttestation: gossipsub.PublishAggregatedAttestation,
 		IsAggregator:                 cfg.IsAggregator,
+		AttestationCommitteeCount:    cfg.AttestationCommitteeCount,
 		Log:                          logging.NewComponentLogger(logging.CompValidator),
 	}
 
@@ -228,14 +229,45 @@ func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
 	if devnetID == "" {
 		devnetID = "devnet0"
 	}
-	topics, err := gossipsub.JoinTopics(host.PubSub, devnetID, 0)
+
+	// Compute the set of attestation subnets to subscribe to.
+	committeeCount := cfg.AttestationCommitteeCount
+	if committeeCount == 0 {
+		committeeCount = 1
+	}
+	seen := make(map[uint64]bool)
+	var subnetIDs []uint64
+
+	// 1. Import subnets (explicit CLI flag).
+	for _, sid := range cfg.ImportSubnetIDs {
+		if !seen[sid] {
+			seen[sid] = true
+			subnetIDs = append(subnetIDs, sid)
+		}
+	}
+
+	// 2. Validator-derived subnets (validatorID % committeeCount).
+	for _, vid := range cfg.ValidatorIDs {
+		sid := vid % committeeCount
+		if !seen[sid] {
+			seen[sid] = true
+			subnetIDs = append(subnetIDs, sid)
+		}
+	}
+
+	// 3. Aggregator fallback: if no subnets yet, default to subnet 0.
+	if len(subnetIDs) == 0 && cfg.IsAggregator {
+		subnetIDs = append(subnetIDs, 0)
+	}
+
+	topics, err := gossipsub.JoinTopics(host.PubSub, devnetID, subnetIDs)
 	if err != nil {
 		host.Close()
 		return nil, nil, fmt.Errorf("join topics: %w", err)
 	}
 
 	gossipLog := logging.NewComponentLogger(logging.CompGossip)
-	gossipLog.Info("gossipsub topics joined", "devnet", devnetID)
+	gossipLog.Info("gossipsub topics joined", "devnet", devnetID, "attestation_subnets", subnetIDs)
 
 	return host, topics, nil
 }
