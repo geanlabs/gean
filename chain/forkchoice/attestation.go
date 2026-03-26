@@ -19,9 +19,6 @@ func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 	}
 
 	c.processAttestationLocked(sa, false)
-	if c.isAggregator {
-		c.storeGossipSignatureLocked(sa)
-	}
 }
 
 // ProcessSubnetAttestation processes an individual attestation from the subnet gossip topic.
@@ -138,7 +135,9 @@ func (c *Store) processAttestationLocked(sa *types.SignedAttestation, isFromBloc
 		if !ok || existing == nil || existing.Message == nil || existing.Message.Slot < data.Slot {
 			c.latestNewAttestations[validatorID] = sa
 		}
-		c.storeGossipSignatureLocked(sa)
+		if c.isAggregator {
+			c.storeGossipSignatureLocked(sa)
+		}
 	}
 
 	metrics.AttestationsValid.WithLabelValues(sourceLabel).Inc()
