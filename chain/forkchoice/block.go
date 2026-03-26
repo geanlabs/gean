@@ -201,9 +201,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		Signature:   envelope.Signature.ProposerSignature,
 	}
 	c.processAttestationLocked(proposerSA, false)
-	if c.isAggregator {
-		c.storeGossipSignatureLocked(proposerSA)
-	}
+	c.storeGossipSignatureLocked(proposerSA)
 
 	metrics.ForkChoiceBlockProcessingTime.Observe(time.Since(start).Seconds())
 	return nil

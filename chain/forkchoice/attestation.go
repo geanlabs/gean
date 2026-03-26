@@ -19,9 +19,7 @@ func (c *Store) ProcessAttestation(sa *types.SignedAttestation) {
 	}
 
 	c.processAttestationLocked(sa, false)
-	if c.isAggregator {
-		c.storeGossipSignatureLocked(sa)
-	}
+	c.storeGossipSignatureLocked(sa)
 }
 
 // ProcessSubnetAttestation processes an individual attestation from the subnet gossip topic.
@@ -72,10 +70,8 @@ func (c *Store) processSubnetAttestationLocked(sa *types.SignedAttestation) {
 		return
 	}
 
-	// Store gossip signature for aggregation — only if this node is an aggregator.
-	if c.isAggregator {
-		c.storeGossipSignatureLocked(sa)
-	}
+	// Store gossip signature for aggregation.
+	c.storeGossipSignatureLocked(sa)
 	metrics.AttestationsValid.WithLabelValues("subnet").Inc()
 }
 
