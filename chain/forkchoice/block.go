@@ -162,6 +162,10 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	c.storage.PutBlock(blockHash, block)
 	c.storage.PutSignedBlock(blockHash, envelope)
 	c.storage.PutState(blockHash, state)
+	if c.blockSummaries == nil {
+		c.blockSummaries = make(map[[32]byte]blockSummary)
+	}
+	c.blockSummaries[blockHash] = summarizeBlock(block)
 
 	// Update justified checkpoint from this block's post-state (monotonic).
 	if state.LatestJustified.Slot > c.latestJustified.Slot {

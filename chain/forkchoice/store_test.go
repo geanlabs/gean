@@ -42,6 +42,59 @@ func TestNewStoreFromCheckpointState(t *testing.T) {
 	if valid != "" {
 		t.Fatalf("validateAttestationData returned %q, want success", valid)
 	}
+
+	if summary, ok := fc.blockSummaries[anchorRoot]; !ok {
+		t.Fatal("expected anchor root to be indexed in block summaries")
+	} else if summary.Slot != state.Slot {
+		t.Fatalf("anchor summary slot = %d, want %d", summary.Slot, state.Slot)
+	}
+}
+
+func TestLookupBlockSummary_UsesRuntimeIndex(t *testing.T) {
+	state := makeCheckpointState()
+	anchorRoot := prepareCheckpointStateForStore(t, state)
+	fc := NewStoreFromCheckpointState(state, anchorRoot, memory.New())
+
+	childRoot := [32]byte{0x44}
+	fc.blockSummaries[childRoot] = blockSummary{
+		Slot:          4,
+		ParentRoot:    anchorRoot,
+		ProposerIndex: 1,
+	}
+	fc.storage = memory.New()
+
+	summary, ok := fc.lookupBlockSummary(childRoot)
+	if !ok {
+		t.Fatal("expected lookupBlockSummary to resolve runtime summary without storage")
+	}
+	if summary.Slot != 4 {
+		t.Fatalf("summary slot = %d, want 4", summary.Slot)
+	}
+	if summary.ParentRoot != anchorRoot {
+		t.Fatalf("summary parent = %x, want %x", summary.ParentRoot, anchorRoot)
+	}
+}
+
+func TestAllKnownBlockSummaries_MergesRuntimeAndCheckpointRoots(t *testing.T) {
+	state := makeCheckpointState()
+	anchorRoot := prepareCheckpointStateForStore(t, state)
+	fc := NewStoreFromCheckpointState(state, anchorRoot, memory.New())
+
+	childRoot := [32]byte{0x55}
+	fc.blockSummaries[childRoot] = blockSummary{
+		Slot:          4,
+		ParentRoot:    anchorRoot,
+		ProposerIndex: 1,
+	}
+	fc.storage = memory.New()
+
+	summaries := fc.allKnownBlockSummaries()
+	if _, ok := summaries[childRoot]; !ok {
+		t.Fatal("expected runtime block summary to be included")
+	}
+	if _, ok := summaries[state.LatestJustified.Root]; !ok {
+		t.Fatal("expected checkpoint-root summary to be included")
+	}
 }
 
 func prepareCheckpointStateForStore(t *testing.T, state *types.State) [32]byte {

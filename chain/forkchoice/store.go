@@ -30,6 +30,7 @@ type Store struct {
 	latestJustified *types.Checkpoint
 	latestFinalized *types.Checkpoint
 	storage         storage.Store
+	blockSummaries  map[[32]byte]blockSummary
 	checkpointRoots map[[32]byte]blockSummary
 	isAggregator    bool
 
@@ -141,6 +142,11 @@ func RestoreFromDB(store storage.Store) *Store {
 		return nil
 	}
 
+	blockSummaries := make(map[[32]byte]blockSummary, len(allBlocks))
+	for root, block := range allBlocks {
+		blockSummaries[root] = summarizeBlock(block)
+	}
+
 	return &Store{
 		time:                          headBlock.Slot * types.IntervalsPerSlot,
 		genesisTime:                   headState.Config.GenesisTime,
@@ -150,6 +156,7 @@ func RestoreFromDB(store storage.Store) *Store {
 		latestJustified:               headState.LatestJustified,
 		latestFinalized:               headState.LatestFinalized,
 		storage:                       store,
+		blockSummaries:                blockSummaries,
 		checkpointRoots:               buildCheckpointRootIndex(headState, headRoot),
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
@@ -184,6 +191,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		latestJustified:               &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
 		latestFinalized:               &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot},
 		storage:                       store,
+		blockSummaries:                map[[32]byte]blockSummary{anchorRoot: summarizeBlock(anchorBlock)},
 		checkpointRoots:               nil,
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
@@ -222,6 +230,7 @@ func NewStoreFromCheckpointState(state *types.State, anchorRoot [32]byte, store 
 		latestJustified:               &types.Checkpoint{Root: state.LatestJustified.Root, Slot: state.LatestJustified.Slot},
 		latestFinalized:               &types.Checkpoint{Root: state.LatestFinalized.Root, Slot: state.LatestFinalized.Slot},
 		storage:                       store,
+		blockSummaries:                map[[32]byte]blockSummary{anchorRoot: summarizeBlock(anchorBlock)},
 		checkpointRoots:               buildCheckpointRootIndex(state, anchorRoot),
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
@@ -271,8 +280,10 @@ func buildCheckpointRootIndex(state *types.State, anchorRoot [32]byte) map[[32]b
 }
 
 func (c *Store) lookupBlockSummary(root [32]byte) (blockSummary, bool) {
-	if block, ok := c.storage.GetBlock(root); ok {
-		return summarizeBlock(block), true
+	if c.blockSummaries != nil {
+		if summary, ok := c.blockSummaries[root]; ok {
+			return summary, true
+		}
 	}
 	if c.checkpointRoots == nil {
 		return blockSummary{}, false
@@ -282,10 +293,9 @@ func (c *Store) lookupBlockSummary(root [32]byte) (blockSummary, bool) {
 }
 
 func (c *Store) allKnownBlockSummaries() map[[32]byte]blockSummary {
-	blocks := c.storage.GetAllBlocks()
-	summaries := make(map[[32]byte]blockSummary, len(blocks)+len(c.checkpointRoots))
-	for root, block := range blocks {
-		summaries[root] = summarizeBlock(block)
+	summaries := make(map[[32]byte]blockSummary, len(c.blockSummaries)+len(c.checkpointRoots))
+	for root, summary := range c.blockSummaries {
+		summaries[root] = summary
 	}
 	for root, summary := range c.checkpointRoots {
 		if _, ok := summaries[root]; !ok {
