@@ -59,20 +59,22 @@ func (n *Node) Close() {
 
 // Config holds node configuration.
 type Config struct {
-	GenesisTime       uint64
-	Validators        []*types.Validator
-	ListenAddr        string
-	NodeKeyPath       string
-	Bootnodes         []string
-	DiscoveryPort     int
-	DataDir           string
-	CheckpointSyncURL string
-	ValidatorIDs      []uint64
-	ValidatorKeysDir  string
-	MetricsPort       int
-	DevnetID          string
-	IsAggregator      bool
-	APIHost           string
-	APIPort           int
-	APIEnabled        bool
+	GenesisTime               uint64
+	Validators                []*types.Validator
+	ListenAddr                string
+	NodeKeyPath               string
+	Bootnodes                 []string
+	DiscoveryPort             int
+	DataDir                   string
+	CheckpointSyncURL         string
+	ValidatorIDs              []uint64
+	ValidatorKeysDir          string
+	MetricsPort               int
+	DevnetID                  string
+	IsAggregator              bool
+	AggregateSubnetIDs        []uint64
+	AttestationCommitteeCount int
+	APIHost                   string
+	APIPort                   int
+	APIEnabled                bool
 }
