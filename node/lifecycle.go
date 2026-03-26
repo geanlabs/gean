@@ -82,7 +82,7 @@ func New(cfg Config) (*Node, error) {
 		PendingBlocks: NewPendingBlockCache(),
 		inflightRoots: newInflightRoots(),
 		peerLimiter:   newPeerLimiter(),
-		recoveryCoord: newRecoveryCoordinator(),
+		fetches:       newFetchManager(),
 		backfillCh:    make(chan [32]byte, 64),
 		dbCloser:      db,
 		log:           log,

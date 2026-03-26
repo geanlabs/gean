@@ -112,49 +112,60 @@ func TestPeerLimiter_IndependentPeers(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// recoveryCoordinator tests
+// fetchManager tests
 // ---------------------------------------------------------------------------
 
-func TestRecoveryCoordinator_Dedup(t *testing.T) {
-	rc := newRecoveryCoordinator()
+func TestFetchManager_EnqueueDedup(t *testing.T) {
+	fm := newFetchManager()
 	root := [32]byte{10}
 
-	if !rc.tryStartRecovery(root) {
-		t.Fatal("first recovery should start")
+	if !fm.enqueue(root) {
+		t.Fatal("first enqueue should succeed")
 	}
-	if rc.tryStartRecovery(root) {
-		t.Fatal("duplicate recovery should be rejected")
+	if fm.enqueue(root) {
+		t.Fatal("duplicate enqueue should be rejected")
 	}
 }
 
-func TestRecoveryCoordinator_FinishAllowsRestart(t *testing.T) {
-	rc := newRecoveryCoordinator()
+func TestFetchManager_NextReadyMarksInFlight(t *testing.T) {
+	fm := newFetchManager()
 	root := [32]byte{11}
 
-	rc.tryStartRecovery(root)
-	rc.finishRecovery(root)
+	fm.enqueue(root)
+	ready := fm.nextReady(1, time.Now())
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready root, got %d", len(ready))
+	}
 
-	if !rc.tryStartRecovery(root) {
-		t.Fatal("recovery after finish should start")
+	if got := fm.nextReady(1, time.Now()); len(got) != 0 {
+		t.Fatalf("expected no second ready root while in flight, got %d", len(got))
 	}
 }
 
-func TestRecoveryCoordinator_Cooldown(t *testing.T) {
-	rc := newRecoveryCoordinator()
+func TestFetchManager_RetryBackoff(t *testing.T) {
+	fm := newFetchManager()
 	root := [32]byte{12}
+	pid := peer.ID("peer-a")
 
-	rc.tryStartRecovery(root)
-	rc.finishRecovery(root)
-	rc.setCooldown(root, 100*time.Millisecond)
+	fm.enqueue(root)
+	ready := fm.nextReady(1, time.Now())
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready root, got %d", len(ready))
+	}
 
-	if rc.tryStartRecovery(root) {
-		t.Fatal("recovery during cooldown should be rejected")
+	fm.markRetry(root, 100*time.Millisecond, pid)
+	if got := fm.nextReady(1, time.Now()); len(got) != 0 {
+		t.Fatalf("expected retry to respect backoff, got %d", len(got))
 	}
 
 	time.Sleep(150 * time.Millisecond)
 
-	if !rc.tryStartRecovery(root) {
-		t.Fatal("recovery after cooldown expiry should start")
+	ready = fm.nextReady(1, time.Now())
+	if len(ready) != 1 {
+		t.Fatalf("expected root to be ready after backoff, got %d", len(ready))
+	}
+	if _, ok := ready[0].failedPeers[pid]; !ok {
+		t.Fatal("expected failed peer to be tracked for retry")
 	}
 }
 
@@ -210,7 +221,7 @@ func TestPendingBlockCache_MissingParents_ExcludesCached(t *testing.T) {
 	childBlock := makeTestBlock(20, parentRoot)
 
 	cache.Add(parentBlock)
-	cache.Add(childBlock)
+	cache.AddWithMissingAncestor(childBlock, parentParent)
 
 	missing := cache.MissingParents()
 	if len(missing) != 1 {
@@ -218,6 +229,27 @@ func TestPendingBlockCache_MissingParents_ExcludesCached(t *testing.T) {
 	}
 	if missing[0] != parentParent {
 		t.Fatalf("expected missing parent %x, got %x", parentParent, missing[0])
+	}
+}
+
+func TestPendingBlockCache_MissingAncestor(t *testing.T) {
+	cache := NewPendingBlockCache()
+	parent := [32]byte{0xAB}
+	deepMissing := [32]byte{0xCD}
+	child := makeTestBlock(30, parent)
+	childRoot, err := child.Message.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash child block: %v", err)
+	}
+
+	cache.AddWithMissingAncestor(child, deepMissing)
+
+	got, ok := cache.MissingAncestor(childRoot)
+	if !ok {
+		t.Fatal("expected missing ancestor entry")
+	}
+	if got != deepMissing {
+		t.Fatalf("expected missing ancestor %x, got %x", deepMissing, got)
 	}
 }
 

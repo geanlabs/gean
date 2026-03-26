@@ -53,28 +53,9 @@ func (n *Node) registerGossipHandlers() error {
 				"state_root", logging.LongHash(block.StateRoot),
 				"attestations", len(block.Body.Attestations),
 			)
-			if err := n.FC.ProcessBlock(sb); err != nil {
+			imported, pending, err := n.processOrPendBlock(sb, gossipLog)
+			if err != nil {
 				status := n.FC.GetStatus()
-				if isMissingParentStateErr(err) {
-					// Cache the block and signal the ticker's backfill loop.
-					// No synchronous network I/O on the gossip goroutine.
-					n.PendingBlocks.Add(sb)
-					gossipLog.Info("cached pending block awaiting parent",
-						"slot", block.Slot,
-						"block_root", logging.LongHash(blockRoot),
-						"parent_root", logging.LongHash(block.ParentRoot),
-						"head_slot", status.HeadSlot,
-						"finalized_slot", status.FinalizedSlot,
-						"pending_count", n.PendingBlocks.Len(),
-					)
-					// Non-blocking signal — if channel is full the ticker will
-					// pick up the parent from PendingBlocks.MissingParents().
-					select {
-					case n.backfillCh <- block.ParentRoot:
-					default:
-					}
-					return
-				}
 				gossipLog.Warn("rejected gossip block",
 					"slot", block.Slot,
 					"block_root", logging.LongHash(blockRoot),
@@ -84,16 +65,20 @@ func (n *Node) registerGossipHandlers() error {
 				)
 				return
 			}
-			// Block accepted.
-			gossipLog.Info("block accepted",
-				"slot", block.Slot,
-				"proposer", block.ProposerIndex,
-				"block_root", logging.LongHash(blockRoot),
-				"parent_root", logging.LongHash(block.ParentRoot),
-				"state_root", logging.LongHash(block.StateRoot),
-				"attestations", len(block.Body.Attestations),
-			)
-			n.processPendingChildren(blockRoot, gossipLog)
+			if pending {
+				return
+			}
+			if imported {
+				gossipLog.Info("block accepted",
+					"slot", block.Slot,
+					"proposer", block.ProposerIndex,
+					"block_root", logging.LongHash(blockRoot),
+					"parent_root", logging.LongHash(block.ParentRoot),
+					"state_root", logging.LongHash(block.StateRoot),
+					"attestations", len(block.Body.Attestations),
+				)
+				n.processPendingChildren(blockRoot, gossipLog)
+			}
 		},
 		OnAttestation: func(sa *types.SignedAttestation) {
 			if sa.Message != nil {
@@ -122,33 +107,40 @@ func (n *Node) registerGossipHandlers() error {
 	return nil
 }
 
-// processPendingChildren processes any cached blocks that were waiting for this parent.
-// This implements the leanSpec requirement to process cached blocks when their parent arrives.
+// processPendingChildren processes cached descendants iteratively whenever a
+// parent root becomes available.
 func (n *Node) processPendingChildren(parentRoot [32]byte, log *slog.Logger) {
-	children := n.PendingBlocks.GetChildrenOf(parentRoot)
-	for _, sb := range children {
-		block := sb.Message.Block
-		blockRoot, _ := block.HashTreeRoot()
+	queue := [][32]byte{parentRoot}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
 
-		if err := n.FC.ProcessBlock(sb); err != nil {
-			// Still can't process - may be missing a deeper ancestor.
-			log.Debug("pending child still not processable",
-				"slot", block.Slot,
-				"block_root", logging.LongHash(blockRoot),
-				"err", err,
-			)
-			continue
+		children := n.PendingBlocks.GetChildrenOf(current)
+		for _, sb := range children {
+			block := sb.Message.Block
+			blockRoot, _ := block.HashTreeRoot()
+
+			imported, pending, err := n.processOrPendBlock(sb, log)
+			switch {
+			case err != nil:
+				log.Debug("pending child rejected",
+					"slot", block.Slot,
+					"block_root", logging.LongHash(blockRoot),
+					"err", err,
+				)
+			case pending:
+				log.Debug("pending child still awaiting ancestor",
+					"slot", block.Slot,
+					"block_root", logging.LongHash(blockRoot),
+				)
+			case imported:
+				log.Info("processed pending child block",
+					"slot", block.Slot,
+					"block_root", logging.LongHash(blockRoot),
+					"parent_root", logging.LongHash(current),
+				)
+				queue = append(queue, blockRoot)
+			}
 		}
-
-		// Successfully processed - remove from pending and recurse.
-		n.PendingBlocks.Remove(blockRoot)
-		log.Info("processed pending child block",
-			"slot", block.Slot,
-			"block_root", logging.LongHash(blockRoot),
-			"parent_root", logging.LongHash(parentRoot),
-		)
-
-		// Recursively process any children of this block.
-		n.processPendingChildren(blockRoot, log)
 	}
 }

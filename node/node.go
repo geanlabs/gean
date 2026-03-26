@@ -33,7 +33,7 @@ type Node struct {
 	// Sync coordination — prevents request storms during missing-parent recovery.
 	inflightRoots *inflightRoots
 	peerLimiter   *peerLimiter
-	recoveryCoord *recoveryCoordinator
+	fetches       *fetchManager
 	backfillCh    chan [32]byte // non-blocking signal from gossip handler to ticker
 
 	Clock    *Clock

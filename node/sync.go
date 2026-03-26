@@ -2,7 +2,7 @@ package node
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"math/rand"
 	"strings"
 	"sync"
@@ -15,20 +15,15 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// Sync constants aligned with leanSpec where applicable.
 const (
-	maxBackfillDepth     = 512              // leanSpec MAX_BACKFILL_DEPTH (was 32768)
-	maxConcurrentPerPeer = 2                // leanSpec MAX_CONCURRENT_REQUESTS
-	maxRecoveryPeers     = 2                // bounded peer subset for parent recovery
-	maxBackfillsPerTick  = 3                // implementation default, tunable
-	requestTimeout       = 8 * time.Second  // per-request context timeout
-	recoveryCooldown     = 2 * time.Second  // cooldown after failed parent recovery
-	inflightStaleAge     = 30 * time.Second // cleanup threshold for abandoned inflight entries
+	maxBackfillDepth     = 512
+	maxConcurrentPerPeer = 2
+	maxBackfillsPerTick  = 3
+	requestTimeout       = 8 * time.Second
+	inflightStaleAge     = 30 * time.Second
+	statusTimeout        = 1200 * time.Millisecond
+	initialSyncRounds    = maxBackfillDepth
 )
-
-// ---------------------------------------------------------------------------
-// inflightRoots — deduplicates concurrent outbound requests for the same root.
-// ---------------------------------------------------------------------------
 
 type inflightRoots struct {
 	mu    sync.Mutex
@@ -39,7 +34,6 @@ func newInflightRoots() *inflightRoots {
 	return &inflightRoots{roots: make(map[[32]byte]time.Time)}
 }
 
-// tryAcquire marks root as in-flight. Returns false if already in-flight.
 func (r *inflightRoots) tryAcquire(root [32]byte) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -50,15 +44,12 @@ func (r *inflightRoots) tryAcquire(root [32]byte) bool {
 	return true
 }
 
-// release removes root from in-flight tracking.
 func (r *inflightRoots) release(root [32]byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.roots, root)
 }
 
-// releaseStale removes entries older than maxAge to prevent leaks from
-// abandoned requests (e.g. context cancelled without cleanup).
 func (r *inflightRoots) releaseStale(maxAge time.Duration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -70,10 +61,6 @@ func (r *inflightRoots) releaseStale(maxAge time.Duration) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// peerLimiter — caps concurrent sync sessions per peer.
-// ---------------------------------------------------------------------------
-
 type peerLimiter struct {
 	mu       sync.Mutex
 	inflight map[peer.ID]int
@@ -83,8 +70,6 @@ func newPeerLimiter() *peerLimiter {
 	return &peerLimiter{inflight: make(map[peer.ID]int)}
 }
 
-// acquire increments the in-flight count for pid. Returns false if the peer
-// is already at maxConcurrentPerPeer sessions.
 func (l *peerLimiter) acquire(pid peer.ID) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -95,7 +80,6 @@ func (l *peerLimiter) acquire(pid peer.ID) bool {
 	return true
 }
 
-// release decrements the in-flight count for pid.
 func (l *peerLimiter) release(pid peer.ID) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -107,217 +91,321 @@ func (l *peerLimiter) release(pid peer.ID) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// recoveryCoordinator — deduplicates missing-parent recovery workflows and
-// applies cooldown after failed attempts.
-// ---------------------------------------------------------------------------
-
-type recoveryCoordinator struct {
-	mu        sync.Mutex
-	active    map[[32]byte]time.Time // parentRoot → recovery start
-	cooldowns map[[32]byte]time.Time // parentRoot → cooldown expiry
+type pendingFetch struct {
+	attempts    int
+	failedPeers map[peer.ID]struct{}
+	inFlight    bool
+	queued      bool
+	nextAttempt time.Time
 }
 
-func newRecoveryCoordinator() *recoveryCoordinator {
-	return &recoveryCoordinator{
-		active:    make(map[[32]byte]time.Time),
-		cooldowns: make(map[[32]byte]time.Time),
-	}
+type fetchCandidate struct {
+	root        [32]byte
+	attempts    int
+	failedPeers map[peer.ID]struct{}
 }
 
-// tryStartRecovery returns true if no recovery is active for parentRoot and
-// any previous cooldown has expired. Marks recovery as active on success.
-func (c *recoveryCoordinator) tryStartRecovery(parentRoot [32]byte) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, active := c.active[parentRoot]; active {
+type fetchManager struct {
+	mu      sync.Mutex
+	pending map[[32]byte]*pendingFetch
+	queue   [][32]byte
+}
+
+func newFetchManager() *fetchManager {
+	return &fetchManager{pending: make(map[[32]byte]*pendingFetch)}
+}
+
+func (m *fetchManager) enqueue(root [32]byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.pending[root]
+	if !ok {
+		m.pending[root] = &pendingFetch{
+			failedPeers: make(map[peer.ID]struct{}),
+			queued:      true,
+		}
+		m.queue = append(m.queue, root)
+		return true
+	}
+	if state.queued || state.inFlight {
 		return false
 	}
-	if expiry, ok := c.cooldowns[parentRoot]; ok && time.Now().Before(expiry) {
-		return false
-	}
-	delete(c.cooldowns, parentRoot)
-	c.active[parentRoot] = time.Now()
+	state.queued = true
+	m.queue = append(m.queue, root)
 	return true
 }
 
-// finishRecovery marks recovery as no longer active.
-func (c *recoveryCoordinator) finishRecovery(parentRoot [32]byte) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.active, parentRoot)
+func (m *fetchManager) nextReady(limit int, now time.Time) []fetchCandidate {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if limit <= 0 || len(m.queue) == 0 {
+		return nil
+	}
+
+	var ready []fetchCandidate
+	remaining := m.queue[:0]
+	for _, root := range m.queue {
+		state, ok := m.pending[root]
+		if !ok {
+			continue
+		}
+		if len(ready) >= limit {
+			remaining = append(remaining, root)
+			continue
+		}
+		if state.inFlight || now.Before(state.nextAttempt) {
+			remaining = append(remaining, root)
+			continue
+		}
+
+		state.inFlight = true
+		state.queued = false
+
+		failedPeers := make(map[peer.ID]struct{}, len(state.failedPeers))
+		for pid := range state.failedPeers {
+			failedPeers[pid] = struct{}{}
+		}
+		ready = append(ready, fetchCandidate{
+			root:        root,
+			attempts:    state.attempts,
+			failedPeers: failedPeers,
+		})
+	}
+	m.queue = remaining
+	return ready
 }
 
-// setCooldown sets a cooldown period during which new recovery for parentRoot
-// will be rejected.
-func (c *recoveryCoordinator) setCooldown(parentRoot [32]byte, d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cooldowns[parentRoot] = time.Now().Add(d)
+func (m *fetchManager) markSuccess(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.pending, root)
 }
 
-// ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
+func (m *fetchManager) markRetry(root [32]byte, delay time.Duration, failedPeer peer.ID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.pending[root]
+	if !ok {
+		state = &pendingFetch{failedPeers: make(map[peer.ID]struct{})}
+		m.pending[root] = state
+	}
+	state.inFlight = false
+	state.attempts++
+	if failedPeer != "" {
+		state.failedPeers[failedPeer] = struct{}{}
+	}
+	state.nextAttempt = time.Now().Add(delay)
+	if !state.queued {
+		state.queued = true
+		m.queue = append(m.queue, root)
+	}
+}
+
+func (m *fetchManager) clearFailedPeers(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.pending[root]
+	if !ok {
+		return
+	}
+	state.failedPeers = make(map[peer.ID]struct{})
+}
 
 func isMissingParentStateErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "parent state not found")
 }
 
-// selectRandomPeers returns up to n randomly-selected peers from the list.
-func selectRandomPeers(peers []peer.ID, n int) []peer.ID {
-	if len(peers) <= n {
-		return peers
+func selectRandomPeers(peers []peer.ID, exclude map[peer.ID]struct{}) []peer.ID {
+	filtered := make([]peer.ID, 0, len(peers))
+	for _, pid := range peers {
+		if _, blocked := exclude[pid]; blocked {
+			continue
+		}
+		filtered = append(filtered, pid)
 	}
-	shuffled := make([]peer.ID, len(peers))
-	copy(shuffled, peers)
-	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
-	return shuffled[:n]
+	rand.Shuffle(len(filtered), func(i, j int) {
+		filtered[i], filtered[j] = filtered[j], filtered[i]
+	})
+	return filtered
 }
 
-// ---------------------------------------------------------------------------
-// fetchParentChain — bounded, parent-targeted backfill replacing the old
-// recoverMissingParentSync which fanned out to all peers.
-// ---------------------------------------------------------------------------
+func backoffForAttempt(attempt int) time.Duration {
+	if attempt < 0 {
+		attempt = 0
+	}
+	delay := time.Second << min(attempt, 5)
+	if delay > 30*time.Second {
+		return 30 * time.Second
+	}
+	return delay
+}
 
-// fetchParentChain fetches the ancestor chain starting from parentRoot until
-// a locally-known state is found or maxBackfillDepth is reached. It tries at
-// most maxRecoveryPeers and respects inflight/peer-limiter coordination.
-// Returns true if the parent state became available.
-func (n *Node) fetchParentChain(ctx context.Context, parentRoot [32]byte) bool {
-	if n.FC.HasState(parentRoot) {
+func (n *Node) resolveMissingAncestor(parentRoot [32]byte) [32]byte {
+	current := parentRoot
+	seen := make(map[[32]byte]struct{})
+	for {
+		if n.FC.HasState(current) {
+			return current
+		}
+		if _, loop := seen[current]; loop {
+			return current
+		}
+		seen[current] = struct{}{}
+
+		next, ok := n.PendingBlocks.MissingAncestor(current)
+		if !ok || next == current {
+			return current
+		}
+		current = next
+	}
+}
+
+func (n *Node) enqueueMissingRoot(root [32]byte) bool {
+	if n.FC.HasState(root) {
+		return false
+	}
+	enqueued := n.fetches.enqueue(root)
+	if enqueued {
+		select {
+		case n.backfillCh <- root:
+		default:
+		}
+	}
+	return enqueued
+}
+
+func (n *Node) processOrPendBlock(
+	sb *types.SignedBlockWithAttestation,
+	log *slog.Logger,
+) (imported bool, pending bool, err error) {
+	if sb == nil || sb.Message == nil || sb.Message.Block == nil {
+		return false, false, nil
+	}
+
+	block := sb.Message.Block
+	blockRoot, _ := block.HashTreeRoot()
+
+	if err := n.FC.ProcessBlock(sb); err != nil {
+		if isMissingParentStateErr(err) {
+			missingRoot := n.resolveMissingAncestor(block.ParentRoot)
+			n.PendingBlocks.AddWithMissingAncestor(sb, missingRoot)
+			n.fetches.markSuccess(blockRoot)
+			n.enqueueMissingRoot(missingRoot)
+
+			status := n.FC.GetStatus()
+			log.Info("cached pending block awaiting ancestor",
+				"slot", block.Slot,
+				"block_root", logging.LongHash(blockRoot),
+				"parent_root", logging.LongHash(block.ParentRoot),
+				"missing_root", logging.LongHash(missingRoot),
+				"head_slot", status.HeadSlot,
+				"finalized_slot", status.FinalizedSlot,
+				"pending_count", n.PendingBlocks.Len(),
+			)
+			return false, true, nil
+		}
+		n.fetches.markSuccess(blockRoot)
+		return false, false, err
+	}
+
+	n.PendingBlocks.Remove(blockRoot)
+	n.fetches.markSuccess(blockRoot)
+	return true, false, nil
+}
+
+func (n *Node) fetchMissingRoot(ctx context.Context, cand fetchCandidate) bool {
+	root := cand.root
+	if n.FC.HasState(root) {
+		n.fetches.markSuccess(root)
+		n.processPendingChildren(root, n.log)
 		return true
 	}
 
-	if !n.recoveryCoord.tryStartRecovery(parentRoot) {
-		n.log.Debug("backfill skipped: recovery already active or in cooldown",
-			"parent_root", logging.LongHash(parentRoot),
-		)
-		return false
+	peers := selectRandomPeers(n.Host.P2P.Network().Peers(), cand.failedPeers)
+	if len(peers) == 0 && len(cand.failedPeers) > 0 {
+		n.fetches.clearFailedPeers(root)
+		peers = selectRandomPeers(n.Host.P2P.Network().Peers(), nil)
 	}
-	defer n.recoveryCoord.finishRecovery(parentRoot)
-
-	peers := selectRandomPeers(n.Host.P2P.Network().Peers(), maxRecoveryPeers)
 	if len(peers) == 0 {
-		n.log.Debug("backfill skipped: no peers available",
-			"parent_root", logging.LongHash(parentRoot),
+		n.fetches.markRetry(root, time.Second, "")
+		n.log.Debug("missing-root fetch deferred: no eligible peers",
+			"root", logging.LongHash(root),
 		)
 		return false
 	}
 
-	for _, pid := range peers {
-		if !n.peerLimiter.acquire(pid) {
-			n.log.Debug("backfill skipped peer: at session limit",
-				"parent_root", logging.LongHash(parentRoot),
-				"peer_id", pid.String(),
-			)
-			continue
-		}
-
-		success := n.backfillFromPeer(ctx, pid, parentRoot)
-		n.peerLimiter.release(pid)
-
-		if success {
-			return true
-		}
-	}
-
-	// All attempted peers failed — apply cooldown before retrying.
-	n.recoveryCoord.setCooldown(parentRoot, recoveryCooldown)
-	n.log.Info("backfill failed for all peers, applying cooldown",
-		"parent_root", logging.LongHash(parentRoot),
-		"cooldown", recoveryCooldown,
-		"peers_tried", len(peers),
-	)
-	return false
-}
-
-// backfillFromPeer walks backward from targetRoot fetching one block at a
-// time until a known state is reached or the depth limit is hit.
-func (n *Node) backfillFromPeer(ctx context.Context, pid peer.ID, targetRoot [32]byte) bool {
-	var pending []*types.SignedBlockWithAttestation
-	nextRoot := targetRoot
-
-	n.log.Info("backfill started",
-		"parent_root", logging.LongHash(targetRoot),
-		"peer_id", pid.String(),
-		"max_depth", maxBackfillDepth,
-	)
-
-	for depth := 0; depth < maxBackfillDepth; depth++ {
-		if n.FC.HasState(nextRoot) {
-			break
-		}
-
-		if !n.inflightRoots.tryAcquire(nextRoot) {
-			n.log.Debug("backfill root skipped: already in-flight",
-				"root", logging.LongHash(nextRoot),
-				"depth", depth,
-			)
-			break
-		}
-
-		reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-		blocks, err := reqresp.RequestBlocksByRoot(reqCtx, n.Host.P2P, pid, [][32]byte{nextRoot})
-		cancel()
-		n.inflightRoots.release(nextRoot)
-
-		if err != nil || len(blocks) == 0 {
-			n.log.Debug("backfill fetch failed",
-				"root", logging.LongHash(nextRoot),
-				"peer_id", pid.String(),
-				"depth", depth,
-				"err", err,
-			)
-			break
-		}
-
-		pending = append(pending, blocks[0])
-		nextRoot = blocks[0].Message.Block.ParentRoot
-	}
-
-	if !n.FC.HasState(nextRoot) {
-		n.log.Debug("backfill did not reach known ancestor",
-			"parent_root", logging.LongHash(targetRoot),
+	pid := peers[0]
+	if !n.peerLimiter.acquire(pid) {
+		n.fetches.markRetry(root, 250*time.Millisecond, "")
+		n.log.Debug("missing-root fetch deferred: peer at session limit",
+			"root", logging.LongHash(root),
 			"peer_id", pid.String(),
-			"fetched", len(pending),
-			"stopped_at", logging.LongHash(nextRoot),
+		)
+		return false
+	}
+	defer n.peerLimiter.release(pid)
+
+	if !n.inflightRoots.tryAcquire(root) {
+		n.fetches.markRetry(root, 250*time.Millisecond, "")
+		n.log.Debug("missing-root fetch deferred: root already in-flight",
+			"root", logging.LongHash(root),
+			"peer_id", pid.String(),
+		)
+		return false
+	}
+	defer n.inflightRoots.release(root)
+
+	n.log.Info("missing-root fetch started",
+		"root", logging.LongHash(root),
+		"peer_id", pid.String(),
+		"attempt", cand.attempts+1,
+	)
+
+	reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	blocks, err := reqresp.RequestBlocksByRoot(reqCtx, n.Host.P2P, pid, [][32]byte{root})
+	cancel()
+	if err != nil || len(blocks) == 0 {
+		delay := backoffForAttempt(cand.attempts)
+		n.fetches.markRetry(root, delay, pid)
+		n.log.Info("missing-root fetch failed",
+			"root", logging.LongHash(root),
+			"peer_id", pid.String(),
+			"err", err,
+			"retry_in", delay,
 		)
 		return false
 	}
 
-	// Process in forward order (oldest first).
-	synced := 0
-	for i := len(pending) - 1; i >= 0; i-- {
-		sb := pending[i]
-		blockRoot, _ := sb.Message.Block.HashTreeRoot()
-		if err := n.FC.ProcessBlock(sb); err != nil {
-			n.log.Debug("backfill block rejected",
-				"slot", sb.Message.Block.Slot,
-				"block_root", logging.LongHash(blockRoot),
-				"err", err,
-			)
-		} else {
-			synced++
-		}
+	imported, pending, procErr := n.processOrPendBlock(blocks[0], n.log)
+	if procErr != nil {
+		n.log.Warn("fetched block rejected",
+			"root", logging.LongHash(root),
+			"peer_id", pid.String(),
+			"err", procErr,
+		)
+		return false
 	}
-
-	n.log.Info("backfill completed",
-		"parent_root", logging.LongHash(targetRoot),
-		"peer_id", pid.String(),
-		"synced", synced,
-		"fetched", len(pending),
-	)
-	return synced > 0
+	if imported {
+		n.processPendingChildren(root, n.log)
+		n.log.Info("missing-root fetch imported block",
+			"root", logging.LongHash(root),
+			"peer_id", pid.String(),
+		)
+		return true
+	}
+	if pending {
+		n.log.Info("missing-root fetch advanced ancestry search",
+			"root", logging.LongHash(root),
+			"peer_id", pid.String(),
+		)
+	}
+	return pending
 }
 
-// ---------------------------------------------------------------------------
-// syncWithPeer — refactored with depth cap and coordination guards.
-// ---------------------------------------------------------------------------
-
-// syncWithPeer exchanges status and fetches missing blocks from a single peer.
-// It walks backwards from the peer's head to find blocks we're missing, then
-// processes them in forward order.
 func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	if !n.peerLimiter.acquire(pid) {
 		n.log.Debug("sync skipped: peer at session limit", "peer_id", pid.String())
@@ -331,11 +419,14 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		Head:      &types.Checkpoint{Root: status.Head, Slot: status.HeadSlot},
 	}
 
-	peerStatus, err := reqresp.RequestStatus(ctx, n.Host.P2P, pid, ourStatus)
-	if err != nil {
+	peerCtx, cancel := context.WithTimeout(ctx, statusTimeout)
+	peerStatus, err := reqresp.RequestStatus(peerCtx, n.Host.P2P, pid, ourStatus)
+	cancel()
+	if err != nil || peerStatus.Head == nil {
 		n.log.Debug("status exchange failed", "peer_id", pid.String(), "err", err)
 		return false
 	}
+
 	n.log.Info("status exchanged",
 		"peer_id", pid.String(),
 		"local_head_slot", status.HeadSlot,
@@ -348,7 +439,6 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		"peer_finalized_root", logging.LongHash(peerStatus.Finalized.Root),
 	)
 
-	// Skip sync only if peer is strictly behind us, or at the exact same position.
 	if peerStatus.Head.Slot < status.HeadSlot {
 		return false
 	}
@@ -356,94 +446,27 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		return false
 	}
 
-	// Walk backwards: request blocks we don't have.
-	var pending []*types.SignedBlockWithAttestation
-	nextRoot := peerStatus.Head.Root
-	backlog := uint64(1)
-	if peerStatus.Head.Slot > status.HeadSlot {
-		backlog = peerStatus.Head.Slot - status.HeadSlot
-	}
-	maxSyncDepth := int(backlog + 16)
-	const maxSyncDepthCap = 32768
-	if maxSyncDepth > maxSyncDepthCap {
-		maxSyncDepth = maxSyncDepthCap
-	}
-
-	for depth := 0; depth < maxSyncDepth; depth++ {
-		if n.FC.HasState(nextRoot) {
-			break
-		}
-
-		if !n.inflightRoots.tryAcquire(nextRoot) {
-			n.log.Debug("sync walk root skipped: already in-flight",
-				"root", logging.LongHash(nextRoot),
-				"peer_id", pid.String(),
-			)
-			break
-		}
-
-		reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-		blocks, err := reqresp.RequestBlocksByRoot(reqCtx, n.Host.P2P, pid, [][32]byte{nextRoot})
-		cancel()
-		n.inflightRoots.release(nextRoot)
-
-		if err != nil || len(blocks) == 0 {
-			n.log.Debug("blocks_by_root failed during sync walk",
-				"peer_id", pid.String(),
-				"requested_root", logging.LongHash(nextRoot),
-				"err", err,
-			)
-			break
-		}
-
-		pending = append(pending, blocks[0])
-		nextRoot = blocks[0].Message.Block.ParentRoot
-	}
-
-	if !n.FC.HasState(nextRoot) {
-		n.log.Debug("sync walk did not reach known ancestor with state",
+	enqueued := n.enqueueMissingRoot(peerStatus.Head.Root)
+	if enqueued {
+		n.log.Info("queued peer head root for sync",
 			"peer_id", pid.String(),
-			"ancestor_root", logging.LongHash(nextRoot),
-			"fetched", len(pending),
-			"max_depth", maxSyncDepth,
+			"head_slot", peerStatus.Head.Slot,
+			"head_root", logging.LongHash(peerStatus.Head.Root),
 		)
-		return false
 	}
-
-	// Process in forward order (oldest first).
-	synced := 0
-	total := len(pending)
-	for i := len(pending) - 1; i >= 0; i-- {
-		sb := pending[i]
-		blockRoot, _ := sb.Message.Block.HashTreeRoot()
-		if err := n.FC.ProcessBlock(sb); err != nil {
-			n.log.Debug("sync block rejected",
-				"slot", sb.Message.Block.Slot,
-				"block_root", logging.LongHash(blockRoot),
-				"err", err,
-			)
-		} else {
-			synced++
-			n.log.Info("synced block",
-				"slot", sb.Message.Block.Slot,
-				"block_root", logging.LongHash(blockRoot),
-				"peer_id", pid.String(),
-				"progress", fmt.Sprintf("%d/%d", synced, total),
-			)
-		}
-	}
-	return synced > 0
+	return enqueued
 }
-
-// ---------------------------------------------------------------------------
-// initialSync — unchanged from before. Iterates all peers on startup.
-// ---------------------------------------------------------------------------
 
 func (n *Node) initialSync(ctx context.Context) {
 	peers := n.Host.P2P.Network().Peers()
 	n.log.Info("initial sync starting", "peer_count", len(peers))
 	for _, pid := range peers {
 		n.syncWithPeer(ctx, pid)
+	}
+	for rounds := 0; rounds < initialSyncRounds; rounds++ {
+		if n.processBackfillQueue(ctx) == 0 {
+			break
+		}
 	}
 	status := n.FC.GetStatus()
 	n.log.Info("initial sync completed",
@@ -455,10 +478,6 @@ func (n *Node) initialSync(ctx context.Context) {
 		"finalized_root", logging.LongHash(status.FinalizedRoot),
 	)
 }
-
-// ---------------------------------------------------------------------------
-// isBehindPeers — unchanged. Background goroutine deferred to follow-up PR.
-// ---------------------------------------------------------------------------
 
 func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus) (bool, uint64) {
 	maxPeerHeadSlot := status.HeadSlot
@@ -473,7 +492,7 @@ func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus)
 	}
 
 	for _, pid := range peers {
-		peerCtx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
+		peerCtx, cancel := context.WithTimeout(ctx, statusTimeout)
 		peerStatus, err := reqresp.RequestStatus(peerCtx, n.Host.P2P, pid, ourStatus)
 		cancel()
 		if err != nil || peerStatus.Head == nil {
@@ -484,17 +503,10 @@ func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus)
 		}
 	}
 
-	behind := status.HeadSlot < maxPeerHeadSlot
-	return behind, maxPeerHeadSlot
+	return status.HeadSlot < maxPeerHeadSlot, maxPeerHeadSlot
 }
 
-// ---------------------------------------------------------------------------
-// processBackfillQueue — called by the ticker once per slot to resolve
-// pending blocks whose parents are missing.
-// ---------------------------------------------------------------------------
-
-func (n *Node) processBackfillQueue(ctx context.Context) {
-	// Drain any signals from the gossip handler.
+func (n *Node) processBackfillQueue(ctx context.Context) int {
 	for {
 		select {
 		case <-n.backfillCh:
@@ -504,29 +516,25 @@ func (n *Node) processBackfillQueue(ctx context.Context) {
 	}
 drained:
 
-	// Periodic cleanup of abandoned inflight entries.
 	n.inflightRoots.releaseStale(inflightStaleAge)
 
-	missingParents := n.PendingBlocks.MissingParents()
-	if len(missingParents) == 0 {
-		return
-	}
-
-	recovered := 0
-	for _, parentRoot := range missingParents {
-		if recovered >= maxBackfillsPerTick {
-			break
-		}
-
-		if n.FC.HasState(parentRoot) {
-			// Parent arrived via gossip or sync — process waiting children.
-			n.processPendingChildren(parentRoot, n.log)
+	for _, root := range n.PendingBlocks.MissingParents() {
+		if n.FC.HasState(root) {
+			n.fetches.markSuccess(root)
+			n.processPendingChildren(root, n.log)
 			continue
 		}
-
-		if n.fetchParentChain(ctx, parentRoot) {
-			n.processPendingChildren(parentRoot, n.log)
-		}
-		recovered++
+		n.enqueueMissingRoot(root)
 	}
+
+	candidates := n.fetches.nextReady(maxBackfillsPerTick, time.Now())
+	for _, cand := range candidates {
+		if n.FC.HasState(cand.root) {
+			n.fetches.markSuccess(cand.root)
+			n.processPendingChildren(cand.root, n.log)
+			continue
+		}
+		n.fetchMissingRoot(ctx, cand)
+	}
+	return len(candidates)
 }
