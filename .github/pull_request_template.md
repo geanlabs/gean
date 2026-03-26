@@ -2,7 +2,7 @@
 <!-- Provide a brief summary of your changes -->
 
 ## Associated Issue
-<!-- PRs targeting main or devenet-N must be linked to an issue. Use Closes #123 / Fixes #123, or link it from the Development sidebar. -->
+<!-- PRs targeting main or devnet-N must be linked to an issue. Use Closes #123 / Fixes #123, or link it from the Development sidebar. -->
 Closes #
 
 ## Test Plan

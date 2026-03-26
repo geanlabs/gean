@@ -27,7 +27,7 @@ jobs:
               "Add 'Closes #123' or 'Fixes #123' to the PR description when GitHub can create the link, " +
               "or link the issue directly from the PR's Development sidebar.";
             const shouldEnforce =
-              baseRef === "main" || /^devenet-[0-9]+$/.test(baseRef);
+              baseRef === "main" || /^devnet-[0-9]+$/.test(baseRef);
 
             if (!shouldEnforce) {
               core.info(
