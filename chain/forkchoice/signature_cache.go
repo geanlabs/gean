@@ -47,6 +47,12 @@ func cloneAggregatedSignatureProof(proof *types.AggregatedSignatureProof) *types
 	}
 }
 
+func (c *Store) updateCacheMetricsLocked() {
+	metrics.GossipSignaturesCount.Set(float64(len(c.gossipSignatures)))
+	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAggregatedPayloads)))
+	metrics.LatestNewAggregatedPayloads.Set(float64(len(c.latestNewAggregatedPayloads)))
+}
+
 func (c *Store) storeGossipSignatureLocked(sa *types.SignedAttestation) {
 	if sa == nil || sa.Message == nil {
 		return
@@ -63,7 +69,7 @@ func (c *Store) storeGossipSignatureLocked(sa *types.SignedAttestation) {
 			signature: sa.Signature,
 		}
 	}
-	metrics.GossipSignaturesCount.Set(float64(len(c.gossipSignatures)))
+	c.updateCacheMetricsLocked()
 }
 
 func (c *Store) storeAggregatedPayloadLocked(
@@ -100,4 +106,46 @@ func (c *Store) storeAggregatedPayloadLocked(
 		existing = existing[len(existing)-maxProofsPerKey:]
 	}
 	c.aggregatedPayloads[key] = existing
+}
+
+func (c *Store) pruneEphemeralCachesLocked(finalizedSlot uint64) {
+	for key, stored := range c.gossipSignatures {
+		if stored.slot <= finalizedSlot {
+			delete(c.gossipSignatures, key)
+		}
+	}
+
+	for key, entries := range c.aggregatedPayloads {
+		kept := entries[:0]
+		for _, entry := range entries {
+			if entry.slot > finalizedSlot {
+				kept = append(kept, entry)
+			}
+		}
+		if len(kept) == 0 {
+			delete(c.aggregatedPayloads, key)
+			continue
+		}
+		c.aggregatedPayloads[key] = kept
+	}
+
+	for key, payload := range c.latestKnownAggregatedPayloads {
+		if payload.data == nil || payload.data.Slot <= finalizedSlot {
+			delete(c.latestKnownAggregatedPayloads, key)
+		}
+	}
+
+	for key, payload := range c.latestNewAggregatedPayloads {
+		if payload.data == nil || payload.data.Slot <= finalizedSlot {
+			delete(c.latestNewAggregatedPayloads, key)
+		}
+	}
+
+	c.updateCacheMetricsLocked()
+}
+
+func (c *Store) PruneEphemeralCaches(finalizedSlot uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pruneEphemeralCachesLocked(finalizedSlot)
 }

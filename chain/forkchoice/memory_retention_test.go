@@ -77,3 +77,80 @@ func TestProcessAttestationLocked_OnChainVoteDoesNotCacheGossipSignature(t *test
 		t.Fatalf("expected no cached gossip signatures for on-chain vote, got %d", got)
 	}
 }
+
+func TestPruneEphemeralCaches_RemovesFinalizedEntries(t *testing.T) {
+	fc, anchorRoot, state := newCheckpointTestStore(t)
+
+	oldData := makeAttestationData(anchorRoot, state, 1)
+	newData := makeAttestationData(anchorRoot, state, 4)
+	oldKey, ok := makeSignatureKey(0, oldData)
+	if !ok {
+		t.Fatal("expected old signature key")
+	}
+	newKey, ok := makeSignatureKey(1, newData)
+	if !ok {
+		t.Fatal("expected new signature key")
+	}
+	oldDataRoot, err := oldData.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash old data root: %v", err)
+	}
+	newDataRoot, err := newData.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash new data root: %v", err)
+	}
+
+	oldProof := &types.AggregatedSignatureProof{Participants: []byte{0x01}, ProofData: []byte{0xAA}}
+	newProof := &types.AggregatedSignatureProof{Participants: []byte{0x01}, ProofData: []byte{0xBB}}
+
+	fc.gossipSignatures[oldKey] = storedSignature{slot: 1, data: oldData}
+	fc.gossipSignatures[newKey] = storedSignature{slot: 4, data: newData}
+	fc.aggregatedPayloads[oldKey] = []storedAggregatedPayload{{slot: 1, proof: oldProof}}
+	fc.aggregatedPayloads[newKey] = []storedAggregatedPayload{{slot: 4, proof: newProof}}
+	fc.latestKnownAggregatedPayloads[oldDataRoot] = aggregatedPayload{data: oldData, proofs: []*types.AggregatedSignatureProof{oldProof}}
+	fc.latestKnownAggregatedPayloads[newDataRoot] = aggregatedPayload{data: newData, proofs: []*types.AggregatedSignatureProof{newProof}}
+	fc.latestNewAggregatedPayloads[oldDataRoot] = aggregatedPayload{data: oldData, proofs: []*types.AggregatedSignatureProof{oldProof}}
+	fc.latestNewAggregatedPayloads[newDataRoot] = aggregatedPayload{data: newData, proofs: []*types.AggregatedSignatureProof{newProof}}
+
+	fc.PruneEphemeralCaches(2)
+
+	if got := len(fc.gossipSignatures); got != 1 {
+		t.Fatalf("expected 1 gossip signature after prune, got %d", got)
+	}
+	if _, ok := fc.gossipSignatures[oldKey]; ok {
+		t.Fatal("expected finalized gossip signature to be pruned")
+	}
+	if _, ok := fc.gossipSignatures[newKey]; !ok {
+		t.Fatal("expected post-finalized gossip signature to remain")
+	}
+
+	if got := len(fc.aggregatedPayloads); got != 1 {
+		t.Fatalf("expected 1 aggregated payload key after prune, got %d", got)
+	}
+	if _, ok := fc.aggregatedPayloads[oldKey]; ok {
+		t.Fatal("expected finalized aggregated payload key to be pruned")
+	}
+	if _, ok := fc.aggregatedPayloads[newKey]; !ok {
+		t.Fatal("expected post-finalized aggregated payload key to remain")
+	}
+
+	if got := len(fc.latestKnownAggregatedPayloads); got != 1 {
+		t.Fatalf("expected 1 known aggregated payload root after prune, got %d", got)
+	}
+	if _, ok := fc.latestKnownAggregatedPayloads[oldDataRoot]; ok {
+		t.Fatal("expected finalized known aggregated payload root to be pruned")
+	}
+	if _, ok := fc.latestKnownAggregatedPayloads[newDataRoot]; !ok {
+		t.Fatal("expected post-finalized known aggregated payload root to remain")
+	}
+
+	if got := len(fc.latestNewAggregatedPayloads); got != 1 {
+		t.Fatalf("expected 1 new aggregated payload root after prune, got %d", got)
+	}
+	if _, ok := fc.latestNewAggregatedPayloads[oldDataRoot]; ok {
+		t.Fatal("expected finalized new aggregated payload root to be pruned")
+	}
+	if _, ok := fc.latestNewAggregatedPayloads[newDataRoot]; !ok {
+		t.Fatal("expected post-finalized new aggregated payload root to remain")
+	}
+}
