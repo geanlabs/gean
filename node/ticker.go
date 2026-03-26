@@ -99,8 +99,15 @@ func (n *Node) Run(ctx context.Context) error {
 			n.Validator.OnInterval(ctx, slot, interval)
 		}
 
-		// Backfill for pending blocks with missing parents.
-		n.processBackfillQueue(ctx)
+		// Backfill for pending blocks with missing parents with a bounded
+		// wall-clock budget so sync work cannot monopolize the ticker.
+		if processed := n.processBackfillQueue(ctx, backfillTickBudget); processed > 0 {
+			n.log.Debug("processed backfill queue",
+				"slot", slot,
+				"processed", processed,
+				"budget", backfillTickBudget,
+			)
+		}
 
 		// Prune finalized pending blocks when finalization advances.
 		if status.FinalizedSlot > lastFinalizedSlot {

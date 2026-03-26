@@ -19,6 +19,7 @@ const (
 	maxBackfillDepth     = 512
 	maxConcurrentPerPeer = 2
 	maxBackfillsPerTick  = 3
+	backfillTickBudget   = 1500 * time.Millisecond
 	requestTimeout       = 8 * time.Second
 	inflightStaleAge     = 30 * time.Second
 	statusTimeout        = 1200 * time.Millisecond
@@ -480,7 +481,7 @@ func (n *Node) initialSync(ctx context.Context) {
 		n.syncWithPeer(ctx, pid)
 	}
 	for rounds := 0; rounds < initialSyncRounds; rounds++ {
-		if n.processBackfillQueue(ctx) == 0 {
+		if n.processBackfillQueue(ctx, 0) == 0 {
 			break
 		}
 	}
@@ -522,7 +523,13 @@ func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus)
 	return status.HeadSlot < maxPeerHeadSlot, maxPeerHeadSlot
 }
 
-func (n *Node) processBackfillQueue(ctx context.Context) int {
+func (n *Node) processBackfillQueue(ctx context.Context, budget time.Duration) int {
+	if budget > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, budget)
+		defer cancel()
+	}
+
 	for {
 		select {
 		case <-n.backfillCh:
@@ -544,13 +551,24 @@ drained:
 	}
 
 	candidates := n.fetches.nextReady(maxBackfillsPerTick, time.Now())
+	processed := 0
 	for _, cand := range candidates {
+		if budget > 0 && ctx.Err() != nil {
+			n.log.Debug("backfill queue budget exhausted",
+				"budget", budget,
+				"processed", processed,
+				"remaining", len(candidates)-processed,
+			)
+			break
+		}
 		if n.FC.HasState(cand.root) {
 			n.fetches.markSuccess(cand.root)
 			n.processPendingChildren(cand.root, n.log)
+			processed++
 			continue
 		}
 		n.fetchMissingRoot(ctx, cand)
+		processed++
 	}
-	return len(candidates)
+	return processed
 }
