@@ -226,18 +226,54 @@ func initP2P(cfg Config) (*network.Host, *gossipsub.Topics, error) {
 
 	devnetID := cfg.DevnetID
 	if devnetID == "" {
-		devnetID = "devnet0"
+		devnetID = gossipsub.NetworkName
 	}
-	topics, err := gossipsub.JoinTopics(host.PubSub, devnetID, 0)
+
+	committeeCount := cfg.AttestationCommitteeCount
+	if committeeCount == 0 {
+		committeeCount = 1
+	}
+
+	subscribeSubnets := computeSubscriptionSubnets(cfg, committeeCount)
+
+	topics, err := gossipsub.JoinTopics(host.PubSub, devnetID, subscribeSubnets, committeeCount)
 	if err != nil {
 		host.Close()
 		return nil, nil, fmt.Errorf("join topics: %w", err)
 	}
 
 	gossipLog := logging.NewComponentLogger(logging.CompGossip)
-	gossipLog.Info("gossipsub topics joined", "devnet", devnetID)
+	gossipLog.Info("gossipsub topics joined",
+		"devnet", devnetID,
+		"subscribed_subnets", len(subscribeSubnets),
+	)
 
 	return host, topics, nil
+}
+
+func computeSubscriptionSubnets(cfg Config, committeeCount int) map[uint64]bool {
+	subnets := make(map[uint64]bool)
+
+	if len(cfg.ValidatorIDs) > 0 {
+		for _, vid := range cfg.ValidatorIDs {
+			subnetID := vid % uint64(committeeCount)
+			subnets[subnetID] = true
+		}
+	}
+
+	if cfg.IsAggregator {
+		for _, sid := range cfg.AggregateSubnetIDs {
+			if sid < uint64(committeeCount) {
+				subnets[sid] = true
+			}
+		}
+
+		if len(subnets) == 0 && len(cfg.ValidatorIDs) == 0 {
+			subnets[0] = true
+		}
+	}
+
+	return subnets
 }
 
 func initDiscovery(log *slog.Logger, cfg Config) (*p2p.LocalNodeManager, *p2p.DiscoveryService, error) {
@@ -319,14 +355,29 @@ func startMetrics(log *slog.Logger, cfg Config) {
 	metrics.ValidatorsCount.Set(float64(len(cfg.ValidatorIDs)))
 	metrics.ConnectedPeers.WithLabelValues("gean").Set(0)
 
-	// Devnet-3 aggregator metrics.
 	if cfg.IsAggregator {
 		metrics.IsAggregator.Set(1)
 	} else {
 		metrics.IsAggregator.Set(0)
 	}
-	metrics.AttestationCommitteeCount.Set(1)  // Always 1 for devnet-3.
-	metrics.AttestationCommitteeSubnet.Set(0) // Always subnet 0 for devnet-3.
+
+	committeeCount := cfg.AttestationCommitteeCount
+	if committeeCount == 0 {
+		committeeCount = 1
+	}
+	metrics.AttestationCommitteeCount.Set(float64(committeeCount))
+
+	var lowestSubnet uint64
+	if len(cfg.ValidatorIDs) > 0 {
+		lowestSubnet = cfg.ValidatorIDs[0] % uint64(committeeCount)
+		for _, vid := range cfg.ValidatorIDs[1:] {
+			subnet := vid % uint64(committeeCount)
+			if subnet < lowestSubnet {
+				lowestSubnet = subnet
+			}
+		}
+	}
+	metrics.AttestationCommitteeSubnet.Set(float64(lowestSubnet))
 
 	metrics.Serve(cfg.MetricsPort)
 	log.Info("metrics server started", "port", cfg.MetricsPort)
