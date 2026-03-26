@@ -6,8 +6,8 @@ on:
 
 permissions:
   contents: read
-  issues: read
-  pull-requests: read
+  issues: write
+  pull-requests: write
 
 jobs:
   check-issue:
@@ -21,6 +21,11 @@ jobs:
             const repo = context.repo.repo;
             const pr = context.payload.pull_request;
             const baseRef = pr.base.ref;
+            const commentMarker = "<!-- pr-issue-check-comment -->";
+            const policyMessage =
+              `PRs targeting '${baseRef}' must be linked to an existing issue. ` +
+              "Add 'Closes #123' or 'Fixes #123' to the PR description when GitHub can create the link, " +
+              "or link the issue directly from the PR's Development sidebar.";
             const shouldEnforce =
               baseRef === "main" || /^devenet-[0-9]+$/.test(baseRef);
 
@@ -30,6 +35,80 @@ jobs:
               );
               return;
             }
+
+            const listManagedComments = async () => {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+
+              return comments
+                .filter(
+                  (comment) =>
+                    comment.user?.login === "github-actions[bot]" &&
+                    comment.body?.includes(commentMarker),
+                )
+                .sort(
+                  (left, right) =>
+                    new Date(left.created_at).getTime() -
+                    new Date(right.created_at).getTime(),
+                );
+            };
+
+            const upsertManagedComment = async (body, createIfMissing) => {
+              const managedComments = await listManagedComments();
+
+              if (managedComments.length > 1) {
+                core.warning(
+                  `Found ${managedComments.length} managed issue-check comments. Updating the oldest one.`,
+                );
+              }
+
+              const existingComment = managedComments[0];
+
+              if (existingComment) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                  body,
+                });
+                return;
+              }
+
+              if (createIfMissing) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
+            };
+
+            const renderFailureComment = () =>
+              [
+                commentMarker,
+                "## Issue link required",
+                "",
+                `This PR targets \`${baseRef}\`, so it must be linked to an existing issue.`,
+                "",
+                "To fix this:",
+                "- Add `Closes #123` or `Fixes #123` to the PR description when GitHub can create the link.",
+                "- Or link the issue directly from the PR's Development sidebar.",
+              ].join("\n");
+
+            const renderSuccessComment = (refs) =>
+              [
+                commentMarker,
+                "## Issue link verified",
+                "",
+                `This PR now has linked issue(s): ${refs.join(", ")}.`,
+                "",
+                `The linked-issue requirement for \`${baseRef}\` is satisfied.`,
+              ].join("\n");
 
             const linkedIssuesQuery = `
               query($owner: String!, $repo: String!, $number: Int!) {
@@ -65,12 +144,21 @@ jobs:
                 (issue) =>
                   `${issue.repository.owner.login}/${issue.repository.name}#${issue.number}`,
               );
+
+              try {
+                await upsertManagedComment(renderSuccessComment(refs), false);
+              } catch (error) {
+                core.warning(`Failed to update managed success comment: ${error.message}`);
+              }
+
               core.info(`Found linked issue(s): ${refs.join(", ")}`);
               return;
             }
 
-            throw new Error(
-              `PRs targeting '${baseRef}' must be linked to an existing issue. ` +
-                "Add 'Closes #123' or 'Fixes #123' to the PR description when GitHub can create the link, " +
-                "or link the issue directly from the PR's Development sidebar.",
-            );
+            try {
+              await upsertManagedComment(renderFailureComment(), true);
+            } catch (error) {
+              core.warning(`Failed to create or update managed failure comment: ${error.message}`);
+            }
+
+            throw new Error(policyMessage);
