@@ -166,8 +166,6 @@ func (v *ValidatorDuties) TryPropose(ctx context.Context, slot uint64) {
 
 func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 	for _, idx := range v.Indices {
-		// Skip if this validator is the proposer for this slot.
-		// The proposer already attests via ProposerAttestation in its block.
 		if statetransition.IsProposer(idx, slot, v.FC.NumValidators()) {
 			continue
 		}
@@ -195,7 +193,6 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			continue
 		}
 
-		// Log signing confirmation.
 		metrics.PQSigAttestationSignaturesTotal.Inc()
 		v.Log.Info("attestation signed (XMSS)",
 			"slot", slot,
@@ -205,24 +202,48 @@ func (v *ValidatorDuties) TryAttest(ctx context.Context, slot uint64) {
 			"signing_time", signDuration,
 		)
 
-		// Warn if no peers are subscribed — publish will be silently dropped with no error.
-		if topicPeerCount(v.Topics.SubnetAttestation) == 0 {
+		subnetID := idx % uint64(v.Topics.AttestationCommitteeCount)
+		topic, ok := v.Topics.SubnetAttestations[subnetID]
+		if !ok {
+			v.Log.Warn("publishing to unsubscribed attestation subnet via fanout",
+				"slot", slot,
+				"validator", idx,
+				"subnet_id", subnetID,
+			)
+			topicStr := gossipsub.AttestationSubnetTopic(subnetID)
+			var err error
+			topic, err = v.Topics.PubSub.Join(topicStr)
+			if err != nil {
+				v.Log.Error("failed to join fanout topic for attestation",
+					"slot", slot,
+					"validator", idx,
+					"subnet_id", subnetID,
+					"err", err,
+				)
+				continue
+			}
+		}
+
+		if topicPeerCount(topic) == 0 {
 			v.Log.Warn("attestation topic has 0 peers — published attestation will not be delivered",
 				"slot", slot,
 				"validator", idx,
+				"subnet_id", subnetID,
 			)
 		}
 
-		if err := v.PublishAttestation(ctx, v.Topics.SubnetAttestation, sa); err != nil {
+		if err := v.PublishAttestation(ctx, topic, sa); err != nil {
 			v.Log.Error("failed to publish attestation",
 				"slot", slot,
 				"validator", idx,
+				"subnet_id", subnetID,
 				"err", err,
 			)
 		} else {
 			v.Log.Debug("published attestation",
 				"slot", slot,
 				"validator", idx,
+				"subnet_id", subnetID,
 				"head_root", logging.LongHash(sa.Message.Head.Root),
 				"target_slot", sa.Message.Target.Slot,
 				"target_root", logging.LongHash(sa.Message.Target.Root),
