@@ -1,15 +1,23 @@
 package forkchoice
 
 import (
+	"bytes"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 )
 
 var log = logging.NewComponentLogger(logging.CompForkChoice)
+
+const (
+	blocksToKeep = 21600
+	statesToKeep = 3000
+)
 
 type blockSummary struct {
 	Slot          uint64
@@ -146,6 +154,7 @@ func RestoreFromDB(store storage.Store) *Store {
 	for root, block := range allBlocks {
 		blockSummaries[root] = summarizeBlock(block)
 	}
+	metrics.ForkchoiceBlockSummaryRoots.Set(float64(len(blockSummaries)))
 
 	return &Store{
 		time:                          headBlock.Slot * types.IntervalsPerSlot,
@@ -181,6 +190,7 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		Message: &types.BlockWithAttestation{Block: anchorBlock},
 	})
 	store.PutState(anchorRoot, state)
+	metrics.ForkchoiceBlockSummaryRoots.Set(1)
 
 	return &Store{
 		time:                          anchorBlock.Slot * types.IntervalsPerSlot,
@@ -220,6 +230,7 @@ func NewStoreFromCheckpointState(state *types.State, anchorRoot [32]byte, store 
 		Message: &types.BlockWithAttestation{Block: anchorBlock},
 	})
 	store.PutState(anchorRoot, state)
+	metrics.ForkchoiceBlockSummaryRoots.Set(1)
 
 	return &Store{
 		time:                          state.Slot * types.IntervalsPerSlot,
@@ -303,4 +314,78 @@ func (c *Store) allKnownBlockSummaries() map[[32]byte]blockSummary {
 		}
 	}
 	return summaries
+}
+
+func (c *Store) PruneOldData() (prunedBlocks int, prunedStates int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pruneOldDataLocked(blocksToKeep, statesToKeep)
+}
+
+func (c *Store) pruneOldDataLocked(blockLimit int, stateLimit int) (prunedBlocks int, prunedStates int) {
+	if len(c.blockSummaries) == 0 {
+		return 0, 0
+	}
+
+	type rootWithSummary struct {
+		root    [32]byte
+		summary blockSummary
+	}
+
+	ordered := make([]rootWithSummary, 0, len(c.blockSummaries))
+	for root, summary := range c.blockSummaries {
+		ordered = append(ordered, rootWithSummary{root: root, summary: summary})
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].summary.Slot != ordered[j].summary.Slot {
+			return ordered[i].summary.Slot > ordered[j].summary.Slot
+		}
+		return bytes.Compare(ordered[i].root[:], ordered[j].root[:]) < 0
+	})
+
+	protected := map[[32]byte]struct{}{
+		c.head:                 {},
+		c.safeTarget:           {},
+		c.latestJustified.Root: {},
+		c.latestFinalized.Root: {},
+	}
+
+	keepBlocks := make(map[[32]byte]struct{}, min(blockLimit, len(ordered))+len(protected))
+	keepStates := make(map[[32]byte]struct{}, min(stateLimit, len(ordered))+len(protected))
+	for root := range protected {
+		keepBlocks[root] = struct{}{}
+		keepStates[root] = struct{}{}
+	}
+	for i, item := range ordered {
+		if i < blockLimit {
+			keepBlocks[item.root] = struct{}{}
+		}
+		if i < stateLimit {
+			keepStates[item.root] = struct{}{}
+		}
+	}
+
+	blockRootsToDelete := make([][32]byte, 0, len(ordered))
+	stateRootsToDelete := make([][32]byte, 0, len(ordered))
+	for _, item := range ordered {
+		if _, keep := keepBlocks[item.root]; !keep {
+			blockRootsToDelete = append(blockRootsToDelete, item.root)
+		}
+		if _, keep := keepStates[item.root]; !keep {
+			stateRootsToDelete = append(stateRootsToDelete, item.root)
+		}
+	}
+
+	if len(blockRootsToDelete) > 0 {
+		c.storage.DeleteBlocks(blockRootsToDelete)
+		for _, root := range blockRootsToDelete {
+			delete(c.blockSummaries, root)
+		}
+	}
+	if len(stateRootsToDelete) > 0 {
+		c.storage.DeleteStates(stateRootsToDelete)
+	}
+	metrics.ForkchoiceBlockSummaryRoots.Set(float64(len(c.blockSummaries)))
+
+	return len(blockRootsToDelete), len(stateRootsToDelete)
 }

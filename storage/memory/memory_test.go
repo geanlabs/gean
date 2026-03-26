@@ -85,3 +85,37 @@ func TestGetAllStatesCopiesMap(t *testing.T) {
 		t.Fatal("deleting from GetAllStates result should not affect store")
 	}
 }
+
+func TestDeleteBlocksRemovesBlockAndSignedBlock(t *testing.T) {
+	s := memory.New()
+	root := [32]byte{3}
+	s.PutBlock(root, &types.Block{Slot: 2})
+	s.PutSignedBlock(root, &types.SignedBlockWithAttestation{
+		Message: &types.BlockWithAttestation{Block: &types.Block{Slot: 2}},
+	})
+
+	s.DeleteBlocks([][32]byte{root})
+
+	if _, ok := s.GetBlock(root); ok {
+		t.Fatal("expected block to be deleted")
+	}
+	if _, ok := s.GetSignedBlock(root); ok {
+		t.Fatal("expected signed block to be deleted with block")
+	}
+}
+
+func TestDeleteStatesRemovesOnlyStates(t *testing.T) {
+	s := memory.New()
+	root := [32]byte{4}
+	s.PutBlock(root, &types.Block{Slot: 3})
+	s.PutState(root, &types.State{Slot: 3})
+
+	s.DeleteStates([][32]byte{root})
+
+	if _, ok := s.GetState(root); ok {
+		t.Fatal("expected state to be deleted")
+	}
+	if _, ok := s.GetBlock(root); !ok {
+		t.Fatal("expected block to remain after deleting state")
+	}
+}

@@ -12,4 +12,6 @@ type Store interface {
 	PutState(root [32]byte, state *types.State)
 	GetAllBlocks() map[[32]byte]*types.Block
 	GetAllStates() map[[32]byte]*types.State
+	DeleteBlocks(roots [][32]byte)
+	DeleteStates(roots [][32]byte)
 }

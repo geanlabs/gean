@@ -235,6 +235,21 @@ var LatestKnownAggregatedPayloads = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of known aggregated payload items",
 })
 
+var AggregatedPayloadCacheKeys = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_aggregated_payload_cache_keys",
+	Help: "Number of aggregated payload cache keys",
+})
+
+var ForkchoiceBlockSummaryRoots = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_forkchoice_block_summary_roots",
+	Help: "Number of block summaries tracked in memory",
+})
+
+var SyncPendingFetchRoots = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "lean_sync_pending_fetch_roots",
+	Help: "Number of pending sync fetch roots",
+})
+
 // --- Network ---
 
 var ConnectedPeers = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -296,6 +311,9 @@ func init() {
 		GossipSignaturesCount,
 		LatestNewAggregatedPayloads,
 		LatestKnownAggregatedPayloads,
+		AggregatedPayloadCacheKeys,
+		ForkchoiceBlockSummaryRoots,
+		SyncPendingFetchRoots,
 		// PQ attestation signatures
 		PQSigAttestationSignaturesTotal,
 		PQSigAttestationSignaturesValidTotal,
@@ -323,6 +341,9 @@ func init() {
 	}
 
 	ConnectedPeers.WithLabelValues("gean").Set(0)
+	AggregatedPayloadCacheKeys.Set(0)
+	ForkchoiceBlockSummaryRoots.Set(0)
+	SyncPendingFetchRoots.Set(0)
 
 	PQSigAttestationSignaturesTotal.Add(0)
 	PQSigAttestationSignaturesValidTotal.Add(0)

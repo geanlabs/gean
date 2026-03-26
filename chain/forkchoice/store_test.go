@@ -97,6 +97,82 @@ func TestAllKnownBlockSummaries_MergesRuntimeAndCheckpointRoots(t *testing.T) {
 	}
 }
 
+func TestPruneOldData_PreservesProtectedRootsAndWindows(t *testing.T) {
+	state := makeCheckpointState()
+	anchorRoot := prepareCheckpointStateForStore(t, state)
+	store := memory.New()
+	fc := NewStoreFromCheckpointState(state, anchorRoot, store)
+
+	fc.blockSummaries = make(map[[32]byte]blockSummary)
+	roots := make([][32]byte, 0, 6)
+	for slot := uint64(1); slot <= 6; slot++ {
+		root := [32]byte{byte(slot)}
+		roots = append(roots, root)
+		fc.blockSummaries[root] = blockSummary{Slot: slot}
+		store.PutBlock(root, &types.Block{Slot: slot, Body: &types.BlockBody{}})
+		store.PutSignedBlock(root, &types.SignedBlockWithAttestation{
+			Message: &types.BlockWithAttestation{
+				Block: &types.Block{Slot: slot, Body: &types.BlockBody{}},
+			},
+		})
+		store.PutState(root, &types.State{
+			Slot:                     slot,
+			Config:                   &types.Config{GenesisTime: 1},
+			LatestJustified:          &types.Checkpoint{},
+			LatestFinalized:          &types.Checkpoint{},
+			LatestBlockHeader:        &types.BlockHeader{},
+			JustifiedSlots:           []byte{0x01},
+			JustificationsValidators: []byte{0x01},
+		})
+	}
+
+	fc.head = roots[5]
+	fc.safeTarget = roots[4]
+	fc.latestJustified = &types.Checkpoint{Root: roots[3], Slot: 4}
+	fc.latestFinalized = &types.Checkpoint{Root: roots[0], Slot: 1}
+
+	prunedBlocks, prunedStates := fc.pruneOldDataLocked(3, 2)
+
+	if prunedBlocks != 2 {
+		t.Fatalf("prunedBlocks = %d, want 2", prunedBlocks)
+	}
+	if prunedStates != 2 {
+		t.Fatalf("prunedStates = %d, want 2", prunedStates)
+	}
+
+	for _, root := range [][32]byte{roots[5], roots[4], roots[3], roots[0]} {
+		if _, ok := store.GetBlock(root); !ok {
+			t.Fatalf("expected protected/retained block %x to remain", root)
+		}
+		if _, ok := fc.blockSummaries[root]; !ok {
+			t.Fatalf("expected protected/retained summary %x to remain", root)
+		}
+	}
+
+	for _, root := range [][32]byte{roots[2], roots[1]} {
+		if _, ok := store.GetBlock(root); ok {
+			t.Fatalf("expected old block %x to be pruned", root)
+		}
+		if _, ok := fc.blockSummaries[root]; ok {
+			t.Fatalf("expected old block summary %x to be pruned", root)
+		}
+	}
+
+	for _, root := range [][32]byte{roots[2], roots[1]} {
+		if _, ok := store.GetState(root); ok {
+			t.Fatalf("expected old state %x to be pruned", root)
+		}
+	}
+	if _, ok := store.GetState(roots[0]); !ok {
+		t.Fatalf("expected protected finalized state %x to remain", roots[0])
+	}
+	for _, root := range [][32]byte{roots[5], roots[4], roots[3]} {
+		if _, ok := store.GetState(root); !ok {
+			t.Fatalf("expected retained state %x to remain", root)
+		}
+	}
+}
+
 func prepareCheckpointStateForStore(t *testing.T, state *types.State) [32]byte {
 	t.Helper()
 

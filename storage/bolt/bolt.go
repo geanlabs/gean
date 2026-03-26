@@ -124,6 +124,14 @@ func (s *Store) GetAllStates() map[[32]byte]*types.State {
 	return result
 }
 
+func (s *Store) DeleteBlocks(roots [][32]byte) {
+	s.deleteRoots(roots, blocksBucket, signedBlockBucket)
+}
+
+func (s *Store) DeleteStates(roots [][32]byte) {
+	s.deleteRoots(roots, statesBucket)
+}
+
 // --- SSZ helpers ---
 
 type sszMarshaler interface {
@@ -165,4 +173,33 @@ func (s *Store) get(bucket, key []byte, dst sszUnmarshaler) bool {
 		return nil
 	})
 	return found
+}
+
+func (s *Store) deleteRoots(roots [][32]byte, buckets ...[]byte) {
+	if len(roots) == 0 || len(buckets) == 0 {
+		return
+	}
+
+	const batchSize = 1000
+	for start := 0; start < len(roots); start += batchSize {
+		end := start + batchSize
+		if end > len(roots) {
+			end = len(roots)
+		}
+		batch := roots[start:end]
+		err := s.db.Update(func(tx *bolt.Tx) error {
+			for _, bucketName := range buckets {
+				bucket := tx.Bucket(bucketName)
+				for _, root := range batch {
+					if err := bucket.Delete(root[:]); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			log.Fatalf("bolt: delete roots from %v: %v", buckets, err)
+		}
+	}
 }

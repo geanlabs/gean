@@ -81,3 +81,20 @@ func (m *Store) GetAllStates() map[[32]byte]*types.State {
 	}
 	return cp
 }
+
+func (m *Store) DeleteBlocks(roots [][32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, root := range roots {
+		delete(m.blocks, root)
+		delete(m.signedBlocks, root)
+	}
+}
+
+func (m *Store) DeleteStates(roots [][32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, root := range roots {
+		delete(m.states, root)
+	}
+}
