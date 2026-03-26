@@ -19,9 +19,18 @@ const (
 
 // Topics holds subscribed gossipsub topics.
 type Topics struct {
-	Block             *pubsub.Topic
-	SubnetAttestation *pubsub.Topic
-	Aggregation       *pubsub.Topic
+	Block              *pubsub.Topic
+	SubnetAttestations map[uint64]*pubsub.Topic // subnet ID -> attestation topic
+	Aggregation        *pubsub.Topic
+}
+
+// GetSubnetTopic returns the attestation topic for the given subnet ID.
+// If the subnet is not subscribed, it returns nil.
+func (t *Topics) GetSubnetTopic(subnetID uint64) *pubsub.Topic {
+	if t.SubnetAttestations == nil {
+		return nil
+	}
+	return t.SubnetAttestations[subnetID]
 }
 
 // NewGossipSub creates a configured gossipsub instance.
@@ -61,19 +70,26 @@ func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo)
 	)
 }
 
-// JoinTopics joins the devnet-3 block, subnet attestation, and aggregation gossip topics.
-func JoinTopics(ps *pubsub.PubSub, devnetID string, subnetID uint64) (*Topics, error) {
+// JoinTopics joins the block, aggregation, and attestation subnet gossip topics.
+// subnetIDs specifies which attestation subnets to join.
+func JoinTopics(ps *pubsub.PubSub, devnetID string, subnetIDs []uint64) (*Topics, error) {
 	blockTopic, err := ps.Join(fmt.Sprintf(BlockTopicFmt, devnetID))
 	if err != nil {
 		return nil, fmt.Errorf("join block topic: %w", err)
-	}
-	subnetAttTopic, err := ps.Join(fmt.Sprintf(SubnetAttestationTopicFmt, devnetID, subnetID))
-	if err != nil {
-		return nil, fmt.Errorf("join subnet attestation topic: %w", err)
 	}
 	aggTopic, err := ps.Join(fmt.Sprintf(AggregationTopicFmt, devnetID))
 	if err != nil {
 		return nil, fmt.Errorf("join aggregation topic: %w", err)
 	}
-	return &Topics{Block: blockTopic, SubnetAttestation: subnetAttTopic, Aggregation: aggTopic}, nil
+
+	subnetTopics := make(map[uint64]*pubsub.Topic, len(subnetIDs))
+	for _, sid := range subnetIDs {
+		topic, err := ps.Join(fmt.Sprintf(SubnetAttestationTopicFmt, devnetID, sid))
+		if err != nil {
+			return nil, fmt.Errorf("join subnet attestation topic %d: %w", sid, err)
+		}
+		subnetTopics[sid] = topic
+	}
+
+	return &Topics{Block: blockTopic, SubnetAttestations: subnetTopics, Aggregation: aggTopic}, nil
 }
