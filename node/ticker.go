@@ -72,12 +72,16 @@ func (n *Node) Run(ctx context.Context) error {
 		if slot != lastSyncCheckSlot {
 			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 			if behindPeers {
+				enqueuedPeers := 0
 				for _, pid := range n.Host.P2P.Network().Peers() {
 					if n.syncWithPeer(ctx, pid) {
-						status = n.FC.GetStatus()
-						break // stop after first successful sync, re-evaluate next slot
+						enqueuedPeers++
+						if enqueuedPeers >= maxSyncPeersPerTick {
+							break
+						}
 					}
 				}
+				status = n.FC.GetStatus()
 				// Recompute from post-sync head vs already-observed max.
 				// maxPeerHeadSlot is stale until next slot — intentional.
 				behindPeers = status.HeadSlot < maxPeerHeadSlot

@@ -19,6 +19,7 @@ const (
 	maxBackfillDepth     = 512
 	maxConcurrentPerPeer = 2
 	maxBackfillsPerTick  = 3
+	maxSyncPeersPerTick  = 3
 	backfillTickBudget   = 1500 * time.Millisecond
 	requestTimeout       = 8 * time.Second
 	inflightStaleAge     = 30 * time.Second
@@ -205,6 +206,23 @@ func (m *fetchManager) markRetry(root [32]byte, delay time.Duration, failedPeer 
 	}
 }
 
+func (m *fetchManager) markDeferred(root [32]byte, delay time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.pending[root]
+	if !ok {
+		state = &pendingFetch{failedPeers: make(map[peer.ID]struct{})}
+		m.pending[root] = state
+	}
+	state.inFlight = false
+	state.nextAttempt = time.Now().Add(delay)
+	if !state.queued {
+		state.queued = true
+		m.queue = append(m.queue, root)
+	}
+}
+
 func (m *fetchManager) clearFailedPeers(root [32]byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -335,7 +353,7 @@ func (n *Node) fetchMissingRoot(ctx context.Context, cand fetchCandidate) bool {
 		peers = selectRandomPeers(n.Host.P2P.Network().Peers(), nil)
 	}
 	if len(peers) == 0 {
-		n.fetches.markRetry(root, time.Second, "")
+		n.fetches.markDeferred(root, 250*time.Millisecond)
 		n.log.Debug("missing-root fetch deferred: no eligible peers",
 			"root", logging.LongHash(root),
 		)
@@ -344,7 +362,7 @@ func (n *Node) fetchMissingRoot(ctx context.Context, cand fetchCandidate) bool {
 
 	pid := peers[0]
 	if !n.peerLimiter.acquire(pid) {
-		n.fetches.markRetry(root, 250*time.Millisecond, "")
+		n.fetches.markDeferred(root, 250*time.Millisecond)
 		n.log.Debug("missing-root fetch deferred: peer at session limit",
 			"root", logging.LongHash(root),
 			"peer_id", pid.String(),
@@ -354,7 +372,7 @@ func (n *Node) fetchMissingRoot(ctx context.Context, cand fetchCandidate) bool {
 	defer n.peerLimiter.release(pid)
 
 	if !n.inflightRoots.tryAcquire(root) {
-		n.fetches.markRetry(root, 250*time.Millisecond, "")
+		n.fetches.markDeferred(root, 250*time.Millisecond)
 		n.log.Debug("missing-root fetch deferred: root already in-flight",
 			"root", logging.LongHash(root),
 			"peer_id", pid.String(),
@@ -552,8 +570,11 @@ drained:
 
 	candidates := n.fetches.nextReady(maxBackfillsPerTick, time.Now())
 	processed := 0
-	for _, cand := range candidates {
+	for i, cand := range candidates {
 		if budget > 0 && ctx.Err() != nil {
+			for _, remaining := range candidates[i:] {
+				n.fetches.markDeferred(remaining.root, 0)
+			}
 			n.log.Debug("backfill queue budget exhausted",
 				"budget", budget,
 				"processed", processed,
