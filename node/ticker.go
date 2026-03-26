@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/geanlabs/gean/observability/logging"
@@ -71,7 +72,8 @@ func (n *Node) Run(ctx context.Context) error {
 		if slot != lastSyncCheckSlot {
 			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 			if behindPeers {
-				for _, pid := range n.Host.P2P.Network().Peers() {
+				if peers := n.Host.P2P.Network().Peers(); len(peers) > 0 {
+					pid := peers[rand.Intn(len(peers))]
 					if n.syncWithPeer(ctx, pid) {
 						status = n.FC.GetStatus()
 					}

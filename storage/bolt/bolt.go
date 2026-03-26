@@ -88,6 +88,18 @@ func (s *Store) PutState(root [32]byte, state *types.State) {
 	s.put(statesBucket, root[:], state)
 }
 
+func (s *Store) DeleteBlock(root [32]byte) {
+	s.delete(blocksBucket, root[:])
+}
+
+func (s *Store) DeleteSignedBlock(root [32]byte) {
+	s.delete(signedBlockBucket, root[:])
+}
+
+func (s *Store) DeleteState(root [32]byte) {
+	s.delete(statesBucket, root[:])
+}
+
 func (s *Store) GetAllBlocks() map[[32]byte]*types.Block {
 	result := make(map[[32]byte]*types.Block)
 	s.db.View(func(tx *bolt.Tx) error {
@@ -144,6 +156,15 @@ func (s *Store) put(bucket, key []byte, val sszMarshaler) {
 	})
 	if err != nil {
 		log.Fatalf("bolt: write %s: %v", bucket, err)
+	}
+}
+
+func (s *Store) delete(bucket, key []byte) {
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucket).Delete(key)
+	})
+	if err != nil {
+		log.Printf("bolt: delete from %s: %v", bucket, err)
 	}
 }
 

@@ -10,6 +10,9 @@ type Store interface {
 	PutSignedBlock(root [32]byte, sb *types.SignedBlockWithAttestation)
 	GetState(root [32]byte) (*types.State, bool)
 	PutState(root [32]byte, state *types.State)
+	DeleteBlock(root [32]byte)
+	DeleteSignedBlock(root [32]byte)
+	DeleteState(root [32]byte)
 	GetAllBlocks() map[[32]byte]*types.Block
 	GetAllStates() map[[32]byte]*types.State
 }

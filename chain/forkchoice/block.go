@@ -172,6 +172,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		c.latestFinalized = state.LatestFinalized
 		metrics.FinalizationsTotal.WithLabelValues("success").Inc()
 		metrics.LatestFinalizedSlot.Set(float64(state.LatestFinalized.Slot))
+		c.pruneOnFinalizationLocked(state.LatestFinalized.Slot)
 	}
 
 	// Step 2: Process body attestations as on-chain votes.

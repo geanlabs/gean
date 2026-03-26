@@ -236,6 +236,58 @@ func emptyCheckpointBody() *types.BlockBody {
 	return &types.BlockBody{Attestations: []*types.AggregatedAttestation{}}
 }
 
+// pruneOnFinalizationLocked removes data for slots older than the finalized slot.
+// Called when finalization advances to bound memory growth.
+func (c *Store) pruneOnFinalizationLocked(finalizedSlot uint64) {
+	for id, sa := range c.latestKnownAttestations {
+		if sa != nil && sa.Message != nil && sa.Message.Slot < finalizedSlot {
+			delete(c.latestKnownAttestations, id)
+		}
+	}
+	for root, ap := range c.latestKnownAggregatedPayloads {
+		if ap.data != nil && ap.data.Slot < finalizedSlot {
+			delete(c.latestKnownAggregatedPayloads, root)
+		}
+	}
+	for key, entries := range c.aggregatedPayloads {
+		// Keep only entries at or after the finalized slot.
+		kept := entries[:0]
+		for _, e := range entries {
+			if e.slot >= finalizedSlot {
+				kept = append(kept, e)
+			}
+		}
+		if len(kept) == 0 {
+			delete(c.aggregatedPayloads, key)
+		} else {
+			c.aggregatedPayloads[key] = kept
+		}
+	}
+	for key, sig := range c.gossipSignatures {
+		if sig.slot < finalizedSlot {
+			delete(c.gossipSignatures, key)
+		}
+	}
+
+	// Prune old blocks and states from storage.
+	for root, block := range c.storage.GetAllBlocks() {
+		if block.Slot < finalizedSlot {
+			c.storage.DeleteBlock(root)
+			c.storage.DeleteSignedBlock(root)
+		}
+	}
+	for root, state := range c.storage.GetAllStates() {
+		if state.Slot < finalizedSlot {
+			c.storage.DeleteState(root)
+		}
+	}
+
+	// Rebuild checkpoint root index from head state.
+	if headState, ok := c.storage.GetState(c.head); ok {
+		c.checkpointRoots = buildCheckpointRootIndex(headState, c.head)
+	}
+}
+
 func summarizeBlock(block *types.Block) blockSummary {
 	return blockSummary{
 		Slot:          block.Slot,

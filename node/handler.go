@@ -56,34 +56,27 @@ func (n *Node) registerGossipHandlers() error {
 			if err := n.FC.ProcessBlock(sb); err != nil {
 				status := n.FC.GetStatus()
 				if isMissingParentStateErr(err) {
-					gossipLog.Warn("parent state missing for gossip block, attempting recovery",
-						"slot", block.Slot,
-						"block_root", logging.LongHash(blockRoot),
-						"parent_root", logging.LongHash(block.ParentRoot),
-						"head_slot", status.HeadSlot,
-						"finalized_slot", status.FinalizedSlot,
-					)
-					if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
-						if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
-							gossipLog.Info("accepted gossip block after parent recovery",
-								"slot", block.Slot,
-								"block_root", logging.LongHash(blockRoot),
-							)
-							// Process any pending children now that this block is available.
-							n.processPendingChildren(blockRoot, gossipLog)
-							return
-						} else {
-							err = retryErr
-						}
-					}
-					// Cache the block for later processing when parent becomes available.
+					// Cache immediately so the block isn't lost.
 					n.PendingBlocks.Add(sb)
-					gossipLog.Info("cached pending block awaiting parent",
+					gossipLog.Info("cached pending block, recovering parent async",
 						"slot", block.Slot,
 						"block_root", logging.LongHash(blockRoot),
 						"parent_root", logging.LongHash(block.ParentRoot),
 						"pending_count", n.PendingBlocks.Len(),
 					)
+					// Recover in background to avoid blocking the gossip goroutine.
+					go func() {
+						if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
+							if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
+								gossipLog.Info("accepted gossip block after parent recovery",
+									"slot", block.Slot,
+									"block_root", logging.LongHash(blockRoot),
+								)
+								n.PendingBlocks.Remove(blockRoot)
+								n.processPendingChildren(blockRoot, gossipLog)
+							}
+						}
+					}()
 					return
 				}
 				gossipLog.Warn("rejected gossip block",

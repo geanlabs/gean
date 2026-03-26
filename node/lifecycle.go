@@ -80,6 +80,7 @@ func New(cfg Config) (*Node, error) {
 		P2PManager:    p2pManager,
 		P2PDiscovery:  p2pDiscovery,
 		PendingBlocks: NewPendingBlockCache(),
+		syncingRoots:  make(map[[32]byte]time.Time),
 		dbCloser:      db,
 		log:           log,
 	}

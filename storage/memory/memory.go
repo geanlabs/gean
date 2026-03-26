@@ -62,6 +62,24 @@ func (m *Store) PutState(root [32]byte, state *types.State) {
 	m.states[root] = state
 }
 
+func (m *Store) DeleteBlock(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.blocks, root)
+}
+
+func (m *Store) DeleteSignedBlock(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.signedBlocks, root)
+}
+
+func (m *Store) DeleteState(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.states, root)
+}
+
 func (m *Store) GetAllBlocks() map[[32]byte]*types.Block {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

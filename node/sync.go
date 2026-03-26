@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		backlog = peerStatus.Head.Slot - status.HeadSlot
 	}
 	maxSyncDepth := int(backlog + 16)
-	const maxSyncDepthCap = 32768
+	const maxSyncDepthCap = 128
 	if maxSyncDepth > maxSyncDepthCap {
 		maxSyncDepth = maxSyncDepthCap
 	}
@@ -130,14 +131,46 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	return synced > 0
 }
 
+const (
+	syncCooldown     = 5 * time.Second
+	maxRecoveryPeers = 3
+)
+
 // recoverMissingParentSync attempts to fill a missing parent chain by syncing with
-// connected peers, then checks whether the requested parent state became available.
+// a few random peers, then checks whether the requested parent state became available.
+// Deduplicates concurrent requests for the same root via syncingRoots.
 func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte) bool {
 	if n.FC.HasState(parentRoot) {
 		return true
 	}
 
-	for _, pid := range n.Host.P2P.Network().Peers() {
+	// Skip if another goroutine is already recovering this root.
+	n.syncMu.Lock()
+	if t, ok := n.syncingRoots[parentRoot]; ok && time.Since(t) < syncCooldown {
+		n.syncMu.Unlock()
+		return false
+	}
+	n.syncingRoots[parentRoot] = time.Now()
+	n.syncMu.Unlock()
+
+	defer func() {
+		n.syncMu.Lock()
+		delete(n.syncingRoots, parentRoot)
+		n.syncMu.Unlock()
+	}()
+
+	peers := n.Host.P2P.Network().Peers()
+	if len(peers) == 0 {
+		return false
+	}
+
+	// Shuffle and try up to maxRecoveryPeers.
+	rand.Shuffle(len(peers), func(i, j int) { peers[i], peers[j] = peers[j], peers[i] })
+	if len(peers) > maxRecoveryPeers {
+		peers = peers[:maxRecoveryPeers]
+	}
+
+	for _, pid := range peers {
 		n.syncWithPeer(ctx, pid)
 		if n.FC.HasState(parentRoot) {
 			return true

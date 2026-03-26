@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
+	"time"
 
 	apiserver "github.com/geanlabs/gean/api/server"
 	"github.com/geanlabs/gean/chain/forkchoice"
@@ -29,6 +31,10 @@ type Node struct {
 
 	// PendingBlocks caches blocks awaiting parent availability.
 	PendingBlocks *PendingBlockCache
+
+	// syncingRoots tracks roots currently being fetched to prevent duplicate requests.
+	syncMu       sync.Mutex
+	syncingRoots map[[32]byte]time.Time
 
 	Clock    *Clock
 	dbCloser io.Closer
