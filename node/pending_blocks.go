@@ -134,6 +134,41 @@ func (c *PendingBlockCache) removeFromParentIndex(parentRoot, blockRoot [32]byte
 	}
 }
 
+// removeBlockLocked removes a cached block and its direct indexes.
+// Must be called with lock held.
+func (c *PendingBlockCache) removeBlockLocked(blockRoot [32]byte) bool {
+	sb, ok := c.blocks[blockRoot]
+	if !ok {
+		return false
+	}
+
+	delete(c.blocks, blockRoot)
+	delete(c.missingAncestor, blockRoot)
+	delete(c.byParent, blockRoot)
+	c.removeFromParentIndex(sb.Message.Block.ParentRoot, blockRoot)
+	return true
+}
+
+// pruneSubtreeLocked removes a cached block and any cached descendants reachable
+// through the byParent index. Must be called with lock held.
+func (c *PendingBlockCache) pruneSubtreeLocked(root [32]byte, visited map[[32]byte]struct{}) int {
+	if _, seen := visited[root]; seen {
+		return 0
+	}
+	visited[root] = struct{}{}
+
+	children := append([][32]byte(nil), c.byParent[root]...)
+
+	pruned := 0
+	for _, child := range children {
+		pruned += c.pruneSubtreeLocked(child, visited)
+	}
+	if c.removeBlockLocked(root) {
+		pruned++
+	}
+	return pruned
+}
+
 func (c *PendingBlockCache) Len() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -174,14 +209,17 @@ func (c *PendingBlockCache) PruneFinalized(finalizedSlot uint64) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	pruned := 0
+	var seeds [][32]byte
 	for root, sb := range c.blocks {
 		if sb.Message.Block.Slot <= finalizedSlot {
-			delete(c.blocks, root)
-			delete(c.missingAncestor, root)
-			c.removeFromParentIndex(sb.Message.Block.ParentRoot, root)
-			pruned++
+			seeds = append(seeds, root)
 		}
+	}
+
+	pruned := 0
+	visited := make(map[[32]byte]struct{}, len(seeds))
+	for _, root := range seeds {
+		pruned += c.pruneSubtreeLocked(root, visited)
 	}
 
 	if pruned > 0 {

@@ -16,15 +16,15 @@ import (
 )
 
 const (
-	maxBackfillDepth     = 512
-	maxConcurrentPerPeer = 2
-	maxBackfillsPerTick  = 3
-	maxSyncPeersPerTick  = 3
-	backfillTickBudget   = 1500 * time.Millisecond
-	requestTimeout       = 8 * time.Second
-	inflightStaleAge     = 30 * time.Second
-	statusTimeout        = 1200 * time.Millisecond
-	initialSyncRounds    = maxBackfillDepth
+	maxBackfillDepth       = 512
+	maxConcurrentPerPeer   = 2
+	maxBackfillsPerTick    = 3
+	maxSyncPeersPerTick    = 3
+	backfillTickBudget     = 1500 * time.Millisecond
+	initialSyncTotalBudget = 5 * time.Second
+	requestTimeout         = 8 * time.Second
+	inflightStaleAge       = 30 * time.Second
+	statusTimeout          = 1200 * time.Millisecond
 )
 
 type inflightRoots struct {
@@ -266,6 +266,41 @@ func backoffForAttempt(attempt int) time.Duration {
 	return delay
 }
 
+func runBudgetedWork(
+	ctx context.Context,
+	totalBudget time.Duration,
+	sliceBudget time.Duration,
+	now func() time.Time,
+	process func(context.Context, time.Duration) int,
+) int {
+	if totalBudget <= 0 {
+		return 0
+	}
+	if now == nil {
+		now = time.Now
+	}
+
+	deadline := now().Add(totalBudget)
+	processedTotal := 0
+	for ctx.Err() == nil {
+		remaining := deadline.Sub(now())
+		if remaining <= 0 {
+			break
+		}
+		budget := remaining
+		if sliceBudget > 0 && budget > sliceBudget {
+			budget = sliceBudget
+		}
+
+		processed := process(ctx, budget)
+		processedTotal += processed
+		if processed == 0 {
+			break
+		}
+	}
+	return processedTotal
+}
+
 func (n *Node) resolveMissingAncestor(parentRoot [32]byte) [32]byte {
 	current := parentRoot
 	seen := make(map[[32]byte]struct{})
@@ -495,14 +530,22 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 func (n *Node) initialSync(ctx context.Context) {
 	peers := n.Host.P2P.Network().Peers()
 	n.log.Info("initial sync starting", "peer_count", len(peers))
+	enqueuedPeers := 0
 	for _, pid := range peers {
-		n.syncWithPeer(ctx, pid)
-	}
-	for rounds := 0; rounds < initialSyncRounds; rounds++ {
-		if n.processBackfillQueue(ctx, 0) == 0 {
-			break
+		if n.syncWithPeer(ctx, pid) {
+			enqueuedPeers++
+			if enqueuedPeers >= maxSyncPeersPerTick {
+				break
+			}
 		}
 	}
+	startupBackfillProcessed := runBudgetedWork(
+		ctx,
+		initialSyncTotalBudget,
+		backfillTickBudget,
+		time.Now,
+		n.processBackfillQueue,
+	)
 	status := n.FC.GetStatus()
 	n.log.Info("initial sync completed",
 		"head_slot", status.HeadSlot,
@@ -511,6 +554,9 @@ func (n *Node) initialSync(ctx context.Context) {
 		"justified_root", logging.LongHash(status.JustifiedRoot),
 		"finalized_slot", status.FinalizedSlot,
 		"finalized_root", logging.LongHash(status.FinalizedRoot),
+		"enqueued_peers", enqueuedPeers,
+		"startup_backfill_budget", initialSyncTotalBudget,
+		"startup_backfill_processed", startupBackfillProcessed,
 	)
 }
 

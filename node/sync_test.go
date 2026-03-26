@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -298,5 +299,166 @@ func TestPendingBlockCache_PruneFinalized_IndexCoherence(t *testing.T) {
 	}
 	if children[0].Message.Block.Slot != 15 {
 		t.Fatalf("expected remaining child at slot 15, got %d", children[0].Message.Block.Slot)
+	}
+}
+
+func TestPendingBlockCache_PruneFinalized_RemovesDescendantSubtree(t *testing.T) {
+	cache := NewPendingBlockCache()
+
+	rootBlock := makeTestBlock(5, [32]byte{0x10})
+	rootRoot, err := rootBlock.Message.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash root block: %v", err)
+	}
+	childBlock := makeTestBlock(15, rootRoot)
+	childRoot, err := childBlock.Message.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash child block: %v", err)
+	}
+	grandchildBlock := makeTestBlock(20, childRoot)
+	grandchildRoot, err := grandchildBlock.Message.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash grandchild block: %v", err)
+	}
+
+	cache.Add(rootBlock)
+	cache.Add(childBlock)
+	cache.Add(grandchildBlock)
+
+	pruned := cache.PruneFinalized(10)
+	if pruned != 3 {
+		t.Fatalf("expected 3 pruned blocks including descendants, got %d", pruned)
+	}
+	if cache.Len() != 0 {
+		t.Fatalf("expected empty cache after subtree prune, got %d", cache.Len())
+	}
+	if missing := cache.MissingParents(); len(missing) != 0 {
+		t.Fatalf("expected no missing parents after subtree prune, got %d", len(missing))
+	}
+	if children := cache.GetChildrenOf(rootRoot); len(children) != 0 {
+		t.Fatalf("expected no cached children for pruned root, got %d", len(children))
+	}
+	if children := cache.GetChildrenOf(childRoot); len(children) != 0 {
+		t.Fatalf("expected no cached children for pruned child, got %d", len(children))
+	}
+	if _, ok := cache.MissingAncestor(childRoot); ok {
+		t.Fatal("expected pruned child missing-ancestor entry to be removed")
+	}
+	if _, ok := cache.MissingAncestor(grandchildRoot); ok {
+		t.Fatal("expected pruned grandchild missing-ancestor entry to be removed")
+	}
+}
+
+func TestPendingBlockCache_PruneFinalized_PreservesIndependentBranch(t *testing.T) {
+	cache := NewPendingBlockCache()
+
+	deadRootBlock := makeTestBlock(5, [32]byte{0x20})
+	deadRoot, err := deadRootBlock.Message.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash dead root block: %v", err)
+	}
+	deadChildBlock := makeTestBlock(15, deadRoot)
+
+	liveParent := [32]byte{0x30}
+	liveBlock := makeTestBlock(15, liveParent)
+
+	cache.Add(deadRootBlock)
+	cache.Add(deadChildBlock)
+	cache.Add(liveBlock)
+
+	pruned := cache.PruneFinalized(10)
+	if pruned != 2 {
+		t.Fatalf("expected dead branch to prune 2 blocks, got %d", pruned)
+	}
+	if cache.Len() != 1 {
+		t.Fatalf("expected 1 block from independent branch to remain, got %d", cache.Len())
+	}
+	children := cache.GetChildrenOf(liveParent)
+	if len(children) != 1 {
+		t.Fatalf("expected independent branch child to remain, got %d", len(children))
+	}
+	if children[0].Message.Block.Slot != 15 {
+		t.Fatalf("expected independent branch block at slot 15, got %d", children[0].Message.Block.Slot)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runBudgetedWork tests
+// ---------------------------------------------------------------------------
+
+func TestRunBudgetedWork_StopsWhenNoProgress(t *testing.T) {
+	now := time.Unix(0, 0)
+	calls := 0
+
+	processed := runBudgetedWork(
+		context.Background(),
+		5*time.Second,
+		time.Second,
+		func() time.Time { return now },
+		func(context.Context, time.Duration) int {
+			calls++
+			return 0
+		},
+	)
+
+	if processed != 0 {
+		t.Fatalf("expected 0 processed items, got %d", processed)
+	}
+	if calls != 1 {
+		t.Fatalf("expected exactly 1 process call, got %d", calls)
+	}
+}
+
+func TestRunBudgetedWork_UsesSliceBudget(t *testing.T) {
+	now := time.Unix(0, 0)
+	var budgets []time.Duration
+
+	processed := runBudgetedWork(
+		context.Background(),
+		3500*time.Millisecond,
+		1500*time.Millisecond,
+		func() time.Time { return now },
+		func(_ context.Context, budget time.Duration) int {
+			budgets = append(budgets, budget)
+			now = now.Add(budget)
+			return 1
+		},
+	)
+
+	if processed != 3 {
+		t.Fatalf("expected 3 processed iterations, got %d", processed)
+	}
+	expected := []time.Duration{1500 * time.Millisecond, 1500 * time.Millisecond, 500 * time.Millisecond}
+	if len(budgets) != len(expected) {
+		t.Fatalf("expected %d budget slices, got %d", len(expected), len(budgets))
+	}
+	for i := range expected {
+		if budgets[i] != expected[i] {
+			t.Fatalf("expected budget %v at index %d, got %v", expected[i], i, budgets[i])
+		}
+	}
+}
+
+func TestRunBudgetedWork_StopsAtTotalBudget(t *testing.T) {
+	now := time.Unix(0, 0)
+	calls := 0
+
+	processed := runBudgetedWork(
+		context.Background(),
+		2*time.Second,
+		5*time.Second,
+		func() time.Time { return now },
+		func(_ context.Context, budget time.Duration) int {
+			calls++
+			now = now.Add(budget)
+			return 1
+		},
+	)
+
+	if processed != 1 {
+		t.Fatalf("expected a single processed iteration, got %d", processed)
+	}
+	if calls != 1 {
+		t.Fatalf("expected a single process call, got %d", calls)
 	}
 }
