@@ -115,19 +115,26 @@ func (n *Node) Run(ctx context.Context) error {
 
 		// Prune finalized pending blocks when finalization advances.
 		if status.FinalizedSlot > lastFinalizedSlot {
-			pendingPruned := n.PendingBlocks.PruneFinalized(status.FinalizedSlot)
-			ephemeralPruned := n.FC.PruneEphemeralCaches(status.FinalizedSlot)
-			prunedBlocks, prunedStates := n.FC.PruneOldData()
-			if pendingPruned > 0 || ephemeralPruned > 0 || prunedBlocks > 0 || prunedStates > 0 {
-				n.log.Info("pruned finalized data",
+			if err := n.FC.PersistRestoreMetadata(); err != nil {
+				n.log.Warn("failed to persist restore metadata; skipping prune cycle",
 					"finalized_slot", status.FinalizedSlot,
-					"pending_blocks_pruned", pendingPruned,
-					"ephemeral_entries_pruned", ephemeralPruned,
-					"stored_blocks_pruned", prunedBlocks,
-					"stored_states_pruned", prunedStates,
+					"err", err,
 				)
+			} else {
+				pendingPruned := n.PendingBlocks.PruneFinalized(status.FinalizedSlot)
+				ephemeralPruned := n.FC.PruneEphemeralCaches(status.FinalizedSlot)
+				prunedBlocks, prunedStates := n.FC.PruneOldData()
+				if pendingPruned > 0 || ephemeralPruned > 0 || prunedBlocks > 0 || prunedStates > 0 {
+					n.log.Info("pruned finalized data",
+						"finalized_slot", status.FinalizedSlot,
+						"pending_blocks_pruned", pendingPruned,
+						"ephemeral_entries_pruned", ephemeralPruned,
+						"stored_blocks_pruned", prunedBlocks,
+						"stored_states_pruned", prunedStates,
+					)
+				}
+				lastFinalizedSlot = status.FinalizedSlot
 			}
-			lastFinalizedSlot = status.FinalizedSlot
 		}
 
 		// Update metrics and log on slot boundary.

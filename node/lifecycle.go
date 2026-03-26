@@ -209,6 +209,9 @@ func initChain(log *slog.Logger, cfg Config) (*forkchoice.Store, *boltstore.Stor
 
 	fc.NowFn = func() uint64 { return uint64(time.Now().UnixMilli()) }
 	fc.SetIsAggregator(cfg.IsAggregator)
+	if err := fc.PersistRestoreMetadata(); err != nil {
+		return nil, nil, fmt.Errorf("persist restore metadata: %w", err)
+	}
 
 	return fc, db, nil
 }
