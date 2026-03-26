@@ -56,34 +56,23 @@ func (n *Node) registerGossipHandlers() error {
 			if err := n.FC.ProcessBlock(sb); err != nil {
 				status := n.FC.GetStatus()
 				if isMissingParentStateErr(err) {
-					gossipLog.Warn("parent state missing for gossip block, attempting recovery",
-						"slot", block.Slot,
-						"block_root", logging.LongHash(blockRoot),
-						"parent_root", logging.LongHash(block.ParentRoot),
-						"head_slot", status.HeadSlot,
-						"finalized_slot", status.FinalizedSlot,
-					)
-					if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
-						if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
-							gossipLog.Info("accepted gossip block after parent recovery",
-								"slot", block.Slot,
-								"block_root", logging.LongHash(blockRoot),
-							)
-							// Process any pending children now that this block is available.
-							n.processPendingChildren(blockRoot, gossipLog)
-							return
-						} else {
-							err = retryErr
-						}
-					}
-					// Cache the block for later processing when parent becomes available.
+					// Cache the block and signal the ticker's backfill loop.
+					// No synchronous network I/O on the gossip goroutine.
 					n.PendingBlocks.Add(sb)
 					gossipLog.Info("cached pending block awaiting parent",
 						"slot", block.Slot,
 						"block_root", logging.LongHash(blockRoot),
 						"parent_root", logging.LongHash(block.ParentRoot),
+						"head_slot", status.HeadSlot,
+						"finalized_slot", status.FinalizedSlot,
 						"pending_count", n.PendingBlocks.Len(),
 					)
+					// Non-blocking signal — if channel is full the ticker will
+					// pick up the parent from PendingBlocks.MissingParents().
+					select {
+					case n.backfillCh <- block.ParentRoot:
+					default:
+					}
 					return
 				}
 				gossipLog.Warn("rejected gossip block",

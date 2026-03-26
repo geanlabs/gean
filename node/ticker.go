@@ -29,6 +29,7 @@ func (n *Node) Run(ctx context.Context) error {
 
 	var lastSyncCheckSlot uint64 = ^uint64(0)
 	var lastLogSlot uint64 = ^uint64(0)
+	var lastFinalizedSlot uint64
 	behindPeers := false
 	maxPeerHeadSlot := uint64(0)
 
@@ -74,9 +75,12 @@ func (n *Node) Run(ctx context.Context) error {
 				for _, pid := range n.Host.P2P.Network().Peers() {
 					if n.syncWithPeer(ctx, pid) {
 						status = n.FC.GetStatus()
+						break // stop after first successful sync, re-evaluate next slot
 					}
 				}
-				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
+				// Recompute from post-sync head vs already-observed max.
+				// maxPeerHeadSlot is stale until next slot — intentional.
+				behindPeers = status.HeadSlot < maxPeerHeadSlot
 				if behindPeers {
 					n.log.Warn(
 						"skipping validator duties while behind peers",
@@ -93,6 +97,20 @@ func (n *Node) Run(ctx context.Context) error {
 		// Execute validator duties unless we are behind peers' head.
 		if !behindPeers {
 			n.Validator.OnInterval(ctx, slot, interval)
+		}
+
+		// Backfill for pending blocks with missing parents.
+		n.processBackfillQueue(ctx)
+
+		// Prune finalized pending blocks when finalization advances.
+		if status.FinalizedSlot > lastFinalizedSlot {
+			if pruned := n.PendingBlocks.PruneFinalized(status.FinalizedSlot); pruned > 0 {
+				n.log.Info("pruned finalized pending blocks",
+					"pruned", pruned,
+					"finalized_slot", status.FinalizedSlot,
+				)
+			}
+			lastFinalizedSlot = status.FinalizedSlot
 		}
 
 		// Update metrics and log on slot boundary.

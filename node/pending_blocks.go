@@ -124,3 +124,50 @@ func (c *PendingBlockCache) Len() int {
 	defer c.mu.Unlock()
 	return len(c.blocks)
 }
+
+// MissingParents returns unique parent roots for cached blocks whose parents
+// are not themselves in the cache. The caller must check whether each parent
+// exists in fork choice (HasState) — this method only knows about the cache.
+func (c *PendingBlockCache) MissingParents() [][32]byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	seen := make(map[[32]byte]struct{})
+	var missing [][32]byte
+	for parentRoot := range c.byParent {
+		if _, cached := c.blocks[parentRoot]; !cached {
+			if _, dup := seen[parentRoot]; !dup {
+				seen[parentRoot] = struct{}{}
+				missing = append(missing, parentRoot)
+			}
+		}
+	}
+	return missing
+}
+
+// PruneFinalized removes all pending blocks at or below the given slot.
+// Returns the number of blocks pruned.
+func (c *PendingBlockCache) PruneFinalized(finalizedSlot uint64) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	pruned := 0
+	for root, sb := range c.blocks {
+		if sb.Message.Block.Slot <= finalizedSlot {
+			delete(c.blocks, root)
+			c.removeFromParentIndex(sb.Message.Block.ParentRoot, root)
+			pruned++
+		}
+	}
+
+	if pruned > 0 {
+		newOrder := c.order[:0]
+		for _, r := range c.order {
+			if _, ok := c.blocks[r]; ok {
+				newOrder = append(newOrder, r)
+			}
+		}
+		c.order = newOrder
+	}
+	return pruned
+}

@@ -80,6 +80,10 @@ func New(cfg Config) (*Node, error) {
 		P2PManager:    p2pManager,
 		P2PDiscovery:  p2pDiscovery,
 		PendingBlocks: NewPendingBlockCache(),
+		inflightRoots: newInflightRoots(),
+		peerLimiter:   newPeerLimiter(),
+		recoveryCoord: newRecoveryCoordinator(),
+		backfillCh:    make(chan [32]byte, 64),
 		dbCloser:      db,
 		log:           log,
 	}

@@ -30,6 +30,12 @@ type Node struct {
 	// PendingBlocks caches blocks awaiting parent availability.
 	PendingBlocks *PendingBlockCache
 
+	// Sync coordination — prevents request storms during missing-parent recovery.
+	inflightRoots *inflightRoots
+	peerLimiter   *peerLimiter
+	recoveryCoord *recoveryCoordinator
+	backfillCh    chan [32]byte // non-blocking signal from gossip handler to ticker
+
 	Clock    *Clock
 	dbCloser io.Closer
 	log      *slog.Logger
