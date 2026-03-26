@@ -35,12 +35,14 @@ type Store struct {
 	head          [32]byte
 	safeTarget    [32]byte
 
-	latestJustified *types.Checkpoint
-	latestFinalized *types.Checkpoint
-	storage         storage.Store
-	blockSummaries  map[[32]byte]blockSummary
-	checkpointRoots map[[32]byte]blockSummary
-	isAggregator    bool
+	latestJustified      *types.Checkpoint
+	latestFinalized      *types.Checkpoint
+	storage              storage.Store
+	blockSummaries       map[[32]byte]blockSummary
+	checkpointRoots      map[[32]byte]blockSummary
+	checkpointAnchorRoot [32]byte
+	hasCheckpointAnchor  bool
+	isAggregator         bool
 
 	latestKnownAttestations       map[uint64]*types.SignedAttestation
 	latestNewAttestations         map[uint64]*types.SignedAttestation
@@ -135,6 +137,16 @@ func RestoreFromDB(store storage.Store) *Store {
 		return nil
 	}
 
+	blockSummaries := make(map[[32]byte]blockSummary, len(allBlocks))
+	for root, block := range allBlocks {
+		blockSummaries[root] = summarizeBlock(block)
+	}
+	metrics.ForkchoiceBlockSummaryRoots.Set(float64(len(blockSummaries)))
+
+	if restored := restoreFromMetadata(store, blockSummaries); restored != nil {
+		return restored
+	}
+
 	// Find the block with the highest slot (chain head).
 	var headRoot [32]byte
 	var headBlock *types.Block
@@ -149,31 +161,18 @@ func RestoreFromDB(store storage.Store) *Store {
 	if !ok {
 		return nil
 	}
-
-	blockSummaries := make(map[[32]byte]blockSummary, len(allBlocks))
-	for root, block := range allBlocks {
-		blockSummaries[root] = summarizeBlock(block)
-	}
-	metrics.ForkchoiceBlockSummaryRoots.Set(float64(len(blockSummaries)))
-
-	return &Store{
-		time:                          headBlock.Slot * types.IntervalsPerSlot,
-		genesisTime:                   headState.Config.GenesisTime,
-		numValidators:                 uint64(len(headState.Validators)),
-		head:                          headRoot,
-		safeTarget:                    headState.LatestFinalized.Root,
-		latestJustified:               headState.LatestJustified,
-		latestFinalized:               headState.LatestFinalized,
-		storage:                       store,
-		blockSummaries:                blockSummaries,
-		checkpointRoots:               buildCheckpointRootIndex(headState, headRoot),
-		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
-		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
-		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
-		latestNewAggregatedPayloads:   make(map[[32]byte]aggregatedPayload),
-		gossipSignatures:              make(map[signatureKey]storedSignature),
-		aggregatedPayloads:            make(map[signatureKey][]storedAggregatedPayload),
-	}
+	return newRestoredStore(
+		store,
+		headRoot,
+		headState,
+		blockSummaries,
+		buildCheckpointRootIndex(headState, headRoot),
+		headState.LatestFinalized.Root,
+		headState.LatestJustified,
+		headState.LatestFinalized,
+		[32]byte{},
+		false,
+	)
 }
 
 // NewStore initializes a store from an anchor state and block.
@@ -203,6 +202,8 @@ func NewStore(state *types.State, anchorBlock *types.Block, store storage.Store)
 		storage:                       store,
 		blockSummaries:                map[[32]byte]blockSummary{anchorRoot: summarizeBlock(anchorBlock)},
 		checkpointRoots:               nil,
+		checkpointAnchorRoot:          [32]byte{},
+		hasCheckpointAnchor:           false,
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
 		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
@@ -243,6 +244,8 @@ func NewStoreFromCheckpointState(state *types.State, anchorRoot [32]byte, store 
 		storage:                       store,
 		blockSummaries:                map[[32]byte]blockSummary{anchorRoot: summarizeBlock(anchorBlock)},
 		checkpointRoots:               buildCheckpointRootIndex(state, anchorRoot),
+		checkpointAnchorRoot:          anchorRoot,
+		hasCheckpointAnchor:           true,
 		latestKnownAttestations:       make(map[uint64]*types.SignedAttestation),
 		latestNewAttestations:         make(map[uint64]*types.SignedAttestation),
 		latestKnownAggregatedPayloads: make(map[[32]byte]aggregatedPayload),
@@ -348,6 +351,9 @@ func (c *Store) pruneOldDataLocked(blockLimit int, stateLimit int) (prunedBlocks
 		c.safeTarget:           {},
 		c.latestJustified.Root: {},
 		c.latestFinalized.Root: {},
+	}
+	if c.hasCheckpointAnchor {
+		protected[c.checkpointAnchorRoot] = struct{}{}
 	}
 
 	keepBlocks := make(map[[32]byte]struct{}, min(blockLimit, len(ordered))+len(protected))
