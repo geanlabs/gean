@@ -27,11 +27,16 @@ func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler
 		gossipLog.Error("failed to subscribe to block topic", "err", err)
 		return err
 	}
-	attSub, err := topics.SubnetAttestation.Subscribe()
-	if err != nil {
-		gossipLog.Error("failed to subscribe to attestation topic", "err", err)
-		return err
+
+	for subnetID, topic := range topics.SubnetAttestations {
+		sub, err := topic.Subscribe()
+		if err != nil {
+			gossipLog.Error("failed to subscribe to attestation topic", "subnet_id", subnetID, "err", err)
+			continue
+		}
+		go readAttestationMessages(ctx, sub, topic, handler)
 	}
+
 	aggSub, err := topics.Aggregation.Subscribe()
 	if err != nil {
 		gossipLog.Error("failed to subscribe to aggregation topic", "err", err)
@@ -40,9 +45,9 @@ func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler
 
 	gossipLog.Info("subscribed to gossip topics",
 		"block_topic", topics.Block.String(),
+		"attestation_subnets", len(topics.SubnetAttestations),
 	)
 	go readBlockMessages(ctx, blockSub, topics.Block, handler)
-	go readAttestationMessages(ctx, attSub, topics.SubnetAttestation, handler)
 	go readAggregatedAttestationMessages(ctx, aggSub, handler)
 	return nil
 }
