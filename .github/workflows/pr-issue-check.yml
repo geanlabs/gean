@@ -1,0 +1,76 @@
+name: PR Issue Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  check-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for linked issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const baseRef = pr.base.ref;
+            const shouldEnforce =
+              baseRef === "main" || /^devenet-[0-9]+$/.test(baseRef);
+
+            if (!shouldEnforce) {
+              core.info(
+                `Skipping issue-link enforcement for base branch '${baseRef}'.`,
+              );
+              return;
+            }
+
+            const linkedIssuesQuery = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    closingIssuesReferences(first: 10) {
+                      nodes {
+                        number
+                        repository {
+                          name
+                          owner {
+                            login
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const linkedIssuesResult = await github.graphql(linkedIssuesQuery, {
+              owner,
+              repo,
+              number: pr.number,
+            });
+
+            const linkedIssues =
+              linkedIssuesResult.repository.pullRequest.closingIssuesReferences.nodes;
+
+            if (linkedIssues.length > 0) {
+              const refs = linkedIssues.map(
+                (issue) =>
+                  `${issue.repository.owner.login}/${issue.repository.name}#${issue.number}`,
+              );
+              core.info(`Found linked issue(s): ${refs.join(", ")}`);
+              return;
+            }
+
+            throw new Error(
+              `PRs targeting '${baseRef}' must be linked to an existing issue. ` +
+                "Add 'Closes #123' or 'Fixes #123' to the PR description when GitHub can create the link, " +
+                "or link the issue directly from the PR's Development sidebar.",
+            );
