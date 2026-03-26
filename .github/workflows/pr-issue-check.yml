@@ -1,0 +1,219 @@
+name: PR Issue Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: pr-issue-check-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  check-issue:
+    if: >-
+      github.event_name == 'pull_request' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '/recheck-issue-link')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for linked issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            async function main() {
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const recheckCommand = "/recheck-issue-link";
+              const eventName = context.eventName;
+              const pr =
+                eventName === "pull_request"
+                  ? context.payload.pull_request
+                  : (
+                      await github.rest.pulls.get({
+                        owner,
+                        repo,
+                        pull_number: context.payload.issue.number,
+                      })
+                    ).data;
+              const baseRef = pr.base.ref;
+              const commentMarker = "<!-- pr-issue-check-comment -->";
+              const policyMessage =
+                `PRs targeting '${baseRef}' must be linked to an existing issue. ` +
+                "Add 'Closes #123' or 'Fixes #123' to the PR description when GitHub can create the link, " +
+                "or link the issue directly from the PR's Development sidebar and comment `/recheck-issue-link`.";
+
+              if (eventName === "issue_comment") {
+                const commentBody = (context.payload.comment.body || "").trim();
+                if (commentBody !== recheckCommand) {
+                  core.info(
+                    `Skipping issue comment event because the comment was not exactly '${recheckCommand}'.`,
+                  );
+                  return;
+                }
+              }
+
+              const shouldEnforce =
+                baseRef === "main" || /^devnet-[0-9]+$/.test(baseRef);
+
+              if (!shouldEnforce) {
+                core.info(
+                  `Skipping issue-link enforcement for base branch '${baseRef}'.`,
+                );
+                return;
+              }
+
+              if (pr.draft) {
+                core.info(
+                  `Skipping issue-link enforcement for draft PR #${pr.number} targeting '${baseRef}'.`,
+                );
+                return;
+              }
+
+              const listManagedComments = async () => {
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  per_page: 100,
+                });
+
+                return comments
+                  .filter(
+                    (comment) =>
+                      comment.user?.login === "github-actions[bot]" &&
+                      comment.body?.includes(commentMarker),
+                  )
+                  .sort(
+                    (left, right) =>
+                      new Date(left.created_at).getTime() -
+                      new Date(right.created_at).getTime(),
+                  );
+              };
+
+              const upsertManagedComment = async (body, createIfMissing) => {
+                const managedComments = await listManagedComments();
+                const [existingComment, ...duplicateComments] = managedComments;
+
+                if (duplicateComments.length > 0) {
+                  for (const duplicateComment of duplicateComments) {
+                    try {
+                      await github.rest.issues.deleteComment({
+                        owner,
+                        repo,
+                        comment_id: duplicateComment.id,
+                      });
+                    } catch (error) {
+                      core.warning(
+                        `Failed to delete duplicate managed comment ${duplicateComment.id}: ${error.message}`,
+                      );
+                    }
+                  }
+                }
+
+                if (existingComment) {
+                  await github.rest.issues.updateComment({
+                    owner,
+                    repo,
+                    comment_id: existingComment.id,
+                    body,
+                  });
+                  return;
+                }
+
+                if (createIfMissing) {
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: pr.number,
+                    body,
+                  });
+                }
+              };
+
+              const renderFailureComment = () =>
+                [
+                  commentMarker,
+                  "## Issue link required",
+                  "",
+                  `This PR targets \`${baseRef}\`, so it must be linked to an existing issue.`,
+                  "",
+                  "To fix this:",
+                  "- Add `Closes #123` or `Fixes #123` to the PR description when GitHub can create the link.",
+                  "- Or link the issue directly from the PR's Development sidebar, then comment `/recheck-issue-link` on this PR.",
+                ].join("\n");
+
+              const renderSuccessComment = (refs) =>
+                [
+                  commentMarker,
+                  "## Issue link verified",
+                  "",
+                  `This PR now has linked issue(s): ${refs.join(", ")}.`,
+                  "",
+                  `The linked-issue requirement for \`${baseRef}\` is satisfied.`,
+                ].join("\n");
+
+              const linkedIssuesQuery = `
+                query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      closingIssuesReferences(first: 10) {
+                        nodes {
+                          number
+                          repository {
+                            name
+                            owner {
+                              login
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+
+              const linkedIssuesResult = await github.graphql(linkedIssuesQuery, {
+                owner,
+                repo,
+                number: pr.number,
+              });
+
+              const linkedIssues =
+                linkedIssuesResult.repository.pullRequest.closingIssuesReferences.nodes;
+
+              if (linkedIssues.length > 0) {
+                const refs = linkedIssues.map(
+                  (issue) =>
+                    `${issue.repository.owner.login}/${issue.repository.name}#${issue.number}`,
+                );
+
+                try {
+                  await upsertManagedComment(renderSuccessComment(refs), false);
+                } catch (error) {
+                  core.warning(`Failed to update managed success comment: ${error.message}`);
+                }
+
+                core.info(`Found linked issue(s): ${refs.join(", ")}`);
+                return;
+              }
+
+              try {
+                await upsertManagedComment(renderFailureComment(), true);
+              } catch (error) {
+                core.warning(`Failed to create or update managed failure comment: ${error.message}`);
+              }
+
+              throw new Error(policyMessage);
+            }
+
+            return main();
