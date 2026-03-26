@@ -4,10 +4,14 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
 
+concurrency:
+  group: pr-issue-check-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write
-  pull-requests: write
+  pull-requests: read
 
 jobs:
   check-issue:
@@ -36,6 +40,13 @@ jobs:
               return;
             }
 
+            if (pr.draft) {
+              core.info(
+                `Skipping issue-link enforcement for draft PR #${pr.number} targeting '${baseRef}'.`,
+              );
+              return;
+            }
+
             const listManagedComments = async () => {
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner,
@@ -59,14 +70,23 @@ jobs:
 
             const upsertManagedComment = async (body, createIfMissing) => {
               const managedComments = await listManagedComments();
+              const [existingComment, ...duplicateComments] = managedComments;
 
-              if (managedComments.length > 1) {
-                core.warning(
-                  `Found ${managedComments.length} managed issue-check comments. Updating the oldest one.`,
-                );
+              if (duplicateComments.length > 0) {
+                for (const duplicateComment of duplicateComments) {
+                  try {
+                    await github.rest.issues.deleteComment({
+                      owner,
+                      repo,
+                      comment_id: duplicateComment.id,
+                    });
+                  } catch (error) {
+                    core.warning(
+                      `Failed to delete duplicate managed comment ${duplicateComment.id}: ${error.message}`,
+                    );
+                  }
+                }
               }
-
-              const existingComment = managedComments[0];
 
               if (existingComment) {
                 await github.rest.issues.updateComment({
