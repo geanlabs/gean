@@ -170,6 +170,68 @@ func TestFetchManager_RetryBackoff(t *testing.T) {
 	}
 }
 
+func TestFetchManager_GCStaleByAge(t *testing.T) {
+	fm := newFetchManager()
+	root := [32]byte{13}
+
+	fm.enqueue(root)
+	fm.mu.Lock()
+	fm.pending[root].lastTouched = time.Now().Add(-15 * time.Minute)
+	fm.mu.Unlock()
+
+	removed := fm.gcStale(10*time.Minute, 0, 0)
+	if removed != 1 {
+		t.Fatalf("expected 1 stale root removed, got %d", removed)
+	}
+	if _, ok := fm.pending[root]; ok {
+		t.Fatal("expected stale root to be removed from pending")
+	}
+}
+
+func TestFetchManager_GCStaleByAttempts(t *testing.T) {
+	fm := newFetchManager()
+	root := [32]byte{14}
+
+	fm.enqueue(root)
+	fm.mu.Lock()
+	fm.pending[root].attempts = 65
+	fm.mu.Unlock()
+
+	removed := fm.gcStale(0, 0, 64)
+	if removed != 1 {
+		t.Fatalf("expected 1 over-attempt root removed, got %d", removed)
+	}
+	if _, ok := fm.pending[root]; ok {
+		t.Fatal("expected over-attempt root to be removed from pending")
+	}
+}
+
+func TestFetchManager_GCStaleByMaxEntries(t *testing.T) {
+	fm := newFetchManager()
+	oldest := [32]byte{15}
+	newest := [32]byte{16}
+
+	fm.enqueue(oldest)
+	fm.enqueue(newest)
+	fm.mu.Lock()
+	fm.pending[oldest].lastTouched = time.Now().Add(-2 * time.Minute)
+	fm.pending[oldest].createdAt = time.Now().Add(-2 * time.Minute)
+	fm.pending[newest].lastTouched = time.Now()
+	fm.pending[newest].createdAt = time.Now()
+	fm.mu.Unlock()
+
+	removed := fm.gcStale(0, 1, 0)
+	if removed != 1 {
+		t.Fatalf("expected 1 excess root removed, got %d", removed)
+	}
+	if _, ok := fm.pending[oldest]; ok {
+		t.Fatal("expected oldest root to be removed when over max entries")
+	}
+	if _, ok := fm.pending[newest]; !ok {
+		t.Fatal("expected newest root to remain")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // PendingBlockCache.MissingParents tests
 // ---------------------------------------------------------------------------

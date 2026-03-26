@@ -59,7 +59,7 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 
 	// Clear consumed gossip signatures (spec: remove aggregated entries).
 	c.gossipSignatures = make(map[signatureKey]storedSignature)
-	metrics.GossipSignaturesCount.Set(0)
+	c.updateCacheMetricsLocked()
 
 	return result, nil
 }

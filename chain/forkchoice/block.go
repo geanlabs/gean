@@ -166,6 +166,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		c.blockSummaries = make(map[[32]byte]blockSummary)
 	}
 	c.blockSummaries[blockHash] = summarizeBlock(block)
+	metrics.ForkchoiceBlockSummaryRoots.Set(float64(len(c.blockSummaries)))
 
 	// Update justified checkpoint from this block's post-state (monotonic).
 	if state.LatestJustified.Slot > c.latestJustified.Slot {
@@ -205,6 +206,7 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		Signature:   envelope.Signature.ProposerSignature,
 	}
 	c.processAttestationLocked(proposerSA, false)
+	c.updateCacheMetricsLocked()
 
 	metrics.ForkChoiceBlockProcessingTime.Observe(time.Since(start).Seconds())
 	return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/network/reqresp"
 	"github.com/geanlabs/gean/observability/logging"
+	"github.com/geanlabs/gean/observability/metrics"
 	"github.com/geanlabs/gean/types"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -25,6 +27,9 @@ const (
 	requestTimeout         = 8 * time.Second
 	inflightStaleAge       = 30 * time.Second
 	statusTimeout          = 1200 * time.Millisecond
+	fetchGCMaxAge          = 10 * time.Minute
+	fetchGCMaxAttempts     = 64
+	fetchGCMaxEntries      = 4096
 )
 
 type inflightRoots struct {
@@ -99,6 +104,8 @@ type pendingFetch struct {
 	inFlight    bool
 	queued      bool
 	nextAttempt time.Time
+	createdAt   time.Time
+	lastTouched time.Time
 }
 
 type fetchCandidate struct {
@@ -114,6 +121,7 @@ type fetchManager struct {
 }
 
 func newFetchManager() *fetchManager {
+	metrics.SyncPendingFetchRoots.Set(0)
 	return &fetchManager{pending: make(map[[32]byte]*pendingFetch)}
 }
 
@@ -121,19 +129,25 @@ func (m *fetchManager) enqueue(root [32]byte) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	now := time.Now()
 	state, ok := m.pending[root]
 	if !ok {
 		m.pending[root] = &pendingFetch{
 			failedPeers: make(map[peer.ID]struct{}),
 			queued:      true,
+			createdAt:   now,
+			lastTouched: now,
 		}
 		m.queue = append(m.queue, root)
+		metrics.SyncPendingFetchRoots.Set(float64(len(m.pending)))
 		return true
 	}
 	if state.queued || state.inFlight {
+		state.lastTouched = now
 		return false
 	}
 	state.queued = true
+	state.lastTouched = now
 	m.queue = append(m.queue, root)
 	return true
 }
@@ -164,6 +178,7 @@ func (m *fetchManager) nextReady(limit int, now time.Time) []fetchCandidate {
 
 		state.inFlight = true
 		state.queued = false
+		state.lastTouched = now
 
 		failedPeers := make(map[peer.ID]struct{}, len(state.failedPeers))
 		for pid := range state.failedPeers {
@@ -183,23 +198,30 @@ func (m *fetchManager) markSuccess(root [32]byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.pending, root)
+	metrics.SyncPendingFetchRoots.Set(float64(len(m.pending)))
 }
 
 func (m *fetchManager) markRetry(root [32]byte, delay time.Duration, failedPeer peer.ID) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	now := time.Now()
 	state, ok := m.pending[root]
 	if !ok {
-		state = &pendingFetch{failedPeers: make(map[peer.ID]struct{})}
+		state = &pendingFetch{
+			failedPeers: make(map[peer.ID]struct{}),
+			createdAt:   now,
+		}
 		m.pending[root] = state
+		metrics.SyncPendingFetchRoots.Set(float64(len(m.pending)))
 	}
 	state.inFlight = false
 	state.attempts++
+	state.lastTouched = now
 	if failedPeer != "" {
 		state.failedPeers[failedPeer] = struct{}{}
 	}
-	state.nextAttempt = time.Now().Add(delay)
+	state.nextAttempt = now.Add(delay)
 	if !state.queued {
 		state.queued = true
 		m.queue = append(m.queue, root)
@@ -210,13 +232,19 @@ func (m *fetchManager) markDeferred(root [32]byte, delay time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	now := time.Now()
 	state, ok := m.pending[root]
 	if !ok {
-		state = &pendingFetch{failedPeers: make(map[peer.ID]struct{})}
+		state = &pendingFetch{
+			failedPeers: make(map[peer.ID]struct{}),
+			createdAt:   now,
+		}
 		m.pending[root] = state
+		metrics.SyncPendingFetchRoots.Set(float64(len(m.pending)))
 	}
 	state.inFlight = false
-	state.nextAttempt = time.Now().Add(delay)
+	state.lastTouched = now
+	state.nextAttempt = now.Add(delay)
 	if !state.queued {
 		state.queued = true
 		m.queue = append(m.queue, root)
@@ -232,6 +260,83 @@ func (m *fetchManager) clearFailedPeers(root [32]byte) {
 		return
 	}
 	state.failedPeers = make(map[peer.ID]struct{})
+	state.lastTouched = time.Now()
+}
+
+func (m *fetchManager) gcStale(maxAge time.Duration, maxEntries int, maxAttempts int) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	toDelete := make(map[[32]byte]struct{})
+
+	for root, state := range m.pending {
+		if state.inFlight {
+			continue
+		}
+		if maxAttempts > 0 && state.attempts > maxAttempts {
+			toDelete[root] = struct{}{}
+			continue
+		}
+		if maxAge > 0 && !state.lastTouched.IsZero() && now.Sub(state.lastTouched) > maxAge {
+			toDelete[root] = struct{}{}
+		}
+	}
+
+	if maxEntries > 0 {
+		excess := len(m.pending) - len(toDelete) - maxEntries
+		if excess > 0 {
+			type candidate struct {
+				root        [32]byte
+				lastTouched time.Time
+				createdAt   time.Time
+			}
+			candidates := make([]candidate, 0, len(m.pending))
+			for root, state := range m.pending {
+				if state.inFlight {
+					continue
+				}
+				if _, already := toDelete[root]; already {
+					continue
+				}
+				candidates = append(candidates, candidate{
+					root:        root,
+					lastTouched: state.lastTouched,
+					createdAt:   state.createdAt,
+				})
+			}
+			sort.Slice(candidates, func(i, j int) bool {
+				left := candidates[i].lastTouched
+				right := candidates[j].lastTouched
+				if left.Equal(right) {
+					return candidates[i].createdAt.Before(candidates[j].createdAt)
+				}
+				return left.Before(right)
+			})
+			for i := 0; i < excess && i < len(candidates); i++ {
+				toDelete[candidates[i].root] = struct{}{}
+			}
+		}
+	}
+
+	if len(toDelete) == 0 {
+		return 0
+	}
+
+	for root := range toDelete {
+		delete(m.pending, root)
+	}
+
+	filtered := m.queue[:0]
+	for _, root := range m.queue {
+		if _, drop := toDelete[root]; drop {
+			continue
+		}
+		filtered = append(filtered, root)
+	}
+	m.queue = filtered
+	metrics.SyncPendingFetchRoots.Set(float64(len(m.pending)))
+	return len(toDelete)
 }
 
 func isMissingParentStateErr(err error) bool {
@@ -604,6 +709,7 @@ func (n *Node) processBackfillQueue(ctx context.Context, budget time.Duration) i
 drained:
 
 	n.inflightRoots.releaseStale(inflightStaleAge)
+	n.fetches.gcStale(fetchGCMaxAge, fetchGCMaxEntries, fetchGCMaxAttempts)
 
 	for _, root := range n.PendingBlocks.MissingParents() {
 		if n.FC.HasState(root) {

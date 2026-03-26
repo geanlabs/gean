@@ -51,6 +51,7 @@ func (c *Store) updateCacheMetricsLocked() {
 	metrics.GossipSignaturesCount.Set(float64(len(c.gossipSignatures)))
 	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAggregatedPayloads)))
 	metrics.LatestNewAggregatedPayloads.Set(float64(len(c.latestNewAggregatedPayloads)))
+	metrics.AggregatedPayloadCacheKeys.Set(float64(len(c.aggregatedPayloads)))
 }
 
 func (c *Store) storeGossipSignatureLocked(sa *types.SignedAttestation) {
@@ -106,12 +107,15 @@ func (c *Store) storeAggregatedPayloadLocked(
 		existing = existing[len(existing)-maxProofsPerKey:]
 	}
 	c.aggregatedPayloads[key] = existing
+	c.updateCacheMetricsLocked()
 }
 
-func (c *Store) pruneEphemeralCachesLocked(finalizedSlot uint64) {
+func (c *Store) pruneEphemeralCachesLocked(finalizedSlot uint64) int {
+	pruned := 0
 	for key, stored := range c.gossipSignatures {
 		if stored.slot <= finalizedSlot {
 			delete(c.gossipSignatures, key)
+			pruned++
 		}
 	}
 
@@ -120,7 +124,9 @@ func (c *Store) pruneEphemeralCachesLocked(finalizedSlot uint64) {
 		for _, entry := range entries {
 			if entry.slot > finalizedSlot {
 				kept = append(kept, entry)
+				continue
 			}
+			pruned++
 		}
 		if len(kept) == 0 {
 			delete(c.aggregatedPayloads, key)
@@ -132,20 +138,23 @@ func (c *Store) pruneEphemeralCachesLocked(finalizedSlot uint64) {
 	for key, payload := range c.latestKnownAggregatedPayloads {
 		if payload.data == nil || payload.data.Slot <= finalizedSlot {
 			delete(c.latestKnownAggregatedPayloads, key)
+			pruned++
 		}
 	}
 
 	for key, payload := range c.latestNewAggregatedPayloads {
 		if payload.data == nil || payload.data.Slot <= finalizedSlot {
 			delete(c.latestNewAggregatedPayloads, key)
+			pruned++
 		}
 	}
 
 	c.updateCacheMetricsLocked()
+	return pruned
 }
 
-func (c *Store) PruneEphemeralCaches(finalizedSlot uint64) {
+func (c *Store) PruneEphemeralCaches(finalizedSlot uint64) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.pruneEphemeralCachesLocked(finalizedSlot)
+	return c.pruneEphemeralCachesLocked(finalizedSlot)
 }
