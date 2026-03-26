@@ -237,7 +237,10 @@ func backoffForAttempt(attempt int) time.Duration {
 	if attempt < 0 {
 		attempt = 0
 	}
-	delay := time.Second << min(attempt, 5)
+	delay := 250 * time.Millisecond
+	if attempt > 0 {
+		delay *= time.Duration(1 << min(attempt, 5))
+	}
 	if delay > 30*time.Second {
 		return 30 * time.Second
 	}
@@ -375,6 +378,19 @@ func (n *Node) fetchMissingRoot(ctx context.Context, cand fetchCandidate) bool {
 			"root", logging.LongHash(root),
 			"peer_id", pid.String(),
 			"err", err,
+			"retry_in", delay,
+		)
+		return false
+	}
+	respRoot, hashErr := blocks[0].Message.Block.HashTreeRoot()
+	if hashErr != nil || respRoot != root {
+		delay := backoffForAttempt(cand.attempts)
+		n.fetches.markRetry(root, delay, pid)
+		n.log.Warn("missing-root fetch returned unexpected block",
+			"requested_root", logging.LongHash(root),
+			"response_root", logging.LongHash(respRoot),
+			"peer_id", pid.String(),
+			"hash_err", hashErr,
 			"retry_in", delay,
 		)
 		return false
