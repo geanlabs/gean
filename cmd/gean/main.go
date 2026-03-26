@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,7 +35,8 @@ func main() {
 	checkpointSyncURL := flag.String("checkpoint-sync-url", "", "URL to fetch finalized checkpoint state from for checkpoint sync")
 	devnetID := flag.String("devnet-id", "devnet0", "Devnet identifier for gossip topics")
 	isAggregator := flag.Bool("is-aggregator", false, "Enable aggregator role for this node")
-	attCommCount := flag.Int("attestation-committee-count", 1, "Number of attestation committees (must be 1 for devnet-3)")
+	attCommCount := flag.Int("attestation-committee-count", 1, "Number of attestation committees")
+	aggregateSubnetIDs := flag.String("aggregate-subnet-ids", "", "Comma-separated subnet IDs for aggregator (requires --is-aggregator)")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
 
@@ -49,9 +51,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *attCommCount != 1 {
-		logger.Error("--attestation-committee-count must be 1 for devnet-3", "value", *attCommCount)
-		os.Exit(1)
+	// Parse aggregate-subnet-ids
+	var parsedAggregateSubnetIDs []uint64
+	if *aggregateSubnetIDs != "" {
+		if !*isAggregator {
+			logger.Error("--aggregate-subnet-ids requires --is-aggregator to be set")
+			os.Exit(1)
+		}
+		for _, s := range strings.Split(*aggregateSubnetIDs, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			id, err := strconv.ParseUint(s, 10, 64)
+			if err != nil {
+				logger.Error("invalid --aggregate-subnet-ids value", "value", s)
+				os.Exit(1)
+			}
+			if id >= uint64(*attCommCount) {
+				logger.Warn("aggregate-subnet-ids contains out-of-range subnet ID, skipping", "subnet_id", id, "committee_count", *attCommCount)
+				continue
+			}
+			parsedAggregateSubnetIDs = append(parsedAggregateSubnetIDs, id)
+		}
 	}
 
 	// Print banner first.
@@ -112,22 +134,24 @@ func main() {
 		*apiEnabled = false
 	}
 	nodeCfg := node.Config{
-		GenesisTime:       genCfg.GenesisTime,
-		Validators:        genCfg.Validators,
-		ListenAddr:        *listenAddr,
-		NodeKeyPath:       *nodeKey,
-		Bootnodes:         bootnodes,
-		ValidatorIDs:      validatorIDs,
-		ValidatorKeysDir:  *validatorKeys,
-		MetricsPort:       *metricsPort,
-		DiscoveryPort:     *discoveryPort,
-		DataDir:           *dataDir,
-		CheckpointSyncURL: *checkpointSyncURL,
-		DevnetID:          *devnetID,
-		IsAggregator:      *isAggregator,
-		APIHost:           *apiHost,
-		APIPort:           *apiPort,
-		APIEnabled:        *apiEnabled,
+		GenesisTime:               genCfg.GenesisTime,
+		Validators:                genCfg.Validators,
+		ListenAddr:                *listenAddr,
+		NodeKeyPath:               *nodeKey,
+		Bootnodes:                 bootnodes,
+		ValidatorIDs:              validatorIDs,
+		ValidatorKeysDir:          *validatorKeys,
+		MetricsPort:               *metricsPort,
+		DiscoveryPort:             *discoveryPort,
+		DataDir:                   *dataDir,
+		CheckpointSyncURL:         *checkpointSyncURL,
+		DevnetID:                  *devnetID,
+		IsAggregator:              *isAggregator,
+		AggregateSubnetIDs:        parsedAggregateSubnetIDs,
+		AttestationCommitteeCount: *attCommCount,
+		APIHost:                   *apiHost,
+		APIPort:                   *apiPort,
+		APIEnabled:                *apiEnabled,
 	}
 
 	n, err := node.New(nodeCfg)
