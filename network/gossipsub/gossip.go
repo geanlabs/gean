@@ -10,6 +10,12 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+const NetworkName = "devnet0"
+
+func AttestationSubnetTopic(subnetID uint64) string {
+	return fmt.Sprintf(SubnetAttestationTopicFmt, NetworkName, subnetID)
+}
+
 // Gossip topic names.
 const (
 	BlockTopicFmt             = "/leanconsensus/%s/block/ssz_snappy"
@@ -19,9 +25,11 @@ const (
 
 // Topics holds subscribed gossipsub topics.
 type Topics struct {
-	Block             *pubsub.Topic
-	SubnetAttestation *pubsub.Topic
-	Aggregation       *pubsub.Topic
+	Block                     *pubsub.Topic
+	SubnetAttestations        map[uint64]*pubsub.Topic
+	Aggregation               *pubsub.Topic
+	AttestationCommitteeCount int
+	PubSub                    *pubsub.PubSub
 }
 
 // NewGossipSub creates a configured gossipsub instance.
@@ -61,19 +69,31 @@ func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo)
 	)
 }
 
-// JoinTopics joins the devnet-3 block, subnet attestation, and aggregation gossip topics.
-func JoinTopics(ps *pubsub.PubSub, devnetID string, subnetID uint64) (*Topics, error) {
+// JoinTopics joins the block, specified subnet attestation, and aggregation gossip topics.
+func JoinTopics(ps *pubsub.PubSub, devnetID string, subnetIDs map[uint64]bool, committeeCount int) (*Topics, error) {
 	blockTopic, err := ps.Join(fmt.Sprintf(BlockTopicFmt, devnetID))
 	if err != nil {
 		return nil, fmt.Errorf("join block topic: %w", err)
 	}
-	subnetAttTopic, err := ps.Join(fmt.Sprintf(SubnetAttestationTopicFmt, devnetID, subnetID))
-	if err != nil {
-		return nil, fmt.Errorf("join subnet attestation topic: %w", err)
+
+	subnetAttestations := make(map[uint64]*pubsub.Topic)
+	for subnetID := range subnetIDs {
+		topic, err := ps.Join(fmt.Sprintf(SubnetAttestationTopicFmt, devnetID, subnetID))
+		if err != nil {
+			return nil, fmt.Errorf("join subnet attestation topic %d: %w", subnetID, err)
+		}
+		subnetAttestations[subnetID] = topic
 	}
+
 	aggTopic, err := ps.Join(fmt.Sprintf(AggregationTopicFmt, devnetID))
 	if err != nil {
 		return nil, fmt.Errorf("join aggregation topic: %w", err)
 	}
-	return &Topics{Block: blockTopic, SubnetAttestation: subnetAttTopic, Aggregation: aggTopic}, nil
+	return &Topics{
+		Block:                     blockTopic,
+		SubnetAttestations:        subnetAttestations,
+		Aggregation:               aggTopic,
+		AttestationCommitteeCount: committeeCount,
+		PubSub:                    ps,
+	}, nil
 }
