@@ -2,8 +2,14 @@ package forkchoice
 
 import (
 	"bytes"
+	"math"
 
 	"github.com/geanlabs/gean/types"
+)
+
+const (
+	maxKnownAggregatedPayloads = 4096
+	maxNewAggregatedPayloads   = 512
 )
 
 type aggregatedPayload struct {
@@ -65,6 +71,21 @@ func mergeAggregatedPayloads(dst map[[32]byte]aggregatedPayload, src map[[32]byt
 		}
 	}
 	return dst
+}
+
+// capAggregatedPayloads evicts the oldest entries by slot when the map exceeds maxSize.
+func capAggregatedPayloads(m map[[32]byte]aggregatedPayload, maxSize int) {
+	for len(m) > maxSize {
+		var oldestKey [32]byte
+		oldestSlot := uint64(math.MaxUint64)
+		for key, payload := range m {
+			if payload.data != nil && payload.data.Slot < oldestSlot {
+				oldestSlot = payload.data.Slot
+				oldestKey = key
+			}
+		}
+		delete(m, oldestKey)
+	}
 }
 
 func extractAttestationsFromAggregatedPayloads(payloads map[[32]byte]aggregatedPayload) map[uint64]*types.SignedAttestation {

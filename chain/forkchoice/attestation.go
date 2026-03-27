@@ -294,6 +294,7 @@ func (c *Store) processAggregatedAttestationLocked(saa *types.SignedAggregatedAt
 	// Store into the aggregated payloads buffer.
 	// Attestations are expanded into per-validator votes during acceptNewAttestationsLocked.
 	addAggregatedPayload(c.latestNewAggregatedPayloads, data, proof)
+	capAggregatedPayloads(c.latestNewAggregatedPayloads, maxNewAggregatedPayloads)
 	metrics.LatestNewAggregatedPayloads.Set(float64(len(c.latestNewAggregatedPayloads)))
 
 	// Also cache per-validator proof in aggregatedPayloads for proposer reuse.

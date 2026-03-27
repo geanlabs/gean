@@ -66,7 +66,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		backlog = peerStatus.Head.Slot - status.HeadSlot
 	}
 	maxSyncDepth := int(backlog + 16)
-	const maxSyncDepthCap = 128
+	const maxSyncDepthCap = 512
 	if maxSyncDepth > maxSyncDepthCap {
 		maxSyncDepth = maxSyncDepthCap
 	}
@@ -144,20 +144,21 @@ func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte
 		return true
 	}
 
-	// Skip if another goroutine is already recovering this root.
+	// Skip if this root was recently attempted. Let the TTL expire naturally
+	// so rapid re-triggers after failure are throttled.
 	n.syncMu.Lock()
-	if t, ok := n.syncingRoots[parentRoot]; ok && time.Since(t) < syncCooldown {
+	now := time.Now()
+	for root, t := range n.syncingRoots {
+		if now.Sub(t) >= syncCooldown {
+			delete(n.syncingRoots, root)
+		}
+	}
+	if t, ok := n.syncingRoots[parentRoot]; ok && now.Sub(t) < syncCooldown {
 		n.syncMu.Unlock()
 		return false
 	}
-	n.syncingRoots[parentRoot] = time.Now()
+	n.syncingRoots[parentRoot] = now
 	n.syncMu.Unlock()
-
-	defer func() {
-		n.syncMu.Lock()
-		delete(n.syncingRoots, parentRoot)
-		n.syncMu.Unlock()
-	}()
 
 	peers := n.Host.P2P.Network().Peers()
 	if len(peers) == 0 {
