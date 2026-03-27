@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -45,12 +46,15 @@ func (g *allowAllGater) InterceptUpgraded(c libp2pnetwork.Conn) (bool, control.D
 
 const nodeKeyFilePerms = 0600
 
+const bootnodeRedialDelay = 12 * time.Second
+
 // Host wraps a libp2p host with gossipsub and protocol handlers.
 type Host struct {
-	P2P    host.Host
-	PubSub *pubsub.PubSub
-	Ctx    context.Context
-	Cancel context.CancelFunc
+	P2P           host.Host
+	PubSub        *pubsub.PubSub
+	Ctx           context.Context
+	Cancel        context.CancelFunc
+	bootnodePeers map[peer.ID]peer.AddrInfo
 }
 
 // NewHost creates a libp2p host with QUIC transport and secp256k1 identity.
@@ -110,6 +114,13 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 		return nil, fmt.Errorf("gossipsub: %w", err)
 	}
 
+	bootnodeMap := make(map[peer.ID]peer.AddrInfo, len(directPeers))
+	for _, dp := range directPeers {
+		bootnodeMap[dp.ID] = dp
+	}
+
+	hostWrapper := &Host{P2P: h, PubSub: gs, Ctx: ctx, Cancel: cancel, bootnodePeers: bootnodeMap}
+
 	// Register peer connection/disconnection notification handler for metrics and logging.
 	h.Network().Notify(&libp2pnetwork.NotifyBundle{
 		ConnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
@@ -126,21 +137,36 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 			)
 		},
 		DisconnectedF: func(n libp2pnetwork.Network, conn libp2pnetwork.Conn) {
+			pid := conn.RemotePeer()
 			dir := "inbound"
 			if conn.Stat().Direction == libp2pnetwork.DirOutbound {
 				dir = "outbound"
 			}
 			metrics.PeerDisconnectionEventsTotal.WithLabelValues(dir, "remote_close").Inc()
 			netLog.Info("peer disconnected",
-				"peer_id", conn.RemotePeer().String(),
+				"peer_id", pid.String(),
 				"direction", dir,
 				"remote_addr", conn.RemoteMultiaddr().String(),
 				"peers", len(n.Peers()),
 			)
+
+			// Schedule bootnode redial after delay.
+			if ai, ok := hostWrapper.bootnodePeers[pid]; ok {
+				go func() {
+					time.Sleep(bootnodeRedialDelay)
+					if n.Connectedness(pid) == libp2pnetwork.Connected {
+						return
+					}
+					netLog.Info("redialing disconnected bootnode", "peer_id", pid.String())
+					if err := h.Connect(ctx, ai); err != nil {
+						netLog.Warn("bootnode redial failed", "peer_id", pid.String(), "err", err)
+					}
+				}()
+			}
 		},
 	})
 
-	return &Host{P2P: h, PubSub: gs, Ctx: ctx, Cancel: cancel}, nil
+	return hostWrapper, nil
 }
 
 // Close shuts down the host.
