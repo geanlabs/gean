@@ -56,27 +56,16 @@ func (n *Node) registerGossipHandlers() error {
 			if err := n.FC.ProcessBlock(sb); err != nil {
 				status := n.FC.GetStatus()
 				if isMissingParentStateErr(err) {
-					// Cache immediately so the block isn't lost.
+					// Cache the block and request the missing parent asynchronously.
+					// The fetcher deduplicates and retries with backoff.
 					n.PendingBlocks.Add(sb)
-					gossipLog.Info("cached pending block, recovering parent async",
+					n.Fetcher.fetchBlock(n.Host.Ctx, block.ParentRoot)
+					gossipLog.Info("cached pending block, fetching parent",
 						"slot", block.Slot,
 						"block_root", logging.LongHash(blockRoot),
 						"parent_root", logging.LongHash(block.ParentRoot),
 						"pending_count", n.PendingBlocks.Len(),
 					)
-					// Recover in background to avoid blocking the gossip goroutine.
-					go func() {
-						if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
-							if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
-								gossipLog.Info("accepted gossip block after parent recovery",
-									"slot", block.Slot,
-									"block_root", logging.LongHash(blockRoot),
-								)
-								n.PendingBlocks.Remove(blockRoot)
-								n.processPendingChildren(blockRoot, gossipLog)
-							}
-						}
-					}()
 					return
 				}
 				gossipLog.Warn("rejected gossip block",

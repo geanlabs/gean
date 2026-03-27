@@ -80,10 +80,11 @@ func New(cfg Config) (*Node, error) {
 		P2PManager:    p2pManager,
 		P2PDiscovery:  p2pDiscovery,
 		PendingBlocks: NewPendingBlockCache(),
-		syncingRoots:  make(map[[32]byte]time.Time),
 		dbCloser:      db,
 		log:           log,
 	}
+
+	n.Fetcher = newBlockFetcher(n)
 
 	// Register req/resp handlers for sync. Gossip handlers are registered
 	// before initial sync in ticker.go so blocks arriving during sync are
