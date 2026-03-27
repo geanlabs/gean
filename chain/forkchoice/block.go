@@ -47,11 +47,12 @@ func (c *Store) verifyAttestationSignatureWithState(
 }
 
 // ProcessBlock processes a new signed block envelope and updates chain state.
-// Attestation processing follows leanSpec on_block ordering:
-//  1. State transition on the bare block.
-//  2. Process body attestations as on-chain votes (is_from_block=true).
-//  3. Update head.
-//  4. Process proposer attestation as gossip vote (is_from_block=false).
+// Processing order follows leanSpec on_block:
+//  1. Verify signatures (reject invalid blocks before expensive state transition).
+//  2. State transition on the bare block.
+//  3. Process body attestations as on-chain votes (is_from_block=true).
+//  4. Update head.
+//  5. Process proposer attestation as gossip vote (is_from_block=false).
 func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 	start := time.Now()
 	c.mu.Lock()
@@ -76,14 +77,8 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		return fmt.Errorf("parent state not found for %x", block.ParentRoot)
 	}
 
-	stStart := time.Now()
-	state, err := statetransition.StateTransition(parentState, block)
-	metrics.StateTransitionTime.Observe(time.Since(stStart).Seconds())
-	if err != nil {
-		return fmt.Errorf("state_transition: %w", err)
-	}
-
-	// Validate signature container shape.
+	// Step 1: Validate signature container shape and verify signatures.
+	// Done before state transition to reject invalid blocks cheaply.
 	numBodyAtts := len(block.Body.Attestations)
 	if len(envelope.Signature.AttestationSignatures) != numBodyAtts {
 		return fmt.Errorf(
@@ -96,11 +91,9 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		return fmt.Errorf("missing proposer attestation")
 	}
 
-	// Step 1b: Verify signatures (skipped when skip_sig_verify build tag is set).
 	if c.shouldVerifySignatures() {
 		leanmultisig.SetupVerifier()
 
-		// Verify aggregated body attestations and their matching proofs.
 		for i, aggregated := range block.Body.Attestations {
 			if aggregated == nil || aggregated.Data == nil {
 				return fmt.Errorf("invalid body attestation at index %d", i)
@@ -147,7 +140,6 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 			)
 		}
 
-		// Verify proposer signature (always individual XMSS).
 		proposerAtt := envelope.Message.ProposerAttestation
 		if err := c.verifyAttestationSignatureWithState(
 			parentState,
@@ -157,6 +149,14 @@ func (c *Store) ProcessBlock(envelope *types.SignedBlockWithAttestation) error {
 		); err != nil {
 			return fmt.Errorf("invalid proposer attestation signature: %w", err)
 		}
+	}
+
+	// Step 2: State transition.
+	stStart := time.Now()
+	state, err := statetransition.StateTransition(parentState, block)
+	metrics.StateTransitionTime.Observe(time.Since(stStart).Seconds())
+	if err != nil {
+		return fmt.Errorf("state_transition: %w", err)
 	}
 
 	c.storage.PutBlock(blockHash, block)
