@@ -27,10 +27,23 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 		c.mu.Unlock()
 		return nil, fmt.Errorf("head state not found")
 	}
+	currentSlot := c.time / types.IntervalsPerSlot
 
 	var attestations []*types.SignedAttestation
+	deferred := make(map[signatureKey]storedSignature)
+	droppedStale := 0
+	deferredFuture := 0
 	for key, stored := range c.gossipSignatures {
 		if stored.data == nil {
+			continue
+		}
+		switch {
+		case stored.data.Slot < currentSlot:
+			droppedStale++
+			continue
+		case stored.data.Slot > currentSlot:
+			deferred[key] = stored
+			deferredFuture++
 			continue
 		}
 		attestations = append(attestations, &types.SignedAttestation{
@@ -40,13 +53,23 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 		})
 	}
 
+	c.gossipSignatures = deferred
+	metrics.GossipSignaturesCount.Set(float64(len(c.gossipSignatures)))
+
 	if len(attestations) == 0 {
 		c.mu.Unlock()
+		if droppedStale > 0 || deferredFuture > 0 {
+			log.Info("aggregation backlog filtered",
+				"current_slot", currentSlot,
+				"eligible_signatures", 0,
+				"dropped_stale_signatures", droppedStale,
+				"deferred_future_signatures", deferredFuture,
+				"built_aggregates", 0,
+			)
+		}
 		return nil, nil
 	}
 
-	// Snapshot reusable proofs and clear consumed gossip signatures while locked.
-	c.gossipSignatures = make(map[signatureKey]storedSignature)
 	c.mu.Unlock()
 
 	// Phase 2: Build proofs WITHOUT the lock. This is the expensive part
@@ -78,6 +101,16 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 			Data:  att.Data,
 			Proof: aggProofs[i],
 		})
+	}
+
+	if droppedStale > 0 || deferredFuture > 0 || len(result) > 0 {
+		log.Info("aggregation backlog filtered",
+			"current_slot", currentSlot,
+			"eligible_signatures", len(attestations),
+			"dropped_stale_signatures", droppedStale,
+			"deferred_future_signatures", deferredFuture,
+			"built_aggregates", len(result),
+		)
 	}
 
 	return result, nil
