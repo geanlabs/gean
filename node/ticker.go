@@ -3,13 +3,10 @@ package node
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"time"
 
-	"github.com/geanlabs/gean/network/reqresp"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
-	"github.com/geanlabs/gean/types"
 )
 
 // Run starts the main event loop.
@@ -30,10 +27,7 @@ func (n *Node) Run(ctx context.Context) error {
 	n.initialSync(ctx)
 	n.log.Info("initial sync completed")
 
-	var lastSyncCheckSlot uint64 = ^uint64(0)
 	var lastLogSlot uint64 = ^uint64(0)
-	behindPeers := false
-	maxPeerHeadSlot := uint64(0)
 
 	for {
 		wait := n.Clock.DurationUntilNextInterval()
@@ -68,52 +62,16 @@ func (n *Node) Run(ctx context.Context) error {
 		// Advance fork choice time.
 		n.FC.AdvanceTimeMillis(n.Clock.CurrentTime(), hasProposal)
 
-		status := n.FC.GetStatus()
-
-		// Re-evaluate sync gating once per slot using peer head status.
-		if slot != lastSyncCheckSlot {
-			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
-			if behindPeers {
-				// Fetch peer head via the async fetcher to avoid blocking the event loop.
-				if peers := n.Host.P2P.Network().Peers(); len(peers) > 0 {
-					pid := peers[rand.Intn(len(peers))]
-					peerCtx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
-					ourStatus := n.FC.GetStatus()
-					peerStatus, err := reqresp.RequestStatus(peerCtx, n.Host.P2P, pid, reqresp.Status{
-						Finalized: &types.Checkpoint{Root: ourStatus.FinalizedRoot, Slot: ourStatus.FinalizedSlot},
-						Head:      &types.Checkpoint{Root: ourStatus.Head, Slot: ourStatus.HeadSlot},
-					})
-					cancel()
-					if err == nil && peerStatus.Head != nil && peerStatus.Head.Slot > ourStatus.HeadSlot {
-						n.Fetcher.fetchBlock(ctx, peerStatus.Head.Root)
-					}
-				}
-				// Re-check after giving fetcher a chance to resolve.
-				status = n.FC.GetStatus()
-				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
-				if behindPeers {
-					n.log.Warn(
-						"skipping validator duties while behind peers",
-						"slot", slot,
-						"head_slot", status.HeadSlot,
-						"finalized_slot", status.FinalizedSlot,
-						"max_peer_head_slot", maxPeerHeadSlot,
-					)
-				}
-			}
-			lastSyncCheckSlot = slot
-		}
-
-		// Execute validator duties unless we are behind peers' head.
-		if !behindPeers {
-			n.Validator.OnInterval(ctx, slot, interval)
-		}
+		// Always execute validator duties on the clock.
+		// No sync gating — matches ethlambda/leanSpec. Gossip delivers blocks,
+		// the fetcher handles missing parents asynchronously.
+		n.Validator.OnInterval(ctx, slot, interval)
 
 		// Update metrics and log on slot boundary.
 		if slot != lastLogSlot {
 			start := time.Now()
 			// Refresh status for metrics if not already current.
-			status = n.FC.GetStatus()
+			status := n.FC.GetStatus()
 
 			metrics.CurrentSlot.Set(float64(slot))
 			metrics.HeadSlot.Set(float64(status.HeadSlot))
@@ -130,8 +88,6 @@ func (n *Node) Run(ctx context.Context) error {
 				"finalized_root", logging.LongHash(status.FinalizedRoot),
 				"justified_slot", status.JustifiedSlot,
 				"justified_root", logging.LongHash(status.JustifiedRoot),
-				"behind_peers", behindPeers,
-				"max_peer_head", maxPeerHeadSlot,
 				"peers", peerCount,
 				"elapsed", logging.TimeSince(start),
 			)

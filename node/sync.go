@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/geanlabs/gean/chain/forkchoice"
 	"github.com/geanlabs/gean/network/reqresp"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/types"
@@ -308,33 +307,4 @@ func (n *Node) initialSync(ctx context.Context) {
 		"finalized_slot", status.FinalizedSlot,
 		"finalized_root", logging.LongHash(status.FinalizedRoot),
 	)
-}
-
-// isBehindPeers reports whether our head is behind the highest head slot
-// advertised by connected peers.
-func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus) (bool, uint64) {
-	maxPeerHeadSlot := status.HeadSlot
-	peers := n.Host.P2P.Network().Peers()
-	if len(peers) == 0 {
-		return false, maxPeerHeadSlot
-	}
-
-	ourStatus := reqresp.Status{
-		Finalized: &types.Checkpoint{Root: status.FinalizedRoot, Slot: status.FinalizedSlot},
-		Head:      &types.Checkpoint{Root: status.Head, Slot: status.HeadSlot},
-	}
-
-	for _, pid := range peers {
-		peerCtx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
-		peerStatus, err := reqresp.RequestStatus(peerCtx, n.Host.P2P, pid, ourStatus)
-		cancel()
-		if err != nil || peerStatus.Head == nil {
-			continue
-		}
-		if peerStatus.Head.Slot > maxPeerHeadSlot {
-			maxPeerHeadSlot = peerStatus.Head.Slot
-		}
-	}
-
-	return status.HeadSlot < maxPeerHeadSlot, maxPeerHeadSlot
 }
