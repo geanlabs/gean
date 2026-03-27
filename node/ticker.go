@@ -6,8 +6,10 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/geanlabs/gean/network/reqresp"
 	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/observability/metrics"
+	"github.com/geanlabs/gean/types"
 )
 
 // Run starts the main event loop.
@@ -72,12 +74,22 @@ func (n *Node) Run(ctx context.Context) error {
 		if slot != lastSyncCheckSlot {
 			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 			if behindPeers {
+				// Fetch peer head via the async fetcher to avoid blocking the event loop.
 				if peers := n.Host.P2P.Network().Peers(); len(peers) > 0 {
 					pid := peers[rand.Intn(len(peers))]
-					if n.syncWithPeer(ctx, pid) {
-						status = n.FC.GetStatus()
+					peerCtx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
+					ourStatus := n.FC.GetStatus()
+					peerStatus, err := reqresp.RequestStatus(peerCtx, n.Host.P2P, pid, reqresp.Status{
+						Finalized: &types.Checkpoint{Root: ourStatus.FinalizedRoot, Slot: ourStatus.FinalizedSlot},
+						Head:      &types.Checkpoint{Root: ourStatus.Head, Slot: ourStatus.HeadSlot},
+					})
+					cancel()
+					if err == nil && peerStatus.Head != nil && peerStatus.Head.Slot > ourStatus.HeadSlot {
+						n.Fetcher.fetchBlock(ctx, peerStatus.Head.Root)
 					}
 				}
+				// Re-check after giving fetcher a chance to resolve.
+				status = n.FC.GetStatus()
 				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 				if behindPeers {
 					n.log.Warn(

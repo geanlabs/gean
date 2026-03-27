@@ -133,6 +133,20 @@ func (bf *blockFetcher) fetchWithRetry(ctx context.Context, root [32]byte) {
 		}
 
 		sb := blocks[0]
+		blockRoot, _ := sb.Message.Block.HashTreeRoot()
+		if blockRoot != root {
+			bf.log.Warn("fetched block root mismatch, ignoring",
+				"requested", logging.LongHash(root),
+				"received", logging.LongHash(blockRoot),
+				"peer_id", pid.String(),
+			)
+			bf.mu.Lock()
+			if pf, ok := bf.pending[root]; ok {
+				pf.failedPeers[pid] = struct{}{}
+			}
+			bf.mu.Unlock()
+			continue
+		}
 		bf.resolve(root)
 
 		// Process the block. If its parent is also missing, that will trigger
@@ -145,7 +159,6 @@ func (bf *blockFetcher) fetchWithRetry(ctx context.Context, root [32]byte) {
 			return
 		}
 
-		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		bf.log.Info("fetched block",
 			"slot", sb.Message.Block.Slot,
 			"block_root", logging.LongHash(blockRoot),
@@ -201,6 +214,15 @@ func (n *Node) fetchParentChain(ctx context.Context, pid peer.ID, parentRoot [32
 		}
 
 		sb := blocks[0]
+		blockRoot, _ := sb.Message.Block.HashTreeRoot()
+		if blockRoot != nextRoot {
+			n.log.Warn("fetched block root mismatch, aborting sync walk",
+				"requested", logging.LongHash(nextRoot),
+				"received", logging.LongHash(blockRoot),
+				"peer_id", pid.String(),
+			)
+			break
+		}
 		pending = append(pending, sb)
 		nextRoot = sb.Message.Block.ParentRoot
 	}
