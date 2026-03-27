@@ -100,6 +100,7 @@ func (bf *blockFetcher) fetchWithRetry(ctx context.Context, root [32]byte) {
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
+				bf.resolve(root)
 				return
 			}
 		}
@@ -133,6 +134,14 @@ func (bf *blockFetcher) fetchWithRetry(ctx context.Context, root [32]byte) {
 		}
 
 		sb := blocks[0]
+		if sb == nil || sb.Message == nil || sb.Message.Block == nil {
+			bf.mu.Lock()
+			if pf, ok := bf.pending[root]; ok {
+				pf.failedPeers[pid] = struct{}{}
+			}
+			bf.mu.Unlock()
+			continue
+		}
 		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		if blockRoot != root {
 			bf.log.Warn("fetched block root mismatch, ignoring",
@@ -214,6 +223,9 @@ func (n *Node) fetchParentChain(ctx context.Context, pid peer.ID, parentRoot [32
 		}
 
 		sb := blocks[0]
+		if sb == nil || sb.Message == nil || sb.Message.Block == nil {
+			break
+		}
 		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		if blockRoot != nextRoot {
 			n.log.Warn("fetched block root mismatch, aborting sync walk",
@@ -253,7 +265,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	}
 
 	peerStatus, err := reqresp.RequestStatus(ctx, n.Host.P2P, pid, ourStatus)
-	if err != nil {
+	if err != nil || peerStatus.Head == nil || peerStatus.Finalized == nil {
 		n.log.Debug("status exchange failed", "peer_id", pid.String(), "err", err)
 		return false
 	}

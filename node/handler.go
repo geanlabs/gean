@@ -115,33 +115,38 @@ func (n *Node) registerGossipHandlers() error {
 	return nil
 }
 
-// processPendingChildren processes any cached blocks that were waiting for this parent.
-// This implements the leanSpec requirement to process cached blocks when their parent arrives.
+// processPendingChildren processes cached blocks whose parent became available.
+// Uses iterative queue to avoid stack overflow from deep chains.
 func (n *Node) processPendingChildren(parentRoot [32]byte, log *slog.Logger) {
-	children := n.PendingBlocks.GetChildrenOf(parentRoot)
-	for _, sb := range children {
-		block := sb.Message.Block
-		blockRoot, _ := block.HashTreeRoot()
+	queue := [][32]byte{parentRoot}
 
-		if err := n.FC.ProcessBlock(sb); err != nil {
-			// Still can't process - may be missing a deeper ancestor.
-			log.Debug("pending child still not processable",
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		children := n.PendingBlocks.GetChildrenOf(current)
+		for _, sb := range children {
+			block := sb.Message.Block
+			blockRoot, _ := block.HashTreeRoot()
+
+			if err := n.FC.ProcessBlock(sb); err != nil {
+				log.Debug("pending child still not processable",
+					"slot", block.Slot,
+					"block_root", logging.LongHash(blockRoot),
+					"err", err,
+				)
+				continue
+			}
+
+			n.PendingBlocks.Remove(blockRoot)
+			log.Info("processed pending child block",
 				"slot", block.Slot,
 				"block_root", logging.LongHash(blockRoot),
-				"err", err,
+				"parent_root", logging.LongHash(current),
 			)
-			continue
+
+			// Enqueue this block's children for processing.
+			queue = append(queue, blockRoot)
 		}
-
-		// Successfully processed - remove from pending and recurse.
-		n.PendingBlocks.Remove(blockRoot)
-		log.Info("processed pending child block",
-			"slot", block.Slot,
-			"block_root", logging.LongHash(blockRoot),
-			"parent_root", logging.LongHash(parentRoot),
-		)
-
-		// Recursively process any children of this block.
-		n.processPendingChildren(blockRoot, log)
 	}
 }
