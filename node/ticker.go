@@ -62,16 +62,10 @@ func (n *Node) Run(ctx context.Context) error {
 		// Advance fork choice time.
 		n.FC.AdvanceTimeMillis(n.Clock.CurrentTime(), hasProposal)
 
-		// Execute validator duties on the clock.
-		// Aggregation (interval 2) runs in a background goroutine because
-		// proof building takes 1-6 seconds — longer than the 800ms interval.
-		// This matches Lantern's approach of running aggregation off the
-		// main thread so the tick loop continues to interval 3 on time.
-		if interval == 2 && n.Validator.IsAggregator {
-			go n.Validator.OnInterval(ctx, slot, interval)
-		} else {
-			n.Validator.OnInterval(ctx, slot, interval)
-		}
+		// Always execute validator duties on the clock.
+		// No sync gating — matches ethlambda/leanSpec. Gossip delivers blocks,
+		// the fetcher handles missing parents asynchronously.
+		n.Validator.OnInterval(ctx, slot, interval)
 
 		// Update metrics and log on slot boundary.
 		if slot != lastLogSlot {
