@@ -98,25 +98,20 @@ func NewHost(listenAddr string, nodeKeyPath string, bootnodes []string) (*Host, 
 		netLog.Info("listening on", "addr", a.String())
 	}
 
-	var directPeers []peer.AddrInfo
+	bootnodeMap := make(map[peer.ID]peer.AddrInfo, len(bootnodes))
 	for _, addr := range bootnodes {
 		pi, err := parseBootnode(addr)
 		if err != nil || pi.ID == h.ID() {
 			continue
 		}
-		directPeers = append(directPeers, *pi)
+		bootnodeMap[pi.ID] = *pi
 	}
 
-	gs, err := gossipsub.NewGossipSub(ctx, h, directPeers)
+	gs, err := gossipsub.NewGossipSub(ctx, h)
 	if err != nil {
 		h.Close()
 		cancel()
 		return nil, fmt.Errorf("gossipsub: %w", err)
-	}
-
-	bootnodeMap := make(map[peer.ID]peer.AddrInfo, len(directPeers))
-	for _, dp := range directPeers {
-		bootnodeMap[dp.ID] = dp
 	}
 
 	hostWrapper := &Host{P2P: h, PubSub: gs, Ctx: ctx, Cancel: cancel, bootnodePeers: bootnodeMap}

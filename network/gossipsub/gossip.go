@@ -7,7 +7,6 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Gossip topic names.
@@ -25,8 +24,7 @@ type Topics struct {
 }
 
 // NewGossipSub creates a configured gossipsub instance.
-// directPeers are always messaged regardless of mesh or subscription state (used for bootnodes).
-func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo) (*pubsub.PubSub, error) {
+func NewGossipSub(ctx context.Context, h host.Host) (*pubsub.PubSub, error) {
 	return pubsub.NewGossipSub(ctx, h,
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
 		pubsub.WithNoAuthor(), // Omit author (From) and sequence number for anonymous mode compatibility
@@ -56,8 +54,7 @@ func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo)
 		}),
 		pubsub.WithSeenMessagesTTL(24*time.Second),
 		pubsub.WithMessageIdFn(ComputeMessageID),
-		pubsub.WithFloodPublish(false),      // Use mesh-only publishing to avoid IDONTWANT pressure
-		pubsub.WithDirectPeers(directPeers), // Always message bootnodes regardless of mesh/subscription state
+		pubsub.WithFloodPublish(false), // Use mesh-only publishing to avoid IDONTWANT pressure
 	)
 }
 
