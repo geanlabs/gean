@@ -13,6 +13,12 @@ import (
 
 var gossipLog = logging.NewComponentLogger(logging.CompGossip)
 
+const (
+	blockBufferSize       = 16
+	attestationBufferSize = 256
+	aggregationBufferSize = 64
+)
+
 // GossipHandler processes decoded gossip messages.
 type GossipHandler struct {
 	OnBlock                 func(*types.SignedBlockWithAttestation)
@@ -21,6 +27,9 @@ type GossipHandler struct {
 }
 
 // SubscribeTopics subscribes to topics and dispatches messages to handler.
+// Reader goroutines decode messages and enqueue them into buffered channels.
+// Separate consumer goroutines dequeue and call the handler callbacks, so
+// slow processing (e.g. sync recovery) never blocks the gossipsub readers.
 func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler) error {
 	blockSub, err := topics.Block.Subscribe()
 	if err != nil {
@@ -41,13 +50,25 @@ func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler
 	gossipLog.Info("subscribed to gossip topics",
 		"block_topic", topics.Block.String(),
 	)
-	go readBlockMessages(ctx, blockSub, topics.Block, handler)
-	go readAttestationMessages(ctx, attSub, topics.SubnetAttestation, handler)
-	go readAggregatedAttestationMessages(ctx, aggSub, handler)
+
+	blockCh := make(chan *types.SignedBlockWithAttestation, blockBufferSize)
+	attCh := make(chan *types.SignedAttestation, attestationBufferSize)
+	aggCh := make(chan *types.SignedAggregatedAttestation, aggregationBufferSize)
+
+	// Readers: decode and enqueue (non-blocking).
+	go readBlockMessages(ctx, blockSub, topics.Block, blockCh)
+	go readAttestationMessages(ctx, attSub, topics.SubnetAttestation, attCh)
+	go readAggregatedAttestationMessages(ctx, aggSub, aggCh)
+
+	// Consumers: dequeue and process (may block on forkchoice lock or sync).
+	go processBlocks(ctx, blockCh, handler)
+	go processAttestations(ctx, attCh, handler)
+	go processAggregatedAttestations(ctx, aggCh, handler)
+
 	return nil
 }
 
-func readBlockMessages(ctx context.Context, sub *pubsub.Subscription, topic *pubsub.Topic, handler *GossipHandler) {
+func readBlockMessages(ctx context.Context, sub *pubsub.Subscription, topic *pubsub.Topic, out chan<- *types.SignedBlockWithAttestation) {
 	// Log mesh peers periodically to diagnose gossip issues.
 	meshLogTicker := time.NewTicker(12 * time.Second)
 	defer meshLogTicker.Stop()
@@ -85,13 +106,18 @@ func readBlockMessages(ctx context.Context, sub *pubsub.Subscription, topic *pub
 
 		gossipLog.Debug("block message received", "from", fromPeer, "slot", block.Message.Block.Slot)
 
-		if handler.OnBlock != nil {
-			handler.OnBlock(block)
+		select {
+		case out <- block:
+		default:
+			gossipLog.Warn("block processing channel full, dropping message",
+				"slot", block.Message.Block.Slot,
+				"from", fromPeer,
+			)
 		}
 	}
 }
 
-func readAttestationMessages(ctx context.Context, sub *pubsub.Subscription, topic *pubsub.Topic, handler *GossipHandler) {
+func readAttestationMessages(ctx context.Context, sub *pubsub.Subscription, topic *pubsub.Topic, out chan<- *types.SignedAttestation) {
 	meshLogTicker := time.NewTicker(12 * time.Second)
 	defer meshLogTicker.Stop()
 
@@ -119,13 +145,18 @@ func readAttestationMessages(ctx context.Context, sub *pubsub.Subscription, topi
 		if err := att.UnmarshalSSZ(decoded); err != nil {
 			continue
 		}
-		if handler.OnAttestation != nil {
-			handler.OnAttestation(att)
+
+		select {
+		case out <- att:
+		default:
+			gossipLog.Warn("attestation processing channel full, dropping message",
+				"slot", att.Message.Slot,
+			)
 		}
 	}
 }
 
-func readAggregatedAttestationMessages(ctx context.Context, sub *pubsub.Subscription, handler *GossipHandler) {
+func readAggregatedAttestationMessages(ctx context.Context, sub *pubsub.Subscription, out chan<- *types.SignedAggregatedAttestation) {
 	for {
 		msg, err := sub.Next(ctx)
 		if err != nil {
@@ -140,8 +171,52 @@ func readAggregatedAttestationMessages(ctx context.Context, sub *pubsub.Subscrip
 		if err := agg.UnmarshalSSZ(decoded); err != nil {
 			continue
 		}
-		if handler.OnAggregatedAttestation != nil {
-			handler.OnAggregatedAttestation(agg)
+
+		select {
+		case out <- agg:
+		default:
+			gossipLog.Warn("aggregation processing channel full, dropping message",
+				"slot", agg.Data.Slot,
+			)
+		}
+	}
+}
+
+func processBlocks(ctx context.Context, ch <-chan *types.SignedBlockWithAttestation, handler *GossipHandler) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case block := <-ch:
+			if handler.OnBlock != nil {
+				handler.OnBlock(block)
+			}
+		}
+	}
+}
+
+func processAttestations(ctx context.Context, ch <-chan *types.SignedAttestation, handler *GossipHandler) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case att := <-ch:
+			if handler.OnAttestation != nil {
+				handler.OnAttestation(att)
+			}
+		}
+	}
+}
+
+func processAggregatedAttestations(ctx context.Context, ch <-chan *types.SignedAggregatedAttestation, handler *GossipHandler) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case agg := <-ch:
+			if handler.OnAggregatedAttestation != nil {
+				handler.OnAggregatedAttestation(agg)
+			}
 		}
 	}
 }
