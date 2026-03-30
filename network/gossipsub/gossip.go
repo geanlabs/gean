@@ -27,37 +27,37 @@ type Topics struct {
 // NewGossipSub creates a configured gossipsub instance.
 // directPeers are always messaged regardless of mesh or subscription state (used for bootnodes).
 func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo) (*pubsub.PubSub, error) {
+	// Start from defaults to avoid zero-value bugs (WithGossipSubParams replaces
+	// the entire struct, it does not merge), then override what we need.
+	params := pubsub.DefaultGossipSubParams()
+	params.D = 8
+	params.Dlo = 6
+	params.Dhi = 12
+	params.Dlazy = 6
+	params.HeartbeatInterval = 700 * time.Millisecond
+	params.FanoutTTL = 60 * time.Second
+	params.HistoryLength = 6
+	params.HistoryGossip = 3
+	params.GossipFactor = 0.25
+	params.PruneBackoff = time.Minute
+	params.UnsubscribeBackoff = 10 * time.Second
+	params.Connectors = 8
+	params.MaxPendingConnections = 128
+	params.ConnectionTimeout = 30 * time.Second
+	params.DirectConnectTicks = 300
+	params.DirectConnectInitialDelay = time.Second
+	params.OpportunisticGraftTicks = 60
+	params.OpportunisticGraftPeers = 2
+	params.GraftFloodThreshold = 10 * time.Second
+	params.MaxIHaveLength = 5000
+	params.MaxIHaveMessages = 10
+	params.IWantFollowupTime = 3 * time.Second
+	params.IDontWantMessageThreshold = 1000
+
 	return pubsub.NewGossipSub(ctx, h,
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
 		pubsub.WithNoAuthor(), // Omit author (From) and sequence number for anonymous mode compatibility
-		pubsub.WithGossipSubParams(pubsub.GossipSubParams{
-			D:                         8,
-			Dlo:                       6,
-			Dhi:                       12,
-			Dlazy:                     6,
-			HeartbeatInterval:         700 * time.Millisecond,
-			FanoutTTL:                 60 * time.Second,
-			HistoryLength:             6,
-			HistoryGossip:             3,
-			GossipFactor:              0.25,
-			PruneBackoff:              time.Minute,
-			UnsubscribeBackoff:        10 * time.Second,
-			Connectors:                8,
-			MaxPendingConnections:     128,
-			ConnectionTimeout:         30 * time.Second,
-			DirectConnectTicks:        300,
-			DirectConnectInitialDelay: time.Second,
-			OpportunisticGraftTicks:   60,
-			OpportunisticGraftPeers:   2,
-			GraftFloodThreshold:       10 * time.Second,
-			MaxIHaveLength:            5000,
-			MaxIHaveMessages:          10,
-			IWantFollowupTime:         3 * time.Second,
-			MaxIDontWantLength:        10,
-			MaxIDontWantMessages:      1000,
-			IDontWantMessageThreshold: 1000,
-			IDontWantMessageTTL:       3,
-		}),
+		pubsub.WithGossipSubParams(params),
 		pubsub.WithSeenMessagesTTL(24*time.Second),
 		pubsub.WithMessageIdFn(ComputeMessageID),
 		pubsub.WithPeerOutboundQueueSize(256), // Larger outbound buffer prevents drops during attestation bursts
