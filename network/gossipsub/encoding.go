@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"sync"
 
 	"github.com/golang/snappy"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -45,6 +46,12 @@ func PublishAggregatedAttestation(ctx context.Context, topic *pubsub.Topic, saa 
 	return topic.Publish(ctx, snappy.Encode(nil, data))
 }
 
+// decodePool reuses snappy decode buffers to reduce allocations in the
+// gossipsub event loop hot path (ComputeMessageID is called per message).
+var decodePool = sync.Pool{
+	New: func() any { b := make([]byte, 0, 8192); return &b },
+}
+
 // ComputeMessageID computes SHA256(domain + uint64_le(topic_len) + topic + data)[:20].
 func ComputeMessageID(pmsg *pb.Message) string {
 	topic := pmsg.GetTopic()
@@ -53,9 +60,17 @@ func ComputeMessageID(pmsg *pb.Message) string {
 	// Try snappy decompress to determine domain.
 	domain := DomainInvalidSnappy
 	msgData := data
-	if decoded, err := snappy.Decode(nil, data); err == nil {
-		domain = DomainValidSnappy
-		msgData = decoded
+
+	bufp := decodePool.Get().(*[]byte)
+	buf := *bufp
+	if dLen, err := snappy.DecodedLen(data); err == nil && dLen > 0 {
+		if cap(buf) < dLen {
+			buf = make([]byte, 0, dLen)
+		}
+		if decoded, err := snappy.Decode(buf[:0], data); err == nil {
+			domain = DomainValidSnappy
+			msgData = decoded
+		}
 	}
 
 	topicBytes := []byte(topic)
@@ -68,6 +83,9 @@ func ComputeMessageID(pmsg *pb.Message) string {
 	h.Write(topicBytes)
 	h.Write(msgData)
 	digest := h.Sum(nil)
+
+	*bufp = buf
+	decodePool.Put(bufp)
 
 	return string(digest[:20])
 }
