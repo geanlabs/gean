@@ -56,7 +56,8 @@ func NewGossipSub(ctx context.Context, h host.Host, directPeers []peer.AddrInfo)
 		}),
 		pubsub.WithSeenMessagesTTL(24*time.Second),
 		pubsub.WithMessageIdFn(ComputeMessageID),
-		pubsub.WithDirectPeers(directPeers), // Always message bootnodes regardless of mesh/subscription state
+		pubsub.WithPeerOutboundQueueSize(256), // Larger outbound buffer prevents drops during attestation bursts
+		pubsub.WithDirectPeers(directPeers),   // Always message bootnodes regardless of mesh/subscription state
 	)
 }
 

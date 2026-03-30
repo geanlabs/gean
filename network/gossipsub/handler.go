@@ -31,17 +31,17 @@ type GossipHandler struct {
 // Separate consumer goroutines dequeue and call the handler callbacks, so
 // slow processing (e.g. sync recovery) never blocks the gossipsub readers.
 func SubscribeTopics(ctx context.Context, topics *Topics, handler *GossipHandler) error {
-	blockSub, err := topics.Block.Subscribe()
+	blockSub, err := topics.Block.Subscribe(pubsub.WithBufferSize(blockBufferSize))
 	if err != nil {
 		gossipLog.Error("failed to subscribe to block topic", "err", err)
 		return err
 	}
-	attSub, err := topics.SubnetAttestation.Subscribe()
+	attSub, err := topics.SubnetAttestation.Subscribe(pubsub.WithBufferSize(attestationBufferSize))
 	if err != nil {
 		gossipLog.Error("failed to subscribe to attestation topic", "err", err)
 		return err
 	}
-	aggSub, err := topics.Aggregation.Subscribe()
+	aggSub, err := topics.Aggregation.Subscribe(pubsub.WithBufferSize(aggregationBufferSize))
 	if err != nil {
 		gossipLog.Error("failed to subscribe to aggregation topic", "err", err)
 		return err
