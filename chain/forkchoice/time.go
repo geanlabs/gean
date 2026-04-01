@@ -83,6 +83,7 @@ func (c *Store) acceptNewAttestationsLocked() {
 	}
 	c.latestKnownAggregatedPayloads = mergeAggregatedPayloads(c.latestKnownAggregatedPayloads, c.latestNewAggregatedPayloads)
 	c.latestNewAggregatedPayloads = make(map[[32]byte]aggregatedPayload)
+	c.enforcePayloadCap()
 	metrics.LatestNewAggregatedPayloads.Set(0)
 
 	// Move new → known and update head.
