@@ -104,6 +104,14 @@ func (n *Node) Close() {
 	if n.API != nil {
 		n.API.Stop()
 	}
+	// Free Rust-allocated XMSS keypairs.
+	if n.Validator != nil {
+		for _, key := range n.Validator.Keys {
+			if f, ok := key.(interface{ Free() }); ok {
+				f.Free()
+			}
+		}
+	}
 	if n.dbCloser != nil {
 		n.dbCloser.Close()
 	}

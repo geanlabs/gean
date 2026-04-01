@@ -299,12 +299,26 @@ func loadValidatorKeys(log *slog.Logger, cfg Config) (map[uint64]forkchoice.Sign
 
 		kp, err := leansig.LoadKeypair(pkPath, skPath)
 		if err != nil {
+			// Clean up previously loaded keypairs to prevent Rust memory leaks.
+			// Modeled after zeam's errdefer keypair.deinit() pattern
+			// (cli/src/node.zig:433-469).
+			freeLoadedKeys(keys)
 			return nil, fmt.Errorf("failed to load keypair for validator %d: %w", idx, err)
 		}
 		keys[idx] = kp
 		log.Info("loaded validator keypair", "validator_index", idx)
 	}
 	return keys, nil
+}
+
+// freeLoadedKeys releases Rust-allocated XMSS keypairs from a partially
+// loaded key map. Called on error during loadValidatorKeys to prevent leaks.
+func freeLoadedKeys(keys map[uint64]forkchoice.Signer) {
+	for _, key := range keys {
+		if f, ok := key.(interface{ Free() }); ok {
+			f.Free()
+		}
+	}
 }
 
 func startMetrics(log *slog.Logger, cfg Config) {
