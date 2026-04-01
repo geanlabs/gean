@@ -44,6 +44,12 @@ type Node struct {
 	peerBackoff   map[peer.ID]*peerSyncState
 	peerBackoffMu sync.Mutex
 
+	// Per-peer concurrency tracking. Limits in-flight sync requests to
+	// maxConcurrentRequestsPerPeer (2) per peer, matching leanSpec
+	// MAX_CONCURRENT_REQUESTS.
+	peerInFlight   map[peer.ID]int
+	peerInFlightMu sync.Mutex
+
 	// Recovery cooldown prevents recoverMissingParentSync from flooding
 	// peers when multiple gossip blocks arrive with missing parents.
 	recoveryMu       sync.Mutex
@@ -87,6 +93,10 @@ const (
 
 	// backoffMultiplier doubles the backoff on each consecutive failure.
 	backoffMultiplier = 2
+
+	// maxConcurrentRequestsPerPeer limits in-flight sync requests to a
+	// single peer. Matches leanSpec MAX_CONCURRENT_REQUESTS.
+	maxConcurrentRequestsPerPeer = 2
 )
 
 func (n *Node) Close() {
