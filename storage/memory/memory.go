@@ -36,6 +36,12 @@ func (m *Store) PutBlock(root [32]byte, block *types.Block) {
 	m.blocks[root] = block
 }
 
+func (m *Store) DeleteBlock(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.blocks, root)
+}
+
 func (m *Store) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -47,6 +53,12 @@ func (m *Store) PutSignedBlock(root [32]byte, sb *types.SignedBlockWithAttestati
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.signedBlocks[root] = sb
+}
+
+func (m *Store) DeleteSignedBlock(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.signedBlocks, root)
 }
 
 func (m *Store) GetState(root [32]byte) (*types.State, bool) {
@@ -62,6 +74,12 @@ func (m *Store) PutState(root [32]byte, state *types.State) {
 	m.states[root] = state
 }
 
+func (m *Store) DeleteState(root [32]byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.states, root)
+}
+
 func (m *Store) GetAllBlocks() map[[32]byte]*types.Block {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -70,6 +88,16 @@ func (m *Store) GetAllBlocks() map[[32]byte]*types.Block {
 		cp[k] = v
 	}
 	return cp
+}
+
+func (m *Store) ForEachBlock(fn func(root [32]byte, block *types.Block) bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for root, block := range m.blocks {
+		if !fn(root, block) {
+			return
+		}
+	}
 }
 
 func (m *Store) GetAllStates() map[[32]byte]*types.State {

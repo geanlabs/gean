@@ -90,6 +90,11 @@ func (c *Store) acceptNewAttestationsLocked() {
 		c.latestKnownAttestations[id] = sa
 	}
 	c.latestNewAttestations = make(map[uint64]*types.SignedAttestation)
+
+	// Enforce caps to bound memory even when finalization stalls.
+	c.enforcePayloadCap()
+	c.enforceAggregatedPayloadsCacheCap()
+
 	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAggregatedPayloads)))
 	c.updateHeadLocked()
 }
