@@ -99,7 +99,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 
 	// Fixed-point collection: include votes whose source matches post-state justified.
 	for {
-		aggregatedAttestations, _, err := c.buildAggregatedAttestationsFromSigned(headState, selected)
+		aggregatedAttestations, _, err := c.buildAggregatedAttestationsFromSignedLocked(headState, selected)
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +144,7 @@ func (c *Store) ProduceBlock(slot, validatorIndex uint64, signer Signer) (*types
 		selected = orderedSignedAttestations(selectedByValidator)
 	}
 
-	finalAttestations, attestationProofs, err := c.buildAggregatedAttestationsFromSigned(headState, selected)
+	finalAttestations, attestationProofs, err := c.buildAggregatedAttestationsFromSignedLocked(headState, selected)
 	if err != nil {
 		return nil, err
 	}
