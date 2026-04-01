@@ -71,6 +71,52 @@ func TestGetAllBlocksCopiesMap(t *testing.T) {
 	}
 }
 
+func TestDeleteBlock(t *testing.T) {
+	s := memory.New()
+	root := [32]byte{1}
+	s.PutBlock(root, &types.Block{Slot: 1})
+
+	s.DeleteBlock(root)
+
+	if _, ok := s.GetBlock(root); ok {
+		t.Fatal("expected block to be deleted")
+	}
+}
+
+func TestDeleteSignedBlock(t *testing.T) {
+	s := memory.New()
+	root := [32]byte{1}
+	s.PutSignedBlock(root, &types.SignedBlockWithAttestation{
+		Message: &types.BlockWithAttestation{Block: &types.Block{Slot: 1}},
+	})
+
+	s.DeleteSignedBlock(root)
+
+	if _, ok := s.GetSignedBlock(root); ok {
+		t.Fatal("expected signed block to be deleted")
+	}
+}
+
+func TestDeleteState(t *testing.T) {
+	s := memory.New()
+	root := [32]byte{1}
+	s.PutState(root, &types.State{Slot: 1})
+
+	s.DeleteState(root)
+
+	if _, ok := s.GetState(root); ok {
+		t.Fatal("expected state to be deleted")
+	}
+}
+
+func TestDeleteNonExistentIsNoop(t *testing.T) {
+	s := memory.New()
+	// Should not panic.
+	s.DeleteBlock([32]byte{0xff})
+	s.DeleteSignedBlock([32]byte{0xff})
+	s.DeleteState([32]byte{0xff})
+}
+
 func TestGetAllStatesCopiesMap(t *testing.T) {
 	s := memory.New()
 	root := [32]byte{1}

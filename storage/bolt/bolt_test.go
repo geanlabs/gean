@@ -78,6 +78,60 @@ func TestPutGetSignedBlock(t *testing.T) {
 	}
 }
 
+func TestDeleteBlock(t *testing.T) {
+	s := newTestStore(t)
+	root := [32]byte{1}
+	s.PutBlock(root, &types.Block{Slot: 5, Body: &types.BlockBody{}})
+
+	s.DeleteBlock(root)
+
+	if _, ok := s.GetBlock(root); ok {
+		t.Fatal("expected block to be deleted")
+	}
+}
+
+func TestDeleteSignedBlock(t *testing.T) {
+	s := newTestStore(t)
+	root := [32]byte{1}
+	s.PutSignedBlock(root, &types.SignedBlockWithAttestation{
+		Message: &types.BlockWithAttestation{Block: &types.Block{Slot: 5, Body: &types.BlockBody{}}},
+	})
+
+	s.DeleteSignedBlock(root)
+
+	if _, ok := s.GetSignedBlock(root); ok {
+		t.Fatal("expected signed block to be deleted")
+	}
+}
+
+func TestDeleteState(t *testing.T) {
+	s := newTestStore(t)
+	root := [32]byte{1}
+	s.PutState(root, &types.State{
+		Slot:                     5,
+		Config:                   &types.Config{GenesisTime: 1000},
+		LatestJustified:          &types.Checkpoint{},
+		LatestFinalized:          &types.Checkpoint{},
+		LatestBlockHeader:        &types.BlockHeader{},
+		JustifiedSlots:           []byte{0x01},
+		JustificationsValidators: []byte{0x01},
+	})
+
+	s.DeleteState(root)
+
+	if _, ok := s.GetState(root); ok {
+		t.Fatal("expected state to be deleted")
+	}
+}
+
+func TestDeleteNonExistentIsNoop(t *testing.T) {
+	s := newTestStore(t)
+	// Should not panic.
+	s.DeleteBlock([32]byte{0xff})
+	s.DeleteSignedBlock([32]byte{0xff})
+	s.DeleteState([32]byte{0xff})
+}
+
 func TestGetMissingBlockReturnsFalse(t *testing.T) {
 	s := newTestStore(t)
 	_, ok := s.GetBlock([32]byte{0xff})

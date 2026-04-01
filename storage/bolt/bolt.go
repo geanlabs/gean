@@ -62,6 +62,10 @@ func (s *Store) PutBlock(root [32]byte, block *types.Block) {
 	s.put(blocksBucket, root[:], block)
 }
 
+func (s *Store) DeleteBlock(root [32]byte) {
+	s.del(blocksBucket, root[:])
+}
+
 func (s *Store) GetSignedBlock(root [32]byte) (*types.SignedBlockWithAttestation, bool) {
 	var sb types.SignedBlockWithAttestation
 	found := s.get(signedBlockBucket, root[:], &sb)
@@ -75,6 +79,10 @@ func (s *Store) PutSignedBlock(root [32]byte, sb *types.SignedBlockWithAttestati
 	s.put(signedBlockBucket, root[:], sb)
 }
 
+func (s *Store) DeleteSignedBlock(root [32]byte) {
+	s.del(signedBlockBucket, root[:])
+}
+
 func (s *Store) GetState(root [32]byte) (*types.State, bool) {
 	var st types.State
 	found := s.get(statesBucket, root[:], &st)
@@ -86,6 +94,28 @@ func (s *Store) GetState(root [32]byte) (*types.State, bool) {
 
 func (s *Store) PutState(root [32]byte, state *types.State) {
 	s.put(statesBucket, root[:], state)
+}
+
+func (s *Store) DeleteState(root [32]byte) {
+	s.del(statesBucket, root[:])
+}
+
+func (s *Store) ForEachBlock(fn func(root [32]byte, block *types.Block) bool) {
+	s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(blocksBucket)
+		return b.ForEach(func(k, v []byte) error {
+			var blk types.Block
+			if err := blk.UnmarshalSSZ(v); err != nil {
+				return nil // skip corrupt entries
+			}
+			var key [32]byte
+			copy(key[:], k)
+			if !fn(key, &blk) {
+				return fmt.Errorf("stop") // break iteration
+			}
+			return nil
+		})
+	})
 }
 
 func (s *Store) GetAllBlocks() map[[32]byte]*types.Block {
@@ -144,6 +174,15 @@ func (s *Store) put(bucket, key []byte, val sszMarshaler) {
 	})
 	if err != nil {
 		log.Fatalf("bolt: write %s: %v", bucket, err)
+	}
+}
+
+func (s *Store) del(bucket, key []byte) {
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucket).Delete(key)
+	})
+	if err != nil {
+		log.Printf("bolt: delete from %s: %v", bucket, err)
 	}
 }
 
