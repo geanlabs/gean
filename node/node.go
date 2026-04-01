@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
+	"time"
 
 	apiserver "github.com/geanlabs/gean/api/server"
 	"github.com/geanlabs/gean/chain/forkchoice"
@@ -14,6 +16,14 @@ import (
 )
 
 var Version = "v0.1.0"
+
+// Queue sizes for async gossip message dispatch. Decouples gossip readers
+// from fork-choice processing to prevent libp2p send queue backpressure.
+const (
+	blockQueueSize       = 64
+	attestationQueueSize = 256
+	aggregationQueueSize = 128
+)
 
 // Node is the main gean node orchestrator.
 type Node struct {
@@ -30,7 +40,21 @@ type Node struct {
 	// PendingBlocks caches blocks awaiting parent availability.
 	PendingBlocks *PendingBlockCache
 
-	Clock    *Clock
+	// Async gossip message queues. Gossip reader goroutines enqueue here
+	// instead of processing synchronously, preventing slow fork-choice
+	// operations from blocking message consumption and causing peer
+	// send queue backpressure.
+	blockCh       chan *types.SignedBlockWithAttestation
+	attestationCh chan *types.SignedAttestation
+	aggregationCh chan *types.SignedAggregatedAttestation
+
+	// recoveryCooldown prevents recoverMissingParentSync from firing
+	// for every gossip block with a missing parent, which causes
+	// excessive blocks_by_root request flooding to peers.
+	recoveryMu       sync.Mutex
+	lastRecoveryTime time.Time
+
+	Clock *Clock
 	dbCloser io.Closer
 	log      *slog.Logger
 

@@ -130,13 +130,29 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	return synced > 0
 }
 
+// recoveryCooldown prevents recoverMissingParentSync from flooding peers
+// when multiple gossip blocks arrive with missing parents in quick succession.
+const recoveryCooldown = 2 * time.Second
+
 // recoverMissingParentSync attempts to fill a missing parent chain by syncing with
 // connected peers, then checks whether the requested parent state became available.
+// Rate-limited to prevent excessive blocks_by_root request flooding.
 func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte) bool {
 	if n.FC.HasState(parentRoot) {
 		return true
 	}
 
+	// Rate-limit: skip if a recovery attempt happened recently.
+	n.recoveryMu.Lock()
+	if time.Since(n.lastRecoveryTime) < recoveryCooldown {
+		n.recoveryMu.Unlock()
+		return false
+	}
+	n.lastRecoveryTime = time.Now()
+	n.recoveryMu.Unlock()
+
+	// Try peers until one succeeds — avoid repeating the backward
+	// walk across every peer for the same missing chain.
 	for _, pid := range n.Host.P2P.Network().Peers() {
 		n.syncWithPeer(ctx, pid)
 		if n.FC.HasState(parentRoot) {

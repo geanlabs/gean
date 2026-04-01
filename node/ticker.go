@@ -23,6 +23,13 @@ func (n *Node) Run(ctx context.Context) error {
 		n.log.Error("failed to register gossip handlers", "err", err)
 		return err
 	}
+	// Start async gossip message workers. These drain the buffered channels
+	// populated by the gossip handler callbacks, processing blocks and
+	// attestations without blocking the gossip reader goroutines.
+	go n.processBlockWorker(ctx)
+	go n.processAttestationWorker(ctx)
+	go n.processAggregationWorker(ctx)
+
 	n.log.Info("gossip handlers registered, starting initial sync")
 	n.initialSync(ctx)
 	n.log.Info("initial sync completed")
@@ -71,12 +78,17 @@ func (n *Node) Run(ctx context.Context) error {
 		if slot != lastSyncCheckSlot {
 			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 			if behindPeers {
+				// Try peers until one succeeds — avoid repeating the
+				// backward walk across every peer for the same chain.
 				for _, pid := range n.Host.P2P.Network().Peers() {
 					if n.syncWithPeer(ctx, pid) {
 						status = n.FC.GetStatus()
+						break
 					}
 				}
-				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
+				// Check locally if we caught up instead of re-querying
+				// all peers for status (saves P network requests).
+				behindPeers = status.HeadSlot < maxPeerHeadSlot
 				if behindPeers {
 					n.log.Warn(
 						"skipping validator duties while behind peers",

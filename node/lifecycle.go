@@ -80,6 +80,9 @@ func New(cfg Config) (*Node, error) {
 		P2PManager:    p2pManager,
 		P2PDiscovery:  p2pDiscovery,
 		PendingBlocks: NewPendingBlockCache(),
+		blockCh:       make(chan *types.SignedBlockWithAttestation, blockQueueSize),
+		attestationCh: make(chan *types.SignedAttestation, attestationQueueSize),
+		aggregationCh: make(chan *types.SignedAggregatedAttestation, aggregationQueueSize),
 		dbCloser:      db,
 		log:           log,
 	}

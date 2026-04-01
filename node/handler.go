@@ -40,91 +40,40 @@ func registerReqRespHandlers(n *Node, fc *forkchoice.Store) {
 func (n *Node) registerGossipHandlers() error {
 	gossipLog := logging.NewComponentLogger(logging.CompGossip)
 
-	// Subscribe to gossip.
+	// Subscribe to gossip. Handlers enqueue messages onto buffered channels
+	// instead of processing synchronously, preventing slow fork-choice
+	// operations from blocking the gossip reader goroutines and causing
+	// "Send Queue full" backpressure on peers.
 	if err := gossipsub.SubscribeTopics(n.Host.Ctx, n.Topics, &gossipsub.GossipHandler{
 		OnBlock: func(sb *types.SignedBlockWithAttestation) {
-			block := sb.Message.Block
-			blockRoot, _ := block.HashTreeRoot()
-			gossipLog.Info("received block via gossip",
-				"slot", block.Slot,
-				"proposer", block.ProposerIndex,
-				"block_root", logging.LongHash(blockRoot),
-				"parent_root", logging.LongHash(block.ParentRoot),
-				"state_root", logging.LongHash(block.StateRoot),
-				"attestations", len(block.Body.Attestations),
-			)
-			if err := n.FC.ProcessBlock(sb); err != nil {
-				status := n.FC.GetStatus()
-				if isMissingParentStateErr(err) {
-					gossipLog.Warn("parent state missing for gossip block, attempting recovery",
-						"slot", block.Slot,
-						"block_root", logging.LongHash(blockRoot),
-						"parent_root", logging.LongHash(block.ParentRoot),
-						"head_slot", status.HeadSlot,
-						"finalized_slot", status.FinalizedSlot,
-					)
-					if n.recoverMissingParentSync(n.Host.Ctx, block.ParentRoot) {
-						if retryErr := n.FC.ProcessBlock(sb); retryErr == nil {
-							gossipLog.Info("accepted gossip block after parent recovery",
-								"slot", block.Slot,
-								"block_root", logging.LongHash(blockRoot),
-							)
-							// Process any pending children now that this block is available.
-							n.processPendingChildren(blockRoot, gossipLog)
-							return
-						} else {
-							err = retryErr
-						}
-					}
-					// Cache the block for later processing when parent becomes available.
-					n.PendingBlocks.Add(sb)
-					gossipLog.Info("cached pending block awaiting parent",
-						"slot", block.Slot,
-						"block_root", logging.LongHash(blockRoot),
-						"parent_root", logging.LongHash(block.ParentRoot),
-						"pending_count", n.PendingBlocks.Len(),
-					)
-					return
-				}
-				gossipLog.Warn("rejected gossip block",
-					"slot", block.Slot,
-					"block_root", logging.LongHash(blockRoot),
-					"err", err,
-					"head_slot", status.HeadSlot,
-					"finalized_slot", status.FinalizedSlot,
+			select {
+			case n.blockCh <- sb:
+			default:
+				gossipLog.Warn("block queue full, dropping gossip block",
+					"slot", sb.Message.Block.Slot,
 				)
-				return
 			}
-			// Block accepted.
-			gossipLog.Info("block accepted",
-				"slot", block.Slot,
-				"proposer", block.ProposerIndex,
-				"block_root", logging.LongHash(blockRoot),
-				"parent_root", logging.LongHash(block.ParentRoot),
-				"state_root", logging.LongHash(block.StateRoot),
-				"attestations", len(block.Body.Attestations),
-			)
-			n.processPendingChildren(blockRoot, gossipLog)
 		},
 		OnAttestation: func(sa *types.SignedAttestation) {
-			if sa.Message != nil {
-				gossipLog.Debug("received attestation from gossip",
-					"slot", sa.Message.Slot,
-					"validator", sa.ValidatorID,
-					"head_root", logging.LongHash(sa.Message.Head.Root),
-					"target_slot", sa.Message.Target.Slot,
-					"target_root", logging.LongHash(sa.Message.Target.Root),
-					"source_slot", sa.Message.Source.Slot,
-					"source_root", logging.LongHash(sa.Message.Source.Root),
-				)
+			select {
+			case n.attestationCh <- sa:
+			default:
+				if sa.Message != nil {
+					gossipLog.Debug("attestation queue full, dropping",
+						"slot", sa.Message.Slot,
+						"validator", sa.ValidatorID,
+					)
+				}
 			}
-			n.FC.ProcessSubnetAttestation(sa)
 		},
 		OnAggregatedAttestation: func(saa *types.SignedAggregatedAttestation) {
-			gossipLog.Debug("received aggregated attestation via gossip",
-				"slot", saa.Data.Slot,
-			)
-			n.FC.ProcessAggregatedAttestation(saa)
+			select {
+			case n.aggregationCh <- saa:
+			default:
+				gossipLog.Debug("aggregation queue full, dropping",
+					"slot", saa.Data.Slot,
+				)
+			}
 		},
 	}); err != nil {
 		return fmt.Errorf("subscribe topics: %w", err)
