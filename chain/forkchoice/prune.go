@@ -20,6 +20,17 @@ const (
 	// maxAggregatedPayloadKeys caps the aggregatedPayloads proof cache to
 	// prevent unbounded key growth.
 	maxAggregatedPayloadKeys = 8192
+
+	// periodicPruningInterval is the number of slots between periodic
+	// pruning passes. Acts as a safety net when finalization stalls.
+	// Matches zeam FORKCHOICE_PRUNING_INTERVAL_SLOTS (constants.zig:22).
+	periodicPruningInterval = 7200
+
+	// periodicPruningLagThreshold defines how far finalization must lag
+	// behind the current slot before periodic pruning kicks in. Prevents
+	// unnecessary pruning work when finalization is healthy.
+	// Matches zeam's guard: finalized.slot + 2*7200 < current_slot.
+	periodicPruningLagThreshold = 2 * periodicPruningInterval
 )
 
 // pruneOnFinalization removes data that can no longer influence fork choice
@@ -163,6 +174,34 @@ func (c *Store) enforcePayloadCap() {
 		}
 		delete(c.latestKnownAggregatedPayloads, oldestKey)
 	}
+}
+
+// maybePeriodicPruneLocked runs a pruning pass every periodicPruningInterval
+// slots when finalization is lagging. This is a safety net that prevents
+// unbounded memory growth even if finalization stalls for an extended period.
+// Matches zeam's periodic pruning pattern (chain.zig:302-326).
+//
+// Must be called with c.mu held.
+func (c *Store) maybePeriodicPruneLocked() {
+	currentSlot := c.time / types.IntervalsPerSlot
+	if currentSlot == 0 || currentSlot%periodicPruningInterval != 0 {
+		return
+	}
+
+	finalizedSlot := c.latestFinalized.Slot
+	if finalizedSlot+periodicPruningLagThreshold >= currentSlot {
+		return // finalization is healthy, no need for periodic pruning
+	}
+
+	log.Warn("finalization lagging, running periodic pruning",
+		"current_slot", currentSlot,
+		"finalized_slot", finalizedSlot,
+		"lag", currentSlot-finalizedSlot,
+	)
+
+	c.pruneStaleAttestationData(finalizedSlot)
+	c.pruneAggregatedPayloadsCache(finalizedSlot)
+	c.pruneStorage(finalizedSlot)
 }
 
 // enforceAggregatedPayloadsCacheCap bounds the aggregatedPayloads proof cache

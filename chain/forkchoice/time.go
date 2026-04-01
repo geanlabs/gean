@@ -54,6 +54,11 @@ func (c *Store) tickIntervalLocked(hasProposal bool) {
 		if hasProposal {
 			c.acceptNewAttestationsLocked()
 		}
+		// Periodic pruning safety net: prune stale data when finalization
+		// is lagging, even if pruneOnFinalization hasn't been triggered.
+		// Runs every periodicPruningInterval slots. Matches zeam's
+		// FORKCHOICE_PRUNING_INTERVAL_SLOTS pattern (constants.zig:22).
+		c.maybePeriodicPruneLocked()
 	case 1:
 		// Validator voting interval — no action.
 	case 2:
