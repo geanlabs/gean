@@ -54,6 +54,11 @@ func (c *Store) tickIntervalLocked(hasProposal bool) {
 		if hasProposal {
 			c.acceptNewAttestationsLocked()
 		}
+		// Periodic pruning safety net: prune stale data when finalization
+		// is lagging, even if pruneOnFinalization hasn't been triggered.
+		// Runs every periodicPruningInterval slots. Matches zeam's
+		// FORKCHOICE_PRUNING_INTERVAL_SLOTS pattern (constants.zig:22).
+		c.maybePeriodicPruneLocked()
 	case 1:
 		// Validator voting interval — no action.
 	case 2:
@@ -90,6 +95,11 @@ func (c *Store) acceptNewAttestationsLocked() {
 		c.latestKnownAttestations[id] = sa
 	}
 	c.latestNewAttestations = make(map[uint64]*types.SignedAttestation)
+
+	// Enforce caps to bound memory even when finalization stalls.
+	c.enforcePayloadCap()
+	c.enforceAggregatedPayloadsCacheCap()
+
 	metrics.LatestKnownAggregatedPayloads.Set(float64(len(c.latestKnownAggregatedPayloads)))
 	c.updateHeadLocked()
 }

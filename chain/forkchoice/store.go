@@ -282,11 +282,12 @@ func (c *Store) lookupBlockSummary(root [32]byte) (blockSummary, bool) {
 }
 
 func (c *Store) allKnownBlockSummaries() map[[32]byte]blockSummary {
-	blocks := c.storage.GetAllBlocks()
-	summaries := make(map[[32]byte]blockSummary, len(blocks)+len(c.checkpointRoots))
-	for root, block := range blocks {
+	summaries := make(map[[32]byte]blockSummary, len(c.checkpointRoots))
+	// Iterate storage without copying the full block map.
+	c.storage.ForEachBlock(func(root [32]byte, block *types.Block) bool {
 		summaries[root] = summarizeBlock(block)
-	}
+		return true
+	})
 	for root, summary := range c.checkpointRoots {
 		if _, ok := summaries[root]; !ok {
 			summaries[root] = summary

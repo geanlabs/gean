@@ -18,9 +18,9 @@ func isMissingParentStateErr(err error) bool {
 }
 
 // syncWithPeer exchanges status and fetches missing blocks from a single peer.
-// It walks backwards from the peer's head collecting roots we need, then
-// requests them in batches (up to maxBlocksPerRequest per RPC call) and
-// processes them in forward order.
+// It walks backwards from the peer's head, keeping fetched blocks in memory,
+// then processes them in forward order. Each root is marked pending immediately
+// to prevent duplicate fetches by concurrent sync paths.
 //
 // The backward walk is capped at maxBackfillDepth (512) to prevent resource
 // exhaustion from deep chains, matching leanSpec MAX_BACKFILL_DEPTH.
@@ -28,6 +28,11 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	if !n.canSyncWithPeer(pid) {
 		return false
 	}
+	if !n.acquirePeerSlot(pid) {
+		n.log.Debug("peer at max concurrent requests, skipping", "peer_id", pid.String())
+		return false
+	}
+	defer n.releasePeerSlot(pid)
 
 	status := n.FC.GetStatus()
 	ourStatus := reqresp.Status{
@@ -61,9 +66,11 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		return false
 	}
 
-	// Phase 1: Walk backwards collecting roots we need to fetch.
-	// Stop when we find a root we have state for, or hit the depth limit.
-	var rootsToFetch [][32]byte
+	// Walk backwards from peer's head, fetching blocks and keeping them.
+	// Each root is marked pending immediately (before fetch) to prevent
+	// concurrent sync paths from requesting the same root.
+	var pending []*types.SignedBlockWithAttestation
+	var pendingMarked [][32]byte
 	nextRoot := peerStatus.Head.Root
 
 	for i := 0; i < maxBackfillDepth; i++ {
@@ -77,8 +84,11 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			break
 		}
 
-		// Request this single root to discover its parent for the walk.
-		// We need the block to learn its ParentRoot for the next step.
+		// Mark this root as pending BEFORE requesting it, matching
+		// leanSpec BackfillSync._pending pattern (backfill_sync.py:164).
+		n.markRootPending(nextRoot)
+		pendingMarked = append(pendingMarked, nextRoot)
+
 		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, [][32]byte{nextRoot})
 		if err != nil || len(blocks) == 0 {
 			n.log.Debug("blocks_by_root failed during sync walk",
@@ -91,62 +101,34 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		}
 
 		sb := blocks[0]
-		rootsToFetch = append(rootsToFetch, nextRoot)
+		pending = append(pending, sb)
 		nextRoot = sb.Message.Block.ParentRoot
 	}
 
-	if len(rootsToFetch) == 0 {
+	// Always clear pending roots when done, even on failure.
+	defer n.clearPendingRoots(pendingMarked)
+
+	if len(pending) == 0 {
 		return false
 	}
 
-	// Check if we reached a known ancestor.
+	// Check if we reached a known ancestor with state.
 	if !n.FC.HasState(nextRoot) {
 		n.log.Debug("sync walk did not reach known ancestor with state",
 			"peer_id", pid.String(),
 			"ancestor_root", logging.LongHash(nextRoot),
-			"collected", len(rootsToFetch),
+			"fetched", len(pending),
 			"max_depth", maxBackfillDepth,
 		)
 		return false
 	}
 
-	// Mark all roots as pending to prevent duplicate fetches.
-	n.markRootsPending(rootsToFetch)
-	defer n.clearPendingRoots(rootsToFetch)
-
-	// Phase 2: Fetch blocks in batches of maxBlocksPerRequest (10).
-	// Roots are in newest-first order; we reverse each batch for forward processing.
-	var allBlocks []*types.SignedBlockWithAttestation
-
-	for batchStart := 0; batchStart < len(rootsToFetch); batchStart += maxBlocksPerRequest {
-		batchEnd := batchStart + maxBlocksPerRequest
-		if batchEnd > len(rootsToFetch) {
-			batchEnd = len(rootsToFetch)
-		}
-		batch := rootsToFetch[batchStart:batchEnd]
-
-		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, batch)
-		if err != nil {
-			n.log.Warn("batch blocks_by_root failed",
-				"peer_id", pid.String(),
-				"batch_size", len(batch),
-				"err", err,
-			)
-			n.recordSyncFailure(pid)
-			break
-		}
-		allBlocks = append(allBlocks, blocks...)
-	}
-
-	if len(allBlocks) == 0 {
-		return false
-	}
-
-	// Phase 3: Process in forward order (oldest first).
+	// Process in forward order (oldest first). Blocks were already fetched
+	// during the walk — no re-fetch needed.
 	synced := 0
-	total := len(allBlocks)
-	for i := len(allBlocks) - 1; i >= 0; i-- {
-		sb := allBlocks[i]
+	total := len(pending)
+	for i := len(pending) - 1; i >= 0; i-- {
+		sb := pending[i]
 		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		if err := n.FC.ProcessBlock(sb); err != nil {
 			n.log.Debug("sync block rejected",
@@ -259,15 +241,13 @@ func (n *Node) isRootPending(root [32]byte) bool {
 	return ok
 }
 
-func (n *Node) markRootsPending(roots [][32]byte) {
+func (n *Node) markRootPending(root [32]byte) {
 	n.pendingRootsMu.Lock()
 	defer n.pendingRootsMu.Unlock()
 	if n.pendingRoots == nil {
 		n.pendingRoots = make(map[[32]byte]struct{})
 	}
-	for _, root := range roots {
-		n.pendingRoots[root] = struct{}{}
-	}
+	n.pendingRoots[root] = struct{}{}
 }
 
 func (n *Node) clearPendingRoots(roots [][32]byte) {
@@ -275,6 +255,36 @@ func (n *Node) clearPendingRoots(roots [][32]byte) {
 	defer n.pendingRootsMu.Unlock()
 	for _, root := range roots {
 		delete(n.pendingRoots, root)
+	}
+}
+
+// --- Per-peer concurrency limiting ---
+
+// acquirePeerSlot checks if the peer has capacity for another in-flight
+// request. Returns true if a slot was acquired, false if the peer is at
+// maxConcurrentRequestsPerPeer. Matches leanSpec MAX_CONCURRENT_REQUESTS.
+func (n *Node) acquirePeerSlot(pid peer.ID) bool {
+	n.peerInFlightMu.Lock()
+	defer n.peerInFlightMu.Unlock()
+	if n.peerInFlight == nil {
+		n.peerInFlight = make(map[peer.ID]int)
+	}
+	if n.peerInFlight[pid] >= maxConcurrentRequestsPerPeer {
+		return false
+	}
+	n.peerInFlight[pid]++
+	return true
+}
+
+func (n *Node) releasePeerSlot(pid peer.ID) {
+	n.peerInFlightMu.Lock()
+	defer n.peerInFlightMu.Unlock()
+	if n.peerInFlight == nil {
+		return
+	}
+	n.peerInFlight[pid]--
+	if n.peerInFlight[pid] <= 0 {
+		delete(n.peerInFlight, pid)
 	}
 }
 
