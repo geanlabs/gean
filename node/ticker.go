@@ -71,12 +71,17 @@ func (n *Node) Run(ctx context.Context) error {
 		if slot != lastSyncCheckSlot {
 			behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
 			if behindPeers {
+				// Try peers until one succeeds — avoid repeating the
+				// backward walk across every peer for the same chain.
 				for _, pid := range n.Host.P2P.Network().Peers() {
 					if n.syncWithPeer(ctx, pid) {
 						status = n.FC.GetStatus()
+						break
 					}
 				}
-				behindPeers, maxPeerHeadSlot = n.isBehindPeers(ctx, status)
+				// Check locally if we caught up instead of re-querying
+				// all peers for status (saves P network requests).
+				behindPeers = status.HeadSlot < maxPeerHeadSlot
 				if behindPeers {
 					n.log.Warn(
 						"skipping validator duties while behind peers",

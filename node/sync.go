@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/chain/forkchoice"
-	"github.com/geanlabs/gean/observability/logging"
-	"github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/geanlabs/gean/network/reqresp"
+	"github.com/geanlabs/gean/observability/logging"
 	"github.com/geanlabs/gean/types"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func isMissingParentStateErr(err error) bool {
@@ -19,9 +18,17 @@ func isMissingParentStateErr(err error) bool {
 }
 
 // syncWithPeer exchanges status and fetches missing blocks from a single peer.
-// It walks backwards from the peer's head to find blocks we're missing, then
+// It walks backwards from the peer's head collecting roots we need, then
+// requests them in batches (up to maxBlocksPerRequest per RPC call) and
 // processes them in forward order.
+//
+// The backward walk is capped at maxBackfillDepth (512) to prevent resource
+// exhaustion from deep chains, matching leanSpec MAX_BACKFILL_DEPTH.
 func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
+	if !n.canSyncWithPeer(pid) {
+		return false
+	}
+
 	status := n.FC.GetStatus()
 	ourStatus := reqresp.Status{
 		Finalized: &types.Checkpoint{Root: status.FinalizedRoot, Slot: status.FinalizedSlot},
@@ -31,6 +38,7 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	peerStatus, err := reqresp.RequestStatus(ctx, n.Host.P2P, pid, ourStatus)
 	if err != nil {
 		n.log.Debug("status exchange failed", "peer_id", pid.String(), "err", err)
+		n.recordSyncFailure(pid)
 		return false
 	}
 	n.log.Info("status exchanged",
@@ -46,8 +54,6 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 	)
 
 	// Skip sync only if peer is strictly behind us, or at the exact same position.
-	// If peer is at the same slot but with a different head root, we should still
-	// sync to ensure we have their chain (potential re-org or fork).
 	if peerStatus.Head.Slot < status.HeadSlot {
 		return false
 	}
@@ -55,29 +61,24 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 		return false
 	}
 
-	// Walk backwards: request blocks we don't have, collecting roots to fetch.
-	var pending []*types.SignedBlockWithAttestation
+	// Phase 1: Walk backwards collecting roots we need to fetch.
+	// Stop when we find a root we have state for, or hit the depth limit.
+	var rootsToFetch [][32]byte
 	nextRoot := peerStatus.Head.Root
-	// Late-join nodes can be hundreds of slots behind. Use a backlog-sized walk
-	// rather than a fixed depth, otherwise we only fetch a disconnected suffix.
-	backlog := uint64(1)
-	if peerStatus.Head.Slot > status.HeadSlot {
-		backlog = peerStatus.Head.Slot - status.HeadSlot
-	}
-	maxSyncDepth := int(backlog + 16)
-	const maxSyncDepthCap = 32768
-	if maxSyncDepth > maxSyncDepthCap {
-		maxSyncDepth = maxSyncDepthCap
-	}
 
-	for i := 0; i < maxSyncDepth; i++ {
-		// Check for state existence, not just block. ProcessBlock requires the
-		// parent state to succeed, so we need to walk back until we find a root
-		// for which we have the state.
+	for i := 0; i < maxBackfillDepth; i++ {
 		if n.FC.HasState(nextRoot) {
-			break // We have state for this block, chain is connected.
+			break
 		}
 
+		// Skip roots already being fetched by another sync path.
+		if n.isRootPending(nextRoot) {
+			n.log.Debug("skipping already-pending root", "root", logging.LongHash(nextRoot))
+			break
+		}
+
+		// Request this single root to discover its parent for the walk.
+		// We need the block to learn its ParentRoot for the next step.
 		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, [][32]byte{nextRoot})
 		if err != nil || len(blocks) == 0 {
 			n.log.Debug("blocks_by_root failed during sync walk",
@@ -85,31 +86,67 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 				"requested_root", logging.LongHash(nextRoot),
 				"err", err,
 			)
+			n.recordSyncFailure(pid)
 			break
 		}
 
 		sb := blocks[0]
-		pending = append(pending, sb)
+		rootsToFetch = append(rootsToFetch, nextRoot)
 		nextRoot = sb.Message.Block.ParentRoot
 	}
 
-	// If we could not reach any known ancestor with state, imported blocks would
-	// fail with "parent state not found".
+	if len(rootsToFetch) == 0 {
+		return false
+	}
+
+	// Check if we reached a known ancestor.
 	if !n.FC.HasState(nextRoot) {
 		n.log.Debug("sync walk did not reach known ancestor with state",
 			"peer_id", pid.String(),
 			"ancestor_root", logging.LongHash(nextRoot),
-			"fetched", len(pending),
-			"max_depth", maxSyncDepth,
+			"collected", len(rootsToFetch),
+			"max_depth", maxBackfillDepth,
 		)
 		return false
 	}
 
-	// Process in forward order (oldest first).
+	// Mark all roots as pending to prevent duplicate fetches.
+	n.markRootsPending(rootsToFetch)
+	defer n.clearPendingRoots(rootsToFetch)
+
+	// Phase 2: Fetch blocks in batches of maxBlocksPerRequest (10).
+	// Roots are in newest-first order; we reverse each batch for forward processing.
+	var allBlocks []*types.SignedBlockWithAttestation
+
+	for batchStart := 0; batchStart < len(rootsToFetch); batchStart += maxBlocksPerRequest {
+		batchEnd := batchStart + maxBlocksPerRequest
+		if batchEnd > len(rootsToFetch) {
+			batchEnd = len(rootsToFetch)
+		}
+		batch := rootsToFetch[batchStart:batchEnd]
+
+		blocks, err := reqresp.RequestBlocksByRoot(ctx, n.Host.P2P, pid, batch)
+		if err != nil {
+			n.log.Warn("batch blocks_by_root failed",
+				"peer_id", pid.String(),
+				"batch_size", len(batch),
+				"err", err,
+			)
+			n.recordSyncFailure(pid)
+			break
+		}
+		allBlocks = append(allBlocks, blocks...)
+	}
+
+	if len(allBlocks) == 0 {
+		return false
+	}
+
+	// Phase 3: Process in forward order (oldest first).
 	synced := 0
-	total := len(pending)
-	for i := len(pending) - 1; i >= 0; i-- {
-		sb := pending[i]
+	total := len(allBlocks)
+	for i := len(allBlocks) - 1; i >= 0; i-- {
+		sb := allBlocks[i]
 		blockRoot, _ := sb.Message.Block.HashTreeRoot()
 		if err := n.FC.ProcessBlock(sb); err != nil {
 			n.log.Debug("sync block rejected",
@@ -127,16 +164,31 @@ func (n *Node) syncWithPeer(ctx context.Context, pid peer.ID) bool {
 			)
 		}
 	}
+
+	if synced > 0 {
+		n.recordSyncSuccess(pid)
+	}
 	return synced > 0
 }
 
-// recoverMissingParentSync attempts to fill a missing parent chain by syncing with
-// connected peers, then checks whether the requested parent state became available.
+// recoverMissingParentSync attempts to fill a missing parent chain by syncing
+// with connected peers. Rate-limited to prevent excessive request flooding
+// when multiple gossip blocks arrive with missing parents in quick succession.
 func (n *Node) recoverMissingParentSync(ctx context.Context, parentRoot [32]byte) bool {
 	if n.FC.HasState(parentRoot) {
 		return true
 	}
 
+	// Rate-limit: skip if a recovery attempt happened recently.
+	n.recoveryMu.Lock()
+	if time.Since(n.lastRecoveryTime) < recoveryCooldown {
+		n.recoveryMu.Unlock()
+		return false
+	}
+	n.lastRecoveryTime = time.Now()
+	n.recoveryMu.Unlock()
+
+	// Try peers until one succeeds.
 	for _, pid := range n.Host.P2P.Network().Peers() {
 		n.syncWithPeer(ctx, pid)
 		if n.FC.HasState(parentRoot) {
@@ -166,8 +218,7 @@ func (n *Node) initialSync(ctx context.Context) {
 }
 
 // isBehindPeers reports whether our head is behind the highest head slot
-// advertised by connected peers. This fires even when finalization is stalled,
-// ensuring we sync from peers who have blocks we haven't yet received via gossip.
+// advertised by connected peers.
 func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus) (bool, uint64) {
 	maxPeerHeadSlot := status.HeadSlot
 	peers := n.Host.P2P.Network().Peers()
@@ -194,4 +245,84 @@ func (n *Node) isBehindPeers(ctx context.Context, status forkchoice.ChainStatus)
 
 	behind := status.HeadSlot < maxPeerHeadSlot
 	return behind, maxPeerHeadSlot
+}
+
+// --- Pending roots deduplication ---
+
+func (n *Node) isRootPending(root [32]byte) bool {
+	n.pendingRootsMu.Lock()
+	defer n.pendingRootsMu.Unlock()
+	if n.pendingRoots == nil {
+		return false
+	}
+	_, ok := n.pendingRoots[root]
+	return ok
+}
+
+func (n *Node) markRootsPending(roots [][32]byte) {
+	n.pendingRootsMu.Lock()
+	defer n.pendingRootsMu.Unlock()
+	if n.pendingRoots == nil {
+		n.pendingRoots = make(map[[32]byte]struct{})
+	}
+	for _, root := range roots {
+		n.pendingRoots[root] = struct{}{}
+	}
+}
+
+func (n *Node) clearPendingRoots(roots [][32]byte) {
+	n.pendingRootsMu.Lock()
+	defer n.pendingRootsMu.Unlock()
+	for _, root := range roots {
+		delete(n.pendingRoots, root)
+	}
+}
+
+// --- Per-peer exponential backoff ---
+
+// canSyncWithPeer checks if enough time has passed since the last failure
+// for this peer, using exponential backoff.
+func (n *Node) canSyncWithPeer(pid peer.ID) bool {
+	n.peerBackoffMu.Lock()
+	defer n.peerBackoffMu.Unlock()
+	if n.peerBackoff == nil {
+		return true
+	}
+	state, ok := n.peerBackoff[pid]
+	if !ok {
+		return true
+	}
+	if state.failures >= maxSyncRetries {
+		// Reset after max retries so peer gets another chance eventually.
+		delete(n.peerBackoff, pid)
+		return true
+	}
+	backoff := initialBackoff
+	for i := 1; i < state.failures; i++ {
+		backoff *= backoffMultiplier
+	}
+	return time.Since(state.lastTried) >= backoff
+}
+
+func (n *Node) recordSyncFailure(pid peer.ID) {
+	n.peerBackoffMu.Lock()
+	defer n.peerBackoffMu.Unlock()
+	if n.peerBackoff == nil {
+		n.peerBackoff = make(map[peer.ID]*peerSyncState)
+	}
+	state, ok := n.peerBackoff[pid]
+	if !ok {
+		state = &peerSyncState{}
+		n.peerBackoff[pid] = state
+	}
+	state.failures++
+	state.lastTried = time.Now()
+}
+
+func (n *Node) recordSyncSuccess(pid peer.ID) {
+	n.peerBackoffMu.Lock()
+	defer n.peerBackoffMu.Unlock()
+	if n.peerBackoff != nil {
+		delete(n.peerBackoff, pid)
+	}
 }
