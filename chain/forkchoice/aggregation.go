@@ -12,10 +12,50 @@ import (
 	"github.com/geanlabs/gean/xmss/leanmultisig"
 )
 
+// aggregationInput holds pre-collected data for a single aggregation group,
+// extracted while holding the lock so the FFI call can run without it.
+type aggregationInput struct {
+	root       [32]byte
+	data       *types.AttestationData
+	bits       []byte
+	signerIDs  []uint64
+	pubkeys    [][]byte
+	signatures [][]byte
+	// cachedProof is non-nil if a reusable proof was found in the cache.
+	cachedProof *types.AggregatedSignatureProof
+}
+
 // AggregateCommitteeSignatures collects gossip signatures, builds aggregated
 // proofs, and returns SignedAggregatedAttestation objects ready for publishing.
 // Called by aggregators at interval 2.
+//
+// The mutex is released during the expensive leanmultisig.Aggregate() FFI calls
+// to prevent blocking block processing, attestation handling, and time advances.
+// This matches zeam's pattern of using a separate signatures_mutex from the
+// forkchoice lock (forkchoice.zig:308).
 func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttestation, error) {
+	// Phase 1: Collect inputs while holding the lock.
+	inputs, err := c.collectAggregationInputs()
+	if err != nil {
+		return nil, err
+	}
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+
+	// Phase 2: Build proofs WITHOUT the lock — this is the expensive part.
+	results, err := buildAggregationProofs(inputs)
+	if err != nil {
+		return nil, fmt.Errorf("build aggregated proofs: %w", err)
+	}
+
+	// Phase 3: Store results and build output while holding the lock.
+	return c.storeAggregationResults(results)
+}
+
+// collectAggregationInputs extracts attestation data and signatures from the
+// gossip cache while holding the lock. Clears consumed gossip signatures.
+func (c *Store) collectAggregationInputs() ([]aggregationInput, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -41,55 +81,210 @@ func (c *Store) AggregateCommitteeSignatures() ([]*types.SignedAggregatedAttesta
 		return nil, nil
 	}
 
-	aggAtts, aggProofs, err := c.buildAggregatedAttestationsFromSigned(headState, attestations)
-	if err != nil {
-		return nil, fmt.Errorf("build aggregated attestations: %w", err)
-	}
-
-	result := make([]*types.SignedAggregatedAttestation, 0, len(aggAtts))
-	for i, att := range aggAtts {
-		if i >= len(aggProofs) || aggProofs[i] == nil {
+	// Group by attestation data root, keep latest per validator.
+	grouped := make(map[[32]byte]map[uint64]*types.SignedAttestation)
+	dataByRoot := make(map[[32]byte]*types.AttestationData)
+	for _, sa := range attestations {
+		if sa == nil || sa.Message == nil {
 			continue
 		}
-		result = append(result, &types.SignedAggregatedAttestation{
-			Data:  att.Data,
-			Proof: aggProofs[i],
+		dataRoot, err := sa.Message.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("hash attestation data: %w", err)
+		}
+		if _, ok := grouped[dataRoot]; !ok {
+			grouped[dataRoot] = make(map[uint64]*types.SignedAttestation)
+			dataByRoot[dataRoot] = sa.Message
+		}
+		existing, ok := grouped[dataRoot][sa.ValidatorID]
+		if !ok || existing == nil || (existing.Message != nil && existing.Message.Slot < sa.Message.Slot) {
+			grouped[dataRoot][sa.ValidatorID] = sa
+		}
+	}
+
+	if len(grouped) == 0 {
+		return nil, nil
+	}
+
+	// Sort roots for deterministic ordering.
+	roots := make([][32]byte, 0, len(grouped))
+	for root := range grouped {
+		roots = append(roots, root)
+	}
+	sort.Slice(roots, func(i, j int) bool {
+		return bytes.Compare(roots[i][:], roots[j][:]) < 0
+	})
+
+	// Build inputs for each group, checking the proof cache while we have the lock.
+	var inputs []aggregationInput
+	for _, root := range roots {
+		group := grouped[root]
+		validatorIDs := make([]uint64, 0, len(group))
+		for validatorID := range group {
+			validatorIDs = append(validatorIDs, validatorID)
+		}
+		sort.Slice(validatorIDs, func(i, j int) bool { return validatorIDs[i] < validatorIDs[j] })
+		if len(validatorIDs) == 0 {
+			continue
+		}
+
+		data := dataByRoot[root]
+		bits := makeAggregationBits(validatorIDs)
+
+		// Check for a cached proof before collecting signatures.
+		if cached := c.findReusableAggregatedProof(data, validatorIDs, bits); cached != nil {
+			inputs = append(inputs, aggregationInput{
+				root:        root,
+				data:        data,
+				bits:        bits,
+				signerIDs:   validatorIDs,
+				cachedProof: cached,
+			})
+			continue
+		}
+
+		// Collect pubkeys and signatures for this group.
+		signerIDs := make([]uint64, 0, len(validatorIDs))
+		pubkeys := make([][]byte, 0, len(validatorIDs))
+		signatures := make([][]byte, 0, len(validatorIDs))
+		for _, validatorID := range validatorIDs {
+			if validatorID >= uint64(len(headState.Validators)) {
+				return nil, fmt.Errorf("validator index out of range: %d", validatorID)
+			}
+			pubkey := headState.Validators[validatorID].Pubkey
+			sa := group[validatorID]
+			if sa == nil || sa.Message == nil {
+				continue
+			}
+
+			signature := sa.Signature
+			key, keyOK := makeSignatureKey(validatorID, data)
+			if keyOK {
+				if cached, ok := c.gossipSignatures[key]; ok && (!hasNonZeroSignature(signature) || cached.slot >= sa.Message.Slot) {
+					signature = cached.signature
+				}
+			}
+			if !hasNonZeroSignature(signature) {
+				continue
+			}
+
+			signerIDs = append(signerIDs, validatorID)
+			pubkeys = append(pubkeys, pubkey[:])
+			sig := make([]byte, len(signature))
+			copy(sig, signature[:])
+			signatures = append(signatures, sig)
+		}
+		if len(signerIDs) == 0 {
+			continue
+		}
+
+		// Rebuild bits for actual signers (may differ from validatorIDs if some had zero sigs).
+		bits = makeAggregationBits(signerIDs)
+
+		// Check cache again with actual signer set.
+		if cached := c.findReusableAggregatedProof(data, signerIDs, bits); cached != nil {
+			inputs = append(inputs, aggregationInput{
+				root:        root,
+				data:        data,
+				bits:        bits,
+				signerIDs:   signerIDs,
+				cachedProof: cached,
+			})
+			continue
+		}
+
+		inputs = append(inputs, aggregationInput{
+			root:       root,
+			data:       data,
+			bits:       bits,
+			signerIDs:  signerIDs,
+			pubkeys:    pubkeys,
+			signatures: signatures,
 		})
 	}
 
 	// Clear consumed gossip signatures (spec: remove aggregated entries).
 	c.gossipSignatures = make(map[signatureKey]storedSignature)
 
+	return inputs, nil
+}
+
+// buildAggregationProofs runs the expensive leanmultisig.Aggregate() FFI calls
+// WITHOUT holding the fork-choice mutex. This is the critical change that
+// prevents consensus stalls during proof building.
+func buildAggregationProofs(inputs []aggregationInput) ([]aggregationInput, error) {
+	proverReady := false
+
+	for i := range inputs {
+		inp := &inputs[i]
+		if inp.cachedProof != nil {
+			log.Info("attestation aggregate proof reused (leanMultisig)",
+				"slot", inp.data.Slot,
+				"participants", len(inp.signerIDs),
+				"proof_size", fmt.Sprintf("%d bytes", len(inp.cachedProof.ProofData)),
+			)
+			continue
+		}
+
+		if !proverReady {
+			leanmultisig.SetupProver()
+			proverReady = true
+		}
+
+		buildStart := time.Now()
+		proofData, err := leanmultisig.Aggregate(inp.pubkeys, inp.signatures, inp.root, uint32(inp.data.Slot))
+		metrics.PQSigSignaturesBuildingTime.Observe(time.Since(buildStart).Seconds())
+		if err != nil {
+			return nil, fmt.Errorf("aggregate signatures for slot %d: %w", inp.data.Slot, err)
+		}
+
+		inp.cachedProof = &types.AggregatedSignatureProof{
+			Participants: append([]byte(nil), inp.bits...),
+			ProofData:    proofData,
+		}
+		log.Info("attestation aggregate proof built (leanMultisig)",
+			"slot", inp.data.Slot,
+			"participants", len(inp.signerIDs),
+			"proof_size", fmt.Sprintf("%d bytes", len(proofData)),
+		)
+	}
+
+	return inputs, nil
+}
+
+// storeAggregationResults stores built proofs in the cache and assembles the
+// final output while holding the lock.
+func (c *Store) storeAggregationResults(inputs []aggregationInput) ([]*types.SignedAggregatedAttestation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	result := make([]*types.SignedAggregatedAttestation, 0, len(inputs))
+	for _, inp := range inputs {
+		if inp.cachedProof == nil {
+			continue
+		}
+
+		// Store in cache for future reuse.
+		for _, validatorID := range inp.signerIDs {
+			c.storeAggregatedPayloadLocked(validatorID, inp.data, inp.cachedProof)
+		}
+
+		result = append(result, &types.SignedAggregatedAttestation{
+			Data:  inp.data,
+			Proof: inp.cachedProof,
+		})
+		metrics.PQSigAggregatedSignaturesTotal.Inc()
+		metrics.PQSigAttestationsInAggregatedTotal.Add(float64(len(inp.signerIDs)))
+	}
+
 	return result, nil
 }
 
-func bitlistToValidatorIDs(bits []byte) []uint64 {
-	numBits := uint64(statetransition.BitlistLen(bits))
-	validatorIDs := make([]uint64, 0, numBits)
-	for i := uint64(0); i < numBits; i++ {
-		if statetransition.GetBit(bits, i) {
-			validatorIDs = append(validatorIDs, i)
-		}
-	}
-	return validatorIDs
-}
-
-func bitlistsEqual(a, b []byte) bool {
-	aLen := statetransition.BitlistLen(a)
-	bLen := statetransition.BitlistLen(b)
-	if aLen != bLen {
-		return false
-	}
-	for i := 0; i < aLen; i++ {
-		idx := uint64(i)
-		if statetransition.GetBit(a, idx) != statetransition.GetBit(b, idx) {
-			return false
-		}
-	}
-	return true
-}
-
-func (c *Store) buildAggregatedAttestationsFromSigned(
+// buildAggregatedAttestationsFromSignedLocked builds aggregated attestations
+// and proofs from a set of signed attestations. Must be called with c.mu held.
+// Used by block production (produce.go) which already holds the lock and needs
+// proofs synchronously before publishing the block.
+func (c *Store) buildAggregatedAttestationsFromSignedLocked(
 	state *types.State,
 	attestations []*types.SignedAttestation,
 ) ([]*types.AggregatedAttestation, []*types.AggregatedSignatureProof, error) {
@@ -97,7 +292,6 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 		return []*types.AggregatedAttestation{}, []*types.AggregatedSignatureProof{}, nil
 	}
 
-	// Group by attestation data root and keep at most one attestation per validator per root.
 	grouped := make(map[[32]byte]map[uint64]*types.SignedAttestation)
 	dataByRoot := make(map[[32]byte]*types.AttestationData)
 	for _, sa := range attestations {
@@ -108,7 +302,6 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 		if err != nil {
 			return nil, nil, fmt.Errorf("hash attestation data: %w", err)
 		}
-
 		if _, ok := grouped[dataRoot]; !ok {
 			grouped[dataRoot] = make(map[uint64]*types.SignedAttestation)
 			dataByRoot[dataRoot] = sa.Message
@@ -153,12 +346,6 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 				Data:            data,
 			})
 			attestationProofs = append(attestationProofs, cached)
-			log.Info(
-				"attestation aggregate proof reused (leanMultisig)",
-				"slot", data.Slot,
-				"participants", len(validatorIDs),
-				"proof_size", fmt.Sprintf("%d bytes", len(cached.ProofData)),
-			)
 			continue
 		}
 
@@ -169,13 +356,11 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 			if validatorID >= uint64(len(state.Validators)) {
 				return nil, nil, fmt.Errorf("validator index out of range: %d", validatorID)
 			}
-
 			pubkey := state.Validators[validatorID].Pubkey
 			sa := group[validatorID]
 			if sa == nil || sa.Message == nil {
 				continue
 			}
-
 			signature := sa.Signature
 			key, keyOK := makeSignatureKey(validatorID, data)
 			if keyOK {
@@ -186,7 +371,6 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 			if !hasNonZeroSignature(signature) {
 				continue
 			}
-
 			signerIDs = append(signerIDs, validatorID)
 			pubkeys = append(pubkeys, pubkey[:])
 			sig := make([]byte, len(signature))
@@ -204,9 +388,7 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 				leanmultisig.SetupProver()
 				proverReady = true
 			}
-			buildStart := time.Now()
 			proofData, err := leanmultisig.Aggregate(pubkeys, signatures, root, uint32(data.Slot))
-			metrics.PQSigSignaturesBuildingTime.Observe(time.Since(buildStart).Seconds())
 			if err != nil {
 				return nil, nil, fmt.Errorf("aggregate signatures: %w", err)
 			}
@@ -217,19 +399,6 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 			for _, validatorID := range signerIDs {
 				c.storeAggregatedPayloadLocked(validatorID, data, proof)
 			}
-			log.Info(
-				"attestation aggregate proof built (leanMultisig)",
-				"slot", data.Slot,
-				"participants", len(signerIDs),
-				"proof_size", fmt.Sprintf("%d bytes", len(proofData)),
-			)
-		} else {
-			log.Info(
-				"attestation aggregate proof reused (leanMultisig)",
-				"slot", data.Slot,
-				"participants", len(signerIDs),
-				"proof_size", fmt.Sprintf("%d bytes", len(proof.ProofData)),
-			)
 		}
 
 		aggregatedAttestations = append(aggregatedAttestations, &types.AggregatedAttestation{
@@ -242,6 +411,32 @@ func (c *Store) buildAggregatedAttestationsFromSigned(
 	}
 
 	return aggregatedAttestations, attestationProofs, nil
+}
+
+func bitlistToValidatorIDs(bits []byte) []uint64 {
+	numBits := uint64(statetransition.BitlistLen(bits))
+	validatorIDs := make([]uint64, 0, numBits)
+	for i := uint64(0); i < numBits; i++ {
+		if statetransition.GetBit(bits, i) {
+			validatorIDs = append(validatorIDs, i)
+		}
+	}
+	return validatorIDs
+}
+
+func bitlistsEqual(a, b []byte) bool {
+	aLen := statetransition.BitlistLen(a)
+	bLen := statetransition.BitlistLen(b)
+	if aLen != bLen {
+		return false
+	}
+	for i := 0; i < aLen; i++ {
+		idx := uint64(i)
+		if statetransition.GetBit(a, idx) != statetransition.GetBit(b, idx) {
+			return false
+		}
+	}
+	return true
 }
 
 func makeAggregationBits(validatorIDs []uint64) []byte {
