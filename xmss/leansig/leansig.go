@@ -16,6 +16,7 @@ package leansig
 import "C"
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 )
 
@@ -75,6 +76,8 @@ func RestoreKeypair(pkBytes []byte, skBytes []byte) (*Keypair, error) {
 	skLen := C.size_t(len(skBytes))
 
 	result := C.leansig_keypair_restore(pkPtr, pkLen, skPtr, skLen, &kpPtr)
+	runtime.KeepAlive(pkBytes)
+	runtime.KeepAlive(skBytes)
 	if result != ResultOK {
 		return nil, fmt.Errorf("leansig_keypair_restore failed with code %d", result)
 	}
@@ -184,6 +187,7 @@ func (kp *Keypair) Sign(epoch uint32, message [MessageLength]byte) ([]byte, erro
 		&sigData,
 		&sigLen,
 	)
+	runtime.KeepAlive(message)
 	if result != ResultOK {
 		return nil, fmt.Errorf("leansig_sign failed with code %d", result)
 	}
@@ -206,6 +210,9 @@ func Verify(pubkeyBytes []byte, epoch uint32, message [MessageLength]byte, sigBy
 		(*C.uint8_t)(unsafe.Pointer(&sigBytes[0])),
 		C.size_t(len(sigBytes)),
 	)
+	runtime.KeepAlive(pubkeyBytes)
+	runtime.KeepAlive(message)
+	runtime.KeepAlive(sigBytes)
 	if result == ResultOK {
 		return nil
 	}
@@ -231,6 +238,8 @@ func (kp *Keypair) VerifyWithKeypair(epoch uint32, message [MessageLength]byte, 
 		(*C.uint8_t)(unsafe.Pointer(&sigBytes[0])),
 		C.size_t(len(sigBytes)),
 	)
+	runtime.KeepAlive(message)
+	runtime.KeepAlive(sigBytes)
 	if result == ResultOK {
 		return nil
 	}

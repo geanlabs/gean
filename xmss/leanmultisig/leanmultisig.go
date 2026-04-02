@@ -10,6 +10,7 @@ package leanmultisig
 import "C"
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"unsafe"
 )
@@ -82,6 +83,7 @@ func Aggregate(pubkeys, signatures [][]byte, messageHash [MessageHashLength]byte
 		&outData,
 		&outLen,
 	)
+	runtime.KeepAlive(messageHash)
 	if result != ResultOK {
 		return nil, resultError("leanmultisig_aggregate", result)
 	}
@@ -118,6 +120,8 @@ func VerifyAggregated(pubkeys [][]byte, messageHash [MessageHashLength]byte, pro
 		C.size_t(len(proofData)),
 		C.uint32_t(epoch),
 	)
+	runtime.KeepAlive(messageHash)
+	runtime.KeepAlive(proofData)
 	if result != ResultOK {
 		return resultError("leanmultisig_verify_aggregated", result)
 	}

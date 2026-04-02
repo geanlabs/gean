@@ -135,6 +135,7 @@ func main() {
 		logger.Error("failed to initialize node", "err", err)
 		os.Exit(1)
 	}
+	defer n.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
