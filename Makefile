@@ -26,7 +26,7 @@ test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
 	go test ./xmss/ -v -count=1
 
 test-spec: leanSpec/fixtures ## Run spec fixture tests only (fast, excludes xmss FFI)
-	go test ./spectests/ -v -count=1 -tags=spectests
+	go test ./spectests/  -count=1 -tags=spectests
 
 test-all: leanSpec/fixtures ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
