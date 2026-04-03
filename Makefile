@@ -25,8 +25,11 @@ test: ## Run unit tests (excludes crypto FFI tests)
 ffi-test: ffi ## Run XMSS crypto FFI tests (requires make ffi first)
 	go test ./xmss/ -v -count=1
 
-test-spec: leanSpec/fixtures ## Run all tests including spec fixture tests (requires uv)
-	go test ./... -v -count=1 -tags=spectests
+test-spec: leanSpec/fixtures ## Run spec fixture tests only (fast, excludes xmss FFI)
+	go test ./spectests/ -count=1 -tags=spectests
+
+test-all: leanSpec/fixtures ## Run all tests including spec fixtures and xmss FFI (slow)
+	go test ./... -count=1 -tags=spectests
 
 lint: ## Run golangci-lint
 	golangci-lint run ./...
