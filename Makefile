@@ -14,9 +14,9 @@ help: ## Show help for each Makefile recipe
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 	@cd xmss/rust && cargo build --release --locked
 
-build: ffi ## Build geany and keygen binaries
+build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
-	@go build -o bin/geany ./cmd/geany
+	@go build -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
 test: ## Run unit tests (excludes crypto FFI tests)
@@ -60,7 +60,7 @@ run-setup: build ## Generate testnet config + XMSS keys (first run only, refresh
 run: build ## Run node0 (aggregator) — requires make run-setup first
 	@rm -rf data/node0
 	@bin/keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
-	@bin/geany \
+	@bin/gean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node0.key \
 		--node-id node0 \
@@ -72,7 +72,7 @@ run: build ## Run node0 (aggregator) — requires make run-setup first
 
 run-node1: build ## Run node1 on port 9001
 	@rm -rf data/node1
-	@bin/geany \
+	@bin/gean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node1.key \
 		--node-id node1 \
@@ -83,7 +83,7 @@ run-node1: build ## Run node1 on port 9001
 
 run-node2: build ## Run node2 on port 9002
 	@rm -rf data/node2
-	@bin/geany \
+	@bin/gean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node2.key \
 		--node-id node2 \
@@ -111,8 +111,8 @@ docker-build: ## Build Docker image
 	docker build \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
-		-t geany:$(VERSION) \
-		-t ghcr.io/geanlabs/geany:devnet3 .
+		-t gean:$(VERSION) \
+		-t ghcr.io/geanlabs/gean:devnet3 .
 
 # --- Multi-client devnet ---
 
@@ -120,6 +120,6 @@ lean-quickstart: ## Clone lean-quickstart for local devnet
 	git clone https://github.com/blockblaz/lean-quickstart.git --depth 1 --single-branch
 
 run-devnet: docker-build lean-quickstart ## Run local multi-client devnet
-	@echo "Starting local devnet with geany client (\"$(DOCKER_TAG)\" tag)."
+	@echo "Starting local devnet with gean client (\"$(DOCKER_TAG)\" tag)."
 	@cd lean-quickstart \
 		&& NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > ../devnet.log 2>&1
