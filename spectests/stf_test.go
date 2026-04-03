@@ -1,16 +1,18 @@
 //go:build spectests
 
-package statetransition
+package spectests
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/geanlabs/gean/statetransition"
 )
 
 func TestSpecStateTransition(t *testing.T) {
-	fixtureDir := "../../leanSpec/fixtures/consensus/state_transition"
+	fixtureDir := "../leanSpec/fixtures/consensus/state_transition"
 
 	var files []string
 	err := filepath.Walk(fixtureDir, func(path string, info os.FileInfo, err error) error {
@@ -64,7 +66,7 @@ func runStateTransitionTest(t *testing.T, tt *StateTransitionTest) {
 	var lastErr error
 	for i, tb := range tt.Blocks {
 		block := tb.ToBlock()
-		if err := StateTransition(state, block); err != nil {
+		if err := statetransition.StateTransition(state, block); err != nil {
 			lastErr = err
 			if expectError {
 				t.Logf("block %d (slot %d): expected error: %v", i, tb.Slot, err)

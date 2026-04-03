@@ -1,6 +1,6 @@
 //go:build spectests
 
-package node
+package spectests
 
 import (
 	"encoding/hex"
@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 )
@@ -297,7 +298,7 @@ func (fa *fcAttestation) toAttestation() *types.Attestation {
 // --- Test runner ---
 
 func TestSpecForkChoice(t *testing.T) {
-	fixtureDir := "../../leanSpec/fixtures/consensus/fork_choice"
+	fixtureDir := "../leanSpec/fixtures/consensus/fork_choice"
 
 	var files []string
 	err := filepath.Walk(fixtureDir, func(path string, info os.FileInfo, err error) error {
@@ -356,7 +357,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 	// 2. Initialize store with in-memory backend.
 	backend := storage.NewInMemoryBackend()
-	s := NewConsensusStore(backend)
+	s := node.NewConsensusStore(backend)
 
 	// Store config from anchor state.
 	s.SetConfig(anchorState.Config)
@@ -423,7 +424,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// Process block through store (no signature verification).
-			if err := OnBlockWithoutVerification(s, signedBlock); err != nil {
+			if err := node.OnBlockWithoutVerification(s, signedBlock); err != nil {
 				if step.Valid {
 					t.Fatalf("step %d: OnBlockWithoutVerification failed: %v", i, err)
 				}
@@ -437,7 +438,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// Register block in fork choice.
-			fc.OnBlock(block.Slot, blockRoot, block.ParentRoot)
+			fc.node.OnBlock(block.Slot, blockRoot, block.ParentRoot)
 
 			// Update head: extract known attestations, feed to fork choice, compute head.
 			attestations := s.ExtractLatestKnownAttestations()
@@ -454,7 +455,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			s.SetHead(newHead)
 
 			// Process proposer attestation AFTER updateHead.
-			ProcessProposerAttestation(s, signedBlock, false)
+			node.ProcessProposerAttestation(s, signedBlock, false)
 
 			// Promote new payloads to known (so next updateHead sees them).
 			s.PromoteNewToKnown()

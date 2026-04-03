@@ -1,6 +1,6 @@
 //go:build spectests
 
-package node
+package spectests
 
 import (
 	"encoding/hex"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 )
@@ -226,7 +227,7 @@ func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
 // Test runner.
 
 func TestSpecSignatures(t *testing.T) {
-	fixtureDir := "../../leanSpec/fixtures/consensus/verify_signatures"
+	fixtureDir := "../leanSpec/fixtures/consensus/verify_signatures"
 
 	var files []string
 	err := filepath.Walk(fixtureDir, func(path string, info os.FileInfo, err error) error {
@@ -290,7 +291,7 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 
 	// 3. Initialize store with in-memory backend.
 	backend := storage.NewInMemoryBackend()
-	s := NewConsensusStore(backend)
+	s := node.NewConsensusStore(backend)
 
 	s.SetConfig(anchorState.Config)
 	s.InsertBlockHeader(anchorRoot, header)
@@ -304,7 +305,7 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	signedBlock := tt.SignedBlockWithAttestation.toSignedBlock()
 
 	// 5. Call OnBlock WITH signature verification.
-	err = OnBlock(s, signedBlock, nil)
+	err = node.OnBlock(s, signedBlock, nil)
 
 	// 6. Check result against expectation.
 	expectFailure := tt.ExpectException != nil

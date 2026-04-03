@@ -1,6 +1,6 @@
 //go:build spectests
 
-package statetransition
+package spectests
 
 import (
 	"encoding/hex"
