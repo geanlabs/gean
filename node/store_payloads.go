@@ -112,6 +112,27 @@ func (pb *PayloadBuffer) ExtractLatestAttestations() map[uint64]*types.Attestati
 	return result
 }
 
+// PruneBelow removes entries with target slot <= finalizedSlot.
+func (pb *PayloadBuffer) PruneBelow(finalizedSlot uint64) int {
+	pruned := 0
+	var newOrder [][32]byte
+	for _, dataRoot := range pb.order {
+		entry, ok := pb.data[dataRoot]
+		if !ok {
+			continue
+		}
+		if entry.Data != nil && entry.Data.Target.Slot <= finalizedSlot {
+			pb.totalProofs -= len(entry.Proofs)
+			delete(pb.data, dataRoot)
+			pruned++
+		} else {
+			newOrder = append(newOrder, dataRoot)
+		}
+	}
+	pb.order = newOrder
+	return pruned
+}
+
 // Entries returns all (data_root, data, proofs) for block building.
 func (pb *PayloadBuffer) Entries() map[[32]byte]*PayloadEntry {
 	return pb.data

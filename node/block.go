@@ -11,6 +11,8 @@ import (
 
 // onBlock processes a received block using an iterative work queue.
 func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
+	oldFinalizedSlot := e.Store.LatestFinalized().Slot
+
 	queue := []*types.SignedBlockWithAttestation{signedBlock}
 
 	for len(queue) > 0 {
@@ -19,11 +21,12 @@ func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
 		e.processOneBlock(current, &queue)
 	}
 
-	// Prune old states and blocks AFTER the entire cascade completes.
-	// Running this mid-cascade would delete states that pending children
-	// still need, causing re-processing loops.
-	
-	PruneOldData(e.Store)
+	// Prune AFTER the entire cascade completes — not mid-cascade.
+	// Canonicality-based pruning: prune non-canonical forks + old finalized ancestors.
+	newFinalized := e.Store.LatestFinalized()
+	if newFinalized.Slot > oldFinalizedSlot {
+		PruneOnFinalization(e.Store, e.FC, oldFinalizedSlot, newFinalized.Slot, newFinalized.Root)
+	}
 }
 
 func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, queue *[]*types.SignedBlockWithAttestation) {
@@ -129,8 +132,6 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 	finalized := e.Store.LatestFinalized()
 	if finalized.Slot > 0 {
 		e.FC.Prune(finalized.Root)
-		// Light pruning: live chain + gossip sigs (cheap, safe mid-cascade).
-		PruneOnFinalization(e.Store, finalized.Slot)
 	}
 
 	// Update head BEFORE processing proposer attestation.

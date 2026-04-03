@@ -51,9 +51,10 @@ func (e *Engine) onTick() {
 		e.logChainStatus(currentSlot)
 	}
 
-	// Interval 3: update safe target.
+	// Interval 3: update safe target + periodic pruning fallback.
 	if currentInterval == 3 {
 		e.updateSafeTarget()
+		PeriodicPrune(e.Store, e.FC, currentSlot, e.Store.LatestFinalized().Slot)
 	}
 }
 
