@@ -77,12 +77,15 @@ func (e *Engine) updateHead(logTree bool) {
 		e.Store.SetHead(newHead)
 		if !types.IsZeroRoot(oldHead) {
 			newHeader := e.Store.GetBlockHeader(newHead)
+			if newHeader == nil {
+				return
+			}
 			justified := e.Store.LatestJustified()
 			finalized := e.Store.LatestFinalized()
 
 			// Check if this is a real reorg (new head's parent != old head)
 			// or normal chain extension (new head is child of old head).
-			isReorg := newHeader != nil && newHeader.ParentRoot != oldHead
+			isReorg := newHeader.ParentRoot != oldHead
 
 			SetHeadSlot(newHeader.Slot)
 			SetLatestJustifiedSlot(justified.Slot)
@@ -97,7 +100,7 @@ func (e *Engine) updateHead(logTree bool) {
 					newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
 					justified.Slot, justified.Root,
 					finalized.Slot, finalized.Root)
-			} else if newHeader != nil {
+			} else {
 				logger.Info(logger.Forkchoice, "head slot=%d head_root=0x%x parent_root=0x%x justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
 					newHeader.Slot, newHead, newHeader.ParentRoot,
 					justified.Slot, justified.Root,
