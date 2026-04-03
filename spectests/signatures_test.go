@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
@@ -227,6 +228,9 @@ func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
 // Test runner.
 
 func TestSpecSignatures(t *testing.T) {
+	logger.Quiet = true
+	defer func() { logger.Quiet = false }()
+
 	fixtureDir := "../leanSpec/fixtures/consensus/verify_signatures"
 
 	var files []string

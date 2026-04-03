@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
@@ -298,6 +299,9 @@ func (fa *fcAttestation) toAttestation() *types.Attestation {
 // --- Test runner ---
 
 func TestSpecForkChoice(t *testing.T) {
+	logger.Quiet = true
+	defer func() { logger.Quiet = false }()
+
 	fixtureDir := "../leanSpec/fixtures/consensus/fork_choice"
 
 	var files []string
@@ -438,7 +442,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// Register block in fork choice.
-			fc.node.OnBlock(block.Slot, blockRoot, block.ParentRoot)
+			fc.OnBlock(block.Slot, blockRoot, block.ParentRoot)
 
 			// Update head: extract known attestations, feed to fork choice, compute head.
 			attestations := s.ExtractLatestKnownAttestations()
@@ -477,7 +481,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	}
 }
 
-func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *ConsensusStore, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
+func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *node.ConsensusStore, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
 	t.Helper()
 
 	headRoot := s.Head()

@@ -8,10 +8,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/statetransition"
 )
 
 func TestSpecStateTransition(t *testing.T) {
+	logger.Quiet = true
+	defer func() { logger.Quiet = false }()
+
 	fixtureDir := "../leanSpec/fixtures/consensus/state_transition"
 
 	var files []string

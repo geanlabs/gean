@@ -20,6 +20,9 @@ const (
 	bold    = "\033[1m"
 )
 
+// Quiet suppresses all log output when true. Used during tests.
+var Quiet bool
+
 // Component tags matching lean client conventions.
 const (
 	Chain      = "chain"
@@ -40,6 +43,9 @@ func timestamp() string {
 
 // Info logs an info-level message with a component tag.
 func Info(component, format string, args ...any) {
+	if Quiet {
+		return
+	}
 	msg := fmt.Sprintf(format, args...)
 	fmt.Fprintf(os.Stderr, "%s%s%s %s%sINFO%s %s[%s]%s %s\n",
 		dim, timestamp(), reset, bold, green, reset, cyan, component, reset, msg)
@@ -47,6 +53,9 @@ func Info(component, format string, args ...any) {
 
 // Warn logs a warning-level message with a component tag.
 func Warn(component, format string, args ...any) {
+	if Quiet {
+		return
+	}
 	msg := fmt.Sprintf(format, args...)
 	fmt.Fprintf(os.Stderr, "%s%s%s %s%sWARN%s %s[%s]%s %s\n",
 		dim, timestamp(), reset, bold, yellow, reset, cyan, component, reset, msg)
@@ -54,6 +63,9 @@ func Warn(component, format string, args ...any) {
 
 // Error logs an error-level message with a component tag.
 func Error(component, format string, args ...any) {
+	if Quiet {
+		return
+	}
 	msg := fmt.Sprintf(format, args...)
 	fmt.Fprintf(os.Stderr, "%s%s%s %s%sERROR%s %s[%s]%s %s\n",
 		dim, timestamp(), reset, bold, red, reset, cyan, component, reset, msg)
