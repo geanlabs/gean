@@ -1,12 +1,19 @@
 package node
 
 import (
+	"os"
 	"testing"
 
 	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 )
+
+func TestMain(m *testing.M) {
+	logger.Quiet = true
+	os.Exit(m.Run())
+}
 
 func makeTestEngine() *Engine {
 	backend := storage.NewInMemoryBackend()
