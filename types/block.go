@@ -1,42 +1,48 @@
 package types
 
-// BlockHeader contains metadata for a block.
+// BlockHeader contains block metadata without the body.
 type BlockHeader struct {
-	Slot          uint64
-	ProposerIndex uint64
-	ParentRoot    [32]byte `ssz-size:"32"`
-	StateRoot     [32]byte `ssz-size:"32"`
-	BodyRoot      [32]byte `ssz-size:"32"`
+	Slot          uint64         `json:"slot"`
+	ProposerIndex uint64         `json:"proposer_index"`
+	ParentRoot    [RootSize]byte `json:"parent_root" ssz-size:"32"`
+	StateRoot     [RootSize]byte `json:"state_root" ssz-size:"32"`
+	BodyRoot      [RootSize]byte `json:"body_root" ssz-size:"32"`
 }
 
-// BlockBody contains the payload of a block.
+// BlockBody contains the attestations included in a block.
 type BlockBody struct {
-	Attestations []*AggregatedAttestation `ssz-max:"4096"`
+	Attestations []*AggregatedAttestation `json:"attestations" ssz-max:"4096"`
 }
 
-// Block is a complete block including header fields and body.
+// Block is the core block structure proposed by a validator.
 type Block struct {
-	Slot          uint64
-	ProposerIndex uint64
-	ParentRoot    [32]byte `ssz-size:"32"`
-	StateRoot     [32]byte `ssz-size:"32"`
-	Body          *BlockBody
+	Slot          uint64         `json:"slot"`
+	ProposerIndex uint64         `json:"proposer_index"`
+	ParentRoot    [RootSize]byte `json:"parent_root" ssz-size:"32"`
+	StateRoot     [RootSize]byte `json:"state_root" ssz-size:"32"`
+	Body          *BlockBody     `json:"body"`
 }
 
-// BlockWithAttestation wraps a block and the proposer's own attestation.
+// BlockWithAttestation pairs a block with the proposer's own attestation.
 type BlockWithAttestation struct {
-	Block               *Block
-	ProposerAttestation *Attestation
+	Block               *Block       `json:"block"`
+	ProposerAttestation *Attestation `json:"proposer_attestation"`
 }
 
-// BlockSignatures contains per-aggregated-attestation proofs and proposer sig.
+// AggregatedSignatureProof is a zkVM proof that a set of validators signed.
+type AggregatedSignatureProof struct {
+	Participants []byte `json:"participants" ssz:"bitlist" ssz-max:"4096"`
+	ProofData    []byte `json:"proof_data" ssz-max:"1048576"`
+}
+
+// BlockSignatures carries the XMSS signatures for a block.
 type BlockSignatures struct {
-	AttestationSignatures []*AggregatedSignatureProof `ssz-max:"4096"`
-	ProposerSignature     [3112]byte                  `ssz-size:"3112"`
+	AttestationSignatures []*AggregatedSignatureProof `json:"attestation_signatures" ssz-max:"4096"`
+	ProposerSignature     [SignatureSize]byte          `json:"proposer_signature" ssz-size:"3112"`
 }
 
-// SignedBlockWithAttestation is the gossip/wire envelope for blocks.
+// SignedBlockWithAttestation is the complete signed block as gossiped on the network.
 type SignedBlockWithAttestation struct {
-	Message   *BlockWithAttestation
-	Signature BlockSignatures
+	Block     *BlockWithAttestation `json:"block"`
+	Signature *BlockSignatures      `json:"signature"`
 }

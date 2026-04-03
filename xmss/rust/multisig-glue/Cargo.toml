@@ -1,0 +1,15 @@
+[package]
+name = "multisig-glue"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rec_aggregation = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "e4474138487eeb1ed7c2e1013674fe80ac9f3165" }
+leansig = { git = "https://github.com/leanEthereum/leansig.git", rev = "73bedc26ed961b110df7ac2e234dc11361a4bf25" }
+whir-p3 = { git = "https://github.com/TomWambsgans/whir-p3", branch = "lean-vm-simple" }
+p3-koala-bear = { git = "https://github.com/TomWambsgans/Plonky3.git", branch = "lean-vm-simple" }
+ssz = { package = "ethereum_ssz", version = "0.10" }
+
+[lib]
+crate-type = ["staticlib"]
+name = "multisig_glue"

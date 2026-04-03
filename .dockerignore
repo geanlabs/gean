@@ -1,17 +1,7 @@
-# Rust/Cargo artifacts
-xmss/leansig-ffi/target/
-
-# LeanSpec artifacts
-leanSpec/
-
-# Binaries
-bin/
-
-# Data
-data/
-keys/
-*.key
-*.enr
-
-# CLAUDE.md (project-specific, not needed in container)
-CLAUDE.md
+.git
+bin
+data
+testnet
+output.log
+leanSpec
+crypto/xmss/target

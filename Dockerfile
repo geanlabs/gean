@@ -1,46 +1,59 @@
-# Rust Builder for XMSS FFI crates
-FROM rust:alpine AS rust-builder
-RUN apk add --no-cache musl-dev
+# Build stage: Rust FFI + Go binary
+FROM golang:1.25-bookworm AS builder
 
-WORKDIR /build
-COPY xmss/leansig-ffi xmss/leansig-ffi/
-COPY xmss/leanmultisig-ffi xmss/leanmultisig-ffi/
+# Install Rust 1.90.0 (pinned for leansig/leanMultisig compatibility)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0
+ENV PATH="/root/.cargo/bin:${PATH}"
 
-WORKDIR /build/xmss/leansig-ffi
-RUN cargo build --release
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /build/xmss/leanmultisig-ffi
-RUN cargo build --release
+WORKDIR /app
 
-# Go Builder for gean
-FROM golang:1.24-alpine AS go-builder
-RUN apk add --no-cache git build-base
+# Copy Rust FFI dependencies first for better caching
+COPY xmss/rust/ xmss/rust/
 
-WORKDIR /build
+# Build Rust FFI libraries
+RUN cd xmss/rust && cargo build --release --locked
 
-# Copy Go modules manifests
+# Copy Go module files for dependency caching
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy Go source code
+# Copy all source code
 COPY . .
 
-# Copy Rust compiled static library and headers
-# leansig.go expects the header in ../leansig-ffi/include and the lib in ../leansig-ffi/target/release/deps/
-COPY --from=rust-builder /build/xmss/leansig-ffi/target/release/deps/libleansig_ffi.a xmss/leansig-ffi/target/release/deps/
-COPY --from=rust-builder /build/xmss/leansig-ffi/include xmss/leansig-ffi/include/
-# leanmultisig.go expects the header in ../leanmultisig-ffi/include and the lib in ../leanmultisig-ffi/target/release/deps/
-COPY --from=rust-builder /build/xmss/leanmultisig-ffi/target/release/deps/libleanmultisig_ffi.a xmss/leanmultisig-ffi/target/release/deps/
-COPY --from=rust-builder /build/xmss/leanmultisig-ffi/include xmss/leanmultisig-ffi/include/
+# Build Go binaries
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+RUN mkdir -p bin && \
+    go build -o bin/geany ./cmd/geany && \
+    go build -o bin/keygen ./cmd/keygen
 
-# Build Go binary including CGO binding
-RUN CGO_ENABLED=1 go build -o /build/gean ./cmd/gean
+# Runtime stage
+FROM ubuntu:24.04 AS runtime
+WORKDIR /app
 
-# Runtime minimal image
-FROM alpine:3.21
+LABEL org.opencontainers.image.source=https://github.com/geanlabs/geany
+LABEL org.opencontainers.image.description="Go Ethereum Lean Consensus Client"
+LABEL org.opencontainers.image.licenses="MIT"
 
-# libgcc is needed for cgo execution
-RUN apk add --no-cache ca-certificates libgcc
-COPY --from=go-builder /build/gean /usr/local/bin/gean
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
+LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 
-ENTRYPOINT ["gean"]
+# Copy binaries
+COPY --from=builder /app/bin/geany /usr/local/bin/
+COPY --from=builder /app/bin/keygen /usr/local/bin/
+
+# 9000/udp - P2P QUIC
+# 5052 - API
+# 5054 - Prometheus metrics
+EXPOSE 9000/udp 5052 5054
+
+ENTRYPOINT ["/usr/local/bin/geany"]

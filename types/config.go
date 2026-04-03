@@ -1,6 +1,6 @@
 package types
 
-// Config holds genesis configuration.
-type Config struct {
-	GenesisTime uint64
+// ChainConfig holds minimal consensus configuration embedded in the beacon state.
+type ChainConfig struct {
+	GenesisTime uint64 `json:"genesis_time"`
 }
