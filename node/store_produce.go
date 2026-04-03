@@ -27,6 +27,9 @@ func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationDa
 	}
 
 	headHeader := s.GetBlockHeader(headRoot)
+	if headHeader == nil {
+		return nil
+	}
 	headCheckpoint := &types.Checkpoint{
 		Root: headRoot,
 		Slot: headHeader.Slot,
