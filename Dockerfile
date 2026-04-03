@@ -31,14 +31,14 @@ COPY . .
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 RUN mkdir -p bin && \
-    go build -o bin/geany ./cmd/geany && \
+    go build -o bin/gean ./cmd/gean && \
     go build -o bin/keygen ./cmd/keygen
 
 # Runtime stage
 FROM ubuntu:24.04 AS runtime
 WORKDIR /app
 
-LABEL org.opencontainers.image.source=https://github.com/geanlabs/geany
+LABEL org.opencontainers.image.source=https://github.com/geanlabs/gean
 LABEL org.opencontainers.image.description="Go Ethereum Lean Consensus Client"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -48,7 +48,7 @@ LABEL org.opencontainers.image.revision=$GIT_COMMIT
 LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 
 # Copy binaries
-COPY --from=builder /app/bin/geany /usr/local/bin/
+COPY --from=builder /app/bin/gean /usr/local/bin/
 COPY --from=builder /app/bin/keygen /usr/local/bin/
 
 # 9000/udp - P2P QUIC
@@ -56,4 +56,4 @@ COPY --from=builder /app/bin/keygen /usr/local/bin/
 # 5054 - Prometheus metrics
 EXPOSE 9000/udp 5052 5054
 
-ENTRYPOINT ["/usr/local/bin/geany"]
+ENTRYPOINT ["/usr/local/bin/gean"]

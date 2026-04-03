@@ -1,6 +1,6 @@
 package xmss
 
-// CGo bindings to geany's Rust glue libraries (hashsig-glue + multisig-glue).
+// CGo bindings to gean's Rust glue libraries (hashsig-glue + multisig-glue).
 // Follows the exact FFI pattern from zeam's glue libraries for cross-client compatibility.
 //
 // Build the FFI libraries first:

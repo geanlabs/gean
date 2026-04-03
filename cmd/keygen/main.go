@@ -1,6 +1,6 @@
 package main
 
-// Keygen generates all config files needed to run a standalone geany devnet.
+// Keygen generates all config files needed to run a standalone gean devnet.
 //
 // First run: generates XMSS keys, node keys, and all config files (~40s per validator).
 // Subsequent runs: skips key generation, only refreshes config.yaml with new genesis time.
@@ -108,7 +108,7 @@ func main() {
 	log.Printf("validators: %d, nodes: %d", len(m.Validators), len(m.Nodes))
 	log.Println("")
 	log.Println("run immediately:")
-	log.Printf("  bin/geany --custom-network-config-dir %s --node-key %s/node0.key --node-id node0 --is-aggregator --data-dir data/node0",
+	log.Printf("  bin/gean --custom-network-config-dir %s --node-key %s/node0.key --node-id node0 --is-aggregator --data-dir data/node0",
 		*outputDir, *outputDir)
 }
 
@@ -118,7 +118,7 @@ func generateKeys(numValidators, numNodes int, outputDir, keysDir string, basePo
 	// Generate XMSS validator keys.
 	log.Printf("generating %d XMSS validator keys (this takes ~40s per key)...", numValidators)
 	for i := 0; i < numValidators; i++ {
-		seed := fmt.Sprintf("geany-testnet-validator-%d-%d", i, time.Now().UnixNano())
+		seed := fmt.Sprintf("gean-testnet-validator-%d-%d", i, time.Now().UnixNano())
 		log.Printf("  generating validator %d/%d...", i+1, numValidators)
 
 		cSeed := C.CString(seed)

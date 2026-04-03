@@ -8,7 +8,7 @@ import (
 
 func tempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "geany-pebble-test-*")
+	dir, err := os.MkdirTemp("", "gean-pebble-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}

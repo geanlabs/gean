@@ -1,6 +1,6 @@
 # Build artifacts
 bin/
-geany
+gean
 
 # Runtime data
 data/

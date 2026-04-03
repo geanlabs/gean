@@ -70,7 +70,7 @@ func (e *Engine) Run(ctx context.Context) {
 	}
 
 	// Initialize static metrics.
-	SetNodeInfo("geany", "dev")
+	SetNodeInfo("gean", "dev")
 	SetNodeStartTime(float64(time.Now().Unix()))
 	SetIsAggregator(e.IsAggregator)
 	SetAttestationCommitteeCount(e.CommitteeCount)

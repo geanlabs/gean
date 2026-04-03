@@ -139,7 +139,7 @@ func parseHexPubkey(s string) [types.PubkeySize]byte {
 	return pk
 }
 
-// ToState converts test JSON pre-state to geany's types.State.
+// ToState converts test JSON pre-state to gean's types.State.
 func (ts *TestState) ToState() *types.State {
 	state := &types.State{
 		Config: &types.ChainConfig{
@@ -231,7 +231,7 @@ func parseBoolBitlist(data []json.RawMessage) []byte {
 	return bl
 }
 
-// ToBlock converts test JSON block to geany's types.Block.
+// ToBlock converts test JSON block to gean's types.Block.
 func (tb *TestBlock) ToBlock() *types.Block {
 	block := &types.Block{
 		Slot:          tb.Slot,

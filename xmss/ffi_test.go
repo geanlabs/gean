@@ -121,7 +121,7 @@ func TestParseSignatureRoundtrip(t *testing.T) {
 
 func TestKeyGenerateSignVerifyRoundtrip(t *testing.T) {
 	// Generate a keypair via FFI.
-	kp, err := GenerateKeyPair("geany-test-seed-phrase", 0, 1<<18)
+	kp, err := GenerateKeyPair("gean-test-seed-phrase", 0, 1<<18)
 	if err != nil {
 		t.Fatalf("key generation failed: %v", err)
 	}

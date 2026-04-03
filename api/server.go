@@ -50,7 +50,7 @@ func StartMetricsServer(address string) error {
 // Matches ethlambda rpc/metrics.rs get_health.
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"healthy","service":"geany"}`))
+	w.Write([]byte(`{"status":"healthy","service":"gean"}`))
 }
 
 // handleFinalizedState returns the finalized state as SSZ bytes.

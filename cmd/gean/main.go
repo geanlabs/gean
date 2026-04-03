@@ -30,7 +30,7 @@ func main() {
 	apiPort := flag.Int("api-port", 5052, "API server port")
 	metricsPort := flag.Int("metrics-port", 5054, "Metrics server port")
 	nodeKey := flag.String("node-key", "", "Path to hex-encoded secp256k1 private key (required)")
-	nodeID := flag.String("node-id", "", "Node identifier, e.g. geany_0 (required)")
+	nodeID := flag.String("node-id", "", "Node identifier, e.g. gean_0 (required)")
 	checkpointURL := flag.String("checkpoint-sync-url", "", "URL for checkpoint sync (optional)")
 	isAggregator := flag.Bool("is-aggregator", false, "Enable attestation aggregation")
 	committeeCount := flag.Uint64("attestation-committee-count", 1, "Number of attestation subnets")
@@ -50,7 +50,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info(logger.Node, "geany consensus client starting")
+	logger.Info(logger.Node, "gean consensus client starting")
 
 	// --- Load configuration ---
 
@@ -200,7 +200,7 @@ func main() {
 		}
 	}()
 
-	logger.Info(logger.Node, "geany started: api=%s metrics=%s aggregator=%v", apiAddr, metricsAddr, *isAggregator)
+	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", apiAddr, metricsAddr, *isAggregator)
 
 	// --- Wait for shutdown ---
 

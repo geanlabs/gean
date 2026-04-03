@@ -175,7 +175,7 @@ type annotatedValidator struct {
 //
 // annotatedPath: path to annotated_validators.yaml
 // keysDir: directory containing validator_*_sk.ssz files
-// nodeID: e.g., "geany_0"
+// nodeID: e.g., "gean_0"
 func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, error) {
 	data, err := os.ReadFile(annotatedPath)
 	if err != nil {
