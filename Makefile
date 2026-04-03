@@ -1,4 +1,4 @@
-.PHONY: help build ffi ffi-test test lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -22,14 +22,14 @@ build: ffi ## Build gean and keygen binaries
 test: ## Run unit tests (excludes crypto FFI tests)
 	go test ./pkg/... -v -count=1
 
-ffi-test: ffi ## Run XMSS crypto FFI tests (requires make ffi first)
+test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
 	go test ./xmss/ -v -count=1
 
 test-spec: leanSpec/fixtures ## Run spec fixture tests only (fast, excludes xmss FFI)
-	go test ./spectests/ -count=1 -tags=spectests
+	go test ./spectests/ -v -count=1 -tags=spectests
 
 test-all: leanSpec/fixtures ## Run all tests including spec fixtures and xmss FFI (slow)
-	go test ./... -count=1 -tags=spectests
+	go test ./... -v -count=1 -tags=spectests
 
 lint: ## Run golangci-lint
 	golangci-lint run ./...
