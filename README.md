@@ -177,7 +177,8 @@ Fixtures are generated under `leanSpec/fixtures/`. The `leanSpec/` directory is 
 ## Acknowledgements
 
 - [Lean Ethereum](https://github.com/leanEthereum)
-- [leanSpec](https://github.com/leanEthereum/leanSpec)
+- [ethlambda](https://github.com/lambdaclass/ethlambda)
+- [zeam](https://github.com/blockblaz/zeam)
 
 ## License
 
