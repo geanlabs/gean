@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// GenesisConfig matches ethlambda genesis.rs GenesisConfig.
+// GenesisConfig is parsed from config.yaml.
 // Parsed from config.yaml.
 type GenesisConfig struct {
 	GenesisTime       uint64   `yaml:"GENESIS_TIME"`
@@ -18,7 +18,6 @@ type GenesisConfig struct {
 }
 
 // Validators converts hex pubkey strings to typed Validators with sequential indices.
-// Matches ethlambda genesis.rs GenesisConfig::validators.
 func (gc *GenesisConfig) Validators() []*types.Validator {
 	validators := make([]*types.Validator, len(gc.GenesisValidators))
 	for i, hexStr := range gc.GenesisValidators {
@@ -38,7 +37,6 @@ func (gc *GenesisConfig) Validators() []*types.Validator {
 }
 
 // GenesisState creates the genesis state from config.
-// Matches ethlambda state.rs State::from_genesis.
 func (gc *GenesisConfig) GenesisState() *types.State {
 	validators := gc.Validators()
 

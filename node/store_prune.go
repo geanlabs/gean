@@ -9,7 +9,6 @@ import (
 
 // PruneOnFinalization performs lightweight pruning when finalization advances.
 // Prunes live chain entries and gossip signatures below the finalized slot.
-// Matches ethlambda store.rs update_checkpoints inline pruning (L514-527).
 func PruneOnFinalization(s *ConsensusStore, finalizedSlot uint64) {
 	prunedChain := pruneLiveChain(s, finalizedSlot)
 	prunedSigs := s.GossipSignatures.PruneBelow(finalizedSlot)
@@ -22,7 +21,6 @@ func PruneOnFinalization(s *ConsensusStore, finalizedSlot uint64) {
 
 // PruneOldData performs heavy pruning of old states and blocks.
 // Must be called AFTER a block cascade completes — not mid-cascade.
-// Matches ethlambda store.rs prune_old_data (L536-543).
 func PruneOldData(s *ConsensusStore) {
 	protectedRoots := map[[32]byte]bool{
 		s.LatestFinalized().Root: true,
@@ -39,7 +37,6 @@ func PruneOldData(s *ConsensusStore) {
 
 // pruneLiveChain removes LiveChain entries with slot < finalizedSlot.
 // LiveChain keys are big-endian slot || root, so lexicographic scan works.
-// Matches ethlambda store.rs prune_live_chain (L585-613).
 func pruneLiveChain(s *ConsensusStore, finalizedSlot uint64) int {
 	rv, err := s.Backend.BeginRead()
 	if err != nil {
@@ -88,7 +85,6 @@ type rootSlotEntry struct {
 
 // pruneOldEntries prunes entries from a root-keyed table (States or BlockHeaders)
 // that exceed the retention window, protecting specified roots.
-// Matches ethlambda store.rs prune_old_states (L631-673).
 func pruneOldEntries(s *ConsensusStore, table storage.Table, keepCount int, protected map[[32]byte]bool) int {
 	// Collect all entries with their slots by cross-referencing block headers.
 	rv, err := s.Backend.BeginRead()
@@ -162,7 +158,6 @@ func pruneOldEntries(s *ConsensusStore, table storage.Table, keepCount int, prot
 }
 
 // pruneOldBlocks prunes old block headers, bodies, and signatures atomically.
-// Matches ethlambda store.rs prune_old_blocks (L682-728).
 func pruneOldBlocks(s *ConsensusStore, keepCount int, protected map[[32]byte]bool) int {
 	rv, err := s.Backend.BeginRead()
 	if err != nil {

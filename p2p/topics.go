@@ -2,10 +2,10 @@ package p2p
 
 import "fmt"
 
-// Network name matching ethlambda p2p/lib.rs L192.
+// Network name rs L192.
 const NetworkName = "devnet0"
 
-// Topic kind constants matching ethlambda p2p/gossipsub/messages.rs.
+// Topic kind constants rs.
 const (
 	BlockTopicKind       = "block"
 	AttestationTopicKind = "attestation"
@@ -14,7 +14,6 @@ const (
 
 // TopicString builds a gossipsub topic string.
 // Format: /leanconsensus/{network}/{kind}/ssz_snappy
-// Matches ethlambda p2p/lib.rs L190-200.
 func TopicString(kind string) string {
 	return fmt.Sprintf("/leanconsensus/%s/%s/ssz_snappy", NetworkName, kind)
 }
@@ -26,7 +25,6 @@ func BlockTopic() string {
 
 // AttestationSubnetTopic returns the attestation topic for a given subnet.
 // Format: /leanconsensus/{network}/attestation_{subnet_id}/ssz_snappy
-// Matches ethlambda p2p/lib.rs L208-212.
 func AttestationSubnetTopic(subnetID uint64) string {
 	return TopicString(fmt.Sprintf("%s_%d", AttestationTopicKind, subnetID))
 }
@@ -37,7 +35,6 @@ func AggregationTopic() string {
 }
 
 // SubnetID computes the subnet for a validator.
-// Matches ethlambda store.rs compute_subnet_id (L36).
 func SubnetID(validatorID, committeeCount uint64) uint64 {
 	return validatorID % committeeCount
 }

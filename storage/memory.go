@@ -7,7 +7,6 @@ import (
 )
 
 // InMemoryBackend is a thread-safe in-memory storage backend for tests.
-// Matches ethlambda: crates/storage/src/backend/in_memory.rs
 type InMemoryBackend struct {
 	mu     sync.RWMutex
 	tables map[Table]map[string][]byte

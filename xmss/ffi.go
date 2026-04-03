@@ -1,7 +1,6 @@
 package xmss
 
 // CGo bindings to gean's Rust glue libraries (hashsig-glue + multisig-glue).
-// Follows the exact FFI pattern from zeam's glue libraries for cross-client compatibility.
 //
 // Build the FFI libraries first:
 //   make ffi
@@ -25,7 +24,7 @@ package xmss
 // // Opaque type from multisig-glue
 // typedef struct Devnet2XmssAggregateSignature Devnet2XmssAggregateSignature;
 //
-// // --- hashsig-glue FFI (from zeam/rust/hashsig-glue/src/lib.rs) ---
+// // --- hashsig-glue FFI (rs) ---
 //
 // KeyPair* hashsig_keypair_from_ssz(
 //     const uint8_t* private_key_ptr, size_t private_key_len,
@@ -55,7 +54,7 @@ package xmss
 // KeyPair* hashsig_keypair_generate(const char* seed_phrase,
 //     size_t activation_epoch, size_t num_active_epochs);
 //
-// // --- multisig-glue FFI (from zeam/rust/multisig-glue/src/lib.rs) ---
+// // --- multisig-glue FFI (rs) ---
 //
 // void xmss_setup_prover();
 // void xmss_setup_verifier();
@@ -111,7 +110,7 @@ var (
 	ErrKeypairParseFailed  = errors.New("keypair parsing failed")
 )
 
-// Lazy initialization guards matching ethlambda/zeam's static Once pattern.
+// Lazy initialization guards 
 var (
 	proverOnce   sync.Once
 	verifierOnce sync.Once
@@ -160,7 +159,6 @@ func VerifySignatureSSZ(pubkey [types.PubkeySize]byte, slot uint32, message [32]
 // AggregateSignatures aggregates multiple XMSS signatures into a single ZK proof.
 // Takes arrays of opaque PublicKey/Signature pointers from resolved gossip signatures.
 // Returns SSZ-encoded proof bytes (max 1 MiB).
-// Matches ethlambda crypto/lib.rs aggregate_signatures.
 func AggregateSignatures(
 	pubkeys []CPubKey,
 	sigs []CSig,
@@ -218,7 +216,6 @@ func AggregateSignatures(
 
 // VerifyAggregatedSignature verifies an aggregated XMSS proof.
 // Takes SSZ proof bytes + array of pubkey pointers for participating validators.
-// Matches ethlambda crypto/lib.rs verify_aggregated_signature.
 func VerifyAggregatedSignature(
 	proofData []byte,
 	pubkeys []CPubKey,

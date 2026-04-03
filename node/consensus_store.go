@@ -6,16 +6,15 @@ import (
 )
 
 const (
-	// Buffer capacities matching ethlambda store.rs L87-91.
+	// Buffer capacities rs L87-91.
 	aggregatedPayloadCap = 512
 	newPayloadCap        = 64
 )
 
 // ConsensusStore holds all state required for fork choice and block processing.
-// Matches ethlambda store.rs Store (L260-268).
 //
 // Note: ForkChoice does NOT live here — it lives in Engine (Phase 7),
-// matching ethlambda where BlockChainServer calls compute_lmd_ghost_head
+// Engine calls ForkChoice with store data as parameters.
 // with store data as parameters.
 type ConsensusStore struct {
 	Backend          storage.Backend
@@ -116,7 +115,6 @@ func (s *ConsensusStore) GetBlockHeader(root [32]byte) *types.BlockHeader {
 }
 
 // GetSignedBlock retrieves a full signed block from storage by root.
-// Matches ethlambda store.rs get_signed_block — loads from BlockSignatures table
 // which stores the full SignedBlockWithAttestation SSZ.
 func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlockWithAttestation {
 	rv, err := s.Backend.BeginRead()
@@ -141,7 +139,6 @@ func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlockWithAtt
 
 // writeBlockData stores body and full signed block across split tables.
 // Body in BlockBodies, full SignedBlockWithAttestation in BlockSignatures.
-// Matches ethlambda write_signed_block split storage.
 func writeBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedBlockWithAttestation) {
 	wb, _ := s.Backend.BeginWrite()
 
@@ -209,7 +206,6 @@ func (s *ConsensusStore) HeadSlot() uint64 {
 }
 
 // StorePendingBlock stores block in DB without LiveChain entry (invisible to fork choice).
-// Matches ethlambda store.rs insert_pending_block / write_signed_block.
 // Split across 3 tables: headers (for chain walk), bodies, signatures (includes proposer att).
 func (s *ConsensusStore) StorePendingBlock(root [32]byte, signedBlock *types.SignedBlockWithAttestation) {
 	block := signedBlock.Block.Block
@@ -236,20 +232,19 @@ func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]
 }
 
 // PromoteNewToKnown moves all new payloads to known.
-// Matches ethlambda store.rs promote_new_aggregated_payloads.
 func (s *ConsensusStore) PromoteNewToKnown() {
 	entries := s.NewPayloads.Drain()
 	s.KnownPayloads.PushBatch(entries)
 }
 
 // ExtractLatestKnownAttestations returns per-validator latest from known pool only.
-// Used by updateHead. Matches ethlambda store.rs extract_latest_known_attestations (L43).
+// Used by updateHead. rs extract_latest_known_attestations (L43).
 func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.AttestationData {
 	return s.KnownPayloads.ExtractLatestAttestations()
 }
 
 // ExtractLatestAllAttestations returns per-validator latest from known+new merged.
-// Used by updateSafeTarget. Matches ethlambda store.rs extract_latest_all_attestations (L104).
+// Used by updateSafeTarget. rs extract_latest_all_attestations (L104).
 func (s *ConsensusStore) ExtractLatestAllAttestations() map[uint64]*types.AttestationData {
 	known := s.KnownPayloads.ExtractLatestAttestations()
 	newAtts := s.NewPayloads.ExtractLatestAttestations()

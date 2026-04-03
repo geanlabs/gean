@@ -5,7 +5,6 @@ import (
 )
 
 // ValidateAttestationData checks 9 validation branches for incoming attestations.
-// Matches ethlambda store.rs validate_attestation_data (L205-261).
 func ValidateAttestationData(s *ConsensusStore, data *types.AttestationData) error {
 	// 1-3. Availability: source, target, head blocks must exist.
 	sourceHeader := s.GetBlockHeader(data.Source.Root)

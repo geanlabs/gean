@@ -1,7 +1,6 @@
 package storage
 
 // Table represents a logical storage table.
-// Matches ethlambda: crates/storage/src/api/tables.rs
 type Table string
 
 const (

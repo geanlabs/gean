@@ -11,7 +11,6 @@ import (
 
 // LoadBootnodes reads bootnode multiaddrs from a YAML/text file.
 // Each line is a multiaddr string (e.g., /ip4/1.2.3.4/udp/9000/quic-v1/p2p/QmPeer...).
-// Matches ethlambda main.rs bootnode loading from nodes.yaml.
 func LoadBootnodes(path string) ([]multiaddr.Multiaddr, error) {
 	f, err := os.Open(path)
 	if err != nil {

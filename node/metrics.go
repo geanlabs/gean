@@ -5,7 +5,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// All metrics use lean_ prefix matching ethlambda/crates/blockchain/src/metrics.rs.
+// All metrics use lean_ prefix rs.
 
 // --- Gauges ---
 

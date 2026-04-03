@@ -1,7 +1,6 @@
 package xmss
 
 // Key management for XMSS validators.
-// Matches ethlambda key_manager.rs + main.rs read_validator_keys (L261-312).
 
 // #include <stdint.h>
 // #include <stdlib.h>
@@ -54,7 +53,6 @@ func (kp *ValidatorKeyPair) PrivateKeyPtr() *C.PrivateKey {
 
 // Sign signs a 32-byte message at the given slot.
 // Returns the SSZ-encoded 3112-byte signature.
-// Matches ethlambda key_manager.rs sign_message.
 func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([types.SignatureSize]byte, error) {
 	var result [types.SignatureSize]byte
 
@@ -92,7 +90,6 @@ func (kp *ValidatorKeyPair) Close() {
 }
 
 // KeyManager holds all validator keypairs for this node.
-// Matches ethlambda key_manager.rs KeyManager.
 type KeyManager struct {
 	keys map[uint64]*ValidatorKeyPair // validator_id -> keypair
 }
@@ -103,7 +100,6 @@ func NewKeyManager(keys map[uint64]*ValidatorKeyPair) *KeyManager {
 }
 
 // ValidatorIDs returns all validator indices managed by this node.
-// Matches ethlambda key_manager.rs validator_ids.
 func (km *KeyManager) ValidatorIDs() []uint64 {
 	ids := make([]uint64, 0, len(km.keys))
 	for id := range km.keys {
@@ -119,7 +115,6 @@ func (km *KeyManager) Get(validatorID uint64) *ValidatorKeyPair {
 
 // SignAttestation signs attestation data for a validator.
 // Message = HashTreeRoot(attestationData), slot from the data.
-// Matches ethlambda key_manager.rs sign_attestation.
 func (km *KeyManager) SignAttestation(validatorID uint64, data *types.AttestationData) ([types.SignatureSize]byte, error) {
 	kp, ok := km.keys[validatorID]
 	if !ok {
@@ -163,7 +158,7 @@ func (km *KeyManager) Close() {
 
 // --- Key loading from YAML + files ---
 
-// annotatedValidator matches ethlambda main.rs AnnotatedValidator (L237-244).
+// annotatedValidator represents a validator entry from annotated_validators.yaml.
 type annotatedValidator struct {
 	Index      uint64 `yaml:"index"`
 	PubkeyHex  string `yaml:"pubkey_hex"`
@@ -171,7 +166,6 @@ type annotatedValidator struct {
 }
 
 // LoadValidatorKeys loads XMSS keypairs from annotated_validators.yaml + key files.
-// Matches ethlambda main.rs read_validator_keys (L261-312).
 //
 // annotatedPath: path to annotated_validators.yaml
 // keysDir: directory containing validator_*_sk.ssz files

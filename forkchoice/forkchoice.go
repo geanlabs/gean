@@ -30,7 +30,6 @@ func (fc *ForkChoice) UpdateHead(justifiedRoot [32]byte) [32]byte {
 // UpdateSafeTarget computes the head using a 2/3 supermajority threshold.
 // Uses all attestations (both known and new merged) — fromKnown=false reads LatestNew
 // which at call time should contain the merged pool.
-// Matches ethlambda store.rs L104: extract_latest_all_attestations()
 func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uint64) [32]byte {
 	minScore := int64((2*numValidators + 2) / 3) // ceil(2n/3)
 	deltas := ComputeDeltas(fc.Array.Len(), fc.Votes, false)

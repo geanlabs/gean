@@ -9,14 +9,13 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Timeouts matching ethlambda checkpoint_sync.rs L9-13.
+// Timeouts rs L9-13.
 const (
 	CheckpointConnectTimeout = 15 * time.Second
 	CheckpointReadTimeout    = 15 * time.Second
 )
 
 // FetchCheckpointState downloads and verifies a finalized state from a peer.
-// Matches ethlambda checkpoint_sync.rs fetch_checkpoint_state (L65-90).
 func FetchCheckpointState(
 	url string,
 	expectedGenesisTime uint64,
@@ -60,7 +59,6 @@ func FetchCheckpointState(
 }
 
 // VerifyCheckpointState runs all 12 validation checks.
-// Matches ethlambda checkpoint_sync.rs verify_checkpoint_state (L98-189).
 func VerifyCheckpointState(
 	state *types.State,
 	expectedGenesisTime uint64,

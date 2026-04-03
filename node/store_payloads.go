@@ -5,14 +5,12 @@ import (
 )
 
 // PayloadEntry stores attestation data + proofs for a single data_root.
-// Matches ethlambda store.rs PayloadEntry (L94-98).
 type PayloadEntry struct {
 	Data   *types.AttestationData
 	Proofs []*types.AggregatedSignatureProof
 }
 
 // PayloadBuffer is a capped FIFO buffer for aggregated payloads.
-// Matches ethlambda store.rs PayloadBuffer (L110-208).
 type PayloadBuffer struct {
 	data        map[[32]byte]*PayloadEntry // data_root -> entry
 	order       [][32]byte                 // insertion order for FIFO eviction
@@ -29,7 +27,6 @@ func NewPayloadBuffer(capacity int) *PayloadBuffer {
 }
 
 // Push inserts a proof for an attestation, FIFO-evicting when over capacity.
-// Matches ethlambda store.rs PayloadBuffer::push (L128-162).
 func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData, proof *types.AggregatedSignatureProof) {
 	if entry, ok := pb.data[dataRoot]; ok {
 		// Skip duplicate proofs (same participants)
@@ -68,7 +65,6 @@ func (pb *PayloadBuffer) PushBatch(entries []PayloadKV) {
 }
 
 // Drain takes all entries, leaving the buffer empty.
-// Matches ethlambda store.rs PayloadBuffer::drain (L172-184).
 func (pb *PayloadBuffer) Drain() []PayloadKV {
 	result := make([]PayloadKV, 0, pb.totalProofs)
 	for _, dataRoot := range pb.order {
@@ -98,7 +94,6 @@ func (pb *PayloadBuffer) TotalProofs() int {
 }
 
 // ExtractLatestAttestations returns per-validator latest attestations from participation bits.
-// Matches ethlambda store.rs PayloadBuffer::extract_latest_attestations (L192-207).
 func (pb *PayloadBuffer) ExtractLatestAttestations() map[uint64]*types.AttestationData {
 	result := make(map[uint64]*types.AttestationData)
 	for _, entry := range pb.data {

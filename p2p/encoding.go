@@ -9,7 +9,7 @@ import (
 	"github.com/golang/snappy"
 )
 
-// Max payload sizes matching ethlambda req_resp/encoding.rs L6-9.
+// Max payload sizes rs L6-9.
 const (
 	MaxPayloadSize           = 10 * 1024 * 1024 // 10 MiB uncompressed
 	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024 // ~12 MiB
@@ -18,13 +18,11 @@ const (
 // --- Gossipsub encoding: raw snappy ---
 
 // SnappyRawEncode compresses data using raw snappy (no framing).
-// Matches ethlambda gossipsub/encoding.rs compress_message.
 func SnappyRawEncode(data []byte) []byte {
 	return snappy.Encode(nil, data)
 }
 
 // SnappyRawDecode decompresses raw snappy data.
-// Matches ethlambda gossipsub/encoding.rs decompress_message.
 func SnappyRawDecode(data []byte) ([]byte, error) {
 	decodedLen, err := snappy.DecodedLen(data)
 	if err != nil {
@@ -39,7 +37,6 @@ func SnappyRawDecode(data []byte) ([]byte, error) {
 // --- Req/Resp encoding: snappy framed + varint ---
 
 // EncodeVarint encodes a uint32 as LEB128 varint.
-// Matches ethlambda req_resp/encoding.rs encode_varint.
 func EncodeVarint(value uint32) []byte {
 	buf := make([]byte, binary.MaxVarintLen32)
 	n := binary.PutUvarint(buf, uint64(value))
@@ -48,7 +45,6 @@ func EncodeVarint(value uint32) []byte {
 
 // DecodeVarint reads a LEB128 varint from a byte slice.
 // Returns the value and remaining bytes.
-// Matches ethlambda req_resp/encoding.rs decode_varint.
 func DecodeVarint(buf []byte) (uint32, []byte, error) {
 	val, n := binary.Uvarint(buf)
 	if n <= 0 {
@@ -101,7 +97,7 @@ func DecodeReqRespPayload(buf []byte) ([]byte, error) {
 	return decoded, nil
 }
 
-// Response codes matching ethlambda req_resp/messages.rs.
+// Response codes rs.
 const (
 	RespSuccess             byte = 0x00
 	RespInvalidRequest      byte = 0x01
@@ -110,7 +106,6 @@ const (
 )
 
 // EncodeResponse encodes a response chunk: code + varint(len) + snappy(data).
-// Matches ethlambda req_resp/encoding.rs build_response_frame.
 func EncodeResponse(code byte, data []byte) []byte {
 	payload := EncodeReqRespPayload(data)
 	result := make([]byte, 1+len(payload))

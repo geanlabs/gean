@@ -11,7 +11,6 @@ import (
 
 // AggregateCommitteeSignatures collects gossip signatures and aggregates them
 // using real XMSS ZK aggregation via xmss.AggregateSignatures.
-// Matches ethlambda store.rs aggregate_committee_signatures (L117-194).
 func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
 	if s.GossipSignatures.Len() == 0 {
 		return nil
@@ -143,7 +142,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 	}
 
 	// Insert into known (immediately usable for block building and fork choice).
-	// Matches ethlambda: "Batch-insert aggregated payloads directly into known" (L183-186).
+	
 	s.KnownPayloads.PushBatch(payloadEntries)
 
 	// Delete aggregated signatures from gossip store.
@@ -153,7 +152,6 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 }
 
 // aggregationBitsFromValidatorIndices builds a bitlist from validator IDs.
-// Matches ethlambda store.rs aggregation_bits_from_validator_indices (L889-907).
 func aggregationBitsFromValidatorIndices(ids []uint64) []byte {
 	if len(ids) == 0 {
 		return types.NewBitlistSSZ(0)

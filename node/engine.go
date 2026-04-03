@@ -14,7 +14,7 @@ import (
 
 // Engine is the consensus coordination loop.
 // It owns Store, ForkChoice, and KeyManager as siblings,
-// matching ethlambda's BlockChainServer (lib.rs L78-95).
+// rs L78-95).
 type Engine struct {
 	Store               *ConsensusStore
 	FC                  *forkchoice.ForkChoice
@@ -57,7 +57,6 @@ func New(
 
 // Run starts the engine's main loop.
 // This is the single-writer goroutine — all state mutations happen here.
-// Matches ethlambda BlockChainServer's message handling loop.
 func (e *Engine) Run(ctx context.Context) {
 	// Set up callbacks for gossip store (avoids circular deps).
 	FreeSignatureFunc = func(ptr unsafe.Pointer) {

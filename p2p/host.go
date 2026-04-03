@@ -21,7 +21,7 @@ import (
 	"github.com/geanlabs/gean/logger"
 )
 
-// GossipSub parameters matching ethlambda p2p/lib.rs L96-119.
+// GossipSub parameters rs L96-119.
 const (
 	GossipMeshN             = 8
 	GossipMeshNLow          = 6
@@ -49,7 +49,6 @@ type Host struct {
 }
 
 // NewHost creates a libp2p host with QUIC transport and gossipsub.
-// Matches ethlambda p2p/lib.rs swarm initialization (L60-160).
 func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeCount uint64) (*Host, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -75,7 +74,7 @@ func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeC
 	}
 
 	// Create gossipsub with custom parameters.
-	// Anonymous message signing matches ethlambda ValidationMode::Anonymous
+	// Anonymous message signing (no author, no sequence number).
 	// + MessageAuthenticity::Anonymous — lean consensus messages have no signature.
 	ps, err := pubsub.NewGossipSub(ctx, h,
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
@@ -220,7 +219,6 @@ func (h *Host) Close() {
 }
 
 // loadNodeKey reads a hex-encoded secp256k1 private key from a file.
-// Matches ethlambda main.rs read_hex_file_bytes + secp256k1 conversion.
 func loadNodeKey(path string) (libp2pcrypto.PrivKey, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {

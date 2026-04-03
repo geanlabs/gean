@@ -9,7 +9,6 @@ import (
 // ProcessAttestations processes all aggregated attestations in a block body,
 // updating justification and finalization state.
 //
-// Matches ethlambda: crates/blockchain/state_transition/src/lib.rs L228-335
 func ProcessAttestations(state *types.State, attestations []*types.AggregatedAttestation) error {
 	validatorCount := int(state.NumValidators())
 	if validatorCount == 0 {
@@ -82,7 +81,6 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 }
 
 // isValidVote checks the 6 validation rules for an attestation vote.
-// Matches ethlambda L346-387.
 func isValidVote(state *types.State, source, target *types.Checkpoint) bool {
 	finalizedSlot := state.LatestFinalized.Slot
 
@@ -116,7 +114,6 @@ func isValidVote(state *types.State, source, target *types.Checkpoint) bool {
 // tryFinalize attempts to advance finalization from source to target.
 // Finalization succeeds when there are no justifiable slots between
 // source.slot and target.slot (exclusive).
-// Matches ethlambda L394-442.
 func tryFinalize(
 	state *types.State,
 	source, target *types.Checkpoint,
@@ -147,7 +144,6 @@ func tryFinalize(
 }
 
 // --- justified_slots operations ---
-// Matches ethlambda: crates/blockchain/state_transition/src/justified_slots_ops.rs
 
 // isSlotJustified checks if a slot is justified.
 // Slots at or before finalized are implicitly justified.
@@ -247,7 +243,7 @@ func buildRootToSlot(state *types.State) map[[32]byte]uint64 {
 }
 
 // serializeJustifications converts vote map back to flat SSZ storage.
-// Roots are sorted for deterministic output (matches ethlambda L448-476).
+// Roots are sorted for deterministic output.
 func serializeJustifications(state *types.State, justifications map[[32]byte][]bool, validatorCount int) {
 	// Sort roots for deterministic output.
 	roots := make([][32]byte, 0, len(justifications))

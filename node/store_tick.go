@@ -5,7 +5,6 @@ import (
 )
 
 // OnTick processes a tick event, dispatching interval-specific actions.
-// Matches ethlambda store.rs on_tick (L270-331).
 //
 // Returns any new aggregated attestations produced at interval 2.
 // Note: head/safe-target updates are NOT done here — they happen in Engine
@@ -27,7 +26,7 @@ func OnTick(
 	time := timeDeltaMs / types.MillisecondsPerInterval
 
 	// Fast-forward if more than a slot behind.
-	// Use guard to prevent uint64 underflow (matches ethlambda's saturating_sub on L285).
+	// Use guard to prevent uint64 underflow.
 	if time > s.Time() && time-s.Time() > types.IntervalsPerSlot {
 		s.SetTime(time - types.IntervalsPerSlot)
 	}

@@ -10,7 +10,6 @@ import (
 )
 
 // OnBlock processes a new signed block with signature verification.
-// Matches ethlambda store.rs on_block (L523-530).
 func OnBlock(
 	s *ConsensusStore,
 	signedBlock *types.SignedBlockWithAttestation,
@@ -22,7 +21,6 @@ func OnBlock(
 // OnBlockWithoutVerification processes a block without signature checks.
 // Used for fork choice spec tests where signatures are absent.
 // Caller must call ProcessProposerAttestation(s, signedBlock, false) AFTER updateHead.
-// Matches ethlambda store.rs on_block_without_verification (L535-540).
 func OnBlockWithoutVerification(
 	s *ConsensusStore,
 	signedBlock *types.SignedBlockWithAttestation,
@@ -31,7 +29,6 @@ func OnBlockWithoutVerification(
 }
 
 // onBlockCore is the core block processing logic.
-// Matches ethlambda store.rs on_block_core (L546-786).
 func onBlockCore(
 	s *ConsensusStore,
 	signedBlock *types.SignedBlockWithAttestation,
@@ -47,7 +44,7 @@ func onBlockCore(
 		return fmt.Errorf("compute block root: %w", err)
 	}
 
-	// Check if already processed (matches ethlambda store.rs L507: has_state check).
+	// Skip duplicate blocks.
 	if s.HasState(blockRoot) {
 		return nil // already known
 	}
@@ -59,7 +56,7 @@ func onBlockCore(
 			fmt.Sprintf("parent state not found for slot %d, missing block %x", slot, block.ParentRoot)}
 	}
 
-	// Verify signatures BEFORE state transition (matches ethlambda L523-526).
+	// Verify signatures BEFORE state transition.
 	// Uses parent_state for validator lookup.
 	if verify {
 		if err := verifyBlockSignatures(s, signedBlock, parentState); err != nil {
@@ -77,7 +74,7 @@ func onBlockCore(
 		return &StoreError{ErrStateTransitionFailed, fmt.Sprintf("state transition: %v", err)}
 	}
 
-	// Cache state root in latest block header (matches ethlambda L540).
+	// Cache state root in latest block header.
 	postState.LatestBlockHeader.StateRoot = block.StateRoot
 
 	// Check if justified/finalized advanced.
@@ -122,7 +119,7 @@ func onBlockCore(
 
 	// NOTE: Proposer attestation is NOT processed here.
 	// Engine must call updateHead BEFORE ProcessProposerAttestation
-	// to prevent circular weight advantage (matches ethlambda L580-582).
+	// to prevent circular weight advantage.
 
 	attCount := 0
 	if block.Body != nil {
@@ -137,7 +134,6 @@ func onBlockCore(
 
 // ProcessProposerAttestation processes the proposer's self-attestation.
 // Must be called AFTER updateHead to prevent circular weight advantage.
-// Matches ethlambda store.rs L572-596 ordering.
 func ProcessProposerAttestation(s *ConsensusStore, signedBlock *types.SignedBlockWithAttestation, verify bool) {
 	if signedBlock.Block.ProposerAttestation == nil {
 		return
@@ -147,7 +143,6 @@ func ProcessProposerAttestation(s *ConsensusStore, signedBlock *types.SignedBloc
 }
 
 // verifyBlockSignatures verifies proposer and attestation signatures.
-// Matches ethlambda store.rs verify_block_signatures pattern.
 func verifyBlockSignatures(
 	s *ConsensusStore,
 	signedBlock *types.SignedBlockWithAttestation,
@@ -158,7 +153,7 @@ func verifyBlockSignatures(
 
 	// Verify proposer attestation signature.
 	// ProposerSignature signs the proposer's AttestationData, NOT the block root.
-	// Matches ethlambda: proposer_signature = sign_attestation(validator_id, &proposer_attestation.data)
+	
 	if block.ProposerIndex >= uint64(len(state.Validators)) {
 		return &StoreError{ErrInvalidValidatorIndex, "proposer index out of range"}
 	}
@@ -240,7 +235,6 @@ func verifyBlockSignatures(
 }
 
 // storeBlockParts stores block body and full signed block across split tables.
-// Matches ethlambda write_signed_block.
 func storeBlockParts(s *ConsensusStore, blockRoot [32]byte, signedBlock *types.SignedBlockWithAttestation) {
 	writeBlockData(s, blockRoot, signedBlock)
 }
@@ -261,7 +255,6 @@ func processBlockAttestations(s *ConsensusStore, signedBlock *types.SignedBlockW
 }
 
 // processProposerAttestation handles the proposer's self-attestation.
-// Matches ethlambda store.rs L572-596.
 // Production (verify=true): store proposer's real XMSS signature in gossip for aggregation at interval 2.
 // Spec tests only (verify=false via OnBlockWithoutVerification): insert participants-only proof
 // into new payloads since no real signatures exist in test fixtures.
@@ -278,7 +271,7 @@ func processProposerAttestation(s *ConsensusStore, signedBlock *types.SignedBloc
 		sigHandle, parseErr := xmss.ParseSignature(signedBlock.Signature.ProposerSignature[:])
 		s.GossipSignatures.InsertWithHandle(dataRoot, att.Data, att.ValidatorID, signedBlock.Signature.ProposerSignature, sigHandle, parseErr)
 	} else {
-		// Without sig verification, insert directly with a dummy proof (matches ethlambda L586-588).
+		// Without sig verification, insert directly with a dummy proof.
 		participants := aggregationBitsFromValidatorIndices([]uint64{att.ValidatorID})
 		proof := &types.AggregatedSignatureProof{
 			Participants: participants,

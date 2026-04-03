@@ -14,7 +14,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Retry parameters matching ethlambda p2p/lib.rs L56-59.
+// Retry parameters rs L56-59.
 const (
 	MaxFetchRetries    = 10
 	InitialBackoffMs   = 5
@@ -56,7 +56,6 @@ func (ps *PeerStore) Count() int {
 
 // RandomPeer returns a random connected peer, excluding the given set.
 // Returns empty peer.ID if none available.
-// Matches ethlambda p2p retry logic: random peer selection, exclude failed.
 func (ps *PeerStore) RandomPeer(exclude map[peer.ID]bool) peer.ID {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
@@ -85,7 +84,6 @@ func (ps *PeerStore) AllPeers() []peer.ID {
 }
 
 // ConnectBootnodes connects to a list of bootnode multiaddrs.
-// Matches ethlambda p2p/lib.rs bootnode connection logic.
 func (h *Host) ConnectBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr) {
 	for _, addr := range addrs {
 		peerInfo, err := peer.AddrInfoFromP2pAddr(addr)
@@ -103,7 +101,6 @@ func (h *Host) ConnectBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr
 }
 
 // StartBootnodeRedial periodically reconnects to bootnodes if disconnected.
-// Matches ethlambda p2p/lib.rs redial every 12 seconds.
 func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multiaddr) {
 	go func() {
 		ticker := time.NewTicker(BootnodeRedialSecs * time.Second)
@@ -133,7 +130,6 @@ func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multia
 // FetchBlocksByRootWithRetry fetches blocks with exponential backoff retry.
 // Backoff: 5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560 ms.
 // Random peer selection, exclude previously-failed peers per root.
-// Matches ethlambda p2p/lib.rs block fetch retry logic (L56-59).
 func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte) ([]*SignedBlockWithAttestationResult, error) {
 	var results []*SignedBlockWithAttestationResult
 

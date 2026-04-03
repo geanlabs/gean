@@ -9,7 +9,6 @@ import (
 
 // PublishBlock publishes a signed block to the block gossipsub topic.
 // SSZ encode -> snappy raw compress -> publish.
-// Matches ethlambda p2p gossipsub/handler.rs publish_block.
 func (h *Host) PublishBlock(ctx context.Context, block *types.SignedBlockWithAttestation) error {
 	data, err := block.MarshalSSZ()
 	if err != nil {
@@ -20,7 +19,6 @@ func (h *Host) PublishBlock(ctx context.Context, block *types.SignedBlockWithAtt
 
 // PublishAttestation publishes a signed attestation to the appropriate subnet topic.
 // Subnet = validator_id % committee_count.
-// Matches ethlambda p2p gossipsub/handler.rs publish_attestation.
 func (h *Host) PublishAttestation(ctx context.Context, att *types.SignedAttestation, committeeCount uint64) error {
 	data, err := att.MarshalSSZ()
 	if err != nil {
@@ -32,7 +30,6 @@ func (h *Host) PublishAttestation(ctx context.Context, att *types.SignedAttestat
 }
 
 // PublishAggregatedAttestation publishes an aggregated attestation to the aggregation topic.
-// Matches ethlambda p2p gossipsub/handler.rs publish_aggregated_attestation.
 func (h *Host) PublishAggregatedAttestation(ctx context.Context, agg *types.SignedAggregatedAttestation) error {
 	data, err := agg.MarshalSSZ()
 	if err != nil {

@@ -16,7 +16,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Protocol IDs matching ethlambda req_resp/messages.rs.
+// Protocol IDs rs.
 const (
 	StatusProtocol       = "/leanconsensus/req/status/1/ssz_snappy"
 	BlocksByRootProtocol = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
@@ -25,7 +25,7 @@ const (
 // Request/response timeout.
 const ReqRespTimeout = 15 * time.Second
 
-// StatusMessage matches ethlambda req_resp/messages.rs Status.
+// StatusMessage is exchanged on peer connection.
 // SSZ wire format: finalized.root (32) | finalized.slot (8) | head.root (32) | head.slot (8) = 80 bytes.
 type StatusMessage struct {
 	FinalizedRoot [32]byte
@@ -35,7 +35,7 @@ type StatusMessage struct {
 }
 
 // MarshalSSZ encodes StatusMessage to SSZ (80 bytes).
-// Field order matches ethlambda's Status { finalized: Checkpoint, head: Checkpoint }
+// SSZ wire format: finalized (root + slot) then head (root + slot) = 80 bytes.
 // where Checkpoint SSZ is { root: H256, slot: u64 }.
 func (s *StatusMessage) MarshalSSZ() []byte {
 	buf := make([]byte, 80)
@@ -73,7 +73,6 @@ func getUint64LE(buf []byte) uint64 {
 }
 
 // RegisterReqRespHandlers registers stream handlers for status and blocks_by_root.
-// Matches ethlambda p2p/req_resp/handlers.rs.
 func (h *Host) RegisterReqRespHandlers(statusFn func() *StatusMessage, blockByRootFn func(root [32]byte) *types.SignedBlockWithAttestation) {
 	// Status handler.
 	h.host.SetStreamHandler(protocol.ID(StatusProtocol), func(s network.Stream) {
@@ -149,7 +148,6 @@ func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byt
 }
 
 // SendStatusRequest sends a status request to a peer and returns their status.
-// Matches ethlambda p2p/req_resp/handlers.rs handle_status_response.
 func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus *StatusMessage) (*StatusMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
 	defer cancel()
@@ -185,7 +183,6 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 
 // FetchBlocksByRoot requests blocks from a peer by their roots.
 // Returns successfully decoded blocks (partial success allowed).
-// Matches ethlambda p2p/req_resp/handlers.rs with multi-chunk streaming.
 func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][32]byte) ([]*types.SignedBlockWithAttestation, error) {
 	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
 	defer cancel()

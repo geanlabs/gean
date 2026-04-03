@@ -11,7 +11,6 @@ import (
 
 // ProduceBlockWithSignatures builds a block with greedy attestation selection.
 // Returns the block and per-attestation signature proofs.
-// Matches ethlambda store.rs produce_block_with_signatures (L747-786).
 func ProduceBlockWithSignatures(
 	s *ConsensusStore,
 	slot, validatorIndex uint64,
@@ -35,7 +34,6 @@ func ProduceBlockWithSignatures(
 }
 
 // buildBlock builds a valid block with greedy attestation selection.
-// Matches ethlambda store.rs build_block (L975-1076).
 func buildBlock(
 	headState *types.State,
 	slot, proposerIndex uint64,
@@ -152,7 +150,6 @@ func buildBlock(
 }
 
 // extendProofsGreedily selects proofs maximizing new validator coverage.
-// Matches ethlambda store.rs extend_proofs_greedily (L909-965).
 func extendProofsGreedily(
 	proofs []*types.AggregatedSignatureProof,
 	selectedProofs *[]*types.AggregatedSignatureProof,

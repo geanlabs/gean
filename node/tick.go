@@ -10,7 +10,6 @@ import (
 )
 
 // onTick processes an 800ms tick event.
-// Matches ethlambda BlockChainServer::on_tick (lib.rs L118-170).
 func (e *Engine) onTick() {
 	timestampMs := uint64(time.Now().UnixMilli())
 
@@ -59,7 +58,6 @@ func (e *Engine) onTick() {
 }
 
 // updateHead runs LMD GHOST using known attestations.
-// Matches ethlambda store.rs update_head (L41-90).
 func (e *Engine) updateHead(logTree bool) {
 	attestations := e.Store.ExtractLatestKnownAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
@@ -110,7 +108,6 @@ func (e *Engine) updateHead(logTree bool) {
 }
 
 // updateSafeTarget runs LMD GHOST with 2/3 threshold using all attestations.
-// Matches ethlambda store.rs update_safe_target (L93-115).
 func (e *Engine) updateSafeTarget() {
 	attestations := e.Store.ExtractLatestAllAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
@@ -139,7 +136,7 @@ func (e *Engine) updateSafeTarget() {
 }
 
 // logChainStatus prints a chain status summary every slot at interval 1.
-// Matches zeam's CHAIN STATUS log format.
+
 func (e *Engine) logChainStatus(currentSlot uint64) {
 	headRoot := e.Store.Head()
 	headHeader := e.Store.GetBlockHeader(headRoot)

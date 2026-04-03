@@ -11,7 +11,6 @@ import (
 
 // maybePropose builds and publishes a block if we're the proposer.
 // Uses store.ProduceBlockWithSignatures for greedy attestation selection.
-// Matches ethlambda BlockChainServer::propose_block (lib.rs L211-276).
 func (e *Engine) maybePropose(slot, validatorID uint64) {
 	if e.Keys == nil {
 		return
@@ -58,7 +57,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 			ProposerAttestation: proposerAtt,
 		},
 		Signature: &types.BlockSignatures{
-			ProposerSignature:     attSig, // attestation signature, NOT block signature (matches ethlambda)
+			ProposerSignature:     attSig, // attestation signature, NOT block signature
 			AttestationSignatures: attSigProofs,
 		},
 	}
@@ -91,7 +90,6 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 }
 
 // produceAttestations creates and publishes attestations for non-proposing validators.
-// Matches ethlambda BlockChainServer::produce_attestations (lib.rs L165-210).
 func (e *Engine) produceAttestations(slot uint64) {
 	if e.Keys == nil {
 		return

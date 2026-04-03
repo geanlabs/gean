@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// Cross-client test vectors from ethlambda crypto/lib.rs tests.
-// Ream-produced signature verified by ethlambda — we must produce the same result.
 
 const reamPublicKeyHex = "7bbaf95bd653c827b5775e00b973b24d50ab4743db3373244f29c95fdf4ccc628788ba2b5b9d635acdb25770e8ceef66bfdecd0a"
 

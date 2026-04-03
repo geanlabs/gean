@@ -9,7 +9,7 @@ import (
 )
 
 // PebbleBackend is a persistent storage backend using CockroachDB's Pebble.
-// Follows the same pattern as ethlambda's RocksDB backend.
+// 
 //
 // Pebble doesn't have column families, so we prefix keys with the table name
 // to achieve table isolation: "{table_name}\x00{key}".

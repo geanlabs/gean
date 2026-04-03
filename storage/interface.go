@@ -1,7 +1,6 @@
 package storage
 
 // Backend is a pluggable storage backend.
-// Matches ethlambda: crates/storage/src/api/traits.rs
 type Backend interface {
 	// BeginRead returns a read-only view of the storage.
 	BeginRead() (ReadView, error)

@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	// CLI flags matching ethlambda main.rs L46-79.
+	// CLI flags rs L46-79.
 	configDir := flag.String("custom-network-config-dir", "", "Config directory (required)")
 	gossipPort := flag.Int("gossipsub-port", 9000, "P2P listen port (QUIC/UDP)")
 	httpAddr := flag.String("http-address", "127.0.0.1", "Bind address for API + metrics")
@@ -215,7 +215,6 @@ func main() {
 }
 
 // initStoreFromState initializes the consensus store from an anchor state.
-// Matches ethlambda Store::from_anchor_state.
 func initStoreFromState(s *node.ConsensusStore, state *types.State) {
 	// Compute anchor block root from header.
 	stateRoot, _ := state.HashTreeRoot()

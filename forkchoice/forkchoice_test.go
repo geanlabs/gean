@@ -21,7 +21,7 @@ func makeAttData(headRoot [32]byte, slot uint64) *types.AttestationData {
 	}
 }
 
-// --- Spec implementation tests (from ethlambda fork_choice/lib.rs tests) ---
+// --- Spec implementation tests (rs tests) ---
 
 func TestSpecComputeBlockWeights(t *testing.T) {
 	// Chain: root_a (slot 0) -> root_b (slot 1) -> root_c (slot 2)

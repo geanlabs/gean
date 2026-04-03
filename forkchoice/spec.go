@@ -3,13 +3,11 @@ package forkchoice
 import "github.com/geanlabs/gean/types"
 
 // Spec-compliant LMD GHOST implementation for testing.
-// Matches ethlambda fork_choice/src/lib.rs exactly (136 lines).
 // Used as debug oracle to validate proto-array produces identical results.
 
 // SpecComputeBlockWeights computes per-block attestation weights.
 // For each attestation, walks backward from head through parent chain,
 // incrementing weight for each block above startSlot.
-// Matches ethlambda compute_block_weights (lib.rs line 9).
 func SpecComputeBlockWeights(
 	startSlot uint64,
 	blocks map[[32]byte]BlockInfo,
@@ -33,7 +31,6 @@ func SpecComputeBlockWeights(
 }
 
 // SpecComputeLMDGhostHead computes the LMD GHOST head.
-// Matches ethlambda compute_lmd_ghost_head (lib.rs line 36).
 func SpecComputeLMDGhostHead(
 	startRoot [32]byte,
 	blocks map[[32]byte]BlockInfo,

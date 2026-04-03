@@ -3,7 +3,6 @@ package node
 import "fmt"
 
 // StoreError represents errors during consensus store operations.
-// Matches ethlambda store.rs StoreError enum (L789-886).
 type StoreError struct {
 	Kind    StoreErrorKind
 	Message string

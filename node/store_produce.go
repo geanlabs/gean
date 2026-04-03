@@ -6,7 +6,6 @@ import (
 )
 
 // ProduceAttestationData creates attestation data for the given slot.
-// Matches ethlambda store.rs produce_attestation_data (L690-724).
 func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationData {
 	headRoot := s.Head()
 	headState := s.GetState(headRoot)
@@ -16,7 +15,7 @@ func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationDa
 
 	// Derive source from head state's justified checkpoint.
 	// At genesis the checkpoint root is zero; substitute the real genesis block root.
-	// Matches ethlambda L697-704 and leanSpec PR #506.
+	
 	var source *types.Checkpoint
 	if headState.LatestBlockHeader.Slot == 0 {
 		source = &types.Checkpoint{
@@ -44,7 +43,6 @@ func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationDa
 }
 
 // GetAttestationTarget computes the target checkpoint for attestations.
-// Matches ethlambda store.rs get_attestation_target (L614-681).
 func GetAttestationTarget(s *ConsensusStore) *types.Checkpoint {
 	targetRoot := s.Head()
 	targetHeader := s.GetBlockHeader(targetRoot)
@@ -59,7 +57,7 @@ func GetAttestationTarget(s *ConsensusStore) *types.Checkpoint {
 	}
 
 	// Walk back toward safe target (up to JUSTIFICATION_LOOKBACK_SLOTS steps).
-	// Matches ethlambda L630-639.
+	
 	for i := uint64(0); i < types.JustificationLookbackSlots; i++ {
 		if targetHeader.Slot > safeTargetSlot {
 			targetRoot = targetHeader.ParentRoot
@@ -76,7 +74,7 @@ func GetAttestationTarget(s *ConsensusStore) *types.Checkpoint {
 	finalizedSlot := s.LatestFinalized().Slot
 
 	// Walk back until justifiable slot.
-	// Matches ethlambda L647-654.
+	
 	for targetHeader.Slot > finalizedSlot &&
 		!statetransition.SlotIsJustifiableAfter(targetHeader.Slot, finalizedSlot) {
 		targetRoot = targetHeader.ParentRoot
@@ -88,7 +86,7 @@ func GetAttestationTarget(s *ConsensusStore) *types.Checkpoint {
 	}
 
 	// Clamp to latest_justified if walked behind.
-	// Matches ethlambda L667-675.
+	
 	latestJustified := s.LatestJustified()
 	if targetHeader.Slot < latestJustified.Slot {
 		return latestJustified

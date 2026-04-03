@@ -21,7 +21,6 @@ type MessageHandler interface {
 
 // StartGossipListeners starts goroutines that read from each subscribed topic
 // and dispatch decoded messages to the handler.
-// Matches ethlambda p2p/gossipsub/handler.rs message dispatch.
 func (h *Host) StartGossipListeners(handler MessageHandler) {
 	for topic, sub := range h.subs {
 		go h.listenTopic(h.ctx, topic, sub, handler)

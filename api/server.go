@@ -13,7 +13,6 @@ import (
 )
 
 // StartAPIServer starts the API server on the given address.
-// Matches ethlambda rpc/lib.rs start_api_server (L14-21).
 func StartAPIServer(address string, s *node.ConsensusStore) error {
 	mux := http.NewServeMux()
 
@@ -32,7 +31,6 @@ func StartAPIServer(address string, s *node.ConsensusStore) error {
 }
 
 // StartMetricsServer starts the metrics server on the given address.
-// Matches ethlambda rpc/lib.rs start_metrics_server (L23-33).
 func StartMetricsServer(address string) error {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promhttp.Handler())
@@ -47,7 +45,6 @@ func StartMetricsServer(address string) error {
 }
 
 // handleHealth returns a simple health check.
-// Matches ethlambda rpc/metrics.rs get_health.
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"healthy","service":"gean"}`))
@@ -55,7 +52,6 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleFinalizedState returns the finalized state as SSZ bytes.
 // Zeros state_root in latest_block_header for canonical post-state form.
-// Matches ethlambda rpc/lib.rs get_latest_finalized_state (L62-77).
 func handleFinalizedState(s *node.ConsensusStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		finalized := s.LatestFinalized()
@@ -66,7 +62,7 @@ func handleFinalizedState(s *node.ConsensusStore) http.HandlerFunc {
 		}
 
 		// Zero state_root to match canonical post-state representation.
-		// Matches ethlambda L74: state.latest_block_header.state_root = H256::ZERO
+		
 		state.LatestBlockHeader.StateRoot = types.ZeroRoot
 
 		data, err := state.MarshalSSZ()
@@ -81,7 +77,6 @@ func handleFinalizedState(s *node.ConsensusStore) http.HandlerFunc {
 }
 
 // handleJustifiedCheckpoint returns the justified checkpoint as JSON.
-// Matches ethlambda rpc/lib.rs get_latest_justified_state (L79-84).
 func handleJustifiedCheckpoint(s *node.ConsensusStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cp := s.LatestJustified()
@@ -94,7 +89,6 @@ func handleJustifiedCheckpoint(s *node.ConsensusStore) http.HandlerFunc {
 }
 
 // handleForkChoice returns fork choice info as JSON.
-// Matches ethlambda rpc/fork_choice.rs get_fork_choice.
 func handleForkChoice(s *node.ConsensusStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		head := s.Head()

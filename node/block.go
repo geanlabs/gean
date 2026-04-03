@@ -10,7 +10,6 @@ import (
 )
 
 // onBlock processes a received block using an iterative work queue.
-// Matches ethlambda BlockChainServer::on_block (lib.rs L278-412).
 func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
 	queue := []*types.SignedBlockWithAttestation{signedBlock}
 
@@ -23,7 +22,7 @@ func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
 	// Prune old states and blocks AFTER the entire cascade completes.
 	// Running this mid-cascade would delete states that pending children
 	// still need, causing re-processing loops.
-	// Matches ethlambda lib.rs L305-308.
+	
 	PruneOldData(e.Store)
 }
 
@@ -43,7 +42,7 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 			block.Slot, blockRoot, parentRoot)
 
 		// Resolve the actual missing ancestor by walking the chain.
-		// Matches ethlambda lib.rs L340-343.
+		
 		missingRoot := parentRoot
 		for {
 			ancestor, ok := e.PendingBlockParents[missingRoot]
@@ -56,7 +55,7 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 		e.PendingBlockParents[blockRoot] = missingRoot
 
 		// Store block in DB as pending (no LiveChain entry — invisible to fork choice).
-		// Matches ethlambda lib.rs L348.
+		
 		e.Store.StorePendingBlock(blockRoot, signedBlock)
 
 		// Track parent→child relationship in memory.
@@ -69,7 +68,7 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 
 		// Walk up through DB: if missingRoot has a stored header,
 		// the actual missing block is further up.
-		// Matches ethlambda lib.rs L360-380.
+		
 		for {
 			header := e.Store.GetBlockHeader(missingRoot)
 			if header == nil {
@@ -145,7 +144,6 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 }
 
 // collectPendingChildren moves pending children of parent into the work queue.
-// Matches ethlambda lib.rs collect_pending_children (L428-460).
 func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.SignedBlockWithAttestation) {
 	childRoots, ok := e.PendingBlocks[parentRoot]
 	if !ok {
@@ -168,7 +166,6 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 }
 
 // onGossipAttestation validates and stores an individual attestation.
-// Matches ethlambda store.rs on_gossip_attestation (L333-395).
 func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	// Validate attestation data.
 	if err := ValidateAttestationData(e.Store, att.Data); err != nil {
@@ -210,7 +207,6 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 }
 
 // onGossipAggregatedAttestation validates and stores an aggregated attestation.
-// Matches ethlambda store.rs on_gossip_aggregated_attestation (L397-454).
 func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
 	// Validate attestation data.
 	if err := ValidateAttestationData(e.Store, agg.Data); err != nil {

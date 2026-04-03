@@ -14,7 +14,6 @@ type ProtoNode struct {
 }
 
 // ProtoArray is a flat array representing the block tree for O(n) fork choice.
-// Translated from zeam's forkchoice.zig ProtoArray struct.
 type ProtoArray struct {
 	nodes   []ProtoNode
 	indices map[[32]byte]int // root -> index
@@ -39,7 +38,7 @@ func NewProtoArray(anchorSlot uint64, anchorRoot [32]byte) *ProtoArray {
 }
 
 // OnBlock registers a new block in the proto-array.
-// Matches zeam forkchoice.zig ProtoArray.onBlock (line 74).
+
 func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {
 	if _, exists := pa.indices[root]; exists {
 		return // already registered
@@ -64,7 +63,7 @@ func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {
 
 // ApplyScoreChanges propagates weight deltas backward through the array
 // and recalculates bestChild/bestDescendant.
-// Matches zeam forkchoice.zig ProtoArray.applyDeltasUnlocked (line 146).
+
 func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 	if len(deltas) != len(pa.nodes) {
 		return
@@ -126,7 +125,7 @@ func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 }
 
 // FindHead returns the head root by walking the bestDescendant chain from justifiedRoot.
-// Matches zeam forkchoice.zig computeFCHeadUnlocked (line 1168).
+
 func (pa *ProtoArray) FindHead(justifiedRoot [32]byte) [32]byte {
 	idx, ok := pa.indices[justifiedRoot]
 	if !ok {

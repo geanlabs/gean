@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 )
 
-// Message ID domains matching ethlambda p2p/lib.rs L619-638.
+// Message ID domains rs L619-638.
 var (
 	domainValidSnappy   = [4]byte{0x01, 0x00, 0x00, 0x00}
 	domainInvalidSnappy = [4]byte{0x00, 0x00, 0x00, 0x00}
@@ -13,7 +13,6 @@ var (
 
 // ComputeMessageID computes a gossipsub message ID.
 // Format: SHA256(domain || uint64_le(topic_len) || topic || data)[:20]
-// Matches ethlambda p2p/lib.rs compute_message_id (L619-638).
 //
 // domain = 0x01000000 if snappy decompression succeeds (valid)
 // domain = 0x00000000 if snappy decompression fails (invalid)

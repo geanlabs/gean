@@ -3,7 +3,7 @@ package forkchoice
 import "github.com/geanlabs/gean/types"
 
 // VoteTracker tracks per-validator attestation targets for delta computation.
-// Matches zeam's AttestationTracker (forkchoice.zig line 251).
+
 type VoteTracker struct {
 	AppliedIndex int // index of last applied vote, -1 if none
 	LatestKnown  *VoteTarget
@@ -59,7 +59,7 @@ func (vs *VoteStore) getOrCreate(validatorID uint64) *VoteTracker {
 }
 
 // ComputeDeltas computes weight deltas from vote changes.
-// Matches zeam forkchoice.zig computeDeltasUnlocked (line 1135).
+
 //
 // For each validator:
 //   - Remove weight from previously applied index (if any)
