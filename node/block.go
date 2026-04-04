@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // onBlock processes a received block using an iterative work queue.
@@ -22,10 +22,10 @@ func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
 	}
 
 	// Prune AFTER the entire cascade completes — not mid-cascade.
-	// Canonicality-based pruning: prune non-canonical forks + old finalized ancestors.
 	newFinalized := e.Store.LatestFinalized()
 	if newFinalized.Slot > oldFinalizedSlot {
 		PruneOnFinalization(e.Store, e.FC, oldFinalizedSlot, newFinalized.Slot, newFinalized.Root)
+		e.discardFinalizedPending(newFinalized.Slot)
 	}
 }
 
@@ -41,11 +41,33 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 
 	// Check if parent state exists.
 	if !e.Store.HasState(parentRoot) {
-		logger.Warn(logger.Chain, "block parent missing slot=%d block_root=0x%x parent_root=0x%x, storing as pending",
-			block.Slot, blockRoot, parentRoot)
+		// Check pending block cache limit.
+		if e.pendingBlockCount() >= MaxPendingBlocks {
+			logger.Warn(logger.Chain, "pending block cache full (%d), rejecting block slot=%d block_root=0x%x",
+				MaxPendingBlocks, block.Slot, blockRoot)
+			return
+		}
+
+		// Compute depth: parent's depth + 1.
+		depth := 1
+		if parentDepth, ok := e.PendingBlockDepths[parentRoot]; ok {
+			depth = parentDepth + 1
+		}
+
+		// Check depth limit.
+		if depth > MaxBlockFetchDepth {
+			logger.Warn(logger.Chain, "block fetch depth exceeded (%d > %d), discarding block slot=%d block_root=0x%x",
+				depth, MaxBlockFetchDepth, block.Slot, blockRoot)
+			return
+		}
+
+		logger.Warn(logger.Chain, "block parent missing slot=%d block_root=0x%x parent_root=0x%x depth=%d, storing as pending",
+			block.Slot, blockRoot, parentRoot, depth)
+
+		// Track depth.
+		e.PendingBlockDepths[blockRoot] = depth
 
 		// Resolve the actual missing ancestor by walking the chain.
-		
 		missingRoot := parentRoot
 		for {
 			ancestor, ok := e.PendingBlockParents[missingRoot]
@@ -58,7 +80,6 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 		e.PendingBlockParents[blockRoot] = missingRoot
 
 		// Store block in DB as pending (no LiveChain entry — invisible to fork choice).
-		
 		e.Store.StorePendingBlock(blockRoot, signedBlock)
 
 		// Track parent→child relationship in memory.
@@ -71,7 +92,6 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 
 		// Walk up through DB: if missingRoot has a stored header,
 		// the actual missing block is further up.
-		
 		for {
 			header := e.Store.GetBlockHeader(missingRoot)
 			if header == nil {
@@ -140,6 +160,9 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 	// Process proposer attestation.
 	ProcessProposerAttestation(e.Store, signedBlock, true)
 
+	// Clear depth tracking for this block (now processed).
+	delete(e.PendingBlockDepths, blockRoot)
+
 	// Cascade: enqueue pending children for processing.
 	e.collectPendingChildren(blockRoot, queue)
 }
@@ -156,6 +179,7 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 
 	for childRoot := range childRoots {
 		delete(e.PendingBlockParents, childRoot)
+		delete(e.PendingBlockDepths, childRoot)
 
 		childBlock := e.Store.GetSignedBlock(childRoot)
 		if childBlock == nil {
@@ -163,6 +187,62 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 			continue
 		}
 		*queue = append(*queue, childBlock)
+	}
+}
+
+// pendingBlockCount returns the total number of pending blocks across all parents.
+func (e *Engine) pendingBlockCount() int {
+	count := 0
+	for _, children := range e.PendingBlocks {
+		count += len(children)
+	}
+	return count
+}
+
+// discardFinalizedPending removes all pending blocks at or below the finalized slot.
+// Their subtrees are also discarded since they can never be processed.
+func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
+	discarded := 0
+
+	// Collect parent roots to discard.
+	var parentsToDiscard [][32]byte
+	for parentRoot, children := range e.PendingBlocks {
+		for childRoot := range children {
+			header := e.Store.GetBlockHeader(childRoot)
+			if header != nil && header.Slot <= finalizedSlot {
+				// This pending block is at/below finalized — discard entire subtree.
+				e.discardPendingSubtree(childRoot)
+				delete(children, childRoot)
+				discarded++
+			}
+		}
+		if len(children) == 0 {
+			parentsToDiscard = append(parentsToDiscard, parentRoot)
+		}
+	}
+
+	for _, parentRoot := range parentsToDiscard {
+		delete(e.PendingBlocks, parentRoot)
+	}
+
+	if discarded > 0 {
+		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
+	}
+}
+
+// discardPendingSubtree recursively discards a pending block and all its descendants.
+func (e *Engine) discardPendingSubtree(blockRoot [32]byte) {
+	delete(e.PendingBlockParents, blockRoot)
+	delete(e.PendingBlockDepths, blockRoot)
+
+	children, ok := e.PendingBlocks[blockRoot]
+	if !ok {
+		return
+	}
+	delete(e.PendingBlocks, blockRoot)
+
+	for childRoot := range children {
+		e.discardPendingSubtree(childRoot)
 	}
 }
 

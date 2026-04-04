@@ -15,6 +15,12 @@ import (
 // Engine is the consensus coordination loop.
 // It owns Store, ForkChoice, and KeyManager as siblings,
 // rs L78-95).
+// Pending block limits to prevent stuck-forever scenarios.
+const (
+	MaxBlockFetchDepth = 512  // Max ancestor chain depth before discarding
+	MaxPendingBlocks   = 1024 // Max pending blocks before rejecting new ones
+)
+
 type Engine struct {
 	Store               *ConsensusStore
 	FC                  *forkchoice.ForkChoice
@@ -24,6 +30,7 @@ type Engine struct {
 	CommitteeCount      uint64
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
 	PendingBlockParents map[[32]byte][32]byte           // block_root -> missing_ancestor
+	PendingBlockDepths  map[[32]byte]int                // block_root -> fetch depth
 
 	// Channels for receiving messages from P2P goroutine.
 	BlockCh       chan *types.SignedBlockWithAttestation
@@ -49,6 +56,7 @@ func New(
 		CommitteeCount:      committeeCount,
 		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
 		PendingBlockParents: make(map[[32]byte][32]byte),
+		PendingBlockDepths:  make(map[[32]byte]int),
 		BlockCh:             make(chan *types.SignedBlockWithAttestation, 64),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
