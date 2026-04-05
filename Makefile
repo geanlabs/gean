@@ -1,128 +1,128 @@
-.PHONY: build ffi spec-test unit-test test-race lint fmt clean docker-build refresh-genesis-time run-setup run-setup-if-missing run run-quic run-devnet run-node-1 run-node-2 help leanSpec leanSpec/fixtures
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
 
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 
-# Force Go build cache into the repo to avoid sandboxed $HOME cache paths.
-export GOCACHE := $(CURDIR)/.gocache
+TESTNET_DIR ?= testnet
+NUM_VALIDATORS ?= 5
+NUM_NODES ?= 3
 
-ffi:
-	@cd xmss/leansig-ffi && cargo +nightly build --release --locked
-	@cd xmss/leanmultisig-ffi && cargo +nightly build --release --locked
+help: ## Show help for each Makefile recipe
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-build: ffi
+ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
+	@cd xmss/rust && cargo build --release --locked
+
+build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
-	@go build -ldflags "-X github.com/geanlabs/gean/node.Version=$(VERSION)" -o bin/gean ./cmd/gean
+	@go build -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
-# Run the spectests with the leanSpec fixtures, skipping signature verification for faster test execution
-spec-test: ffi leanSpec/fixtures
-	go test -tags skip_sig_verify -count=1 ./spectests/...
+test: ## Run unit tests (excludes crypto FFI and spec tests)
+	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
 
-# Run the unit tests, which include signature verification and thus take longer to execute
-unit-test: ffi
-	go test ./... -count=1
+test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
+	go test ./xmss/ -v -count=1
 
-test-race: ffi
-	go test -race ./...
+test-spec: leanSpec/fixtures ## Run spec fixture tests only (fast, excludes xmss FFI)
+	go test ./spectests/  -count=1 -tags=spectests
 
-lint:
-	go vet ./...
-	@which staticcheck > /dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed, skipping"
+test-all: leanSpec/fixtures ## Run all tests including spec fixtures and xmss FFI (slow)
+	go test ./... -v -count=1 -tags=spectests
 
-fmt:
-	go fmt ./...
+lint: ## Run golangci-lint
+	golangci-lint run ./...
 
-clean:
-	rm -rf bin
-	go clean
+fmt: ## Format all Go code
+	gofmt -w .
+	goimports -w .
 
-docker-build:
-	docker build -t gean:$(VERSION) -t ghcr.io/geanlabs/gean:devnet3 .
+sszgen: ## Regenerate SSZ encoding files from struct tags
+	@rm -f types/*_encoding.go
+	sszgen --path pkg/types --objs ChainConfig --output types/config_encoding.go
+	sszgen --path pkg/types --objs Checkpoint --output types/checkpoint_encoding.go
+	sszgen --path pkg/types --objs Validator --output types/validator_encoding.go
+	sszgen --path pkg/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SignedAggregatedAttestation --exclude-objs Checkpoint --output types/attestation_encoding.go
+	sszgen --path pkg/types --objs BlockHeader,BlockBody,Block,BlockWithAttestation,AggregatedSignatureProof,BlockSignatures,SignedBlockWithAttestation --exclude-objs Checkpoint,AttestationData,Attestation,AggregatedAttestation,AggregatedSignatureProof --output types/block_encoding.go
+	sszgen --path pkg/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output types/state_encoding.go
 
-# Resolve the directory this Makefile lives in
-MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-CONFIG := $(MAKEFILE_DIR)config.yaml
+clean: ## Remove build artifacts and generated files
+	rm -rf bin data
+	rm -f types/*_encoding.go
+	cd xmss/rust && cargo clean
 
-RUN_SETUP_NODES ?= 3
-RUN_SETUP_VALIDATORS ?= 5
-RUN_SETUP_IP ?= 127.0.0.1
-RUN_SETUP_BASE_PORT ?= 9000
+tidy: ## Tidy Go module dependencies
+	go mod tidy
 
-refresh-genesis-time:
-	@NEW_TIME=$$(($$(date +%s) + 30)); \
-	if [ "$$(uname -s)" = "Darwin" ]; then \
-		sed -i '' "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" $(CONFIG); \
-	else \
-		sed -i "s/^GENESIS_TIME:.*/GENESIS_TIME: $$NEW_TIME/" $(CONFIG); \
-	fi; \
-	echo "Updated GENESIS_TIME to $$NEW_TIME in $(CONFIG)"
+# --- Local testnet ---
 
-run-setup: build
-	@set -eu; \
-	NOW=$$(date +%s); \
-	echo "GENESIS_TIME: $$NOW" > config.yaml; \
-	./bin/keygen -validators $(RUN_SETUP_VALIDATORS) -keys-dir keys -print-yaml >> config.yaml; \
-	go run ./scripts/gen_node_keys -nodes $(RUN_SETUP_NODES) -ip $(RUN_SETUP_IP) -base-port $(RUN_SETUP_BASE_PORT) -out nodes.yaml 1>/dev/null; \
-	$(MAKE) refresh-genesis-time 1>/dev/null; \
-	echo "Generated local devnet artifacts: config.yaml, nodes.yaml, keys/, node*.key"
+run-setup: build ## Generate testnet config + XMSS keys (first run only, refreshes genesis time)
+	@bin/keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
 
-run-setup-if-missing:
-	@set -eu; \
-	missing=0; \
-	[ -f config.yaml ] || missing=1; \
-	[ -f nodes.yaml ] || missing=1; \
-	i=0; \
-	while [ $$i -lt $(RUN_SETUP_NODES) ]; do \
-		[ -f node$$i.key ] || missing=1; \
-		i=$$(($$i + 1)); \
-	done; \
-	[ -f keys/validator_0_pk.ssz ] || missing=1; \
-	[ -f keys/validator_0_sk.ssz ] || missing=1; \
-	if [ $$missing -eq 0 ]; then \
-		echo "Using existing local devnet artifacts (config.yaml, nodes.yaml). Run 'make run-setup' to regenerate."; \
-	else \
-		$(MAKE) run-setup; \
-	fi
+run: build ## Run node0 (aggregator) — requires make run-setup first
+	@rm -rf data/node0
+	@bin/keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
+	@bin/gean \
+		--custom-network-config-dir $(TESTNET_DIR) \
+		--node-key $(TESTNET_DIR)/node0.key \
+		--node-id node0 \
+		--data-dir data/node0 \
+		--is-aggregator \
+		--gossipsub-port 9000 \
+		--api-port 5052 \
+		--metrics-port 8080
 
-run: build refresh-genesis-time run-setup-if-missing
-	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node0 --listen-addr /ip4/0.0.0.0/tcp/9000 --node-key node0.key --data-dir data/node0 --is-aggregator
- 
-run-devnet:
-	@if [ ! -d "../lean-quickstart" ]; then \
-		echo "Cloning lean-quickstart..."; \
-		git clone https://github.com/blockblaz/lean-quickstart.git ../lean-quickstart; \
-	fi
-	$(MAKE) docker-build
-	cd ../lean-quickstart && NETWORK_DIR=local-devnet ./spin-node.sh --node gean_0 --generateGenesis --metrics
+run-node1: build ## Run node1 on port 9001
+	@rm -rf data/node1
+	@bin/gean \
+		--custom-network-config-dir $(TESTNET_DIR) \
+		--node-key $(TESTNET_DIR)/node1.key \
+		--node-id node1 \
+		--data-dir data/node1 \
+		--gossipsub-port 9001 \
+		--api-port 5053 \
+		--metrics-port 8081
 
-run-node-1: run-setup-if-missing
-	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node1 --listen-addr /ip4/0.0.0.0/tcp/9001 --node-key node1.key --data-dir data/node1 --discovery-port 9001 --api-port 5053 --metrics-port 8081
+run-node2: build ## Run node2 on port 9002
+	@rm -rf data/node2
+	@bin/gean \
+		--custom-network-config-dir $(TESTNET_DIR) \
+		--node-key $(TESTNET_DIR)/node2.key \
+		--node-id node2 \
+		--data-dir data/node2 \
+		--gossipsub-port 9002 \
+		--api-port 5054 \
+		--metrics-port 8082
 
+# --- leanSpec fixtures ---
 
+LEAN_SPEC_COMMIT_HASH := be853180d21aa36d6401b8c1541aa6fcaad5008d
 
-run-node-2: run-setup-if-missing
-	@./bin/gean --genesis config.yaml --bootnodes nodes.yaml --validator-registry-path validators.yaml --validator-keys keys --node-id node2 --listen-addr /ip4/0.0.0.0/tcp/9002 --node-key node2.key --data-dir data/node2 --discovery-port 9002 --api-port 5054 --metrics-port 8082
+leanSpec: ## Clone leanSpec at devnet-3 commit
+	git clone https://github.com/leanEthereum/leanSpec.git --single-branch
+	cd leanSpec && git checkout $(LEAN_SPEC_COMMIT_HASH)
 
-# The commit hash of the leanSpec repository to use for testing and fixtures
-LEAN_SPEC_COMMIT_HASH := 8b7636bb8a95fe4bec414cc4c24e74079e6256b6
+leanSpec/fixtures: leanSpec ## Generate consensus test fixtures from leanSpec
+	cd leanSpec && uv run fill --fork devnet --scheme=prod -o fixtures
 
-# A file to track which commit of the leanSpec fixtures have been generated, to avoid unnecessary regeneration
-LEAN_SPEC_FIXTURE_STAMP := leanSpec/.fixtures-commit
+# --- Docker ---
 
-# Clone the leanSpec repository if it doesn't exist, and checkout the specified commit
-leanSpec:
-	@if [ ! -d "leanSpec/.git" ]; then \
-		git clone https://github.com/leanEthereum/leanSpec.git --single-branch leanSpec; \
-	fi
-	@cd leanSpec && CURRENT_COMMIT=$$(git rev-parse HEAD) && \
-	if [ "$$CURRENT_COMMIT" != "$(LEAN_SPEC_COMMIT_HASH)" ]; then \
-		git fetch --all --tags --prune && git checkout $(LEAN_SPEC_COMMIT_HASH); \
-	fi
+DOCKER_TAG ?= local
 
-# Generate the leanSpec fixtures if they are not already generated for the specified commit
-leanSpec/fixtures: leanSpec
-	@CURRENT_FIXTURE_COMMIT=$$(cat $(LEAN_SPEC_FIXTURE_STAMP) 2>/dev/null || true); \
-	if [ "$$CURRENT_FIXTURE_COMMIT" != "$(LEAN_SPEC_COMMIT_HASH)" ] || [ ! -d "leanSpec/fixtures/consensus" ]; then \
-		cd leanSpec && uv run fill --fork=Devnet --layer=consensus --clean -o fixtures && \
-		echo "$(LEAN_SPEC_COMMIT_HASH)" > .fixtures-commit; \
-	fi
+docker-build: ## Build Docker image
+	docker build \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
+		-t gean:$(VERSION) \
+		-t ghcr.io/geanlabs/gean:devnet3 .
+
+# --- Multi-client devnet ---
+
+lean-quickstart: ## Clone lean-quickstart for local devnet
+	git clone https://github.com/blockblaz/lean-quickstart.git --depth 1 --single-branch
+
+run-devnet: docker-build lean-quickstart ## Run local multi-client devnet
+	@echo "Starting local devnet with gean client (\"$(DOCKER_TAG)\" tag)."
+	@cd lean-quickstart \
+		&& NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > ../devnet.log 2>&1

@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [
+  "hashsig-glue",
+  "multisig-glue",
+]
+
+[profile.release]
+lto = false
+strip = "symbols"
+codegen-units = 16
