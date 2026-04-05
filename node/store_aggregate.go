@@ -45,7 +45,6 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 		var pubkeys []xmss.CPubKey
 		var sigs []xmss.CSig
 		var ids []uint64
-		var cleanupPubkeys []xmss.CPubKey
 		var cleanupSigs []xmss.CSig // for fallback-parsed sigs only
 
 		valid := true
@@ -70,25 +69,21 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 				sigHandle = parsed
 			}
 
-			// Parse pubkey to opaque handle.
-			pk, err := xmss.ParsePublicKey(targetState.Validators[sigEntry.ValidatorID].Pubkey)
+			// Get cached pubkey handle (parsed once, reused across aggregation cycles).
+			pk, err := s.PubKeyCache.Get(targetState.Validators[sigEntry.ValidatorID].Pubkey)
 			if err != nil {
 				logger.Error(logger.Signature, "aggregate: parse pubkey %d: %v", sigEntry.ValidatorID, err)
 				valid = false
 				break
 			}
-			cleanupPubkeys = append(cleanupPubkeys, pk)
 
 			pubkeys = append(pubkeys, pk)
 			sigs = append(sigs, sigHandle)
 			ids = append(ids, sigEntry.ValidatorID)
 		}
 
-		// Free pubkey handles and any fallback-parsed sig handles.
+		// Free only fallback-parsed sig handles. Pubkey handles are owned by the cache.
 		defer func() {
-			for _, pk := range cleanupPubkeys {
-				xmss.FreePublicKey(pk)
-			}
 			for _, sig := range cleanupSigs {
 				xmss.FreeSignature(sig)
 			}

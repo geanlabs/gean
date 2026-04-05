@@ -3,6 +3,7 @@ package node
 import (
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 const (
@@ -21,6 +22,7 @@ type ConsensusStore struct {
 	NewPayloads      *PayloadBuffer
 	KnownPayloads    *PayloadBuffer
 	GossipSignatures GossipSignatureMap
+	PubKeyCache      *xmss.PubKeyCache // cached parsed pubkey handles for aggregation
 }
 
 // NewConsensusStore creates a store backed by the given storage backend.
@@ -30,6 +32,7 @@ func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 		NewPayloads:      NewPayloadBuffer(newPayloadCap),
 		KnownPayloads:    NewPayloadBuffer(aggregatedPayloadCap),
 		GossipSignatures: make(GossipSignatureMap),
+		PubKeyCache:      xmss.NewPubKeyCache(),
 	}
 }
 

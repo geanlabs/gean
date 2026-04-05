@@ -197,21 +197,28 @@ func AggregateSignatures(
 	}
 	defer C.xmss_free_aggregate_signature((*C.Devnet2XmssAggregateSignature)(unsafe.Pointer(aggSig)))
 
-	// Serialize to SSZ bytes.
-	buf := make([]byte, MaxProofSize)
+	// Serialize to SSZ bytes using pooled buffer.
+	bufPtr := getProofBuf()
+	buf := *bufPtr
 	n := C.xmss_aggregate_signature_to_bytes(
 		aggSig,
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
 		C.size_t(len(buf)),
 	)
 	if n == 0 {
+		putProofBuf(bufPtr)
 		return nil, ErrSerializationFailed
 	}
 	if int(n) > MaxProofSize {
+		putProofBuf(bufPtr)
 		return nil, ErrProofTooBig
 	}
 
-	return buf[:n], nil
+	// Copy used bytes to a right-sized slice, return pooled buffer.
+	result := make([]byte, int(n))
+	copy(result, buf[:n])
+	putProofBuf(bufPtr)
+	return result, nil
 }
 
 // VerifyAggregatedSignature verifies an aggregated XMSS proof.

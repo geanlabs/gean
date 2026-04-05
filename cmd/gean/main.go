@@ -210,8 +210,10 @@ func main() {
 
 	logger.Info(logger.Node, "shutting down...")
 	cancel()
-	// Give engine goroutine time to exit before deferred backend.Close() runs.
+	// Give engine goroutine time to exit before cleanup.
 	time.Sleep(500 * time.Millisecond)
+	// Free cached pubkey handles.
+	s.PubKeyCache.Close()
 }
 
 // initStoreFromState initializes the consensus store from an anchor state.
