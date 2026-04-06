@@ -62,10 +62,6 @@ func buildBlock(
 		}
 
 		processedRoots := make(map[[32]byte]bool)
-		// coveredValidators tracks validators already included in this block.
-		// Persists across the fixed-point loop iterations so each validator
-		// is added at most once, bounding total attestations by validator count.
-		coveredValidators := make(map[uint64]bool)
 
 		// Sort by (target.slot, data_root) for deterministic processing order.
 		type sortEntry struct {
@@ -86,6 +82,12 @@ func buildBlock(
 
 		for {
 			foundNew := false
+
+			// Per-iteration covered set: each validator can be included at most
+			// once per fixed-point iteration, but may appear across iterations
+			// as justification advances and unlocks newer votes with newer sources.
+			// Total attestations bounded by numValidators × iterations.
+			coveredValidators := make(map[uint64]bool)
 
 			for _, se := range sorted {
 				if processedRoots[se.dataRoot] {
