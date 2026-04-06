@@ -33,7 +33,12 @@ func ProduceBlockWithSignatures(
 	return buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries)
 }
 
-// buildBlock builds a valid block with greedy attestation selection.
+// buildBlock builds a valid block with per-validator attestation dedup.
+//
+// To prevent unbounded block growth during stall recovery, each validator
+// is included in at most one attestation across the entire block. This
+// matches the canonical approach used by nlean, zeam, and lantern, and
+// keeps blocks under the 12 MiB gossip limit regardless of payload backlog.
 func buildBlock(
 	headState *types.State,
 	slot, proposerIndex uint64,
@@ -57,6 +62,10 @@ func buildBlock(
 		}
 
 		processedRoots := make(map[[32]byte]bool)
+		// coveredValidators tracks validators already included in this block.
+		// Persists across the fixed-point loop iterations so each validator
+		// is added at most once, bounding total attestations by validator count.
+		coveredValidators := make(map[uint64]bool)
 
 		// Sort by (target.slot, data_root) for deterministic processing order.
 		type sortEntry struct {
@@ -93,7 +102,7 @@ func buildBlock(
 				processedRoots[se.dataRoot] = true
 				foundNew = true
 
-				extendProofsGreedily(se.entry.Proofs, &signatures, &attestations, se.entry.Data)
+				extendProofsGreedily(se.entry.Proofs, &signatures, &attestations, se.entry.Data, coveredValidators)
 			}
 
 			if !foundNew {
@@ -149,18 +158,20 @@ func buildBlock(
 	return finalBlock, signatures, nil
 }
 
-// extendProofsGreedily selects proofs maximizing new validator coverage.
+// extendProofsGreedily selects proofs maximizing new validator coverage,
+// respecting a global covered set so each validator is added at most once
+// across the entire block.
 func extendProofsGreedily(
 	proofs []*types.AggregatedSignatureProof,
 	selectedProofs *[]*types.AggregatedSignatureProof,
 	attestations *[]*types.AggregatedAttestation,
 	attData *types.AttestationData,
+	covered map[uint64]bool,
 ) {
 	if len(proofs) == 0 {
 		return
 	}
 
-	covered := make(map[uint64]bool)
 	remaining := make(map[int]bool)
 	for i := range proofs {
 		remaining[i] = true
