@@ -167,8 +167,12 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 	}
 
 	gossipSigs := e.Store.GossipSignatures.Len()
-	newPayloads := e.Store.NewPayloads.Len()
 	knownPayloads := e.Store.KnownPayloads.Len()
+	statesCount := e.Store.StatesCount()
+	fcNodesCount := 0
+	if e.FC != nil {
+		fcNodesCount = e.FC.Array.Len()
+	}
 
 	// Build mesh info string with full topic paths.
 	meshInfo := ""
@@ -179,13 +183,13 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 		}
 	}
 
-	logger.Info(logger.Chain, "\n\n+===============================================================+\n  CHAIN STATUS: Current Slot: %d | Head Slot: %d | Behind: %d\n+---------------------------------------------------------------+\n  Connected Peers:    %d\n+---------------------------------------------------------------+\n  Head Block Root:    0x%x\n  Parent Block Root:  0x%x\n  State Root:         0x%x\n+---------------------------------------------------------------+\n  Latest Justified:   Slot %6d | Root: 0x%x\n  Latest Finalized:   Slot %6d | Root: 0x%x\n+---------------------------------------------------------------+\n  Gossip Sigs: %d | New Payloads: %d | Known Payloads: %d\n+---------------------------------------------------------------+\n  Topics:%s\n+===============================================================+\n",
+	logger.Info(logger.Chain, "\n\n+===============================================================+\n  CHAIN STATUS: Current Slot: %d | Head Slot: %d | Behind: %d\n+---------------------------------------------------------------+\n  Connected Peers:    %d\n+---------------------------------------------------------------+\n  Head Block Root:    0x%x\n  Parent Block Root:  0x%x\n  State Root:         0x%x\n+---------------------------------------------------------------+\n  Latest Justified:   Slot %6d | Root: 0x%x\n  Latest Finalized:   Slot %6d | Root: 0x%x\n+---------------------------------------------------------------+\n  Gossip Sigs: %d | Known Payloads: %d | States: %d | FC Nodes: %d\n+---------------------------------------------------------------+\n  Topics:%s\n+===============================================================+\n",
 		currentSlot, headSlot, behind,
 		peerCount,
 		headRoot, parentRoot, stateRoot,
 		justified.Slot, justified.Root,
 		finalized.Slot, finalized.Root,
-		gossipSigs, newPayloads, knownPayloads,
+		gossipSigs, knownPayloads, statesCount, fcNodesCount,
 		meshInfo)
 }
 

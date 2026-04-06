@@ -39,8 +39,11 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 		return
 	}
 
+	hasParent := e.Store.HasState(parentRoot)
+	logger.Info(logger.Chain, "processing block slot=%d block_root=0x%x has_parent=%t", block.Slot, blockRoot, hasParent)
+
 	// Check if parent state exists.
-	if !e.Store.HasState(parentRoot) {
+	if !hasParent {
 		// Check pending block cache limit.
 		if e.pendingBlockCount() >= MaxPendingBlocks {
 			logger.Warn(logger.Chain, "pending block cache full (%d), rejecting block slot=%d block_root=0x%x",

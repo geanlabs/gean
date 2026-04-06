@@ -192,6 +192,24 @@ func (s *ConsensusStore) InsertState(root [32]byte, state *types.State) {
 	wb.Commit()
 }
 
+// StatesCount returns the number of states currently stored.
+func (s *ConsensusStore) StatesCount() int {
+	rv, err := s.Backend.BeginRead()
+	if err != nil {
+		return 0
+	}
+	it, err := rv.PrefixIterator(storage.TableStates, nil)
+	if err != nil {
+		return 0
+	}
+	defer it.Close()
+	count := 0
+	for it.Next() {
+		count++
+	}
+	return count
+}
+
 func (s *ConsensusStore) InsertBlockHeader(root [32]byte, header *types.BlockHeader) {
 	data, _ := header.MarshalSSZ()
 	wb, _ := s.Backend.BeginWrite()

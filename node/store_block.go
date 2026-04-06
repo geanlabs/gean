@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/logger"
@@ -35,6 +36,7 @@ func onBlockCore(
 	verify bool,
 	localValidatorIDs []uint64,
 ) error {
+	start := time.Now()
 	block := signedBlock.Block.Block
 	slot := block.Slot
 
@@ -125,9 +127,10 @@ func onBlockCore(
 	if block.Body != nil {
 		attCount = len(block.Body.Attestations)
 	}
-	logger.Info(logger.Chain, "block slot=%d block_root=0x%x parent_root=0x%x proposer=%d attestations=%d justified_slot=%d finalized_slot=%d",
+	logger.Info(logger.Chain, "block slot=%d block_root=0x%x parent_root=0x%x proposer=%d attestations=%d justified_slot=%d finalized_slot=%d proc_time=%s",
 		slot, blockRoot, block.ParentRoot, block.ProposerIndex, attCount,
-		s.LatestJustified().Slot, s.LatestFinalized().Slot)
+		s.LatestJustified().Slot, s.LatestFinalized().Slot,
+		time.Since(start).Round(time.Millisecond))
 
 	return nil
 }
