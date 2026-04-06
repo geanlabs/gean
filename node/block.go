@@ -125,6 +125,12 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 			go func(root [32]byte) {
 				blocks, err := e.P2P.FetchBlocksByRootWithRetry(context.Background(), [][32]byte{root})
 				if err != nil || len(blocks) == 0 {
+					// All retries exhausted — notify the engine to blacklist this root.
+					select {
+					case e.FailedRootCh <- root:
+					default:
+						logger.Warn(logger.Sync, "failed root channel full, dropping notification for 0x%x", root)
+					}
 					return
 				}
 				for _, result := range blocks {
@@ -231,6 +237,27 @@ func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
 	if discarded > 0 {
 		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
 	}
+}
+
+// onFailedRoot discards pending blocks whose subtree depends on a root that
+// no peer could serve after exhausting all fetch retries.
+//
+// We free memory by dropping the orphaned subtree, but we do NOT permanently
+// blacklist the root — if a peer reconnects with the missing block later, or
+// a new orphan arrives needing the same parent, gean will try fetching again.
+func (e *Engine) onFailedRoot(failedRoot [32]byte) {
+	children, ok := e.PendingBlocks[failedRoot]
+	if !ok {
+		return
+	}
+	delete(e.PendingBlocks, failedRoot)
+
+	discarded := 0
+	for childRoot := range children {
+		e.discardPendingSubtree(childRoot)
+		discarded++
+	}
+	logger.Warn(logger.Sync, "fetch exhausted for root 0x%x, discarded %d pending child block(s)", failedRoot, discarded)
 }
 
 // discardPendingSubtree recursively discards a pending block and all its descendants.

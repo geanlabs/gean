@@ -36,9 +36,8 @@ func ProduceBlockWithSignatures(
 // buildBlock builds a valid block with per-validator attestation dedup.
 //
 // To prevent unbounded block growth during stall recovery, each validator
-// is included in at most one attestation across the entire block. This
-// matches the canonical approach used by nlean, zeam, and lantern, and
-// keeps blocks under the 12 MiB gossip limit regardless of payload backlog.
+// is included in at most one attestation per fixed-point iteration. This
+// keeps blocks under the gossip size limit regardless of payload backlog.
 func buildBlock(
 	headState *types.State,
 	slot, proposerIndex uint64,

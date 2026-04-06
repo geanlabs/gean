@@ -36,6 +36,7 @@ type Engine struct {
 	BlockCh       chan *types.SignedBlockWithAttestation
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
+	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
 }
 
 // New creates a new Engine.
@@ -60,6 +61,7 @@ func New(
 		BlockCh:             make(chan *types.SignedBlockWithAttestation, 64),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
+		FailedRootCh:        make(chan [32]byte, 64),
 	}
 }
 
@@ -107,6 +109,9 @@ func (e *Engine) Run(ctx context.Context) {
 
 		case agg := <-e.AggregationCh:
 			e.onGossipAggregatedAttestation(agg)
+
+		case root := <-e.FailedRootCh:
+			e.onFailedRoot(root)
 		}
 	}
 }
