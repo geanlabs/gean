@@ -91,6 +91,39 @@ gean is part of the [lean-quickstart](https://github.com/blockblaz/lean-quicksta
 make run-devnet
 ```
 
+### Multi-client testing skills
+
+For repeatable testing against zeam, ream, lantern, and ethlambda, gean ships
+three Claude Code skills under [`.claude/skills/`](.claude/skills/README.md).
+The most useful entry points are exposed as `make` targets:
+
+```sh
+# Build current branch + run a 5-client devnet test (most common)
+make devnet-test
+
+# Same as above plus a sync recovery test (pause peers, then resume)
+make devnet-test-sync
+
+# Inspect what's running right now
+make devnet-status
+
+# Stop the devnet and restore configs
+make devnet-cleanup
+
+# Run a one-off devnet for 120s and dump every client's logs to the repo root
+make devnet-run
+
+# Analyze .log files in the current directory (gean + peer clients)
+make devnet-analyze
+```
+
+`make devnet-test` automatically watches for two regressions: oversized blocks
+(`MessageTooLarge` / `exceeds max`) and excessive attestations per block
+(> 30). If either fires, the test exits with `✗ FAILED`.
+
+See [`.claude/skills/README.md`](.claude/skills/README.md) for the full
+overview of each skill (`devnet-log-review`, `devnet-runner`, `test-pr-devnet`).
+
 ## API
 
 gean exposes a lightweight HTTP API on two separate ports:

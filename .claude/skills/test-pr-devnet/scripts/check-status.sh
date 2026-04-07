@@ -48,16 +48,17 @@ if docker ps --format "{{.Names}}" | grep -q "^gean_0$"; then
     echo "gean key metrics:"
 
     # Max attestations per block (block bloat regression check)
-    MAX_ATTS=$(docker logs gean_0 2>&1 | grep -oE "attestations=[0-9]+" | grep -oE "[0-9]+" | sort -n | tail -1 || echo "0")
-    if [[ "${MAX_ATTS:-0}" -gt 30 ]]; then
+    MAX_ATTS=$(docker logs gean_0 2>&1 | grep -oE "attestations=[0-9]+" | grep -oE "[0-9]+" | sort -n | tail -1)
+    MAX_ATTS=${MAX_ATTS:-0}
+    if [[ "$MAX_ATTS" -gt 30 ]]; then
         echo -e "  Max attestations/block: ${RED}$MAX_ATTS${NC} ⚠ regression risk"
     else
         echo -e "  Max attestations/block: ${GREEN}$MAX_ATTS${NC}"
     fi
 
     # Block bloat error count
-    SIZE_ERRORS=$(docker logs gean_0 2>&1 | grep -cE "MessageTooLarge|exceeds max" || echo "0")
-    SIZE_ERRORS=$(echo "$SIZE_ERRORS" | tr -d '\n' | xargs)
+    SIZE_ERRORS=$(docker logs gean_0 2>&1 | grep -cE "MessageTooLarge|exceeds max" 2>/dev/null | head -1 | tr -d ' \n')
+    SIZE_ERRORS=${SIZE_ERRORS:-0}
     if [[ "$SIZE_ERRORS" -eq 0 ]]; then
         echo -e "  Oversized block errors: ${GREEN}0${NC}"
     else
@@ -71,8 +72,8 @@ fi
 echo "Error counts:"
 for node in gean_0 zeam_0 ream_0 lantern_0 ethlambda_0; do
     if docker ps --format "{{.Names}}" | grep -q "^$node$"; then
-        COUNT=$(docker logs "$node" 2>&1 | grep -c "ERROR" || echo "0")
-        COUNT=$(echo "$COUNT" | tr -d '\n' | xargs)
+        COUNT=$(docker logs "$node" 2>&1 | grep -c "ERROR" 2>/dev/null | head -1 | tr -d ' \n')
+        COUNT=${COUNT:-0}
         if [[ "$COUNT" -eq 0 ]]; then
             echo -e "  $node: ${GREEN}$COUNT${NC}"
         else

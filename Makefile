@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 devnet-test devnet-test-sync devnet-status devnet-cleanup devnet-analyze devnet-run
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -126,3 +126,24 @@ run-devnet: docker-build lean-quickstart ## Run local multi-client devnet
 	@echo "Starting local devnet with gean client (\"$(DOCKER_TAG)\" tag)."
 	@cd lean-quickstart \
 		&& NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > ../devnet.log 2>&1
+
+# --- Claude Code skills (multi-client testing helpers) ---
+# See .claude/skills/README.md for details.
+
+devnet-run: ## Run multi-client devnet for 120s, dump logs to repo root, then stop
+	@.claude/skills/devnet-runner/scripts/run-devnet-with-timeout.sh 120
+
+devnet-test: ## Build current branch + test in 5-client devnet
+	@.claude/skills/test-pr-devnet/scripts/test-branch.sh
+
+devnet-test-sync: ## Same as devnet-test but also tests sync recovery (pause/resume)
+	@.claude/skills/test-pr-devnet/scripts/test-branch.sh --with-sync-test
+
+devnet-status: ## Show status of running devnet (heads, errors, gean metrics)
+	@.claude/skills/test-pr-devnet/scripts/check-status.sh
+
+devnet-cleanup: ## Stop devnet and restore gean-cmd.sh from backup
+	@.claude/skills/test-pr-devnet/scripts/cleanup.sh
+
+devnet-analyze: ## Analyze .log files in current directory (errors, blocks, consensus progress)
+	@.claude/skills/devnet-log-review/scripts/analyze-logs.sh .
