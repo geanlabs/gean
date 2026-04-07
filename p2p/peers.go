@@ -20,6 +20,8 @@ const (
 	InitialBackoffMs   = 5
 	BackoffMultiplier  = 2
 	BootnodeRedialSecs = 12
+	// MaxBlocksPerRequest matches leanSpec MAX_BLOCKS_PER_REQUEST.
+	MaxBlocksPerRequest = 10
 )
 
 // PeerStore tracks connected peers.
@@ -143,6 +145,74 @@ func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte)
 	}
 
 	return results, nil
+}
+
+// FetchBlocksByRootBatchWithRetry fetches up to MaxBlocksPerRequest roots
+// from a single peer in one request. Retries up to MaxFetchRetries times,
+// rotating peers and excluding previously-failed ones.
+//
+// Returns the blocks the peer delivered (may be fewer than requested if the
+// peer doesn't have all of them) and the set of roots that were not delivered
+// after exhausting retries.
+func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlockWithAttestation, [][32]byte, error) {
+	if len(roots) == 0 {
+		return nil, nil, nil
+	}
+	if len(roots) > MaxBlocksPerRequest {
+		roots = roots[:MaxBlocksPerRequest]
+	}
+
+	excluded := make(map[peer.ID]bool)
+	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
+
+	for attempt := 0; attempt < MaxFetchRetries; attempt++ {
+		peerID := h.peerStore.RandomPeer(excluded)
+		if peerID == "" {
+			return nil, roots, fmt.Errorf("no peers available for batch block fetch")
+		}
+
+		blocks, err := h.FetchBlocksByRoot(ctx, peerID, roots)
+		if err == nil && len(blocks) > 0 {
+			missing := computeMissingRoots(roots, blocks)
+			return blocks, missing, nil
+		}
+
+		excluded[peerID] = true
+		reason := "peer returned no blocks"
+		if err != nil {
+			reason = err.Error()
+		}
+		logger.Warn(logger.Network, "batch block fetch attempt %d/%d failed for %d root(s) peer=%s reason=%s",
+			attempt+1, MaxFetchRetries, len(roots), peerID, reason)
+
+		select {
+		case <-ctx.Done():
+			return nil, roots, ctx.Err()
+		case <-time.After(backoff):
+			backoff *= BackoffMultiplier
+		}
+	}
+
+	return nil, roots, fmt.Errorf("batch block fetch failed after %d retries for %d roots", MaxFetchRetries, len(roots))
+}
+
+// computeMissingRoots returns the roots that the peer did not deliver.
+func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlockWithAttestation) [][32]byte {
+	deliveredRoots := make(map[[32]byte]bool, len(delivered))
+	for _, b := range delivered {
+		root, err := b.Block.Block.HashTreeRoot()
+		if err != nil {
+			continue
+		}
+		deliveredRoots[root] = true
+	}
+	var missing [][32]byte
+	for _, r := range requested {
+		if !deliveredRoots[r] {
+			missing = append(missing, r)
+		}
+	}
+	return missing
 }
 
 // SignedBlockWithAttestationResult holds the result of fetching a single block.

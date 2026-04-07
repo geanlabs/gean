@@ -37,6 +37,7 @@ type Engine struct {
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
 	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
+	FetchRootCh   chan [32]byte // roots to fetch — coalesced into batches by the fetch batcher
 }
 
 // New creates a new Engine.
@@ -62,6 +63,7 @@ func New(
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
 		FailedRootCh:        make(chan [32]byte, 64),
+		FetchRootCh:         make(chan [32]byte, 256),
 	}
 }
 
@@ -89,6 +91,10 @@ func (e *Engine) Run(ctx context.Context) {
 
 	ticker := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
 	defer ticker.Stop()
+
+	// Start the fetch batcher: coalesces individual fetch requests into
+	// batches of up to MaxBlocksPerRequest roots per peer request.
+	go e.runFetchBatcher(ctx)
 
 	logger.Info(logger.Node, "started")
 

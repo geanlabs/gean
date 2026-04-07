@@ -210,30 +210,42 @@ func main() {
 
 	logger.Info(logger.Node, "shutting down...")
 	cancel()
-	// Give engine goroutine time to exit before cleanup.
+	// Give engine goroutine time to exit before deferred backend.Close() runs.
 	time.Sleep(500 * time.Millisecond)
-	// Free cached pubkey handles.
-	s.PubKeyCache.Close()
 }
 
 // initStoreFromState initializes the consensus store from an anchor state.
+//
+// The anchor state becomes the new latest justified AND latest finalized
+// checkpoint — both pointing at the served block at header.Slot. This
+// matches the standard checkpoint sync convention: the bootstrapping node
+// trusts the served state as the new finalization anchor and starts forward
+// sync from there.
+//
+// Note: state.LatestJustified and state.LatestFinalized inside the served
+// state point to EARLIER slots (the finalization status from when the block
+// was processed). We deliberately do NOT use those — the served block IS
+// the new anchor, regardless of what its internal pointers say.
 func initStoreFromState(s *node.ConsensusStore, state *types.State) {
 	// Compute anchor block root from header.
 	stateRoot, _ := state.HashTreeRoot()
 	header := state.LatestBlockHeader
 
-	// Fill state_root if zero (genesis).
+	// Fill state_root if zero (canonical post-state form from checkpoint server).
 	if header.StateRoot == types.ZeroRoot {
 		header.StateRoot = stateRoot
 	}
 	blockRoot, _ := header.HashTreeRoot()
 
+	// Anchor checkpoint: both justified and finalized point at the served block.
+	anchor := &types.Checkpoint{Root: blockRoot, Slot: header.Slot}
+
 	// Store metadata.
 	s.SetConfig(state.Config)
 	s.SetHead(blockRoot)
 	s.SetSafeTarget(blockRoot)
-	s.SetLatestJustified(&types.Checkpoint{Root: blockRoot, Slot: state.LatestJustified.Slot})
-	s.SetLatestFinalized(&types.Checkpoint{Root: blockRoot, Slot: state.LatestFinalized.Slot})
+	s.SetLatestJustified(anchor)
+	s.SetLatestFinalized(anchor)
 	s.SetTime(0)
 
 	// Store block header and state.
@@ -241,6 +253,6 @@ func initStoreFromState(s *node.ConsensusStore, state *types.State) {
 	s.InsertState(blockRoot, state)
 	s.InsertLiveChainEntry(state.Slot, blockRoot, header.ParentRoot)
 
-	logger.Info(logger.Store, "store initialized: slot=%d head=%x finalized_root=%x justified_root=%x parent_root=%x state_root=%x",
-		state.Slot, blockRoot, state.LatestFinalized.Root, state.LatestJustified.Root, header.ParentRoot, stateRoot)
+	logger.Info(logger.Store, "store initialized from anchor: slot=%d head=%x parent_root=%x state_root=%x",
+		header.Slot, blockRoot, header.ParentRoot, stateRoot)
 }
