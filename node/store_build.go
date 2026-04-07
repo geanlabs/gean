@@ -9,7 +9,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// ProduceBlockWithSignatures builds a block with greedy attestation selection.
+// ProduceBlockWithSignatures builds a block using per-validator latest-vote selection.
 // Returns the block and per-attestation signature proofs.
 func ProduceBlockWithSignatures(
 	s *ConsensusStore,
@@ -33,11 +33,15 @@ func ProduceBlockWithSignatures(
 	return buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries)
 }
 
-// buildBlock builds a valid block with per-validator attestation dedup.
+// buildBlock builds a valid block using per-validator latest-vote selection.
 //
-// To prevent unbounded block growth during stall recovery, each validator
-// is included in at most one attestation per fixed-point iteration. This
-// keeps blocks under the gossip size limit regardless of payload backlog.
+// For each validator, we pick their latest vote whose source matches the
+// current justified checkpoint, then group validators by their vote's data
+// root and emit one attestation per (data root, validator subset) pair.
+//
+// This bounds block size by the validator count: at most numValidators
+// distinct attestations per fixed-point iteration. Multiple validators
+// voting for the same target share a single AggregatedAttestation.
 func buildBlock(
 	headState *types.State,
 	slot, proposerIndex uint64,
@@ -60,57 +64,31 @@ func buildBlock(
 			currentJustified = headState.LatestJustified
 		}
 
-		processedRoots := make(map[[32]byte]bool)
-
-		// Sort by (target.slot, data_root) for deterministic processing order.
-		type sortEntry struct {
-			dataRoot [32]byte
-			entry    *PayloadEntry
-		}
-		sorted := make([]sortEntry, 0, len(payloads))
-		for dr, entry := range payloads {
-			sorted = append(sorted, sortEntry{dataRoot: dr, entry: entry})
-		}
-		sort.Slice(sorted, func(i, j int) bool {
-			si, sj := sorted[i], sorted[j]
-			if si.entry.Data.Target.Slot != sj.entry.Data.Target.Slot {
-				return si.entry.Data.Target.Slot < sj.entry.Data.Target.Slot
-			}
-			return compareRoots(si.dataRoot, sj.dataRoot) < 0
-		})
+		// Track validators already included to avoid duplication across iterations.
+		processedValidators := make(map[uint64]bool)
 
 		for {
-			foundNew := false
-
-			// Per-iteration covered set: each validator can be included at most
-			// once per fixed-point iteration, but may appear across iterations
-			// as justification advances and unlocks newer votes with newer sources.
-			// Total attestations bounded by numValidators × iterations.
-			coveredValidators := make(map[uint64]bool)
-
-			for _, se := range sorted {
-				if processedRoots[se.dataRoot] {
-					continue
-				}
-				if !knownBlockRoots[se.entry.Data.Head.Root] {
-					continue
-				}
-				if se.entry.Data.Source.Root != currentJustified.Root ||
-					se.entry.Data.Source.Slot != currentJustified.Slot {
-					continue
-				}
-
-				processedRoots[se.dataRoot] = true
-				foundNew = true
-
-				extendProofsGreedily(se.entry.Proofs, &signatures, &attestations, se.entry.Data, coveredValidators)
-			}
-
-			if !foundNew {
+			// For the current justified source, find each validator's latest vote.
+			// The result maps each validator to the payload entry containing their
+			// latest matching vote (highest data.Slot).
+			perValidator := selectLatestPerValidator(payloads, knownBlockRoots, currentJustified, processedValidators)
+			if len(perValidator) == 0 {
 				break
 			}
 
-			// Check if justification advanced by trial state transition.
+			// Group validators by their selected payload entry. Multiple validators
+			// pointing at the same entry will share AggregatedAttestations.
+			groups := groupValidatorsByEntry(perValidator)
+
+			added := 0
+			for _, group := range groups {
+				added += emitAttestationsForGroup(group.entry, group.validators, &attestations, &signatures, processedValidators)
+			}
+			if added == 0 {
+				break
+			}
+
+			// Check if justification advanced via trial state transition.
 			candidate := &types.Block{
 				Slot:          slot,
 				ProposerIndex: proposerIndex,
@@ -159,58 +137,122 @@ func buildBlock(
 	return finalBlock, signatures, nil
 }
 
-// extendProofsGreedily selects proofs maximizing new validator coverage,
-// respecting a global covered set so each validator is added at most once
-// across the entire block.
-func extendProofsGreedily(
-	proofs []*types.AggregatedSignatureProof,
-	selectedProofs *[]*types.AggregatedSignatureProof,
+// selectLatestPerValidator finds, for each validator, the payload entry that
+// contains their latest vote whose source matches `currentJustified`.
+//
+// Validators in `excluded` are skipped (used to avoid re-selecting validators
+// already included in earlier fixed-point iterations).
+func selectLatestPerValidator(
+	payloads map[[32]byte]*PayloadEntry,
+	knownBlockRoots map[[32]byte]bool,
+	currentJustified *types.Checkpoint,
+	excluded map[uint64]bool,
+) map[uint64]*PayloadEntry {
+	perValidator := make(map[uint64]*PayloadEntry)
+	for _, entry := range payloads {
+		if !knownBlockRoots[entry.Data.Head.Root] {
+			continue
+		}
+		if entry.Data.Source.Root != currentJustified.Root ||
+			entry.Data.Source.Slot != currentJustified.Slot {
+			continue
+		}
+		for _, proof := range entry.Proofs {
+			for _, vid := range types.BitlistIndices(proof.Participants) {
+				if excluded[vid] {
+					continue
+				}
+				existing, ok := perValidator[vid]
+				if !ok || entry.Data.Slot > existing.Data.Slot {
+					perValidator[vid] = entry
+				}
+			}
+		}
+	}
+	return perValidator
+}
+
+// validatorGroup holds a payload entry and the validators selected from it.
+type validatorGroup struct {
+	entry      *PayloadEntry
+	validators []uint64
+}
+
+// groupValidatorsByEntry inverts perValidator into groups keyed by entry,
+// returning a deterministically-sorted slice. Multiple validators pointing
+// at the same entry are batched so we can pick proofs that cover them all.
+func groupValidatorsByEntry(perValidator map[uint64]*PayloadEntry) []validatorGroup {
+	byEntry := make(map[*PayloadEntry][]uint64)
+	for vid, entry := range perValidator {
+		byEntry[entry] = append(byEntry[entry], vid)
+	}
+	groups := make([]validatorGroup, 0, len(byEntry))
+	for entry, vids := range byEntry {
+		sort.Slice(vids, func(i, j int) bool { return vids[i] < vids[j] })
+		groups = append(groups, validatorGroup{entry: entry, validators: vids})
+	}
+	// Deterministic order: by target slot then by data root.
+	sort.Slice(groups, func(i, j int) bool {
+		ei, ej := groups[i].entry, groups[j].entry
+		if ei.Data.Target.Slot != ej.Data.Target.Slot {
+			return ei.Data.Target.Slot < ej.Data.Target.Slot
+		}
+		ri, _ := ei.Data.HashTreeRoot()
+		rj, _ := ej.Data.HashTreeRoot()
+		return compareRoots(ri, rj) < 0
+	})
+	return groups
+}
+
+// emitAttestationsForGroup picks the smallest set of proofs from `entry` that
+// covers all validators in `wanted`, appending one AggregatedAttestation per
+// chosen proof. Returns the number of attestations emitted.
+func emitAttestationsForGroup(
+	entry *PayloadEntry,
+	wanted []uint64,
 	attestations *[]*types.AggregatedAttestation,
-	attData *types.AttestationData,
-	covered map[uint64]bool,
-) {
-	if len(proofs) == 0 {
-		return
+	signatures *[]*types.AggregatedSignatureProof,
+	processedValidators map[uint64]bool,
+) int {
+	needed := make(map[uint64]bool, len(wanted))
+	for _, vid := range wanted {
+		needed[vid] = true
 	}
 
-	remaining := make(map[int]bool)
-	for i := range proofs {
-		remaining[i] = true
-	}
-
-	for len(remaining) > 0 {
+	emitted := 0
+	for len(needed) > 0 {
 		bestIdx := -1
 		bestCount := 0
-
-		for idx := range remaining {
+		for i, proof := range entry.Proofs {
 			count := 0
-			for _, vid := range types.BitlistIndices(proofs[idx].Participants) {
-				if !covered[vid] {
+			for _, vid := range types.BitlistIndices(proof.Participants) {
+				if needed[vid] {
 					count++
 				}
 			}
 			if count > bestCount {
 				bestCount = count
-				bestIdx = idx
+				bestIdx = i
 			}
 		}
-
 		if bestIdx < 0 || bestCount == 0 {
 			break
 		}
 
-		proof := proofs[bestIdx]
+		proof := entry.Proofs[bestIdx]
 		*attestations = append(*attestations, &types.AggregatedAttestation{
 			AggregationBits: proof.Participants,
-			Data:            attData,
+			Data:            entry.Data,
 		})
-		*selectedProofs = append(*selectedProofs, proof)
+		*signatures = append(*signatures, proof)
+		emitted++
 
 		for _, vid := range types.BitlistIndices(proof.Participants) {
-			covered[vid] = true
+			delete(needed, vid)
+			processedValidators[vid] = true
 		}
-		delete(remaining, bestIdx)
 	}
+	return emitted
 }
 
 // getBlockRoots returns all known block roots from the store.
