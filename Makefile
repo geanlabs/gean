@@ -131,15 +131,29 @@ run-devnet: docker-build lean-quickstart ## Run local multi-client devnet
 
 # --- Claude Code skills (multi-client testing helpers) ---
 # See .claude/skills/README.md for details.
+#
+# Targets that take an optional duration support BOTH styles:
+#   make devnet-run                  # default 120s
+#   make devnet-run 600              # 600s (positional, picked from MAKECMDGOALS)
+#   make devnet-run DURATION=600     # 600s (named variable)
+#
+# The DEVNET_ARGS filter pulls any extra non-target words off the command line
+# so you can pass "make devnet-test 300" without errors. The numeric catch-all
+# rule at the bottom of this section absorbs the trailing word.
+DEVNET_ARGS := $(filter-out $(MAKECMDGOALS),$(MAKECMDGOALS))
+DEVNET_EXTRA := $(filter-out devnet-run devnet-test devnet-test-sync devnet-status devnet-cleanup devnet-clean-logs devnet-analyze,$(MAKECMDGOALS))
 
-devnet-run: ## Run multi-client devnet for 120s, dump logs to repo root, then stop
-	@.claude/skills/devnet-runner/scripts/run-devnet-with-timeout.sh 120
+DURATION ?= 120
+TEST_DURATION ?= 60
 
-devnet-test: ## Build current branch + test in 5-client devnet
-	@.claude/skills/test-pr-devnet/scripts/test-branch.sh
+devnet-run: ## Run multi-client devnet for DURATION seconds (default 120), dump logs, then stop
+	@.claude/skills/devnet-runner/scripts/run-devnet-with-timeout.sh $(or $(DEVNET_EXTRA),$(DURATION))
+
+devnet-test: ## Build current branch + test in 5-client devnet (default 60s, override: make devnet-test 300)
+	@RUN_DURATION=$(or $(DEVNET_EXTRA),$(TEST_DURATION)) .claude/skills/test-pr-devnet/scripts/test-branch.sh
 
 devnet-test-sync: ## Same as devnet-test but also tests sync recovery (pause/resume)
-	@.claude/skills/test-pr-devnet/scripts/test-branch.sh --with-sync-test
+	@RUN_DURATION=$(or $(DEVNET_EXTRA),$(TEST_DURATION)) .claude/skills/test-pr-devnet/scripts/test-branch.sh --with-sync-test
 
 devnet-status: ## Show status of running devnet (heads, errors, gean metrics)
 	@.claude/skills/test-pr-devnet/scripts/check-status.sh
@@ -153,3 +167,9 @@ devnet-clean-logs: ## Remove dumped client logs from the repo root
 
 devnet-analyze: ## Analyze .log files in current directory (errors, blocks, consensus progress)
 	@.claude/skills/devnet-log-review/scripts/analyze-logs.sh .
+
+# Catch-all for numeric positional args after devnet-* targets.
+# Matches any all-digit "target name" so `make devnet-test 300` doesn't error
+# trying to build a `300` target.
+%:
+	@:

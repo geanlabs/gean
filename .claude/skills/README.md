@@ -26,6 +26,29 @@ make devnet-analyze       # Analyze .log files in the current directory
 make devnet-clean-logs    # Just delete the dumped *.log files (without stopping devnet)
 ```
 
+### Custom run duration
+
+`devnet-test` defaults to 60 seconds and `devnet-run` defaults to 120 seconds.
+You can override with a positional argument:
+
+```bash
+make devnet-test 300       # test for 5 minutes
+make devnet-test 1800      # test for 30 minutes (catches slow leaks)
+make devnet-test 3600      # test for 1 hour (long-running stability)
+make devnet-run 600        # run + dump logs after 10 minutes
+```
+
+Or with a named variable if you prefer:
+
+```bash
+make devnet-test TEST_DURATION=1800
+make devnet-run DURATION=600
+```
+
+Use longer runs to catch bugs that only appear after the chain has been
+running for a while — slow memory leaks, sync drift, finalization edge
+cases, etc.
+
 `make help` lists them all with descriptions.
 
 ## Direct script invocation (if you prefer)

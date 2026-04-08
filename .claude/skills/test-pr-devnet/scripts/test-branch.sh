@@ -195,9 +195,10 @@ else
 
     # Let it run long enough for the round-robin proposer cycle to reach gean.
     # With 5 validators and 4s slots, 60s gives ~15 slots — every validator
-    # gets at least 2-3 turns.
-    echo "Letting devnet run for 60 seconds..."
-    sleep 60
+    # gets at least 2-3 turns. Override with RUN_DURATION=N for longer runs.
+    RUN_DURATION="${RUN_DURATION:-60}"
+    echo "Letting devnet run for ${RUN_DURATION} seconds..."
+    sleep "$RUN_DURATION"
 fi
 
 # Step 6: Analyze results
