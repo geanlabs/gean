@@ -47,7 +47,4 @@ jobs:
         run: make build
 
       - name: Run unit tests
-        run: make unit-test
-
-      - name: Run race detector tests
-        run: make test-race
+        run: make test
