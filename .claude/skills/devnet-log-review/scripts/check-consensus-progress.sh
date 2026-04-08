@@ -74,25 +74,28 @@ for f in "${log_files[@]}"; do
         continue
     fi
 
-    # Extract proposed slots based on client
+    # Extract proposed slots based on client.
+    # Trailing `|| true` is required: under `set -euo pipefail` a grep with no
+    # matches returns 1, which would otherwise abort the whole script and skip
+    # every node alphabetically after a node with zero proposed blocks.
     case "$client" in
         gean)
-            slots=$(strip_ansi < "$f" | grep "\[validator\] proposed block" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//')
+            slots=$(strip_ansi < "$f" | grep "\[validator\] proposed block" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//' || true)
             ;;
         zeam)
-            slots=$(strip_ansi < "$f" | grep "produced block for slot" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//')
+            slots=$(strip_ansi < "$f" | grep "produced block for slot" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//' || true)
             ;;
         ream)
-            slots=$(strip_ansi < "$f" | grep "Proposing block by Validator" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//')
+            slots=$(strip_ansi < "$f" | grep "Proposing block by Validator" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//' || true)
             ;;
         ethlambda)
-            slots=$(strip_ansi < "$f" | grep "Published block to gossipsub" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//')
+            slots=$(strip_ansi < "$f" | grep "Published block to gossipsub" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//' || true)
             ;;
         lantern)
-            slots=$(strip_ansi < "$f" | grep "[Pp]ublished block\|[Pp]roduced block" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//')
+            slots=$(strip_ansi < "$f" | grep "[Pp]ublished block\|[Pp]roduced block" | grep -oE "slot=[0-9]+" | cut -d= -f2 | tr '\n' ',' | sed 's/,$//' || true)
             ;;
         qlean)
-            slots=$(strip_ansi < "$f" | grep "Produced block" | grep -oE "@ [0-9]+" | grep -oE "[0-9]+" | tr '\n' ',' | sed 's/,$//')
+            slots=$(strip_ansi < "$f" | grep "Produced block" | grep -oE "@ [0-9]+" | grep -oE "[0-9]+" | tr '\n' ',' | sed 's/,$//' || true)
             ;;
         *)
             slots=""
