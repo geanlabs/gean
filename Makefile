@@ -31,12 +31,14 @@ test-spec: leanSpec/fixtures ## Run spec fixture tests only (fast, excludes xmss
 test-all: leanSpec/fixtures ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
 
-lint: ## Run golangci-lint
-	golangci-lint run ./...
+lint: ## Run linters for go & rust
+	go vet ./...
+	cd xmss/rust && cargo fmt --check
+	cd xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
 
 fmt: ## Format all Go code
 	gofmt -w .
-	goimports -w .
+	cd xmss/rust && cargo fmt
 
 sszgen: ## Regenerate SSZ encoding files from struct tags
 	@rm -f types/*_encoding.go

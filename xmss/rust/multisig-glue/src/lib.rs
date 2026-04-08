@@ -135,8 +135,9 @@ pub unsafe extern "C" fn xmss_verify_aggregated(
     // Wrap in catch_unwind for CGo safety.
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         xmss_verify_aggregated_signatures(&pub_keys, &message_owned, agg_sig_ref, epoch_owned)
-          .is_ok()
-    })).unwrap_or_default()
+            .is_ok()
+    }))
+    .unwrap_or_default()
 }
 
 #[no_mangle]

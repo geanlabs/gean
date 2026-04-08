@@ -10,6 +10,7 @@ testnet/
 
 # Spec fixtures (cloned separately)
 leanSpec/
+spectests/
 
 # Lean-quickstart (cloned separately)
 lean-quickstart/
