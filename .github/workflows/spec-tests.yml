@@ -38,8 +38,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/leansig-ffi/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/leansig-ffi/Cargo.lock') }}
+            xmss/rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 
@@ -47,4 +47,4 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run spec tests
-        run: make spec-test
+        run: make test-spec
