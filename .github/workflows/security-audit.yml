@@ -6,8 +6,8 @@ on:
     paths:
       - "go.mod"
       - "go.sum"
-      - "xmss/leansig-ffi/Cargo.toml"
-      - "xmss/leansig-ffi/Cargo.lock"
+      - "xmss/rust/Cargo.toml"
+      - "xmss/rust/Cargo.lock"
   schedule:
     # Runs every Monday at 08:00 UTC
     - cron: "0 8 * * 1"
