@@ -105,7 +105,7 @@ func TestProcessBlockHeaderValidatesParentRoot(t *testing.T) {
 
 	block := &types.Block{
 		Slot:          1,
-		ProposerIndex: 1, // correct: 1 % 3 = 1
+		ProposerIndex: 1,              // correct: 1 % 3 = 1
 		ParentRoot:    [32]byte{0xff}, // wrong parent root
 		Body:          &types.BlockBody{},
 	}

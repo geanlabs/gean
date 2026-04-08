@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // maybePropose builds and publishes a block if we're the proposer.

@@ -10,16 +10,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/api"
-	"github.com/geanlabs/gean/node"
+	"github.com/geanlabs/gean/checkpoint"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/genesis"
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/storage"
-	"github.com/geanlabs/gean/checkpoint"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 func main() {

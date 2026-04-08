@@ -62,7 +62,7 @@ func handleFinalizedState(s *node.ConsensusStore) http.HandlerFunc {
 		}
 
 		// Zero state_root to match canonical post-state representation.
-		
+
 		state.LatestBlockHeader.StateRoot = types.ZeroRoot
 
 		data, err := state.MarshalSSZ()
@@ -98,9 +98,9 @@ func handleForkChoice(s *node.ConsensusStore) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"head":       fmt.Sprintf("0x%x", head),
-			"justified":  map[string]interface{}{"slot": justified.Slot, "root": fmt.Sprintf("0x%x", justified.Root)},
-			"finalized":  map[string]interface{}{"slot": finalized.Slot, "root": fmt.Sprintf("0x%x", finalized.Root)},
+			"head":        fmt.Sprintf("0x%x", head),
+			"justified":   map[string]interface{}{"slot": justified.Slot, "root": fmt.Sprintf("0x%x", justified.Root)},
+			"finalized":   map[string]interface{}{"slot": finalized.Slot, "root": fmt.Sprintf("0x%x", finalized.Root)},
 			"safe_target": fmt.Sprintf("0x%x", safeTarget),
 		})
 	}

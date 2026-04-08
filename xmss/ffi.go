@@ -110,7 +110,7 @@ var (
 	ErrKeypairParseFailed  = errors.New("keypair parsing failed")
 )
 
-// Lazy initialization guards 
+// Lazy initialization guards
 var (
 	proverOnce   sync.Once
 	verifierOnce sync.Once

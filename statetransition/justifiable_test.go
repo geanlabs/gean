@@ -8,9 +8,9 @@ func TestSlotIsJustifiableAfter(t *testing.T) {
 		want            bool
 	}{
 		// Rule 1: delta <= 5
-		{1, 0, true},  // delta=1
-		{5, 0, true},  // delta=5
-		{6, 1, true},  // delta=5
+		{1, 0, true}, // delta=1
+		{5, 0, true}, // delta=5
+		{6, 1, true}, // delta=5
 
 		// Rule 2: perfect squares
 		{9, 0, true},   // delta=9 = 3^2
@@ -20,11 +20,11 @@ func TestSlotIsJustifiableAfter(t *testing.T) {
 		{100, 0, true}, // delta=100 = 10^2
 
 		// Rule 3: pronic numbers n*(n+1)
-		{6, 0, true},   // delta=6 = 2*3 (also <= 5+1, but pronic)
-		{12, 0, true},  // delta=12 = 3*4
-		{20, 0, true},  // delta=20 = 4*5
-		{30, 0, true},  // delta=30 = 5*6
-		{42, 0, true},  // delta=42 = 6*7
+		{6, 0, true},  // delta=6 = 2*3 (also <= 5+1, but pronic)
+		{12, 0, true}, // delta=12 = 3*4
+		{20, 0, true}, // delta=20 = 4*5
+		{30, 0, true}, // delta=30 = 5*6
+		{42, 0, true}, // delta=42 = 6*7
 
 		// NOT justifiable: delta > 5, not square, not pronic
 		{7, 0, false},  // 7

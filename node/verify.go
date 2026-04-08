@@ -3,8 +3,8 @@ package node
 import (
 	"fmt"
 
-	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // verifyAttestation verifies a single XMSS signature.

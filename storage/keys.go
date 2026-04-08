@@ -4,12 +4,12 @@ import "encoding/binary"
 
 // Metadata keys rs L62-72.
 var (
-	KeyTime             = []byte("time")
-	KeyConfig           = []byte("config")
-	KeyHead             = []byte("head")
-	KeySafeTarget       = []byte("safe_target")
-	KeyLatestJustified  = []byte("latest_justified")
-	KeyLatestFinalized  = []byte("latest_finalized")
+	KeyTime            = []byte("time")
+	KeyConfig          = []byte("config")
+	KeyHead            = []byte("head")
+	KeySafeTarget      = []byte("safe_target")
+	KeyLatestJustified = []byte("latest_justified")
+	KeyLatestFinalized = []byte("latest_finalized")
 )
 
 // Retention constants rs L75-78.

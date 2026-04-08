@@ -45,8 +45,8 @@ func (gc *GenesisConfig) GenesisState() *types.State {
 	bodyRoot, _ := emptyBody.HashTreeRoot()
 
 	return &types.State{
-		Config:            &types.ChainConfig{GenesisTime: gc.GenesisTime},
-		Slot:              0,
+		Config: &types.ChainConfig{GenesisTime: gc.GenesisTime},
+		Slot:   0,
 		LatestBlockHeader: &types.BlockHeader{
 			Slot:          0,
 			ProposerIndex: 0,

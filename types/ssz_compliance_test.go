@@ -89,7 +89,7 @@ func TestCheckpointHashTreeRootWithSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	field0 := chunk("")                // root = zero
+	field0 := chunk("")                 // root = zero
 	field1 := chunk("2a00000000000000") // slot = 42 LE
 	expected := h(field0, field1)
 	if root != expected {
@@ -114,12 +114,12 @@ func TestBlockHeaderHashTreeRootCompliance(t *testing.T) {
 	// 5 fields padded to 8:
 	f0 := chunk("0100000000000000") // slot=1 LE
 	f1 := chunk("")                 // proposer_index=0
-	f2 := chunk("01")              // parent_root
-	f3 := chunk("02")              // state_root
-	f4 := chunk("03")              // body_root
-	f5 := chunk("")                // padding
-	f6 := chunk("")                // padding
-	f7 := chunk("")                // padding
+	f2 := chunk("01")               // parent_root
+	f3 := chunk("02")               // state_root
+	f4 := chunk("03")               // body_root
+	f5 := chunk("")                 // padding
+	f6 := chunk("")                 // padding
+	f7 := chunk("")                 // padding
 
 	expected := h(
 		h(h(f0, f1), h(f2, f3)),

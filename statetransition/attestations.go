@@ -8,7 +8,6 @@ import (
 
 // ProcessAttestations processes all aggregated attestations in a block body,
 // updating justification and finalization state.
-//
 func ProcessAttestations(state *types.State, attestations []*types.AggregatedAttestation) error {
 	validatorCount := int(state.NumValidators())
 	if validatorCount == 0 {

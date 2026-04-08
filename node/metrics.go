@@ -177,22 +177,32 @@ var (
 
 // --- Public update functions ---
 
-func SetNodeInfo(name, version string)       { metricNodeInfo.WithLabelValues(name, version).Set(1) }
-func SetNodeStartTime(t float64)             { metricNodeStartTime.Set(t) }
-func SetHeadSlot(s uint64)                   { metricHeadSlot.Set(float64(s)) }
-func SetCurrentSlot(s uint64)                { metricCurrentSlot.Set(float64(s)) }
-func SetSafeTargetSlot(s uint64)             { metricSafeTargetSlot.Set(float64(s)) }
-func SetLatestJustifiedSlot(s uint64)        { metricLatestJustifiedSlot.Set(float64(s)) }
-func SetLatestFinalizedSlot(s uint64)        { metricLatestFinalizedSlot.Set(float64(s)) }
-func SetValidatorsCount(n int)               { metricValidatorsCount.Set(float64(n)) }
-func SetIsAggregator(b bool)                 { if b { metricIsAggregator.Set(1) } else { metricIsAggregator.Set(0) } }
-func SetAttestationCommitteeCount(n uint64)  { metricAttestationCommitteeCount.Set(float64(n)) }
-func SetGossipSignatures(n int)              { metricGossipSignatures.Set(float64(n)) }
-func SetNewAggregatedPayloads(n int)         { metricLatestNewAggregatedPayloads.Set(float64(n)) }
-func SetKnownAggregatedPayloads(n int)       { metricLatestKnownAggregatedPayloads.Set(float64(n)) }
-func SetTableBytes(table string, bytes uint64) { metricTableBytes.WithLabelValues(table).Set(float64(bytes)) }
-func SetConnectedPeers(client string, n int)  { metricConnectedPeers.WithLabelValues(client).Set(float64(n)) }
-func SetAttestationCommitteeSubnet(n uint64)  { metricAttestationCommitteeSubnet.Set(float64(n)) }
+func SetNodeInfo(name, version string) { metricNodeInfo.WithLabelValues(name, version).Set(1) }
+func SetNodeStartTime(t float64)       { metricNodeStartTime.Set(t) }
+func SetHeadSlot(s uint64)             { metricHeadSlot.Set(float64(s)) }
+func SetCurrentSlot(s uint64)          { metricCurrentSlot.Set(float64(s)) }
+func SetSafeTargetSlot(s uint64)       { metricSafeTargetSlot.Set(float64(s)) }
+func SetLatestJustifiedSlot(s uint64)  { metricLatestJustifiedSlot.Set(float64(s)) }
+func SetLatestFinalizedSlot(s uint64)  { metricLatestFinalizedSlot.Set(float64(s)) }
+func SetValidatorsCount(n int)         { metricValidatorsCount.Set(float64(n)) }
+func SetIsAggregator(b bool) {
+	if b {
+		metricIsAggregator.Set(1)
+	} else {
+		metricIsAggregator.Set(0)
+	}
+}
+func SetAttestationCommitteeCount(n uint64) { metricAttestationCommitteeCount.Set(float64(n)) }
+func SetGossipSignatures(n int)             { metricGossipSignatures.Set(float64(n)) }
+func SetNewAggregatedPayloads(n int)        { metricLatestNewAggregatedPayloads.Set(float64(n)) }
+func SetKnownAggregatedPayloads(n int)      { metricLatestKnownAggregatedPayloads.Set(float64(n)) }
+func SetTableBytes(table string, bytes uint64) {
+	metricTableBytes.WithLabelValues(table).Set(float64(bytes))
+}
+func SetConnectedPeers(client string, n int) {
+	metricConnectedPeers.WithLabelValues(client).Set(float64(n))
+}
+func SetAttestationCommitteeSubnet(n uint64) { metricAttestationCommitteeSubnet.Set(float64(n)) }
 
 func IncAttestationsValid(n uint64)          { metricAttestationsValid.Add(float64(n)) }
 func IncAttestationsInvalid()                { metricAttestationsInvalid.Inc() }
@@ -205,21 +215,31 @@ func IncPqSigAttestationSigsTotal()          { metricPqSigAttestationSigsTotal.I
 func IncPqSigAttestationSigsValid()          { metricPqSigAttestationSigsValid.Inc() }
 func IncPqSigAttestationSigsInvalid()        { metricPqSigAttestationSigsInvalid.Inc() }
 
-func ObserveBlockProcessingTime(seconds float64)     { metricBlockProcessingTime.Observe(seconds) }
-func ObserveAttestationValidationTime(seconds float64) { metricAttestationValidationTime.Observe(seconds) }
-func ObserveCommitteeAggregationTime(seconds float64) { metricCommitteeAggregationTime.Observe(seconds) }
-func ObservePqSigSigningTime(seconds float64)         { metricPqSigSigningTime.Observe(seconds) }
-func ObservePqSigVerificationTime(seconds float64)    { metricPqSigVerificationTime.Observe(seconds) }
-func ObservePqSigAggBuildingTime(seconds float64)     { metricPqSigAggBuildingTime.Observe(seconds) }
-func ObservePqSigAggVerificationTime(seconds float64) { metricPqSigAggVerificationTime.Observe(seconds) }
-func ObserveForkChoiceReorgDepth(depth float64)       { metricForkChoiceReorgDepth.Observe(depth) }
+func ObserveBlockProcessingTime(seconds float64) { metricBlockProcessingTime.Observe(seconds) }
+func ObserveAttestationValidationTime(seconds float64) {
+	metricAttestationValidationTime.Observe(seconds)
+}
+func ObserveCommitteeAggregationTime(seconds float64) {
+	metricCommitteeAggregationTime.Observe(seconds)
+}
+func ObservePqSigSigningTime(seconds float64)      { metricPqSigSigningTime.Observe(seconds) }
+func ObservePqSigVerificationTime(seconds float64) { metricPqSigVerificationTime.Observe(seconds) }
+func ObservePqSigAggBuildingTime(seconds float64)  { metricPqSigAggBuildingTime.Observe(seconds) }
+func ObservePqSigAggVerificationTime(seconds float64) {
+	metricPqSigAggVerificationTime.Observe(seconds)
+}
+func ObserveForkChoiceReorgDepth(depth float64) { metricForkChoiceReorgDepth.Observe(depth) }
 
-func IncFinalization(result string)                    { metricFinalizationsTotal.WithLabelValues(result).Inc() }
-func IncSTFSlotsProcessed(n uint64)                    { metricSTFSlotsProcessed.Add(float64(n)) }
-func IncSTFAttestationsProcessed(n uint64)             { metricSTFAttestationsProcessed.Add(float64(n)) }
-func IncPeerConnection(direction, result string)       { metricPeerConnectionEvents.WithLabelValues(direction, result).Inc() }
-func IncPeerDisconnection(direction, reason string)    { metricPeerDisconnectionEvents.WithLabelValues(direction, reason).Inc() }
-func ObserveSTFTime(seconds float64)                   { metricSTFTime.Observe(seconds) }
-func ObserveSTFSlotsTime(seconds float64)              { metricSTFSlotsTime.Observe(seconds) }
-func ObserveSTFBlockTime(seconds float64)              { metricSTFBlockTime.Observe(seconds) }
-func ObserveSTFAttestationsTime(seconds float64)       { metricSTFAttestationsTime.Observe(seconds) }
+func IncFinalization(result string)        { metricFinalizationsTotal.WithLabelValues(result).Inc() }
+func IncSTFSlotsProcessed(n uint64)        { metricSTFSlotsProcessed.Add(float64(n)) }
+func IncSTFAttestationsProcessed(n uint64) { metricSTFAttestationsProcessed.Add(float64(n)) }
+func IncPeerConnection(direction, result string) {
+	metricPeerConnectionEvents.WithLabelValues(direction, result).Inc()
+}
+func IncPeerDisconnection(direction, reason string) {
+	metricPeerDisconnectionEvents.WithLabelValues(direction, reason).Inc()
+}
+func ObserveSTFTime(seconds float64)             { metricSTFTime.Observe(seconds) }
+func ObserveSTFSlotsTime(seconds float64)        { metricSTFSlotsTime.Observe(seconds) }
+func ObserveSTFBlockTime(seconds float64)        { metricSTFBlockTime.Observe(seconds) }
+func ObserveSTFAttestationsTime(seconds float64) { metricSTFAttestationsTime.Observe(seconds) }

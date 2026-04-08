@@ -38,7 +38,7 @@ type AggregatedSignatureProof struct {
 // BlockSignatures carries the XMSS signatures for a block.
 type BlockSignatures struct {
 	AttestationSignatures []*AggregatedSignatureProof `json:"attestation_signatures" ssz-max:"4096"`
-	ProposerSignature     [SignatureSize]byte          `json:"proposer_signature" ssz-size:"3112"`
+	ProposerSignature     [SignatureSize]byte         `json:"proposer_signature" ssz-size:"3112"`
 }
 
 // SignedBlockWithAttestation is the complete signed block as gossiped on the network.

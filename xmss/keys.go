@@ -160,8 +160,8 @@ func (km *KeyManager) Close() {
 
 // annotatedValidator represents a validator entry from annotated_validators.yaml.
 type annotatedValidator struct {
-	Index      uint64 `yaml:"index"`
-	PubkeyHex  string `yaml:"pubkey_hex"`
+	Index       uint64 `yaml:"index"`
+	PubkeyHex   string `yaml:"pubkey_hex"`
 	PrivkeyFile string `yaml:"privkey_file"`
 }
 

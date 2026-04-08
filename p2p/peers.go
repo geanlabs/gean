@@ -255,4 +255,3 @@ func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]
 
 	return nil, fmt.Errorf("block fetch failed after %d retries for %x", MaxFetchRetries, root)
 }
-

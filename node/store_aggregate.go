@@ -4,9 +4,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // AggregateCommitteeSignatures collects gossip signatures and aggregates them
@@ -137,7 +137,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 	}
 
 	// Insert into known (immediately usable for block building and fork choice).
-	
+
 	s.KnownPayloads.PushBatch(payloadEntries)
 
 	// Delete aggregated signatures from gossip store.

@@ -12,7 +12,7 @@ type VoteTracker struct {
 
 // VoteTarget is a resolved attestation pointing to a proto-array index.
 type VoteTarget struct {
-	Index int    // proto-array node index
+	Index int // proto-array node index
 	Slot  uint64
 	Data  *types.AttestationData
 }
@@ -60,7 +60,6 @@ func (vs *VoteStore) getOrCreate(validatorID uint64) *VoteTracker {
 
 // ComputeDeltas computes weight deltas from vote changes.
 
-//
 // For each validator:
 //   - Remove weight from previously applied index (if any)
 //   - Add weight to current target index (from known or new pool)

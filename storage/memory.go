@@ -108,9 +108,9 @@ type inMemoryWriteBatch struct {
 }
 
 type batchOp struct {
-	table  Table
-	key    string
-	value  []byte // nil = delete
+	table Table
+	key   string
+	value []byte // nil = delete
 }
 
 func (b *inMemoryWriteBatch) PutBatch(table Table, entries []KV) error {

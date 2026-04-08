@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // OnBlock processes a new signed block with signature verification.
@@ -156,7 +156,7 @@ func verifyBlockSignatures(
 
 	// Verify proposer attestation signature.
 	// ProposerSignature signs the proposer's AttestationData, NOT the block root.
-	
+
 	if block.ProposerIndex >= uint64(len(state.Validators)) {
 		return &StoreError{ErrInvalidValidatorIndex, "proposer index out of range"}
 	}

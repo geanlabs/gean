@@ -5,11 +5,11 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/geanlabs/gean/xmss"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // Engine is the consensus coordination loop.
@@ -29,8 +29,8 @@ type Engine struct {
 	IsAggregator        bool
 	CommitteeCount      uint64
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
-	PendingBlockParents map[[32]byte][32]byte           // block_root -> missing_ancestor
-	PendingBlockDepths  map[[32]byte]int                // block_root -> fetch depth
+	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
+	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
 
 	// Channels for receiving messages from P2P goroutine.
 	BlockCh       chan *types.SignedBlockWithAttestation

@@ -15,7 +15,7 @@ func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationDa
 
 	// Derive source from head state's justified checkpoint.
 	// At genesis the checkpoint root is zero; substitute the real genesis block root.
-	
+
 	var source *types.Checkpoint
 	if headState.LatestBlockHeader.Slot == 0 {
 		source = &types.Checkpoint{
@@ -60,7 +60,7 @@ func GetAttestationTarget(s *ConsensusStore) *types.Checkpoint {
 	}
 
 	// Walk back toward safe target (up to JUSTIFICATION_LOOKBACK_SLOTS steps).
-	
+
 	for i := uint64(0); i < types.JustificationLookbackSlots; i++ {
 		if targetHeader.Slot > safeTargetSlot {
 			targetRoot = targetHeader.ParentRoot
@@ -77,7 +77,7 @@ func GetAttestationTarget(s *ConsensusStore) *types.Checkpoint {
 	finalizedSlot := s.LatestFinalized().Slot
 
 	// Walk back until justifiable slot.
-	
+
 	for targetHeader.Slot > finalizedSlot &&
 		!statetransition.SlotIsJustifiableAfter(targetHeader.Slot, finalizedSlot) {
 		targetRoot = targetHeader.ParentRoot
@@ -89,7 +89,7 @@ func GetAttestationTarget(s *ConsensusStore) *types.Checkpoint {
 	}
 
 	// Clamp to latest_justified if walked behind.
-	
+
 	latestJustified := s.LatestJustified()
 	if targetHeader.Slot < latestJustified.Slot {
 		return latestJustified

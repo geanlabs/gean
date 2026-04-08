@@ -7,10 +7,10 @@ type ProtoNode struct {
 	Slot           uint64
 	Root           [32]byte
 	ParentRoot     [32]byte
-	Parent         int    // index into nodes, -1 if none
-	Weight         int64  // accumulated attestation weight
-	BestChild      int    // index, -1 if none
-	BestDescendant int    // index, -1 if none
+	Parent         int   // index into nodes, -1 if none
+	Weight         int64 // accumulated attestation weight
+	BestChild      int   // index, -1 if none
+	BestDescendant int   // index, -1 if none
 }
 
 // ProtoArray is a flat array representing the block tree for O(n) fork choice.
