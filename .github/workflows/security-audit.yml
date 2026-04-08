@@ -53,5 +53,5 @@ jobs:
         run: cargo install --locked cargo-audit
 
       - name: Run cargo audit
-        working-directory: xmss/leansig-ffi
+        working-directory: xmss/rust
         run: cargo audit
