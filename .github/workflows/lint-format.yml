@@ -67,7 +67,9 @@ jobs:
 
       - name: Check Rust formatting
         working-directory: xmss/rust
-        run: cargo fmt --check
+        run: |
+          rustup component add --toolchain 1.90.0-x86_64-unknown-linux-gnu rustfmt
+          cargo fmt --check
 
       - name: Run Clippy
         working-directory: xmss/rust
