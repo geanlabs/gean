@@ -2,146 +2,148 @@ package node
 
 import (
 	"context"
-	"io"
-	"log/slog"
-	"sync"
 	"time"
+	"unsafe"
 
-	apiserver "github.com/geanlabs/gean/api/server"
-	"github.com/geanlabs/gean/chain/forkchoice"
-	"github.com/geanlabs/gean/network"
-	"github.com/geanlabs/gean/network/gossipsub"
-	"github.com/geanlabs/gean/network/p2p"
+	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
-	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/geanlabs/gean/xmss"
 )
 
-var Version = "v0.1.0"
-
-// Node is the main gean node orchestrator.
-type Node struct {
-	FC        *forkchoice.Store
-	Host      *network.Host
-	Topics    *gossipsub.Topics
-	API       *apiserver.Server
-	Validator *ValidatorDuties
-
-	// P2P Services
-	P2PManager   *p2p.LocalNodeManager
-	P2PDiscovery *p2p.DiscoveryService
-
-	// PendingBlocks caches blocks awaiting parent availability.
-	PendingBlocks *PendingBlockCache
-
-	// Sync deduplication: tracks roots currently being fetched to avoid
-	// duplicate requests across peers and recovery attempts.
-	// Matches leanSpec BackfillSync._pending pattern.
-	pendingRoots   map[[32]byte]struct{}
-	pendingRootsMu sync.Mutex
-
-	// Per-peer backoff tracking for sync requests.
-	// Tracks consecutive failures and last attempt time per peer.
-	peerBackoff   map[peer.ID]*peerSyncState
-	peerBackoffMu sync.Mutex
-
-	// Per-peer concurrency tracking. Limits in-flight sync requests to
-	// maxConcurrentRequestsPerPeer (2) per peer, matching leanSpec
-	// MAX_CONCURRENT_REQUESTS.
-	peerInFlight   map[peer.ID]int
-	peerInFlightMu sync.Mutex
-
-	// Recovery cooldown prevents recoverMissingParentSync from flooding
-	// peers when multiple gossip blocks arrive with missing parents.
-	recoveryMu       sync.Mutex
-	lastRecoveryTime time.Time
-
-	Clock    *Clock
-	dbCloser io.Closer
-	log      *slog.Logger
-
-	ctx    context.Context
-	cancel context.CancelFunc
-}
-
-// peerSyncState tracks backoff state for a single peer during sync.
-// Modeled after ethlambda's exponential backoff pattern.
-type peerSyncState struct {
-	failures  int
-	lastTried time.Time
-}
-
-// Sync constants aligned with leanSpec (subspecs/sync/config.py).
+// Engine is the consensus coordination loop.
+// It owns Store, ForkChoice, and KeyManager as siblings,
+// rs L78-95).
+// Pending block limits to prevent stuck-forever scenarios.
 const (
-	// maxBlocksPerRequest is the maximum number of block roots to request
-	// in a single BlocksByRoot RPC call. Matches leanSpec MAX_BLOCKS_PER_REQUEST.
-	maxBlocksPerRequest = 10
-
-	// maxBackfillDepth is the maximum depth for backward chain walks.
-	// Matches leanSpec MAX_BACKFILL_DEPTH and zeam MAX_BLOCK_FETCH_DEPTH.
-	maxBackfillDepth = 512
-
-	// recoveryCooldown prevents rapid-fire recovery attempts when multiple
-	// gossip blocks arrive with missing parents in quick succession.
-	recoveryCooldown = 2 * time.Second
-
-	// maxSyncRetries is the maximum number of retry attempts per peer
-	// before giving up. Matches ethlambda MAX_FETCH_RETRIES.
-	maxSyncRetries = 10
-
-	// initialBackoff is the starting backoff duration for failed sync requests.
-	initialBackoff = 5 * time.Millisecond
-
-	// backoffMultiplier doubles the backoff on each consecutive failure.
-	backoffMultiplier = 2
-
-	// maxConcurrentRequestsPerPeer limits in-flight sync requests to a
-	// single peer. Matches leanSpec MAX_CONCURRENT_REQUESTS.
-	maxConcurrentRequestsPerPeer = 2
+	MaxBlockFetchDepth = 512  // Max ancestor chain depth before discarding
+	MaxPendingBlocks   = 1024 // Max pending blocks before rejecting new ones
 )
 
-func (n *Node) Close() {
-	n.cancel()
-	if n.API != nil {
-		n.API.Stop()
+type Engine struct {
+	Store               *ConsensusStore
+	FC                  *forkchoice.ForkChoice
+	P2P                 *p2p.Host
+	Keys                *xmss.KeyManager
+	IsAggregator        bool
+	CommitteeCount      uint64
+	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
+	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
+	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
+
+	// Channels for receiving messages from P2P goroutine.
+	BlockCh       chan *types.SignedBlockWithAttestation
+	AttestationCh chan *types.SignedAttestation
+	AggregationCh chan *types.SignedAggregatedAttestation
+	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
+	FetchRootCh   chan [32]byte // roots to fetch — coalesced into batches by the fetch batcher
+}
+
+// New creates a new Engine.
+func New(
+	s *ConsensusStore,
+	fc *forkchoice.ForkChoice,
+	p2pHost *p2p.Host,
+	keys *xmss.KeyManager,
+	isAggregator bool,
+	committeeCount uint64,
+) *Engine {
+	return &Engine{
+		Store:               s,
+		FC:                  fc,
+		P2P:                 p2pHost,
+		Keys:                keys,
+		IsAggregator:        isAggregator,
+		CommitteeCount:      committeeCount,
+		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
+		PendingBlockParents: make(map[[32]byte][32]byte),
+		PendingBlockDepths:  make(map[[32]byte]int),
+		BlockCh:             make(chan *types.SignedBlockWithAttestation, 64),
+		AttestationCh:       make(chan *types.SignedAttestation, 256),
+		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
+		FailedRootCh:        make(chan [32]byte, 64),
+		FetchRootCh:         make(chan [32]byte, 256),
 	}
-	// Free Rust-allocated XMSS keypairs.
-	if n.Validator != nil {
-		for _, key := range n.Validator.Keys {
-			if f, ok := key.(interface{ Free() }); ok {
-				f.Free()
-			}
+}
+
+// Run starts the engine's main loop.
+// This is the single-writer goroutine — all state mutations happen here.
+func (e *Engine) Run(ctx context.Context) {
+	// Set up callbacks for gossip store (avoids circular deps).
+	FreeSignatureFunc = func(ptr unsafe.Pointer) {
+		xmss.FreeSignature(ptr)
+	}
+	AggregateMetricsFunc = func(durationSeconds float64, numAttestations int) {
+		ObservePqSigAggBuildingTime(durationSeconds)
+		IncPqSigAggregatedTotal()
+		IncPqSigAttestationsInAggregated(numAttestations)
+	}
+
+	// Initialize static metrics.
+	SetNodeInfo("gean", "dev")
+	SetNodeStartTime(float64(time.Now().Unix()))
+	SetIsAggregator(e.IsAggregator)
+	SetAttestationCommitteeCount(e.CommitteeCount)
+	if e.Keys != nil {
+		SetValidatorsCount(len(e.Keys.ValidatorIDs()))
+	}
+
+	ticker := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
+	defer ticker.Stop()
+
+	// Start the fetch batcher: coalesces individual fetch requests into
+	// batches of up to MaxBlocksPerRequest roots per peer request.
+	go e.runFetchBatcher(ctx)
+
+	logger.Info(logger.Node, "started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info(logger.Node, "shutting down")
+			return
+
+		case <-ticker.C:
+			e.onTick()
+
+		case block := <-e.BlockCh:
+			e.onBlock(block)
+
+		case att := <-e.AttestationCh:
+			e.onGossipAttestation(att)
+
+		case agg := <-e.AggregationCh:
+			e.onGossipAggregatedAttestation(agg)
+
+		case root := <-e.FailedRootCh:
+			e.onFailedRoot(root)
 		}
 	}
-	if n.dbCloser != nil {
-		n.dbCloser.Close()
-	}
-	if n.P2PDiscovery != nil {
-		n.P2PDiscovery.Close()
-	}
-	if n.P2PManager != nil {
-		n.P2PManager.Close()
-	}
-	if n.Host != nil {
-		n.Host.Close()
+}
+
+// --- MessageHandler interface for P2P ---
+
+func (e *Engine) OnBlock(block *types.SignedBlockWithAttestation) {
+	select {
+	case e.BlockCh <- block:
+	default:
+		logger.Warn(logger.Chain, "block channel full, dropping")
 	}
 }
 
-// Config holds node configuration.
-type Config struct {
-	GenesisTime       uint64
-	Validators        []*types.Validator
-	ListenAddr        string
-	NodeKeyPath       string
-	Bootnodes         []string
-	DiscoveryPort     int
-	DataDir           string
-	CheckpointSyncURL string
-	ValidatorIDs      []uint64
-	ValidatorKeysDir  string
-	MetricsPort       int
-	DevnetID          string
-	IsAggregator      bool
-	APIHost           string
-	APIPort           int
-	APIEnabled        bool
+func (e *Engine) OnGossipAttestation(att *types.SignedAttestation) {
+	select {
+	case e.AttestationCh <- att:
+	default:
+		logger.Warn(logger.Gossip, "attestation channel full, dropping")
+	}
+}
+
+func (e *Engine) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
+	select {
+	case e.AggregationCh <- agg:
+	default:
+		logger.Warn(logger.Signature, "aggregation channel full, dropping")
+	}
 }

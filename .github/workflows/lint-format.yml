@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25.9"
   RUST_VERSION: "1.88"
 
 jobs:
@@ -60,15 +60,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/leansig-ffi/target
-          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/leansig-ffi/Cargo.lock') }}
+            xmss/rust/target
+          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-lint-${{ runner.os }}-
 
       - name: Check Rust formatting
-        working-directory: xmss/leansig-ffi
-        run: cargo fmt --check
+        working-directory: xmss/rust
+        run: |
+          rustup component add --toolchain 1.90.0-x86_64-unknown-linux-gnu rustfmt
+          cargo fmt --check
 
       - name: Run Clippy
-        working-directory: xmss/leansig-ffi
-        run: cargo clippy -- -D warnings -A clippy::missing_safety_doc
+        working-directory: xmss/rust
+        run: |
+          rustup component add --toolchain 1.90.0-x86_64-unknown-linux-gnu clippy
+          cargo clippy -- -D warnings -A clippy::missing_safety_doc

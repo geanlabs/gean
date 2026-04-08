@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25.9"
   RUST_VERSION: "1.88"
 
 jobs:
@@ -35,8 +35,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/leansig-ffi/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/leansig-ffi/Cargo.lock') }}
+            xmss/rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 
@@ -47,7 +47,4 @@ jobs:
         run: make build
 
       - name: Run unit tests
-        run: make unit-test
-
-      - name: Run race detector tests
-        run: make test-race
+        run: make test
