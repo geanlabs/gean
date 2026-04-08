@@ -76,14 +76,18 @@ pub unsafe extern "C" fn xmss_aggregate(
     let pub_key_ptrs = slice::from_raw_parts(public_keys, num_keys);
     let mut pub_keys: Vec<LeanSigPubKey> = Vec::with_capacity(num_keys);
     for &pk_ptr in pub_key_ptrs {
-        if pk_ptr.is_null() { return std::ptr::null(); }
+        if pk_ptr.is_null() {
+            return std::ptr::null();
+        }
         pub_keys.push((*pk_ptr).inner.clone());
     }
 
     let sig_ptrs = slice::from_raw_parts(signatures, num_sigs);
     let mut lean_signatures: Vec<LeanSigSignature> = Vec::with_capacity(num_sigs);
     for &sig_ptr in sig_ptrs {
-        if sig_ptr.is_null() { return std::ptr::null(); }
+        if sig_ptr.is_null() {
+            return std::ptr::null();
+        }
         lean_signatures.push((*sig_ptr).inner.clone());
     }
 
@@ -119,7 +123,9 @@ pub unsafe extern "C" fn xmss_verify_aggregated(
     let pub_key_ptrs = slice::from_raw_parts(public_keys, num_keys);
     let mut pub_keys: Vec<LeanSigPubKey> = Vec::with_capacity(num_keys);
     for &pk_ptr in pub_key_ptrs {
-        if pk_ptr.is_null() { return false; }
+        if pk_ptr.is_null() {
+            return false;
+        }
         pub_keys.push((*pk_ptr).inner.clone());
     }
 
@@ -128,7 +134,8 @@ pub unsafe extern "C" fn xmss_verify_aggregated(
     let epoch_owned = epoch;
     // Wrap in catch_unwind for CGo safety.
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        xmss_verify_aggregated_signatures(&pub_keys, &message_owned, agg_sig_ref, epoch_owned).is_ok()
+        xmss_verify_aggregated_signatures(&pub_keys, &message_owned, agg_sig_ref, epoch_owned)
+            .is_ok()
     })) {
         Ok(result) => result,
         Err(_) => false,
@@ -150,10 +157,14 @@ pub unsafe extern "C" fn xmss_aggregate_signature_to_bytes(
     buffer: *mut u8,
     buffer_len: usize,
 ) -> usize {
-    if agg_sig.is_null() || buffer.is_null() { return 0; }
+    if agg_sig.is_null() || buffer.is_null() {
+        return 0;
+    }
     let agg_sig_ref = &*agg_sig;
     let ssz_bytes = to_ssz_bytes(agg_sig_ref);
-    if ssz_bytes.len() > buffer_len { return 0; }
+    if ssz_bytes.len() > buffer_len {
+        return 0;
+    }
     let output_slice = slice::from_raw_parts_mut(buffer, buffer_len);
     output_slice[..ssz_bytes.len()].copy_from_slice(&ssz_bytes);
     ssz_bytes.len()
@@ -164,7 +175,9 @@ pub unsafe extern "C" fn xmss_aggregate_signature_from_bytes(
     bytes: *const u8,
     bytes_len: usize,
 ) -> *mut Devnet2XmssAggregateSignature {
-    if bytes.is_null() || bytes_len == 0 { return std::ptr::null_mut(); }
+    if bytes.is_null() || bytes_len == 0 {
+        return std::ptr::null_mut();
+    }
     let input_slice = slice::from_raw_parts(bytes, bytes_len);
     match from_ssz_bytes(input_slice) {
         Ok(agg_sig) => Box::into_raw(Box::new(agg_sig)),

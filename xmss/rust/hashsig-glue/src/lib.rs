@@ -55,9 +55,11 @@ impl PrivateKey {
         message: &[u8; MESSAGE_LENGTH],
         epoch: u32,
     ) -> Result<Signature, leansig::signature::SigningError> {
-        Ok(Signature::new(
-            <HashSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)?,
-        ))
+        Ok(Signature::new(<HashSigScheme as SignatureScheme>::sign(
+            &self.inner,
+            epoch,
+            message,
+        )?))
     }
 }
 
@@ -140,7 +142,9 @@ pub unsafe extern "C" fn hashsig_keypair_from_ssz(
 #[no_mangle]
 pub unsafe extern "C" fn hashsig_keypair_free(keypair: *mut KeyPair) {
     if !keypair.is_null() {
-        unsafe { let _ = Box::from_raw(keypair); }
+        unsafe {
+            let _ = Box::from_raw(keypair);
+        }
     }
 }
 
@@ -148,7 +152,9 @@ pub unsafe extern "C" fn hashsig_keypair_free(keypair: *mut KeyPair) {
 pub unsafe extern "C" fn hashsig_keypair_get_public_key(
     keypair: *const KeyPair,
 ) -> *const PublicKey {
-    if keypair.is_null() { return ptr::null(); }
+    if keypair.is_null() {
+        return ptr::null();
+    }
     &(*keypair).public_key
 }
 
@@ -156,7 +162,9 @@ pub unsafe extern "C" fn hashsig_keypair_get_public_key(
 pub unsafe extern "C" fn hashsig_keypair_get_private_key(
     keypair: *const KeyPair,
 ) -> *const PrivateKey {
-    if keypair.is_null() { return ptr::null(); }
+    if keypair.is_null() {
+        return ptr::null();
+    }
     &(*keypair).private_key
 }
 
@@ -165,7 +173,9 @@ pub unsafe extern "C" fn hashsig_public_key_from_ssz(
     public_key_ptr: *const u8,
     public_key_len: usize,
 ) -> *mut PublicKey {
-    if public_key_ptr.is_null() { return ptr::null_mut(); }
+    if public_key_ptr.is_null() {
+        return ptr::null_mut();
+    }
     unsafe {
         let pk_slice = slice::from_raw_parts(public_key_ptr, public_key_len);
         let public_key: HashSigPublicKey = match HashSigPublicKey::from_ssz_bytes(pk_slice) {
@@ -179,7 +189,9 @@ pub unsafe extern "C" fn hashsig_public_key_from_ssz(
 #[no_mangle]
 pub unsafe extern "C" fn hashsig_public_key_free(public_key: *mut PublicKey) {
     if !public_key.is_null() {
-        unsafe { let _ = Box::from_raw(public_key); }
+        unsafe {
+            let _ = Box::from_raw(public_key);
+        }
     }
 }
 
@@ -189,7 +201,9 @@ pub unsafe extern "C" fn hashsig_sign(
     message_ptr: *const u8,
     epoch: u32,
 ) -> *mut Signature {
-    if private_key.is_null() || message_ptr.is_null() { return ptr::null_mut(); }
+    if private_key.is_null() || message_ptr.is_null() {
+        return ptr::null_mut();
+    }
     unsafe {
         let private_key_ref = &*private_key;
         let message_slice = slice::from_raw_parts(message_ptr, MESSAGE_LENGTH);
@@ -207,7 +221,9 @@ pub unsafe extern "C" fn hashsig_sign(
 #[no_mangle]
 pub unsafe extern "C" fn hashsig_signature_free(signature: *mut Signature) {
     if !signature.is_null() {
-        unsafe { let _ = Box::from_raw(signature); }
+        unsafe {
+            let _ = Box::from_raw(signature);
+        }
     }
 }
 
@@ -216,7 +232,9 @@ pub unsafe extern "C" fn hashsig_signature_from_ssz(
     signature_ptr: *const u8,
     signature_len: usize,
 ) -> *mut Signature {
-    if signature_ptr.is_null() || signature_len == 0 { return ptr::null_mut(); }
+    if signature_ptr.is_null() || signature_len == 0 {
+        return ptr::null_mut();
+    }
     unsafe {
         let sig_slice = slice::from_raw_parts(signature_ptr, signature_len);
         let signature: HashSigSignature = match HashSigSignature::from_ssz_bytes(sig_slice) {
@@ -234,7 +252,9 @@ pub unsafe extern "C" fn hashsig_verify(
     epoch: u32,
     signature: *const Signature,
 ) -> i32 {
-    if public_key.is_null() || message_ptr.is_null() || signature.is_null() { return -1; }
+    if public_key.is_null() || message_ptr.is_null() || signature.is_null() {
+        return -1;
+    }
     unsafe {
         let public_key_ref = &*public_key;
         let signature_ref = &*signature;
@@ -243,7 +263,11 @@ pub unsafe extern "C" fn hashsig_verify(
             Ok(arr) => arr,
             Err(_) => return -1,
         };
-        if signature_ref.verify(message_array, public_key_ref, epoch) { 1 } else { 0 }
+        if signature_ref.verify(message_array, public_key_ref, epoch) {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -260,11 +284,15 @@ pub unsafe extern "C" fn hashsig_signature_to_bytes(
     buffer: *mut u8,
     buffer_len: usize,
 ) -> usize {
-    if signature.is_null() || buffer.is_null() { return 0; }
+    if signature.is_null() || buffer.is_null() {
+        return 0;
+    }
     unsafe {
         let sig_ref = &*signature;
         let ssz_bytes = sig_ref.inner.as_ssz_bytes();
-        if ssz_bytes.len() > buffer_len { return 0; }
+        if ssz_bytes.len() > buffer_len {
+            return 0;
+        }
         let output_slice = slice::from_raw_parts_mut(buffer, buffer_len);
         output_slice[..ssz_bytes.len()].copy_from_slice(&ssz_bytes);
         ssz_bytes.len()
@@ -277,11 +305,15 @@ pub unsafe extern "C" fn hashsig_public_key_to_bytes(
     buffer: *mut u8,
     buffer_len: usize,
 ) -> usize {
-    if public_key.is_null() || buffer.is_null() { return 0; }
+    if public_key.is_null() || buffer.is_null() {
+        return 0;
+    }
     unsafe {
         let public_key_ref = &*public_key;
         let ssz_bytes = public_key_ref.inner.as_ssz_bytes();
-        if ssz_bytes.len() > buffer_len { return 0; }
+        if ssz_bytes.len() > buffer_len {
+            return 0;
+        }
         let output_slice = slice::from_raw_parts_mut(buffer, buffer_len);
         output_slice[..ssz_bytes.len()].copy_from_slice(&ssz_bytes);
         ssz_bytes.len()
@@ -294,11 +326,15 @@ pub unsafe extern "C" fn hashsig_private_key_to_bytes(
     buffer: *mut u8,
     buffer_len: usize,
 ) -> usize {
-    if private_key.is_null() || buffer.is_null() { return 0; }
+    if private_key.is_null() || buffer.is_null() {
+        return 0;
+    }
     unsafe {
         let private_key_ref = &*private_key;
         let ssz_bytes = private_key_ref.inner.as_ssz_bytes();
-        if ssz_bytes.len() > buffer_len { return 0; }
+        if ssz_bytes.len() > buffer_len {
+            return 0;
+        }
         let output_slice = slice::from_raw_parts_mut(buffer, buffer_len);
         output_slice[..ssz_bytes.len()].copy_from_slice(&ssz_bytes);
         ssz_bytes.len()
@@ -314,7 +350,9 @@ pub unsafe extern "C" fn hashsig_verify_ssz(
     signature_bytes: *const u8,
     signature_len: usize,
 ) -> i32 {
-    if pubkey_bytes.is_null() || message.is_null() || signature_bytes.is_null() { return -1; }
+    if pubkey_bytes.is_null() || message.is_null() || signature_bytes.is_null() {
+        return -1;
+    }
     unsafe {
         let pk_data = slice::from_raw_parts(pubkey_bytes, pubkey_len);
         let sig_data = slice::from_raw_parts(signature_bytes, signature_len);
@@ -331,6 +369,10 @@ pub unsafe extern "C" fn hashsig_verify_ssz(
             Ok(sig) => sig,
             Err(_) => return -1,
         };
-        if <HashSigScheme as SignatureScheme>::verify(&pk, epoch, message_array, &sig) { 1 } else { 0 }
+        if <HashSigScheme as SignatureScheme>::verify(&pk, epoch, message_array, &sig) {
+            1
+        } else {
+            0
+        }
     }
 }
