@@ -134,8 +134,10 @@ echo -e "${BLUE}[4/6] Starting devnet...${NC}"
 echo "This will take ~40 seconds (genesis generation + startup)"
 echo ""
 
-# Run devnet in background
-NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > "/tmp/devnet-$BRANCH_NAME.log" 2>&1 &
+# Run devnet in background.
+# --cleanData wipes per-node data dirs so each run starts from a fresh genesis;
+# without it, clients (notably lantern) boot from stale on-disk state.
+NETWORK_DIR=local-devnet ./spin-node.sh --node all --cleanData --generateGenesis --metrics > "/tmp/devnet-$BRANCH_NAME.log" 2>&1 &
 DEVNET_PID=$!
 
 # Wait for nodes to start (check docker ps)

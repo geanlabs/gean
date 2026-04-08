@@ -19,7 +19,9 @@ if [ ! -d "$QUICKSTART_DIR" ]; then
 fi
 
 cd "$QUICKSTART_DIR"
-NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis 2>&1 | tee "$REPO_ROOT/devnet.log" &
+# --cleanData wipes per-node data dirs so each run starts from a fresh genesis;
+# without it, clients (notably lantern) boot from stale on-disk state.
+NETWORK_DIR=local-devnet ./spin-node.sh --node all --cleanData --generateGenesis 2>&1 | tee "$REPO_ROOT/devnet.log" &
 PID=$!
 sleep "$1"
 
