@@ -60,15 +60,15 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/leansig-ffi/target
-          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/leansig-ffi/Cargo.lock') }}
+            xmss/rust/target
+          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-lint-${{ runner.os }}-
 
       - name: Check Rust formatting
-        working-directory: xmss/leansig-ffi
+        working-directory: xmss/rust
         run: cargo fmt --check
 
       - name: Run Clippy
-        working-directory: xmss/leansig-ffi
+        working-directory: xmss/rust
         run: cargo clippy -- -D warnings -A clippy::missing_safety_doc
