@@ -20,9 +20,10 @@ root:
 make devnet-test          # Build current branch + run 5-client devnet test (most common)
 make devnet-test-sync     # Same as devnet-test but also tests sync recovery
 make devnet-status        # Check what's running right now
-make devnet-cleanup       # Stop everything and restore configs
+make devnet-cleanup       # Stop everything, restore configs, AND delete dumped logs
 make devnet-run           # Just run the devnet for 120s and dump logs
 make devnet-analyze       # Analyze .log files in the current directory
+make devnet-clean-logs    # Just delete the dumped *.log files (without stopping devnet)
 ```
 
 `make help` lists them all with descriptions.

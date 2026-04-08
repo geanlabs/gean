@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 devnet-test devnet-test-sync devnet-status devnet-cleanup devnet-analyze devnet-run
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 devnet-test devnet-test-sync devnet-status devnet-cleanup devnet-analyze devnet-run devnet-clean-logs
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -142,8 +142,12 @@ devnet-test-sync: ## Same as devnet-test but also tests sync recovery (pause/res
 devnet-status: ## Show status of running devnet (heads, errors, gean metrics)
 	@.claude/skills/test-pr-devnet/scripts/check-status.sh
 
-devnet-cleanup: ## Stop devnet and restore gean-cmd.sh from backup
+devnet-cleanup: devnet-clean-logs ## Stop devnet, restore gean-cmd.sh, and remove dumped logs
 	@.claude/skills/test-pr-devnet/scripts/cleanup.sh
+
+devnet-clean-logs: ## Remove dumped client logs from the repo root
+	@rm -f gean_0.log zeam_0.log ream_0.log lantern_0.log ethlambda_0.log qlean_0.log devnet.log
+	@echo "✓ Dumped logs removed"
 
 devnet-analyze: ## Analyze .log files in current directory (errors, blocks, consensus progress)
 	@.claude/skills/devnet-log-review/scripts/analyze-logs.sh .
