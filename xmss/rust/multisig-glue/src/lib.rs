@@ -133,13 +133,10 @@ pub unsafe extern "C" fn xmss_verify_aggregated(
     let message_owned = *message_hash;
     let epoch_owned = epoch;
     // Wrap in catch_unwind for CGo safety.
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         xmss_verify_aggregated_signatures(&pub_keys, &message_owned, agg_sig_ref, epoch_owned)
-            .is_ok()
-    })) {
-        Ok(result) => result,
-        Err(_) => false,
-    }
+          .is_ok()
+    })).unwrap_or_default()
 }
 
 #[no_mangle]
