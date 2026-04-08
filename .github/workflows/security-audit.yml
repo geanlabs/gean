@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25"
   RUST_VERSION: "1.88"
 
 jobs:
