@@ -150,7 +150,7 @@ gean exposes a lightweight HTTP API on two separate ports:
 make test
 
 # FFI/crypto tests (requires make ffi)
-make ffi-test
+make test-ffi
 
 # leanSpec fixture tests (requires fixtures)
 make leanSpec/fixtures
