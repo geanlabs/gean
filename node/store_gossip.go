@@ -95,6 +95,29 @@ func (m GossipSignatureMap) PruneBelow(finalizedSlot uint64) int {
 	return pruned
 }
 
+// PruneStaleSigs removes entries older than the given slot cutoff, regardless of finalization.
+// This prevents unbounded growth on non-aggregator nodes where GossipSignatures are never
+// consumed by the aggregation cycle.
+func (m GossipSignatureMap) PruneStaleSigs(currentSlot uint64, maxAge uint64) int {
+	if currentSlot < maxAge {
+		return 0
+	}
+	cutoff := currentSlot - maxAge
+	pruned := 0
+	for root, entry := range m {
+		if entry.Data.Slot < cutoff {
+			for _, sig := range entry.Signatures {
+				if sig.SigHandle != nil && FreeSignatureFunc != nil {
+					FreeSignatureFunc(sig.SigHandle)
+				}
+			}
+			delete(m, root)
+			pruned++
+		}
+	}
+	return pruned
+}
+
 // Len returns the number of data entries.
 func (m GossipSignatureMap) Len() int {
 	return len(m)

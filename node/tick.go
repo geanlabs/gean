@@ -55,6 +55,10 @@ func (e *Engine) onTick() {
 	if currentInterval == 3 {
 		e.updateSafeTarget()
 		PeriodicPrune(e.Store, e.FC, currentSlot, e.Store.LatestFinalized().Slot)
+
+		// Prune stale gossip signatures older than 10 slots.
+		// Prevents unbounded growth on non-aggregator nodes.
+		e.Store.GossipSignatures.PruneStaleSigs(currentSlot, 10)
 	}
 }
 
