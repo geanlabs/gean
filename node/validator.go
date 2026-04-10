@@ -74,22 +74,12 @@ func (e *Engine) produceAttestations(slot uint64) {
 		return
 	}
 
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
-		return
-	}
-	numValidators := headState.NumValidators()
-
 	attData := ProduceAttestationData(e.Store, slot)
 	if attData == nil {
 		return
 	}
 
 	for _, vid := range e.Keys.ValidatorIDs() {
-		// Skip proposer — they already attested via block.
-		if types.IsProposer(slot, vid, numValidators) {
-			continue
-		}
 
 		sStart := time.Now()
 		sig, err := e.Keys.SignAttestation(vid, attData)
