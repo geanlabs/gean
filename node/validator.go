@@ -6,6 +6,7 @@ import (
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // maybePropose builds and publishes a block if we're the proposer.
@@ -68,7 +69,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		slot, blockRoot, len(block.Body.Attestations))
 }
 
-// produceAttestations creates and publishes attestations for non-proposing validators.
+// produceAttestations creates and publishes attestations for all local validators.
 func (e *Engine) produceAttestations(slot uint64) {
 	if e.Keys == nil {
 		return
@@ -96,6 +97,13 @@ func (e *Engine) produceAttestations(slot uint64) {
 		}
 
 		logger.Info(logger.Validator, "produced attestation slot=%d validator=%d", slot, vid)
+
+		// Store locally so the aggregator (if running on this node) can
+		// include it. Gossip skips self-published messages, so without
+		// this the aggregator would never see its own node's attestations.
+		dataRoot, _ := attData.HashTreeRoot()
+		sigHandle, parseErr := xmss.ParseSignature(sig[:])
+		e.Store.GossipSignatures.InsertWithHandle(dataRoot, attData, vid, sig, sigHandle, parseErr)
 
 		// Publish to subnet.
 		if e.P2P != nil {
