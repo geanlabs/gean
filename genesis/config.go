@@ -29,8 +29,9 @@ func (gc *GenesisConfig) Validators() []*types.Validator {
 		var pubkey [types.PubkeySize]byte
 		copy(pubkey[:], pkBytes)
 		validators[i] = &types.Validator{
-			Pubkey: pubkey,
-			Index:  uint64(i),
+			AttestationPubkey: pubkey,
+			ProposalPubkey:    pubkey, // Phase 2 will parse separate proposal pubkey from config
+			Index:             uint64(i),
 		}
 	}
 	return validators

@@ -96,7 +96,7 @@ func VerifyCheckpointState(
 
 	// 6. Validator pubkeys match
 	for i, v := range state.Validators {
-		if v.Pubkey != expectedValidators[i].Pubkey {
+		if v.AttestationPubkey != expectedValidators[i].AttestationPubkey {
 			return fmt.Errorf("validator %d pubkey mismatch", i)
 		}
 	}

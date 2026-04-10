@@ -69,7 +69,7 @@ func TestBlockHeaderHashTreeRoot(t *testing.T) {
 }
 
 func TestValidatorSSZRoundtrip(t *testing.T) {
-	v := &Validator{Pubkey: [52]byte{1, 2, 3}, Index: 7}
+	v := &Validator{AttestationPubkey: [52]byte{1, 2, 3}, Index: 7}
 	data, err := v.MarshalSSZ()
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestValidatorSSZRoundtrip(t *testing.T) {
 	if err := v2.UnmarshalSSZ(data); err != nil {
 		t.Fatal(err)
 	}
-	if v.Pubkey != v2.Pubkey || v.Index != v2.Index {
+	if v.AttestationPubkey != v2.AttestationPubkey || v.Index != v2.Index {
 		t.Fatal("roundtrip mismatch")
 	}
 }
@@ -151,7 +151,7 @@ func TestStateSSZRoundtrip(t *testing.T) {
 			make([]byte, 32),
 		},
 		JustifiedSlots:           NewBitlistSSZ(10),
-		Validators:               []*Validator{{Pubkey: [52]byte{1}, Index: 0}},
+		Validators:               []*Validator{{AttestationPubkey: [52]byte{1}, Index: 0}},
 		JustificationsRoots:      [][]byte{make([]byte, 32)},
 		JustificationsValidators: NewBitlistSSZ(5),
 	}
@@ -180,7 +180,7 @@ func TestStateHashTreeRoot(t *testing.T) {
 		LatestFinalized:          &Checkpoint{Slot: 3},
 		HistoricalBlockHashes:    [][]byte{make([]byte, 32)},
 		JustifiedSlots:           NewBitlistSSZ(10),
-		Validators:               []*Validator{{Pubkey: [52]byte{1}, Index: 0}},
+		Validators:               []*Validator{{AttestationPubkey: [52]byte{1}, Index: 0}},
 		JustificationsRoots:      [][]byte{make([]byte, 32)},
 		JustificationsValidators: NewBitlistSSZ(5),
 	}

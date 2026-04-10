@@ -9,7 +9,7 @@ import (
 
 // PublishBlock publishes a signed block to the block gossipsub topic.
 // SSZ encode -> snappy raw compress -> publish.
-func (h *Host) PublishBlock(ctx context.Context, block *types.SignedBlockWithAttestation) error {
+func (h *Host) PublishBlock(ctx context.Context, block *types.SignedBlock) error {
 	data, err := block.MarshalSSZ()
 	if err != nil {
 		return fmt.Errorf("marshal block: %w", err)

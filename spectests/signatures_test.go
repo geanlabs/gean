@@ -25,7 +25,7 @@ type sigTest struct {
 	Network                    string   `json:"network"`
 	LeanEnv                    string   `json:"leanEnv"`
 	AnchorState                sigState `json:"anchorState"`
-	SignedBlockWithAttestation sigSBA   `json:"signedBlockWithAttestation"`
+	SignedBlock sigSBA   `json:"signedBlock"`
 	ExpectException            *string  `json:"expectException"`
 }
 
@@ -49,7 +49,7 @@ type sigSBA struct {
 
 type sigMessage struct {
 	Block               fcBlock        `json:"block"`
-	ProposerAttestation *fcAttestation `json:"proposerAttestation,omitempty"`
+	ProposerAttestation *fcAttestation `json:"proposerAttestation,omitempty"` // legacy devnet-3, ignored
 }
 
 type sigSignature struct {
@@ -158,7 +158,7 @@ func (fs *sigState) toState() *types.State {
 
 	for _, v := range fs.Validators.Data {
 		state.Validators = append(state.Validators, &types.Validator{
-			Pubkey: sigParseHexPubkey(v.Pubkey),
+			Pubkey: sigParseHexPubkey(v.AttestationPubkey),
 			Index:  v.Index,
 		})
 	}
@@ -192,14 +192,9 @@ func (fs *sigState) toState() *types.State {
 	return state
 }
 
-// toSignedBlock converts fixture signed block with attestation to types.SignedBlockWithAttestation.
-func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
+// toSignedBlock converts fixture signed block to types.SignedBlock.
+func (sba *sigSBA) toSignedBlock() *types.SignedBlock {
 	block := sba.Message.Block.toBlock()
-
-	var proposerAtt *types.Attestation
-	if sba.Message.ProposerAttestation != nil {
-		proposerAtt = sba.Message.ProposerAttestation.toAttestation()
-	}
 
 	proposerSig := sigParseHexSignature(sba.Signature.ProposerSignature)
 
@@ -213,11 +208,8 @@ func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
 		})
 	}
 
-	return &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               block,
-			ProposerAttestation: proposerAtt,
-		},
+	return &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
 			ProposerSignature:     proposerSig,
 			AttestationSignatures: attSigs,
@@ -306,7 +298,7 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	s.SetLatestFinalized(&types.Checkpoint{Root: anchorRoot, Slot: header.Slot})
 
 	// 4. Convert fixture signed block.
-	signedBlock := tt.SignedBlockWithAttestation.toSignedBlock()
+	signedBlock := tt.SignedBlock.toSignedBlock()
 
 	// 5. Call OnBlock WITH signature verification.
 	err = node.OnBlock(s, signedBlock, nil)

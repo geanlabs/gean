@@ -6,7 +6,6 @@ import (
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 // maybePropose builds and publishes a block if we're the proposer.
@@ -30,34 +29,20 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
-	// Produce proposer's own attestation.
-	attData := ProduceAttestationData(e.Store, slot)
-	if attData == nil {
-		logger.Error(logger.Validator, "failed to produce attestation data for proposal")
-		return
-	}
-
-	proposerAtt := &types.Attestation{
-		ValidatorID: validatorID,
-		Data:        attData,
-	}
-
-	// Sign proposer's attestation (this becomes the ProposerSignature in the block).
+	// Sign the block root with the proposer's key.
+	blockRoot, _ := block.HashTreeRoot()
 	signStart := time.Now()
-	attSig, err := e.Keys.SignAttestation(validatorID, attData)
+	proposerSig, err := e.Keys.SignBlock(validatorID, slot, blockRoot)
 	ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
-		logger.Error(logger.Validator, "sign proposer attestation failed: %v", err)
+		logger.Error(logger.Validator, "sign block failed: %v", err)
 		return
 	}
 
-	signedBlock := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               block,
-			ProposerAttestation: proposerAtt,
-		},
+	signedBlock := &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
-			ProposerSignature:     attSig, // attestation signature, NOT block signature
+			ProposerSignature:     proposerSig,
 			AttestationSignatures: attSigProofs,
 		},
 	}
@@ -69,14 +54,8 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	}
 
 	// Register in fork choice.
-	bRoot, _ := block.HashTreeRoot()
-	e.FC.OnBlock(slot, bRoot, block.ParentRoot)
+	e.FC.OnBlock(slot, blockRoot, block.ParentRoot)
 	e.updateHead(false)
-
-	// Store proposer's attestation signature in gossip for aggregation with C handle.
-	dataRoot, _ := attData.HashTreeRoot()
-	sigHandle, parseErr := xmss.ParseSignature(attSig[:])
-	e.Store.GossipSignatures.InsertWithHandle(dataRoot, attData, validatorID, attSig, sigHandle, parseErr)
 
 	// Publish to network.
 	if e.P2P != nil {
@@ -86,7 +65,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	}
 
 	logger.Info(logger.Validator, "proposed block slot=%d block_root=0x%x attestations=%d",
-		slot, bRoot, len(block.Body.Attestations))
+		slot, blockRoot, len(block.Body.Attestations))
 }
 
 // produceAttestations creates and publishes attestations for non-proposing validators.

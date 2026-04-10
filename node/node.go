@@ -33,7 +33,7 @@ type Engine struct {
 	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
 
 	// Channels for receiving messages from P2P goroutine.
-	BlockCh       chan *types.SignedBlockWithAttestation
+	BlockCh       chan *types.SignedBlock
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
 	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
@@ -59,7 +59,7 @@ func New(
 		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
 		PendingBlockParents: make(map[[32]byte][32]byte),
 		PendingBlockDepths:  make(map[[32]byte]int),
-		BlockCh:             make(chan *types.SignedBlockWithAttestation, 64),
+		BlockCh:             make(chan *types.SignedBlock, 64),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
 		FailedRootCh:        make(chan [32]byte, 64),
@@ -124,7 +124,7 @@ func (e *Engine) Run(ctx context.Context) {
 
 // --- MessageHandler interface for P2P ---
 
-func (e *Engine) OnBlock(block *types.SignedBlockWithAttestation) {
+func (e *Engine) OnBlock(block *types.SignedBlock) {
 	select {
 	case e.BlockCh <- block:
 	default:

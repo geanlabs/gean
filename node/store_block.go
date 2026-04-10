@@ -13,7 +13,7 @@ import (
 // OnBlock processes a new signed block with signature verification.
 func OnBlock(
 	s *ConsensusStore,
-	signedBlock *types.SignedBlockWithAttestation,
+	signedBlock *types.SignedBlock,
 	localValidatorIDs []uint64,
 ) error {
 	return onBlockCore(s, signedBlock, true, localValidatorIDs)
@@ -21,10 +21,10 @@ func OnBlock(
 
 // OnBlockWithoutVerification processes a block without signature checks.
 // Used for fork choice spec tests where signatures are absent.
-// Caller must call ProcessProposerAttestation(s, signedBlock, false) AFTER updateHead.
+// In devnet-4, the proposer attests during interval 1 like all other validators.
 func OnBlockWithoutVerification(
 	s *ConsensusStore,
-	signedBlock *types.SignedBlockWithAttestation,
+	signedBlock *types.SignedBlock,
 ) error {
 	return onBlockCore(s, signedBlock, false, nil)
 }
@@ -32,12 +32,12 @@ func OnBlockWithoutVerification(
 // onBlockCore is the core block processing logic.
 func onBlockCore(
 	s *ConsensusStore,
-	signedBlock *types.SignedBlockWithAttestation,
+	signedBlock *types.SignedBlock,
 	verify bool,
 	localValidatorIDs []uint64,
 ) error {
 	start := time.Now()
-	block := signedBlock.Block.Block
+	block := signedBlock.Block
 	slot := block.Slot
 
 	// Compute block root.
@@ -119,9 +119,8 @@ func onBlockCore(
 	// Process block body attestations into known payloads.
 	processBlockAttestations(s, signedBlock, blockRoot)
 
-	// NOTE: Proposer attestation is NOT processed here.
-	// Engine must call updateHead BEFORE ProcessProposerAttestation
-	// to prevent circular weight advantage.
+	// In devnet-4, proposer attestation is no longer embedded in blocks.
+	// The proposer attests during interval 1 like all other validators.
 
 	attCount := 0
 	if block.Body != nil {
@@ -135,41 +134,26 @@ func onBlockCore(
 	return nil
 }
 
-// ProcessProposerAttestation processes the proposer's self-attestation.
-// Must be called AFTER updateHead to prevent circular weight advantage.
-func ProcessProposerAttestation(s *ConsensusStore, signedBlock *types.SignedBlockWithAttestation, verify bool) {
-	if signedBlock.Block.ProposerAttestation == nil {
-		return
-	}
-	blockRoot, _ := signedBlock.Block.Block.HashTreeRoot()
-	processProposerAttestation(s, signedBlock, blockRoot, verify)
-}
-
 // verifyBlockSignatures verifies proposer and attestation signatures.
 func verifyBlockSignatures(
 	s *ConsensusStore,
-	signedBlock *types.SignedBlockWithAttestation,
+	signedBlock *types.SignedBlock,
 	state *types.State,
 ) error {
-	block := signedBlock.Block.Block
+	block := signedBlock.Block
 	sigs := signedBlock.Signature
 
-	// Verify proposer attestation signature.
-	// ProposerSignature signs the proposer's AttestationData, NOT the block root.
-
+	// Verify proposer signature over the block root using the proposer's attestation pubkey.
+	// NOTE: Phase 3 (feat/dual-key-signing) will change this to use ProposalPubkey instead.
 	if block.ProposerIndex >= uint64(len(state.Validators)) {
 		return &StoreError{ErrInvalidValidatorIndex, "proposer index out of range"}
 	}
-	proposerPubkey := state.Validators[block.ProposerIndex].Pubkey
+	proposerPubkey := state.Validators[block.ProposerIndex].AttestationPubkey
 
-	proposerAtt := signedBlock.Block.ProposerAttestation
-	if proposerAtt == nil || proposerAtt.Data == nil {
-		return &StoreError{ErrProposerSignatureVerificationFailed, "missing proposer attestation data"}
-	}
-	attDataRoot, _ := proposerAtt.Data.HashTreeRoot()
-	slot := uint32(proposerAtt.Data.Slot)
+	blockRoot, _ := block.HashTreeRoot()
+	slot := uint32(block.Slot)
 
-	valid, err := xmss.VerifySignatureSSZ(proposerPubkey, slot, attDataRoot, sigs.ProposerSignature)
+	valid, err := xmss.VerifySignatureSSZ(proposerPubkey, slot, blockRoot, sigs.ProposerSignature)
 	if err != nil {
 		return &StoreError{ErrProposerSignatureDecodingFailed, fmt.Sprintf("proposer sig decode: %v", err)}
 	}
@@ -203,7 +187,7 @@ func verifyBlockSignatures(
 			if vid >= uint64(len(targetState.Validators)) {
 				return &StoreError{ErrInvalidValidatorIndex, fmt.Sprintf("validator %d out of range", vid)}
 			}
-			pubkeys = append(pubkeys, targetState.Validators[vid].Pubkey)
+			pubkeys = append(pubkeys, targetState.Validators[vid].AttestationPubkey)
 		}
 
 		// Verify aggregated proof.
@@ -238,16 +222,16 @@ func verifyBlockSignatures(
 }
 
 // storeBlockParts stores block body and full signed block across split tables.
-func storeBlockParts(s *ConsensusStore, blockRoot [32]byte, signedBlock *types.SignedBlockWithAttestation) {
+func storeBlockParts(s *ConsensusStore, blockRoot [32]byte, signedBlock *types.SignedBlock) {
 	writeBlockData(s, blockRoot, signedBlock)
 }
 
 // processBlockAttestations extracts attestations from block body into known payloads.
-func processBlockAttestations(s *ConsensusStore, signedBlock *types.SignedBlockWithAttestation, blockRoot [32]byte) {
-	if signedBlock.Block.Block.Body == nil || signedBlock.Signature == nil {
+func processBlockAttestations(s *ConsensusStore, signedBlock *types.SignedBlock, blockRoot [32]byte) {
+	if signedBlock.Block.Body == nil || signedBlock.Signature == nil {
 		return
 	}
-	for i, att := range signedBlock.Block.Block.Body.Attestations {
+	for i, att := range signedBlock.Block.Body.Attestations {
 		if i >= len(signedBlock.Signature.AttestationSignatures) {
 			continue
 		}
@@ -257,29 +241,3 @@ func processBlockAttestations(s *ConsensusStore, signedBlock *types.SignedBlockW
 	}
 }
 
-// processProposerAttestation handles the proposer's self-attestation.
-// Production (verify=true): store proposer's real XMSS signature in gossip for aggregation at interval 2.
-// Spec tests only (verify=false via OnBlockWithoutVerification): insert participants-only proof
-// into new payloads since no real signatures exist in test fixtures.
-func processProposerAttestation(s *ConsensusStore, signedBlock *types.SignedBlockWithAttestation, blockRoot [32]byte, verify bool) {
-	att := signedBlock.Block.ProposerAttestation
-	if att == nil || att.Data == nil {
-		return
-	}
-	dataRoot, _ := att.Data.HashTreeRoot()
-
-	if verify && signedBlock.Signature != nil {
-		// Store proposer's gossip signature for aggregation with C handle.
-		// ParseSignature creates a native leansig handle from SSZ bytes.
-		sigHandle, parseErr := xmss.ParseSignature(signedBlock.Signature.ProposerSignature[:])
-		s.GossipSignatures.InsertWithHandle(dataRoot, att.Data, att.ValidatorID, signedBlock.Signature.ProposerSignature, sigHandle, parseErr)
-	} else {
-		// Without sig verification, insert directly with a dummy proof.
-		participants := aggregationBitsFromValidatorIndices([]uint64{att.ValidatorID})
-		proof := &types.AggregatedSignatureProof{
-			Participants: participants,
-			ProofData:    nil,
-		}
-		s.NewPayloads.Push(dataRoot, att.Data, proof)
-	}
-}

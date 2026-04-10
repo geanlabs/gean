@@ -10,7 +10,7 @@ func makeTestState(slot uint64, genesisTime uint64, numValidators int) *types.St
 	validators := make([]*types.Validator, numValidators)
 	for i := 0; i < numValidators; i++ {
 		validators[i] = &types.Validator{
-			Pubkey: [types.PubkeySize]byte{byte(i + 1)},
+			AttestationPubkey: [types.PubkeySize]byte{byte(i + 1)},
 			Index:  uint64(i),
 		}
 	}
@@ -87,7 +87,7 @@ func TestVerifyCheckpointStatePubkeyMismatch(t *testing.T) {
 	expected := make([]*types.Validator, 3)
 	for i := 0; i < 3; i++ {
 		expected[i] = &types.Validator{
-			Pubkey: [types.PubkeySize]byte{byte(i + 100)}, // different
+			AttestationPubkey: [types.PubkeySize]byte{byte(i + 100)}, // different
 			Index:  uint64(i),
 		}
 	}

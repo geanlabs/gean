@@ -95,7 +95,7 @@ type fcStep struct {
 
 type fcStepBlock struct {
 	Block               fcBlock        `json:"block"`
-	ProposerAttestation *fcAttestation `json:"proposerAttestation,omitempty"`
+	ProposerAttestation *fcAttestation `json:"proposerAttestation,omitempty"` // legacy devnet-3, ignored in devnet-4
 	BlockRootLabel      string         `json:"blockRootLabel,omitempty"`
 }
 
@@ -199,7 +199,7 @@ func (fs *fcState) toState() *types.State {
 
 	for _, v := range fs.Validators.Data {
 		state.Validators = append(state.Validators, &types.Validator{
-			Pubkey: fcParseHexPubkey(v.Pubkey),
+			Pubkey: fcParseHexPubkey(v.AttestationPubkey),
 			Index:  v.Index,
 		})
 	}
@@ -389,11 +389,8 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	s.SetLatestFinalized(&types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot})
 
 	// Store anchor as signed block.
-	anchorSigned := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               anchorBlock,
-			ProposerAttestation: nil,
-		},
+	anchorSigned := &types.SignedBlock{
+		Block:     anchorBlock,
 		Signature: nil,
 	}
 	s.StorePendingBlock(anchorRoot, anchorSigned)
@@ -414,16 +411,8 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 			block := step.Block.Block.toBlock()
 
-			var proposerAtt *types.Attestation
-			if step.Block.ProposerAttestation != nil {
-				proposerAtt = step.Block.ProposerAttestation.toAttestation()
-			}
-
-			signedBlock := &types.SignedBlockWithAttestation{
-				Block: &types.BlockWithAttestation{
-					Block:               block,
-					ProposerAttestation: proposerAtt,
-				},
+			signedBlock := &types.SignedBlock{
+				Block:     block,
 				Signature: nil,
 			}
 
@@ -457,9 +446,6 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 			newHead := fc.UpdateHead(justifiedRoot)
 			s.SetHead(newHead)
-
-			// Process proposer attestation AFTER updateHead.
-			node.ProcessProposerAttestation(s, signedBlock, false)
 
 			// Promote new payloads to known (so next updateHead sees them).
 			s.PromoteNewToKnown()

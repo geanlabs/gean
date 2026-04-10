@@ -44,7 +44,7 @@ func TestValidators(t *testing.T) {
 		if v.Index != uint64(i) {
 			t.Fatalf("validator %d index: expected %d, got %d", i, i, v.Index)
 		}
-		if v.Pubkey == [types.PubkeySize]byte{} {
+		if v.AttestationPubkey == [types.PubkeySize]byte{} {
 			t.Fatalf("validator %d has zero pubkey", i)
 		}
 	}

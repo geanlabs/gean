@@ -11,10 +11,10 @@ import (
 )
 
 // onBlock processes a received block using an iterative work queue.
-func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
+func (e *Engine) onBlock(signedBlock *types.SignedBlock) {
 	oldFinalizedSlot := e.Store.LatestFinalized().Slot
 
-	queue := []*types.SignedBlockWithAttestation{signedBlock}
+	queue := []*types.SignedBlock{signedBlock}
 
 	for len(queue) > 0 {
 		current := queue[0]
@@ -30,8 +30,8 @@ func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
 	}
 }
 
-func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, queue *[]*types.SignedBlockWithAttestation) {
-	block := signedBlock.Block.Block
+func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types.SignedBlock) {
+	block := signedBlock.Block
 	blockRoot, _ := block.HashTreeRoot()
 	parentRoot := block.ParentRoot
 
@@ -150,11 +150,8 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 		e.FC.Prune(finalized.Root)
 	}
 
-	// Update head BEFORE processing proposer attestation.
+	// Update head after processing block.
 	e.updateHead(false)
-
-	// Process proposer attestation.
-	ProcessProposerAttestation(e.Store, signedBlock, true)
 
 	// Clear depth tracking for this block (now processed).
 	delete(e.PendingBlockDepths, blockRoot)
@@ -164,7 +161,7 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 }
 
 // collectPendingChildren moves pending children of parent into the work queue.
-func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.SignedBlockWithAttestation) {
+func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.SignedBlock) {
 	childRoots, ok := e.PendingBlocks[parentRoot]
 	if !ok {
 		return
@@ -348,7 +345,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	if att.ValidatorID >= uint64(len(targetState.Validators)) {
 		return
 	}
-	pubkey := targetState.Validators[att.ValidatorID].Pubkey
+	pubkey := targetState.Validators[att.ValidatorID].AttestationPubkey
 
 	// Verify XMSS signature.
 	dataRoot, _ := att.Data.HashTreeRoot()

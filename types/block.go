@@ -23,12 +23,6 @@ type Block struct {
 	Body          *BlockBody     `json:"body"`
 }
 
-// BlockWithAttestation pairs a block with the proposer's own attestation.
-type BlockWithAttestation struct {
-	Block               *Block       `json:"block"`
-	ProposerAttestation *Attestation `json:"proposer_attestation"`
-}
-
 // AggregatedSignatureProof is a zkVM proof that a set of validators signed.
 type AggregatedSignatureProof struct {
 	Participants []byte `json:"participants" ssz:"bitlist" ssz-max:"4096"`
@@ -41,8 +35,8 @@ type BlockSignatures struct {
 	ProposerSignature     [SignatureSize]byte         `json:"proposer_signature" ssz-size:"3112"`
 }
 
-// SignedBlockWithAttestation is the complete signed block as gossiped on the network.
-type SignedBlockWithAttestation struct {
-	Block     *BlockWithAttestation `json:"block"`
-	Signature *BlockSignatures      `json:"signature"`
+// SignedBlock is the complete signed block as gossiped on the network.
+type SignedBlock struct {
+	Block     *Block           `json:"block"`
+	Signature *BlockSignatures `json:"signature"`
 }

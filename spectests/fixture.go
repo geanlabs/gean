@@ -166,7 +166,7 @@ func (ts *TestState) ToState() *types.State {
 	// Validators
 	for _, v := range ts.Validators.Data {
 		state.Validators = append(state.Validators, &types.Validator{
-			Pubkey: parseHexPubkey(v.Pubkey),
+			Pubkey: parseHexPubkey(v.AttestationPubkey),
 			Index:  v.Index,
 		})
 	}

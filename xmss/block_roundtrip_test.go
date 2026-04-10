@@ -7,7 +7,7 @@ import (
 )
 
 // TestProposerSigThroughBlockSSZ simulates the exact P2P path:
-// Node1 signs → builds SignedBlockWithAttestation → SSZ marshal → SSZ unmarshal →
+// Node1 signs → builds SignedBlock → SSZ marshal → SSZ unmarshal →
 // extract ProposerSignature → ParseSignature → aggregate.
 func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	kp, err := GenerateKeyPair("block-roundtrip-0", 0, 1<<18)
@@ -28,23 +28,12 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 		t.Fatalf("sign: %v", err)
 	}
 
-	// Build a SignedBlockWithAttestation with this signature as ProposerSignature
-	signedBlock := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block: &types.Block{
-				Slot:          1,
-				ProposerIndex: 0,
-				Body:          &types.BlockBody{},
-			},
-			ProposerAttestation: &types.Attestation{
-				ValidatorID: 0,
-				Data: &types.AttestationData{
-					Slot:   1,
-					Head:   &types.Checkpoint{},
-					Target: &types.Checkpoint{},
-					Source: &types.Checkpoint{},
-				},
-			},
+	// Build a SignedBlock with this signature as ProposerSignature
+	signedBlock := &types.SignedBlock{
+		Block: &types.Block{
+			Slot:          1,
+			ProposerIndex: 0,
+			Body:          &types.BlockBody{},
 		},
 		Signature: &types.BlockSignatures{
 			ProposerSignature: sig,
@@ -58,7 +47,7 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	}
 
 	// SSZ unmarshal (simulates P2P receive)
-	decoded := &types.SignedBlockWithAttestation{}
+	decoded := &types.SignedBlock{}
 	if err := decoded.UnmarshalSSZ(encoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
