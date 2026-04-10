@@ -50,8 +50,7 @@ sszgen: ## Regenerate SSZ encoding files from struct tags
 	sszgen --path pkg/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output types/state_encoding.go
 
 clean: ## Remove build artifacts and generated files
-	rm -rf bin data
-	rm -f types/*_encoding.go
+	rm -rf bin data testnet
 	cd xmss/rust && cargo clean
 
 tidy: ## Tidy Go module dependencies
