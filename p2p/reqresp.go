@@ -228,7 +228,7 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 
 // EncodeBlocksByRootRequest encodes roots as SSZ container: BlocksByRootRequest { roots: List[Root, 1024] }.
 // SSZ container with one variable-length field: 4-byte offset + concatenated roots.
-// Matches leanSpec networking/reqresp/message.py BlocksByRootRequest.
+// SSZ container: BlocksByRootRequest { roots: List[Root, 1024] }.
 func EncodeBlocksByRootRequest(roots [][32]byte) []byte {
 	rootsData := make([]byte, len(roots)*32)
 	for i, root := range roots {

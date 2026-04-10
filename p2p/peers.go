@@ -20,7 +20,7 @@ const (
 	InitialBackoffMs   = 5
 	BackoffMultiplier  = 2
 	BootnodeRedialSecs = 12
-	// MaxBlocksPerRequest matches leanSpec MAX_BLOCKS_PER_REQUEST.
+	// MaxBlocksPerRequest is the maximum number of blocks per blocks-by-root request.
 	MaxBlocksPerRequest = 10
 )
 

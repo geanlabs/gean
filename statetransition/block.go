@@ -70,7 +70,6 @@ func ProcessBlockHeader(state *types.State, block *types.Block) error {
 	}
 
 	// Extend justified_slots to cover slots up to block.slot - 1, relative to finalized boundary.
-	// Matches leanSpec state.py extend_to_slot(finalized_slot, last_materialized_slot)
 
 	lastMaterializedSlot := block.Slot - 1
 	if lastMaterializedSlot > state.LatestFinalized.Slot {

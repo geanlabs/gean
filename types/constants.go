@@ -12,7 +12,7 @@ const (
 	ValidatorRegistryLimit     = 1 << 12 // 4096
 	AttestationCommitteeCount  = 1
 	JustificationLookbackSlots = 3
-	MaxAttestationsData        = 16 // Maximum distinct AttestationData entries per block (leanSpec PR #536)
+	MaxAttestationsData        = 16 // Maximum distinct AttestationData entries per block
 
 	// Derived limits
 	JustificationValidatorsLimit = HistoricalRootsLimit * ValidatorRegistryLimit // 1073741824

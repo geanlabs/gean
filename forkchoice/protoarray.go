@@ -107,7 +107,7 @@ func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 			if bestChild.Weight < pa.nodes[i].Weight {
 				shouldUpdate = true
 			} else if bestChild.Weight == pa.nodes[i].Weight {
-				// Tie-break: lexicographically larger root wins (leanSpec-compatible).
+				// Tie-break: lexicographically larger root wins.
 				if bytes.Compare(bestChild.Root[:], pa.nodes[i].Root[:]) < 0 {
 					shouldUpdate = true
 				}
