@@ -154,13 +154,13 @@ func verifyBlockSignatures(
 	block := signedBlock.Block.Block
 	sigs := signedBlock.Signature
 
-	// Verify proposer attestation signature.
-	// ProposerSignature signs the proposer's AttestationData, NOT the block root.
+	// Verify proposer signature using the PROPOSAL key.
+	// Currently signs attestation data; Phase 4 will change to block root.
 
 	if block.ProposerIndex >= uint64(len(state.Validators)) {
 		return &StoreError{ErrInvalidValidatorIndex, "proposer index out of range"}
 	}
-	proposerPubkey := state.Validators[block.ProposerIndex].AttestationPubkey
+	proposerPubkey := state.Validators[block.ProposerIndex].ProposalPubkey
 
 	proposerAtt := signedBlock.Block.ProposerAttestation
 	if proposerAtt == nil || proposerAtt.Data == nil {

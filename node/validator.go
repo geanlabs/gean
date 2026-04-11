@@ -42,9 +42,17 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		Data:        attData,
 	}
 
-	// Sign proposer's attestation (this becomes the ProposerSignature in the block).
+	// Sign proposer's attestation with the PROPOSAL key (not attestation key).
+	// The proposer uses a separate key domain for block-related signatures.
+	// Phase 4 will change the signed message from attestation data to block root.
 	signStart := time.Now()
-	attSig, err := e.Keys.SignAttestation(validatorID, attData)
+	propKey := e.Keys.GetProposalKey(validatorID)
+	if propKey == nil {
+		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
+		return
+	}
+	attDataRoot, _ := attData.HashTreeRoot()
+	attSig, err := propKey.Sign(uint32(slot), attDataRoot)
 	ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
 		logger.Error(logger.Validator, "sign proposer attestation failed: %v", err)
