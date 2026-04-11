@@ -65,6 +65,23 @@ func onBlockCore(
 		}
 	}
 
+	// Enforce unique AttestationData per block + MAX_ATTESTATIONS_DATA cap.
+	// Spec: store.py on_block lines 549-556
+	if block.Body != nil {
+		seen := make(map[[32]byte]bool)
+		for _, att := range block.Body.Attestations {
+			dataRoot, _ := att.Data.HashTreeRoot()
+			if seen[dataRoot] {
+				return &StoreError{ErrDuplicateAttestationData, "block contains duplicate AttestationData"}
+			}
+			seen[dataRoot] = true
+		}
+		if len(seen) > int(types.MaxAttestationsData) {
+			return &StoreError{ErrTooManyAttestationData,
+				fmt.Sprintf("block has %d distinct AttestationData (max %d)", len(seen), types.MaxAttestationsData)}
+		}
+	}
+
 	// Clone state for transition.
 	stateBytes, _ := parentState.MarshalSSZ()
 	postState := &types.State{}

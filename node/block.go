@@ -368,7 +368,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 
 	// Store for aggregation.
 	logger.Info(logger.Gossip, "attestation verified: validator=%d slot=%d dataRoot=%x", att.ValidatorID, att.Data.Slot, dataRoot)
-	e.Store.GossipSignatures.InsertWithHandle(dataRoot, att.Data, att.ValidatorID, att.Signature, sigHandle, parseErr)
+	e.Store.AttestationSignatures.InsertWithHandle(dataRoot, att.Data, att.ValidatorID, att.Signature, sigHandle, parseErr)
 }
 
 // onGossipAggregatedAttestation validates and stores an aggregated attestation.

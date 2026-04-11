@@ -197,8 +197,8 @@ func TestExtractLatestAllAttestations(t *testing.T) {
 	}
 }
 
-func TestGossipSignatureInsertAndDelete(t *testing.T) {
-	gsm := make(GossipSignatureMap)
+func TestAttestationSignatureInsertAndDelete(t *testing.T) {
+	gsm := make(AttestationSignatureMap)
 	var dr [32]byte
 	dr[0] = 1
 	data := &types.AttestationData{Slot: 5}
@@ -214,14 +214,14 @@ func TestGossipSignatureInsertAndDelete(t *testing.T) {
 		t.Fatal("expected 2 signatures")
 	}
 
-	gsm.Delete([]GossipDeleteKey{{ValidatorID: 0, DataRoot: dr}})
+	gsm.Delete([]AttestationDeleteKey{{ValidatorID: 0, DataRoot: dr}})
 	if len(gsm[dr].Signatures) != 1 {
 		t.Fatal("expected 1 signature after delete")
 	}
 }
 
-func TestGossipSignaturePruneBelow(t *testing.T) {
-	gsm := make(GossipSignatureMap)
+func TestAttestationSignaturePruneBelow(t *testing.T) {
+	gsm := make(AttestationSignatureMap)
 	var sig [types.SignatureSize]byte
 	for i := uint64(0); i < 5; i++ {
 		var dr [32]byte

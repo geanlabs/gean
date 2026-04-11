@@ -21,7 +21,7 @@ type ConsensusStore struct {
 	Backend          storage.Backend
 	NewPayloads      *PayloadBuffer
 	KnownPayloads    *PayloadBuffer
-	GossipSignatures GossipSignatureMap
+	AttestationSignatures AttestationSignatureMap
 	PubKeyCache      *xmss.PubKeyCache // cached parsed pubkey handles for aggregation
 }
 
@@ -31,7 +31,7 @@ func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 		Backend:          backend,
 		NewPayloads:      NewPayloadBuffer(newPayloadCap),
 		KnownPayloads:    NewPayloadBuffer(aggregatedPayloadCap),
-		GossipSignatures: make(GossipSignatureMap),
+		AttestationSignatures: make(AttestationSignatureMap),
 		PubKeyCache:      xmss.NewPubKeyCache(),
 	}
 }

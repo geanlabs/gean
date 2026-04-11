@@ -9,18 +9,18 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-// AggregateCommitteeSignatures collects gossip signatures and aggregates them
+// AggregateCommitteeSignatures collects attestation signatures and aggregates them
 // using real XMSS ZK aggregation via xmss.AggregateSignatures.
 func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
-	if s.GossipSignatures.Len() == 0 {
+	if s.AttestationSignatures.Len() == 0 {
 		return nil
 	}
 
 	var newAggregates []*types.SignedAggregatedAttestation
-	var keysToDelete []GossipDeleteKey
+	var keysToDelete []AttestationDeleteKey
 	var payloadEntries []PayloadKV
 
-	for dataRoot, entry := range s.GossipSignatures {
+	for dataRoot, entry := range s.AttestationSignatures {
 		if len(entry.Signatures) == 0 {
 			continue
 		}
@@ -35,7 +35,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 		// Sort signatures by validator ID for deterministic aggregation ordering.
 		// Verification side uses BitlistIndices which returns ascending order,
 		// so aggregation must match.
-		sortedSigs := make([]GossipSignatureEntry, len(entry.Signatures))
+		sortedSigs := make([]AttestationSignatureEntry, len(entry.Signatures))
 		copy(sortedSigs, entry.Signatures)
 		sort.Slice(sortedSigs, func(i, j int) bool {
 			return sortedSigs[i].ValidatorID < sortedSigs[j].ValidatorID
@@ -129,7 +129,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 		})
 
 		for _, id := range ids {
-			keysToDelete = append(keysToDelete, GossipDeleteKey{
+			keysToDelete = append(keysToDelete, AttestationDeleteKey{
 				ValidatorID: id,
 				DataRoot:    dataRoot,
 			})
@@ -140,8 +140,8 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 
 	s.KnownPayloads.PushBatch(payloadEntries)
 
-	// Delete aggregated signatures from gossip store.
-	s.GossipSignatures.Delete(keysToDelete)
+	// Delete aggregated signatures from attestation signature store.
+	s.AttestationSignatures.Delete(keysToDelete)
 
 	return newAggregates
 }

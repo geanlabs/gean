@@ -12,8 +12,8 @@ import (
 var FreeSignatureFunc func(unsafe.Pointer)
 var AggregateMetricsFunc func(durationSeconds float64, numAttestations int)
 
-// GossipSignatureEntry holds one validator's signature for aggregation.
-type GossipSignatureEntry struct {
+// AttestationSignatureEntry holds one validator's signature for aggregation.
+type AttestationSignatureEntry struct {
 	ValidatorID uint64
 	Signature   [types.SignatureSize]byte
 	// SigHandle is an opaque C pointer to the parsed leansig Signature.
@@ -21,32 +21,32 @@ type GossipSignatureEntry struct {
 	SigHandle unsafe.Pointer
 }
 
-// GossipDataEntry groups signatures by attestation data.
-type GossipDataEntry struct {
+// AttestationDataEntry groups signatures by attestation data.
+type AttestationDataEntry struct {
 	Data       *types.AttestationData
-	Signatures []GossipSignatureEntry
+	Signatures []AttestationSignatureEntry
 }
 
-// GossipSignatureMap maps data_root -> signatures.
-type GossipSignatureMap map[[32]byte]*GossipDataEntry
+// AttestationSignatureMap maps data_root -> signatures.
+type AttestationSignatureMap map[[32]byte]*AttestationDataEntry
 
-// Insert adds a gossip signature for a validator (without C handle).
-func (m GossipSignatureMap) Insert(dataRoot [32]byte, data *types.AttestationData, validatorID uint64, sig [types.SignatureSize]byte) {
+// Insert adds an attestation signature for a validator (without C handle).
+func (m AttestationSignatureMap) Insert(dataRoot [32]byte, data *types.AttestationData, validatorID uint64, sig [types.SignatureSize]byte) {
 	m.InsertWithHandle(dataRoot, data, validatorID, sig, nil, nil)
 }
 
-// InsertWithHandle adds a gossip signature with an optional opaque C handle.
-func (m GossipSignatureMap) InsertWithHandle(dataRoot [32]byte, data *types.AttestationData, validatorID uint64, sig [types.SignatureSize]byte, handle unsafe.Pointer, parseErr error) {
+// InsertWithHandle adds an attestation signature with an optional opaque C handle.
+func (m AttestationSignatureMap) InsertWithHandle(dataRoot [32]byte, data *types.AttestationData, validatorID uint64, sig [types.SignatureSize]byte, handle unsafe.Pointer, parseErr error) {
 	entry, ok := m[dataRoot]
 	if !ok {
-		entry = &GossipDataEntry{Data: data}
+		entry = &AttestationDataEntry{Data: data}
 		m[dataRoot] = entry
 	}
 	var h unsafe.Pointer
 	if parseErr == nil {
 		h = handle
 	}
-	entry.Signatures = append(entry.Signatures, GossipSignatureEntry{
+	entry.Signatures = append(entry.Signatures, AttestationSignatureEntry{
 		ValidatorID: validatorID,
 		Signature:   sig,
 		SigHandle:   h,
@@ -54,7 +54,7 @@ func (m GossipSignatureMap) InsertWithHandle(dataRoot [32]byte, data *types.Atte
 }
 
 // Delete removes specific (validatorID, dataRoot) entries, freeing C handles.
-func (m GossipSignatureMap) Delete(keys []GossipDeleteKey) {
+func (m AttestationSignatureMap) Delete(keys []AttestationDeleteKey) {
 	for _, key := range keys {
 		entry, ok := m[key.DataRoot]
 		if !ok {
@@ -79,7 +79,7 @@ func (m GossipSignatureMap) Delete(keys []GossipDeleteKey) {
 }
 
 // PruneBelow removes entries with slot <= finalizedSlot, freeing C handles.
-func (m GossipSignatureMap) PruneBelow(finalizedSlot uint64) int {
+func (m AttestationSignatureMap) PruneBelow(finalizedSlot uint64) int {
 	pruned := 0
 	for root, entry := range m {
 		if entry.Data.Slot <= finalizedSlot {
@@ -96,12 +96,12 @@ func (m GossipSignatureMap) PruneBelow(finalizedSlot uint64) int {
 }
 
 // Len returns the number of data entries.
-func (m GossipSignatureMap) Len() int {
+func (m AttestationSignatureMap) Len() int {
 	return len(m)
 }
 
-// GossipDeleteKey identifies a specific signature to delete.
-type GossipDeleteKey struct {
+// AttestationDeleteKey identifies a specific signature to delete.
+type AttestationDeleteKey struct {
 	ValidatorID uint64
 	DataRoot    [32]byte
 }

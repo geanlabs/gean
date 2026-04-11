@@ -91,7 +91,7 @@ func (e *Engine) updateHead(logTree bool) {
 			SetHeadSlot(newHeader.Slot)
 			SetLatestJustifiedSlot(justified.Slot)
 			SetLatestFinalizedSlot(finalized.Slot)
-			SetGossipSignatures(e.Store.GossipSignatures.Len())
+			SetAttestationSignatures(e.Store.AttestationSignatures.Len())
 			SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
 			SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
 
@@ -166,7 +166,7 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 		peerCount = e.P2P.ConnectedPeers()
 	}
 
-	gossipSigs := e.Store.GossipSignatures.Len()
+	gossipSigs := e.Store.AttestationSignatures.Len()
 	knownPayloads := e.Store.KnownPayloads.Len()
 	statesCount := e.Store.StatesCount()
 	fcNodesCount := 0
