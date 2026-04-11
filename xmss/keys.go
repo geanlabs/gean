@@ -1,6 +1,9 @@
 package xmss
 
 // Key management for XMSS validators.
+// Devnet-4: dual keys — separate attestation and proposal keypairs per validator.
+// Spec: lean_spec/subspecs/containers/validator.py
+// Cross-ref: ethlambda ValidatorKeyPair, zeam ValidatorKeys
 
 // #include <stdint.h>
 // #include <stdlib.h>
@@ -40,19 +43,16 @@ type ValidatorKeyPair struct {
 }
 
 // PublicKeyPtr returns a borrowed pointer to the embedded public key.
-// Valid only while the ValidatorKeyPair is alive — do NOT free it.
 func (kp *ValidatorKeyPair) PublicKeyPtr() *C.PublicKey {
 	return C.hashsig_keypair_get_public_key(kp.handle)
 }
 
 // PrivateKeyPtr returns a borrowed pointer to the embedded private key.
-// Valid only while the ValidatorKeyPair is alive.
 func (kp *ValidatorKeyPair) PrivateKeyPtr() *C.PrivateKey {
 	return C.hashsig_keypair_get_private_key(kp.handle)
 }
 
 // Sign signs a 32-byte message at the given slot.
-// Returns the SSZ-encoded 3112-byte signature.
 func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([types.SignatureSize]byte, error) {
 	var result [types.SignatureSize]byte
 
@@ -66,7 +66,6 @@ func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([types.Signatur
 	}
 	defer C.hashsig_signature_free(sigPtr)
 
-	// Serialize to fixed-size SSZ bytes.
 	buf := make([]byte, SignatureBuffer)
 	n := C.hashsig_signature_to_bytes(
 		sigPtr,
@@ -89,36 +88,46 @@ func (kp *ValidatorKeyPair) Close() {
 	}
 }
 
-// KeyManager holds all validator keypairs for this node.
+// KeyManager holds dual keypairs for each validator on this node.
+// Attestation and proposal keys are independent, allowing both to sign
+// in the same slot without violating XMSS one-time signature constraints.
 type KeyManager struct {
-	keys map[uint64]*ValidatorKeyPair // validator_id -> keypair
+	attestationKeys map[uint64]*ValidatorKeyPair
+	proposalKeys    map[uint64]*ValidatorKeyPair
 }
 
-// NewKeyManager creates a KeyManager from loaded keypairs.
-func NewKeyManager(keys map[uint64]*ValidatorKeyPair) *KeyManager {
-	return &KeyManager{keys: keys}
+// NewKeyManager creates a KeyManager from loaded dual keypairs.
+func NewKeyManager(attestationKeys, proposalKeys map[uint64]*ValidatorKeyPair) *KeyManager {
+	return &KeyManager{
+		attestationKeys: attestationKeys,
+		proposalKeys:    proposalKeys,
+	}
 }
 
 // ValidatorIDs returns all validator indices managed by this node.
 func (km *KeyManager) ValidatorIDs() []uint64 {
-	ids := make([]uint64, 0, len(km.keys))
-	for id := range km.keys {
+	ids := make([]uint64, 0, len(km.attestationKeys))
+	for id := range km.attestationKeys {
 		ids = append(ids, id)
 	}
 	return ids
 }
 
-// Get returns the keypair for a validator, or nil if not found.
-func (km *KeyManager) Get(validatorID uint64) *ValidatorKeyPair {
-	return km.keys[validatorID]
+// GetAttestationKey returns the attestation keypair for a validator.
+func (km *KeyManager) GetAttestationKey(validatorID uint64) *ValidatorKeyPair {
+	return km.attestationKeys[validatorID]
 }
 
-// SignAttestation signs attestation data for a validator.
-// Message = HashTreeRoot(attestationData), slot from the data.
+// GetProposalKey returns the proposal keypair for a validator.
+func (km *KeyManager) GetProposalKey(validatorID uint64) *ValidatorKeyPair {
+	return km.proposalKeys[validatorID]
+}
+
+// SignAttestation signs attestation data using the attestation key.
 func (km *KeyManager) SignAttestation(validatorID uint64, data *types.AttestationData) ([types.SignatureSize]byte, error) {
-	kp, ok := km.keys[validatorID]
+	kp, ok := km.attestationKeys[validatorID]
 	if !ok {
-		return [types.SignatureSize]byte{}, fmt.Errorf("validator %d not found in key manager", validatorID)
+		return [types.SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
 	}
 
 	msgRoot, err := data.HashTreeRoot()
@@ -134,11 +143,11 @@ func (km *KeyManager) SignAttestation(validatorID uint64, data *types.Attestatio
 	return kp.Sign(slot, msgRoot)
 }
 
-// SignBlock signs a block root for a validator (proposer signature).
+// SignBlock signs a block root using the proposal key.
 func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]byte) ([types.SignatureSize]byte, error) {
-	kp, ok := km.keys[validatorID]
+	kp, ok := km.proposalKeys[validatorID]
 	if !ok {
-		return [types.SignatureSize]byte{}, fmt.Errorf("validator %d not found in key manager", validatorID)
+		return [types.SignatureSize]byte{}, fmt.Errorf("proposal key for validator %d not found", validatorID)
 	}
 
 	s := uint32(slot)
@@ -151,7 +160,10 @@ func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]b
 
 // Close frees all keypairs.
 func (km *KeyManager) Close() {
-	for _, kp := range km.keys {
+	for _, kp := range km.attestationKeys {
+		kp.Close()
+	}
+	for _, kp := range km.proposalKeys {
 		kp.Close()
 	}
 }
@@ -159,24 +171,22 @@ func (km *KeyManager) Close() {
 // --- Key loading from YAML + files ---
 
 // annotatedValidator represents a validator entry from annotated_validators.yaml.
+// Devnet-4: dual key files per validator.
 type annotatedValidator struct {
-	Index       uint64 `yaml:"index"`
-	PubkeyHex   string `yaml:"pubkey_hex"`
-	PrivkeyFile string `yaml:"privkey_file"`
+	Index              uint64 `yaml:"index"`
+	AttestationPubkey  string `yaml:"attestation_pubkey_hex"`
+	ProposalPubkey     string `yaml:"proposal_pubkey_hex"`
+	AttestationSkFile  string `yaml:"attestation_sk_file"`
+	ProposalSkFile     string `yaml:"proposal_sk_file"`
 }
 
-// LoadValidatorKeys loads XMSS keypairs from annotated_validators.yaml + key files.
-//
-// annotatedPath: path to annotated_validators.yaml
-// keysDir: directory containing validator_*_sk.ssz files
-// nodeID: e.g., "gean_0"
+// LoadValidatorKeys loads dual XMSS keypairs from annotated_validators.yaml + key files.
 func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, error) {
 	data, err := os.ReadFile(annotatedPath)
 	if err != nil {
 		return nil, fmt.Errorf("read annotated validators: %w", err)
 	}
 
-	// File is map[node_id][]annotatedValidator.
 	var allValidators map[string][]annotatedValidator
 	if err := yaml.Unmarshal(data, &allValidators); err != nil {
 		return nil, fmt.Errorf("parse annotated validators: %w", err)
@@ -187,45 +197,54 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 		return nil, fmt.Errorf("node ID %q not found in annotated validators", nodeID)
 	}
 
-	keys := make(map[uint64]*ValidatorKeyPair, len(validators))
+	attestationKeys := make(map[uint64]*ValidatorKeyPair, len(validators))
+	proposalKeys := make(map[uint64]*ValidatorKeyPair, len(validators))
 
 	for _, v := range validators {
-		// Resolve privkey file path (relative to keysDir).
-		skPath := v.PrivkeyFile
-		if !filepath.IsAbs(skPath) {
-			skPath = filepath.Join(keysDir, skPath)
-		}
-
-		// Read raw SSZ secret key bytes.
-		skBytes, err := os.ReadFile(skPath)
+		attKp, err := loadKeypair(keysDir, v.AttestationSkFile, v.AttestationPubkey, v.Index)
 		if err != nil {
-			return nil, fmt.Errorf("read secret key for validator %d: %w", v.Index, err)
+			return nil, fmt.Errorf("load attestation key for validator %d: %w", v.Index, err)
 		}
+		attestationKeys[v.Index] = attKp
 
-		// Decode pubkey from hex.
-		pkHex := strings.TrimPrefix(strings.TrimSpace(v.PubkeyHex), "0x")
-		pkBytes, err := hex.DecodeString(pkHex)
+		propKp, err := loadKeypair(keysDir, v.ProposalSkFile, v.ProposalPubkey, v.Index)
 		if err != nil {
-			return nil, fmt.Errorf("decode pubkey hex for validator %d: %w", v.Index, err)
+			return nil, fmt.Errorf("load proposal key for validator %d: %w", v.Index, err)
 		}
-		if len(pkBytes) != types.PubkeySize {
-			return nil, fmt.Errorf("pubkey for validator %d has %d bytes, expected %d", v.Index, len(pkBytes), types.PubkeySize)
-		}
-
-		// Create keypair via FFI.
-		handle := C.hashsig_keypair_from_ssz(
-			(*C.uint8_t)(unsafe.Pointer(&skBytes[0])), C.size_t(len(skBytes)),
-			(*C.uint8_t)(unsafe.Pointer(&pkBytes[0])), C.size_t(len(pkBytes)),
-		)
-		if handle == nil {
-			return nil, fmt.Errorf("%w: validator %d", ErrKeypairParseFailed, v.Index)
-		}
-
-		keys[v.Index] = &ValidatorKeyPair{
-			handle: handle,
-			Index:  v.Index,
-		}
+		proposalKeys[v.Index] = propKp
 	}
 
-	return NewKeyManager(keys), nil
+	return NewKeyManager(attestationKeys, proposalKeys), nil
+}
+
+// loadKeypair loads a single XMSS keypair from an SK file and pubkey hex.
+func loadKeypair(keysDir, skFile, pubkeyHex string, index uint64) (*ValidatorKeyPair, error) {
+	skPath := skFile
+	if !filepath.IsAbs(skPath) {
+		skPath = filepath.Join(keysDir, skFile)
+	}
+
+	skBytes, err := os.ReadFile(skPath)
+	if err != nil {
+		return nil, fmt.Errorf("read secret key: %w", err)
+	}
+
+	pkHex := strings.TrimPrefix(strings.TrimSpace(pubkeyHex), "0x")
+	pkBytes, err := hex.DecodeString(pkHex)
+	if err != nil {
+		return nil, fmt.Errorf("decode pubkey hex: %w", err)
+	}
+	if len(pkBytes) != types.PubkeySize {
+		return nil, fmt.Errorf("pubkey has %d bytes, expected %d", len(pkBytes), types.PubkeySize)
+	}
+
+	handle := C.hashsig_keypair_from_ssz(
+		(*C.uint8_t)(unsafe.Pointer(&skBytes[0])), C.size_t(len(skBytes)),
+		(*C.uint8_t)(unsafe.Pointer(&pkBytes[0])), C.size_t(len(pkBytes)),
+	)
+	if handle == nil {
+		return nil, fmt.Errorf("%w: validator %d", ErrKeypairParseFailed, index)
+	}
+
+	return &ValidatorKeyPair{handle: handle, Index: index}, nil
 }

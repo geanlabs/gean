@@ -9,9 +9,12 @@ import (
 
 const testConfigYAML = `GENESIS_TIME: 1770407233
 GENESIS_VALIDATORS:
-    - "cd323f232b34ab26d6db7402c886e74ca81cfd3a0c659d2fe022356f25592f7d2d25ca7b19604f5a180037046cf2a02e1da4a800"
-    - "b7b0f72e24801b02bda64073cb4de6699a416b37dfead227d7ca3922647c940fa03e4c012e8a0e656b731934aeac124a5337e333"
-    - "8d9cbc508b20ef43e165f8559c1bdd18aaeda805ef565a4f9ffd6e4fbed01c05e143e305017847445859650d6dd06e6efb3f8410"
+  - attestation_pubkey: "cd323f232b34ab26d6db7402c886e74ca81cfd3a0c659d2fe022356f25592f7d2d25ca7b19604f5a180037046cf2a02e1da4a800"
+    proposal_pubkey: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  - attestation_pubkey: "b7b0f72e24801b02bda64073cb4de6699a416b37dfead227d7ca3922647c940fa03e4c012e8a0e656b731934aeac124a5337e333"
+    proposal_pubkey: "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+  - attestation_pubkey: "8d9cbc508b20ef43e165f8559c1bdd18aaeda805ef565a4f9ffd6e4fbed01c05e143e305017847445859650d6dd06e6efb3f8410"
+    proposal_pubkey: "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
 `
 
 func TestLoadGenesisConfig(t *testing.T) {
@@ -50,8 +53,8 @@ func TestValidators(t *testing.T) {
 		if v.ProposalPubkey == [types.PubkeySize]byte{} {
 			t.Fatalf("validator %d has zero proposal pubkey", i)
 		}
-		if v.AttestationPubkey != v.ProposalPubkey {
-			t.Fatalf("validator %d: attestation and proposal pubkeys should match (same genesis key)", i)
+		if v.AttestationPubkey == v.ProposalPubkey {
+			t.Fatalf("validator %d: attestation and proposal pubkeys should be different", i)
 		}
 	}
 }
