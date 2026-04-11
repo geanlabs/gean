@@ -348,7 +348,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	if att.ValidatorID >= uint64(len(targetState.Validators)) {
 		return
 	}
-	pubkey := targetState.Validators[att.ValidatorID].Pubkey
+	pubkey := targetState.Validators[att.ValidatorID].AttestationPubkey
 
 	// Verify XMSS signature.
 	dataRoot, _ := att.Data.HashTreeRoot()
