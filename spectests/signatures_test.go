@@ -194,14 +194,9 @@ func (fs *sigState) toState() *types.State {
 	return state
 }
 
-// toSignedBlock converts fixture signed block with attestation to types.SignedBlockWithAttestation.
-func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
+// toSignedBlock converts fixture signed block with attestation to types.SignedBlock.
+func (sba *sigSBA) toSignedBlock() *types.SignedBlock {
 	block := sba.Message.Block.toBlock()
-
-	var proposerAtt *types.Attestation
-	if sba.Message.ProposerAttestation != nil {
-		proposerAtt = sba.Message.ProposerAttestation.toAttestation()
-	}
 
 	proposerSig := sigParseHexSignature(sba.Signature.ProposerSignature)
 
@@ -215,11 +210,8 @@ func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
 		})
 	}
 
-	return &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               block,
-			ProposerAttestation: proposerAtt,
-		},
+	return &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
 			ProposerSignature:     proposerSig,
 			AttestationSignatures: attSigs,

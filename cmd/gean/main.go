@@ -172,7 +172,7 @@ func main() {
 				HeadSlot:      s.HeadSlot(),
 			}
 		},
-		func(root [32]byte) *types.SignedBlockWithAttestation {
+		func(root [32]byte) *types.SignedBlock {
 			return s.GetSignedBlock(root)
 		},
 	)

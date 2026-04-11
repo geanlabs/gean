@@ -6,7 +6,6 @@ import (
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 // maybePropose builds and publishes a block if we're the proposer.
@@ -30,42 +29,25 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
-	// Produce proposer's own attestation.
-	attData := ProduceAttestationData(e.Store, slot)
-	if attData == nil {
-		logger.Error(logger.Validator, "failed to produce attestation data for proposal")
-		return
-	}
-
-	proposerAtt := &types.Attestation{
-		ValidatorID: validatorID,
-		Data:        attData,
-	}
-
-	// Sign proposer's attestation with the PROPOSAL key (not attestation key).
-	// The proposer uses a separate key domain for block-related signatures.
-	// Phase 4 will change the signed message from attestation data to block root.
+	// Sign the block root with the PROPOSAL key.
 	signStart := time.Now()
 	propKey := e.Keys.GetProposalKey(validatorID)
 	if propKey == nil {
 		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
 		return
 	}
-	attDataRoot, _ := attData.HashTreeRoot()
-	attSig, err := propKey.Sign(uint32(slot), attDataRoot)
+	blockRoot, _ := block.HashTreeRoot()
+	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
 	ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
-		logger.Error(logger.Validator, "sign proposer attestation failed: %v", err)
+		logger.Error(logger.Validator, "sign block failed: %v", err)
 		return
 	}
 
-	signedBlock := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               block,
-			ProposerAttestation: proposerAtt,
-		},
+	signedBlock := &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
-			ProposerSignature:     attSig, // attestation signature, NOT block signature
+			ProposerSignature:     blockSig,
 			AttestationSignatures: attSigProofs,
 		},
 	}
@@ -81,11 +63,6 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	e.FC.OnBlock(slot, bRoot, block.ParentRoot)
 	e.updateHead(false)
 
-	// Store proposer's attestation signature in gossip for aggregation with C handle.
-	dataRoot, _ := attData.HashTreeRoot()
-	sigHandle, parseErr := xmss.ParseSignature(attSig[:])
-	e.Store.GossipSignatures.InsertWithHandle(dataRoot, attData, validatorID, attSig, sigHandle, parseErr)
-
 	// Publish to network.
 	if e.P2P != nil {
 		if err := e.P2P.PublishBlock(context.Background(), signedBlock); err != nil {
@@ -97,17 +74,11 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		slot, bRoot, len(block.Body.Attestations))
 }
 
-// produceAttestations creates and publishes attestations for non-proposing validators.
+// produceAttestations creates and publishes attestations for all local validators.
 func (e *Engine) produceAttestations(slot uint64) {
 	if e.Keys == nil {
 		return
 	}
-
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
-		return
-	}
-	numValidators := headState.NumValidators()
 
 	attData := ProduceAttestationData(e.Store, slot)
 	if attData == nil {
@@ -115,11 +86,6 @@ func (e *Engine) produceAttestations(slot uint64) {
 	}
 
 	for _, vid := range e.Keys.ValidatorIDs() {
-		// Skip proposer — they already attested via block.
-		if types.IsProposer(slot, vid, numValidators) {
-			continue
-		}
-
 		sStart := time.Now()
 		sig, err := e.Keys.SignAttestation(vid, attData)
 		ObservePqSigSigningTime(time.Since(sStart).Seconds())
@@ -135,6 +101,11 @@ func (e *Engine) produceAttestations(slot uint64) {
 		}
 
 		logger.Info(logger.Validator, "produced attestation slot=%d validator=%d", slot, vid)
+
+		// Self-deliver for aggregation if we are the aggregator.
+		if e.IsAggregator {
+			e.onGossipAttestation(signedAtt)
+		}
 
 		// Publish to subnet.
 		if e.P2P != nil {

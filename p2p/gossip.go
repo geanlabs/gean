@@ -14,7 +14,7 @@ import (
 // MessageHandler defines callbacks for gossipsub messages.
 // Engine implements this interface and processes messages on its own goroutine.
 type MessageHandler interface {
-	OnBlock(block *types.SignedBlockWithAttestation)
+	OnBlock(block *types.SignedBlock)
 	OnGossipAttestation(att *types.SignedAttestation)
 	OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation)
 }
@@ -60,14 +60,14 @@ func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscr
 func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler) error {
 	switch {
 	case topic == BlockTopic():
-		block := &types.SignedBlockWithAttestation{}
+		block := &types.SignedBlock{}
 		if err := block.UnmarshalSSZ(data); err != nil {
 			return fmt.Errorf("unmarshal block (%d bytes): %w", len(data), err)
 		}
-		blockRoot, _ := block.Block.Block.HashTreeRoot()
+		blockRoot, _ := block.Block.HashTreeRoot()
 		logger.Info(logger.Gossip, "received block slot=%d proposer=%d block_root=0x%x parent_root=0x%x",
-			block.Block.Block.Slot, block.Block.Block.ProposerIndex,
-			blockRoot, block.Block.Block.ParentRoot)
+			block.Block.Slot, block.Block.ProposerIndex,
+			blockRoot, block.Block.ParentRoot)
 		handler.OnBlock(block)
 
 	case strings.Contains(topic, AttestationTopicKind+"_"):

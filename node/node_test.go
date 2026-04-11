@@ -116,7 +116,7 @@ func TestEngineCascadePending(t *testing.T) {
 	}
 
 	// collectPendingChildren removes entries and returns blocks to process.
-	var queue []*types.SignedBlockWithAttestation
+	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
 	if len(e.PendingBlocks) != 0 {
@@ -131,11 +131,8 @@ func TestEngineMessageHandler(t *testing.T) {
 	e := makeTestEngine()
 
 	// Verify Engine implements the MessageHandler interface.
-	block := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               &types.Block{Slot: 1},
-			ProposerAttestation: &types.Attestation{},
-		},
+	block := &types.SignedBlock{
+		Block:     &types.Block{Slot: 1},
 		Signature: &types.BlockSignatures{},
 	}
 
@@ -145,7 +142,7 @@ func TestEngineMessageHandler(t *testing.T) {
 	// Check channel received it.
 	select {
 	case received := <-e.BlockCh:
-		if received.Block.Block.Slot != 1 {
+		if received.Block.Slot != 1 {
 			t.Fatal("wrong block slot")
 		}
 	default:
@@ -284,7 +281,7 @@ func TestCascadeClearsDepth(t *testing.T) {
 	children[child1] = true
 	e.PendingBlocks[parentRoot] = children
 
-	var queue []*types.SignedBlockWithAttestation
+	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
 	// Depth should be cleared after cascade.

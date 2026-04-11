@@ -118,8 +118,8 @@ func (s *ConsensusStore) GetBlockHeader(root [32]byte) *types.BlockHeader {
 }
 
 // GetSignedBlock retrieves a full signed block from storage by root.
-// which stores the full SignedBlockWithAttestation SSZ.
-func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlockWithAttestation {
+// Retrieves full SignedBlock SSZ from BlockSignatures table.
+func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlock {
 	rv, err := s.Backend.BeginRead()
 	if err != nil {
 		return nil
@@ -130,30 +130,30 @@ func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlockWithAtt
 		return nil
 	}
 
-	full := &types.SignedBlockWithAttestation{}
+	full := &types.SignedBlock{}
 	if err := full.UnmarshalSSZ(sigBytes); err != nil {
 		return nil
 	}
-	if full.Block == nil || full.Block.Block == nil {
+	if full.Block == nil {
 		return nil
 	}
 	return full
 }
 
 // writeBlockData stores body and full signed block across split tables.
-// Body in BlockBodies, full SignedBlockWithAttestation in BlockSignatures.
-func writeBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedBlockWithAttestation) {
+// Body in BlockBodies, full SignedBlock SSZ in BlockSignatures.
+func writeBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedBlock) {
 	wb, _ := s.Backend.BeginWrite()
 
 	// Store body separately.
-	if signedBlock.Block != nil && signedBlock.Block.Block != nil && signedBlock.Block.Block.Body != nil {
-		bodyData, _ := signedBlock.Block.Block.Body.MarshalSSZ()
+	if signedBlock.Block != nil && signedBlock.Block.Body != nil {
+		bodyData, _ := signedBlock.Block.Body.MarshalSSZ()
 		if len(bodyData) > 0 {
 			wb.PutBatch(storage.TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}})
 		}
 	}
 
-	// Store full SignedBlockWithAttestation (includes proposer attestation + signatures).
+	// Store full SignedBlock (includes block + signatures).
 	fullData, _ := signedBlock.MarshalSSZ()
 	wb.PutBatch(storage.TableBlockSignatures, []storage.KV{{Key: root[:], Value: fullData}})
 
@@ -227,9 +227,9 @@ func (s *ConsensusStore) HeadSlot() uint64 {
 }
 
 // StorePendingBlock stores block in DB without LiveChain entry (invisible to fork choice).
-// Split across 3 tables: headers (for chain walk), bodies, signatures (includes proposer att).
-func (s *ConsensusStore) StorePendingBlock(root [32]byte, signedBlock *types.SignedBlockWithAttestation) {
-	block := signedBlock.Block.Block
+// Split across 3 tables: headers (for chain walk), bodies, signatures.
+func (s *ConsensusStore) StorePendingBlock(root [32]byte, signedBlock *types.SignedBlock) {
+	block := signedBlock.Block
 	header := &types.BlockHeader{
 		Slot:          block.Slot,
 		ProposerIndex: block.ProposerIndex,

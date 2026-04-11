@@ -36,7 +36,6 @@ const (
 	ErrSignatureAggregationFailed
 	ErrMissingTargetState
 	ErrNotProposer
-	ErrProposerAttestationMismatch
 )
 
 func errMissingParentState(parentRoot [32]byte, slot uint64) error {
