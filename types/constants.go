@@ -12,6 +12,7 @@ const (
 	ValidatorRegistryLimit     = 1 << 12 // 4096
 	AttestationCommitteeCount  = 1
 	JustificationLookbackSlots = 3
+	MaxAttestationsData        = 16
 
 	// Derived limits
 	JustificationValidatorsLimit = HistoricalRootsLimit * ValidatorRegistryLimit // 1073741824

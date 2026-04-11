@@ -36,12 +36,22 @@ func (m GossipSignatureMap) Insert(dataRoot [32]byte, data *types.AttestationDat
 }
 
 // InsertWithHandle adds a gossip signature with an optional opaque C handle.
+// Deduplicates by validator ID per data root to prevent duplicate entries
+// when the same attestation arrives from multiple gossip paths.
 func (m GossipSignatureMap) InsertWithHandle(dataRoot [32]byte, data *types.AttestationData, validatorID uint64, sig [types.SignatureSize]byte, handle unsafe.Pointer, parseErr error) {
 	entry, ok := m[dataRoot]
 	if !ok {
 		entry = &GossipDataEntry{Data: data}
 		m[dataRoot] = entry
 	}
+
+	// Skip if this validator already has a signature for this data root.
+	for _, existing := range entry.Signatures {
+		if existing.ValidatorID == validatorID {
+			return
+		}
+	}
+
 	var h unsafe.Pointer
 	if parseErr == nil {
 		h = handle
@@ -83,6 +93,28 @@ func (m GossipSignatureMap) PruneBelow(finalizedSlot uint64) int {
 	pruned := 0
 	for root, entry := range m {
 		if entry.Data.Slot <= finalizedSlot {
+			for _, sig := range entry.Signatures {
+				if sig.SigHandle != nil && FreeSignatureFunc != nil {
+					FreeSignatureFunc(sig.SigHandle)
+				}
+			}
+			delete(m, root)
+			pruned++
+		}
+	}
+	return pruned
+}
+
+// PruneStaleSigs removes entries older than the given slot cutoff.
+// Prevents unbounded growth on non-aggregator nodes.
+func (m GossipSignatureMap) PruneStaleSigs(currentSlot uint64, maxAge uint64) int {
+	if currentSlot < maxAge {
+		return 0
+	}
+	cutoff := currentSlot - maxAge
+	pruned := 0
+	for root, entry := range m {
+		if entry.Data.Slot < cutoff {
 			for _, sig := range entry.Signatures {
 				if sig.SigHandle != nil && FreeSignatureFunc != nil {
 					FreeSignatureFunc(sig.SigHandle)

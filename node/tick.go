@@ -11,6 +11,9 @@ import (
 
 // onTick processes an 800ms tick event.
 func (e *Engine) onTick() {
+	// Drain pending blocks before tick — mirrors zeam's processPendingBlocks().
+	e.drainPendingBlocks()
+
 	timestampMs := uint64(time.Now().UnixMilli())
 
 	currentSlot := e.currentSlot(timestampMs)
@@ -55,6 +58,9 @@ func (e *Engine) onTick() {
 	if currentInterval == 3 {
 		e.updateSafeTarget()
 		PeriodicPrune(e.Store, e.FC, currentSlot, e.Store.LatestFinalized().Slot)
+
+		// Prune stale gossip signatures older than 10 slots.
+		e.Store.GossipSignatures.PruneStaleSigs(currentSlot, 10)
 	}
 }
 
@@ -191,6 +197,18 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 		finalized.Slot, finalized.Root,
 		gossipSigs, knownPayloads, statesCount, fcNodesCount,
 		meshInfo)
+}
+
+// drainPendingBlocks processes all blocks waiting in BlockCh before the tick.
+func (e *Engine) drainPendingBlocks() {
+	for {
+		select {
+		case block := <-e.BlockCh:
+			e.onBlock(block)
+		default:
+			return
+		}
+	}
 }
 
 // currentSlot derives the current slot from a timestamp.

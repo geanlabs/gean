@@ -160,7 +160,7 @@ func verifyBlockSignatures(
 	if block.ProposerIndex >= uint64(len(state.Validators)) {
 		return &StoreError{ErrInvalidValidatorIndex, "proposer index out of range"}
 	}
-	proposerPubkey := state.Validators[block.ProposerIndex].Pubkey
+	proposerPubkey := state.Validators[block.ProposerIndex].AttestationPubkey
 
 	proposerAtt := signedBlock.Block.ProposerAttestation
 	if proposerAtt == nil || proposerAtt.Data == nil {
@@ -203,7 +203,7 @@ func verifyBlockSignatures(
 			if vid >= uint64(len(targetState.Validators)) {
 				return &StoreError{ErrInvalidValidatorIndex, fmt.Sprintf("validator %d out of range", vid)}
 			}
-			pubkeys = append(pubkeys, targetState.Validators[vid].Pubkey)
+			pubkeys = append(pubkeys, targetState.Validators[vid].AttestationPubkey)
 		}
 
 		// Verify aggregated proof.
