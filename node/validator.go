@@ -24,7 +24,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
 	// Build block with greedy attestation selection.
-	block, attSigProofs, err := ProduceBlockWithSignatures(e.Store, slot, validatorID)
+	block, attSigProofs, postCheckpoints, err := ProduceBlockWithSignatures(e.Store, slot, validatorID)
 	if err != nil {
 		logger.Error(logger.Validator, "produce block failed: %v", err)
 		return
@@ -57,6 +57,28 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	// Register in fork choice.
 	e.FC.OnBlock(slot, blockRoot, block.ParentRoot)
 	e.updateHead(false)
+
+	// Store proposer's attestation using POST-BLOCK checkpoints.
+	// buildBlock already ran the state transition — postCheckpoints has the
+	// updated justified/finalized AFTER this block's attestations are processed.
+	// Using post-block values prevents the attestation from carrying stale
+	// source/target that are already justified (which isValidVote would reject).
+	if postCheckpoints != nil {
+		headCheckpoint := &types.Checkpoint{Root: blockRoot, Slot: slot}
+		target := GetAttestationTarget(e.Store)
+		attData := &types.AttestationData{
+			Slot:   slot,
+			Head:   headCheckpoint,
+			Target: target,
+			Source: postCheckpoints.Justified,
+		}
+		attSig, err := e.Keys.SignAttestation(validatorID, attData)
+		if err == nil {
+			dataRoot, _ := attData.HashTreeRoot()
+			sigHandle, parseErr := xmss.ParseSignature(attSig[:])
+			e.Store.GossipSignatures.InsertWithHandle(dataRoot, attData, validatorID, attSig, sigHandle, parseErr)
+		}
+	}
 
 	// Publish to network.
 	if e.P2P != nil {

@@ -11,20 +11,28 @@ import (
 
 // ProduceBlockWithSignatures builds a block using per-validator latest-vote selection.
 // Returns the block and per-attestation signature proofs.
+// PostBlockCheckpoints carries the justified/finalized checkpoints from
+// the post-state transition. Used by the proposer to compute attestation
+// source/target using the UPDATED checkpoints (not stale pre-block values).
+type PostBlockCheckpoints struct {
+	Justified *types.Checkpoint
+	Finalized *types.Checkpoint
+}
+
 func ProduceBlockWithSignatures(
 	s *ConsensusStore,
 	slot, validatorIndex uint64,
-) (*types.Block, []*types.AggregatedSignatureProof, error) {
+) (*types.Block, []*types.AggregatedSignatureProof, *PostBlockCheckpoints, error) {
 	headRoot := s.Head()
 	headState := s.GetState(headRoot)
 	if headState == nil {
-		return nil, nil, &StoreError{ErrMissingParentState,
+		return nil, nil, nil, &StoreError{ErrMissingParentState,
 			fmt.Sprintf("head state missing for slot %d", slot)}
 	}
 
 	numValidators := headState.NumValidators()
 	if !types.IsProposer(slot, validatorIndex, numValidators) {
-		return nil, nil, errNotProposer(validatorIndex, slot)
+		return nil, nil, nil, errNotProposer(validatorIndex, slot)
 	}
 
 	knownEntries := s.KnownPayloads.Entries()
@@ -48,7 +56,7 @@ func buildBlock(
 	parentRoot [32]byte,
 	knownBlockRoots map[[32]byte]bool,
 	payloads map[[32]byte]*PayloadEntry,
-) (*types.Block, []*types.AggregatedSignatureProof, error) {
+) (*types.Block, []*types.AggregatedSignatureProof, *PostBlockCheckpoints, error) {
 	var attestations []*types.AggregatedAttestation
 	var signatures []*types.AggregatedSignatureProof
 
@@ -125,16 +133,21 @@ func buildBlock(
 	postState.UnmarshalSSZ(finalBytes)
 
 	if err := statetransition.ProcessSlots(postState, slot); err != nil {
-		return nil, nil, fmt.Errorf("process slots: %w", err)
+		return nil, nil, nil, fmt.Errorf("process slots: %w", err)
 	}
 	if err := statetransition.ProcessBlock(postState, finalBlock); err != nil {
-		return nil, nil, fmt.Errorf("process block: %w", err)
+		return nil, nil, nil, fmt.Errorf("process block: %w", err)
 	}
 
 	stateRoot, _ := postState.HashTreeRoot()
 	finalBlock.StateRoot = stateRoot
 
-	return finalBlock, signatures, nil
+	postCheckpoints := &PostBlockCheckpoints{
+		Justified: postState.LatestJustified,
+		Finalized: postState.LatestFinalized,
+	}
+
+	return finalBlock, signatures, postCheckpoints, nil
 }
 
 // selectLatestPerValidator finds, for each validator, the payload entry that
