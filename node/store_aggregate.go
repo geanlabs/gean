@@ -70,7 +70,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 			}
 
 			// Get cached pubkey handle (parsed once, reused across aggregation cycles).
-			pk, err := s.PubKeyCache.Get(targetState.Validators[sigEntry.ValidatorID].Pubkey)
+			pk, err := s.PubKeyCache.Get(targetState.Validators[sigEntry.ValidatorID].AttestationPubkey)
 			if err != nil {
 				logger.Error(logger.Signature, "aggregate: parse pubkey %d: %v", sigEntry.ValidatorID, err)
 				valid = false

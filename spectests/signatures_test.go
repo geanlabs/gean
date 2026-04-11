@@ -157,9 +157,11 @@ func (fs *sigState) toState() *types.State {
 	}
 
 	for _, v := range fs.Validators.Data {
+		pk := sigParseHexPubkey(v.Pubkey)
 		state.Validators = append(state.Validators, &types.Validator{
-			Pubkey: sigParseHexPubkey(v.Pubkey),
-			Index:  v.Index,
+			AttestationPubkey: pk,
+			ProposalPubkey:    pk,
+			Index:             v.Index,
 		})
 	}
 

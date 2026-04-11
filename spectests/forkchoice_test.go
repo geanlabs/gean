@@ -198,9 +198,11 @@ func (fs *fcState) toState() *types.State {
 	}
 
 	for _, v := range fs.Validators.Data {
+		pk := fcParseHexPubkey(v.Pubkey)
 		state.Validators = append(state.Validators, &types.Validator{
-			Pubkey: fcParseHexPubkey(v.Pubkey),
-			Index:  v.Index,
+			AttestationPubkey: pk,
+			ProposalPubkey:    pk,
+			Index:             v.Index,
 		})
 	}
 
