@@ -83,6 +83,49 @@ func TestValidatorSSZRoundtrip(t *testing.T) {
 	}
 }
 
+func TestValidatorDualKeysIndependent(t *testing.T) {
+	// Verify attestation and proposal keys are stored independently.
+	var attKey, propKey [52]byte
+	for i := range attKey {
+		attKey[i] = byte(i + 1)
+	}
+	for i := range propKey {
+		propKey[i] = byte(i + 100)
+	}
+	v := &Validator{AttestationPubkey: attKey, ProposalPubkey: propKey, Index: 42}
+
+	data, err := v.MarshalSSZ()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 112 {
+		t.Fatalf("expected 112 bytes, got %d", len(data))
+	}
+
+	v2 := &Validator{}
+	if err := v2.UnmarshalSSZ(data); err != nil {
+		t.Fatal(err)
+	}
+	if v2.AttestationPubkey != attKey {
+		t.Fatal("attestation pubkey mismatch after roundtrip")
+	}
+	if v2.ProposalPubkey != propKey {
+		t.Fatal("proposal pubkey mismatch after roundtrip")
+	}
+	if v2.AttestationPubkey == v2.ProposalPubkey {
+		t.Fatal("keys should be different but are equal")
+	}
+	if v2.Index != 42 {
+		t.Fatalf("index mismatch: got %d", v2.Index)
+	}
+}
+
+func TestMaxAttestationsDataConstant(t *testing.T) {
+	if MaxAttestationsData != 16 {
+		t.Fatalf("MaxAttestationsData: expected 16, got %d", MaxAttestationsData)
+	}
+}
+
 func TestAttestationDataSSZRoundtrip(t *testing.T) {
 	d := &AttestationData{
 		Slot:   5,

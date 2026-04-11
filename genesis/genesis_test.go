@@ -47,6 +47,12 @@ func TestValidators(t *testing.T) {
 		if v.AttestationPubkey == [types.PubkeySize]byte{} {
 			t.Fatalf("validator %d has zero attestation pubkey", i)
 		}
+		if v.ProposalPubkey == [types.PubkeySize]byte{} {
+			t.Fatalf("validator %d has zero proposal pubkey", i)
+		}
+		if v.AttestationPubkey != v.ProposalPubkey {
+			t.Fatalf("validator %d: attestation and proposal pubkeys should match (same genesis key)", i)
+		}
 	}
 }
 
