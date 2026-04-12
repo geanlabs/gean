@@ -114,8 +114,10 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 			}
 		}
 
-		// Need at least 1 raw sig, or >= 2 children (per spec).
-		if len(rawIDs) == 0 && len(childProofs) < 2 {
+		// Prover requires at least 2 total inputs. A single raw sig with no
+		// children causes an index-out-of-bounds panic in the sumcheck backend.
+		totalInputs := len(rawIDs) + len(childProofs)
+		if totalInputs < 2 {
 			continue
 		}
 

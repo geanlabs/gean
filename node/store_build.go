@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
@@ -28,6 +29,14 @@ func ProduceBlockWithSignatures(
 	if !types.IsProposer(slot, validatorIndex, numValidators) {
 		return nil, nil, errNotProposer(validatorIndex, slot)
 	}
+
+	// Flush any pending NewPayloads → KnownPayloads before building.
+	// Matches leanSpec get_proposal_head which calls accept_new_attestations
+	// right before reading latest_known_aggregated_payloads.
+	s.PromoteNewToKnown()
+
+	logger.Info(logger.Chain, "ProduceBlock: slot=%d head=0x%x stateJustified=0x%x/%d",
+		slot, headRoot, headState.LatestJustified.Root, headState.LatestJustified.Slot)
 
 	knownEntries := s.KnownPayloads.Entries()
 	knownBlockRoots := s.getBlockRoots()
@@ -56,9 +65,15 @@ func buildBlock(
 	var attestations []*types.AggregatedAttestation
 	var signatures []*types.AggregatedSignatureProof
 
+	logger.Info(logger.Chain, "buildBlock: slot=%d payloads=%d knownRoots=%d headSlot=%d stateJustified=0x%x/%d",
+		slot, len(payloads), len(knownBlockRoots), headState.LatestBlockHeader.Slot,
+		headState.LatestJustified.Root, headState.LatestJustified.Slot)
+
 	if len(payloads) > 0 {
-		// Genesis edge case: derive justified checkpoint matching process_block_header.
-		// Spec: state.py build_block "if self.latest_block_header.slot == Slot(0)"
+		// Use head state's justified checkpoint for filtering, matching leanSpec
+		// build_block and ethlambda store.rs:1130. Both attestation producer and
+		// builder use the same head state, so sources match when the proposer
+		// aggregates + promotes + updateHead right before building.
 		var currentJustified *types.Checkpoint
 		if headState.LatestBlockHeader.Slot == 0 {
 			currentJustified = &types.Checkpoint{
@@ -68,6 +83,9 @@ func buildBlock(
 		} else {
 			currentJustified = headState.LatestJustified
 		}
+
+		logger.Info(logger.Chain, "buildBlock: currentJustified root=0x%x slot=%d",
+			currentJustified.Root, currentJustified.Slot)
 
 		// Sort payloads by target.slot for deterministic processing order.
 		type payloadItem struct {
@@ -100,10 +118,15 @@ func buildBlock(
 					continue
 				}
 				if !knownBlockRoots[item.entry.Data.Head.Root] {
+					logger.Info(logger.Chain, "buildBlock: SKIP unknown head root=0x%x attSlot=%d",
+						item.entry.Data.Head.Root, item.entry.Data.Slot)
 					continue
 				}
 				if item.entry.Data.Source.Root != currentJustified.Root ||
 					item.entry.Data.Source.Slot != currentJustified.Slot {
+					logger.Info(logger.Chain, "buildBlock: SKIP source mismatch attSlot=%d src_root=0x%x src_slot=%d want_root=0x%x want_slot=%d",
+						item.entry.Data.Slot, item.entry.Data.Source.Root, item.entry.Data.Source.Slot,
+						currentJustified.Root, currentJustified.Slot)
 					continue
 				}
 

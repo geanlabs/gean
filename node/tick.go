@@ -25,24 +25,33 @@ func (e *Engine) onTick() {
 		proposerValidatorID, hasProposal = e.getOurProposer(currentSlot)
 	}
 
-	// Tick the store — handles interval dispatch (promote attestations, aggregate).
-	newAggregates := OnTick(e.Store, timestampMs, hasProposal, e.IsAggregator)
+	// Tick the store — handles interval dispatch (promote attestations).
+	// Aggregation is handled async below to avoid blocking the tick loop.
+	_ = OnTick(e.Store, timestampMs, hasProposal, e.IsAggregator)
 
-	// Publish new aggregates from interval 2.
-	for _, agg := range newAggregates {
-		if e.P2P != nil {
-			e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+	// Interval 2: aggregation (synchronous for now — async causes thread-safety
+	// issues with the Rust prover's precomputed state).
+	if currentInterval == 2 && e.IsAggregator {
+		e.drainPendingAttestations()
+		aggs := AggregateCommitteeSignatures(e.Store)
+		for _, agg := range aggs {
+			if e.P2P != nil {
+				e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+			}
 		}
+	}
+
+	// Interval 0/4: update head after attestation promotion.
+	// Must run BEFORE proposal so the builder uses the freshest head.
+	// Spec: get_proposal_head calls accept_new_attestations (promote + updateHead)
+	// before reading self.head for block building.
+	if currentInterval == 0 || currentInterval == 4 {
+		e.updateHead(false)
 	}
 
 	// Interval 0: propose block if we're the proposer.
 	if hasProposal {
 		e.maybePropose(currentSlot, proposerValidatorID)
-	}
-
-	// Interval 0/4: update head after attestation promotion.
-	if currentInterval == 0 || currentInterval == 4 {
-		e.updateHead(false)
 	}
 
 	// Interval 1: produce attestations + chain status log.
@@ -55,6 +64,45 @@ func (e *Engine) onTick() {
 	if currentInterval == 3 {
 		e.updateSafeTarget()
 		PeriodicPrune(e.Store, e.FC, currentSlot, e.Store.LatestFinalized().Slot)
+	}
+}
+
+// drainPendingAttestations processes all queued gossip attestations from the
+// channel before aggregation. Each attestation requires XMSS verification
+// (~500ms), so without batching, the event loop only processes 1-2 between
+// ticks, starving the aggregator of signatures.
+func (e *Engine) drainPendingAttestations() {
+	drained := 0
+	for {
+		select {
+		case att := <-e.AttestationCh:
+			e.onGossipAttestation(att)
+			drained++
+		default:
+			if drained > 0 {
+				logger.Info(logger.Chain, "drained %d pending attestations before aggregation", drained)
+			}
+			return
+		}
+	}
+}
+
+// asyncAggregate runs recursive aggregation in a background goroutine.
+// When complete, results are pushed to KnownPayloads and gossiped.
+// This avoids blocking the tick loop for the 14s+ recursive prover.
+func (e *Engine) asyncAggregate() {
+	defer e.aggregating.Store(false)
+
+	aggs := AggregateCommitteeSignatures(e.Store)
+	if len(aggs) == 0 {
+		return
+	}
+
+	// Publish aggregates to gossip network.
+	for _, agg := range aggs {
+		if e.P2P != nil {
+			e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+		}
 	}
 }
 

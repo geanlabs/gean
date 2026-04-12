@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -28,6 +29,7 @@ type Engine struct {
 	Keys                *xmss.KeyManager
 	IsAggregator        bool
 	CommitteeCount      uint64
+	aggregating         atomic.Bool
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
 	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
 	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth

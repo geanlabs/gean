@@ -98,9 +98,9 @@ run-node2: build ## Run node2 on port 9002
 
 # --- leanSpec fixtures ---
 
-LEAN_SPEC_COMMIT_HASH := be853180d21aa36d6401b8c1541aa6fcaad5008d
+LEAN_SPEC_COMMIT_HASH := 16e50a5fcc8be837f09aabf30c92e653bc36dad4
 
-leanSpec: ## Clone leanSpec at devnet-3 commit
+leanSpec: ## Clone leanSpec at pinned main commit (contains devnet-4 changes)
 	git clone https://github.com/leanEthereum/leanSpec.git --single-branch
 	cd leanSpec && git checkout $(LEAN_SPEC_COMMIT_HASH)
 

@@ -157,6 +157,15 @@ func main() {
 	p2pHost.ConnectBootnodes(ctx, bootnodes)
 	p2pHost.StartBootnodeRedial(ctx, bootnodes)
 
+	// Pre-initialize the XMSS prover so the ~45s setup cost happens before
+	// the chain starts, not during the first live aggregation.
+	if *isAggregator {
+		logger.Info(logger.Node, "pre-initializing XMSS prover (this takes ~45s)...")
+		xmss.EnsureProverReady()
+		logger.Info(logger.Node, "XMSS prover ready")
+	}
+	xmss.EnsureVerifierReady()
+
 	// --- Initialize engine ---
 
 	n := node.New(s, fc, p2pHost, keyManager, *isAggregator, *committeeCount)

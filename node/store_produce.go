@@ -1,11 +1,14 @@
 package node
 
 import (
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/types"
 )
 
 // ProduceAttestationData creates attestation data for the given slot.
+// Uses the head state's latest_justified as source per leanSpec and ethlambda.
+// Cross-ref: ethlambda store.rs:743 produce_attestation_data, leanSpec store.py:1283
 func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationData {
 	headRoot := s.Head()
 	headState := s.GetState(headRoot)
@@ -15,7 +18,6 @@ func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationDa
 
 	// Derive source from head state's justified checkpoint.
 	// At genesis the checkpoint root is zero; substitute the real genesis block root.
-
 	var source *types.Checkpoint
 	if headState.LatestBlockHeader.Slot == 0 {
 		source = &types.Checkpoint{
@@ -36,6 +38,9 @@ func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationDa
 	}
 
 	target := GetAttestationTarget(s)
+
+	logger.Info(logger.Chain, "ProduceAttestation: slot=%d head=0x%x source=0x%x/%d target=0x%x/%d",
+		slot, headRoot, source.Root, source.Slot, target.Root, target.Slot)
 
 	return &types.AttestationData{
 		Slot:   slot,

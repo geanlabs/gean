@@ -6,6 +6,7 @@ import (
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // maybePropose builds and publishes a block if we're the proposer.
@@ -21,6 +22,12 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	}
 
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
+
+	// Spec get_proposal_head: promote pending attestations and update head
+	// immediately before building. Matches leanSpec get_proposal_head which
+	// calls accept_new_attestations (promote + updateHead) before reading head.
+	e.Store.PromoteNewToKnown()
+	e.updateHead(false)
 
 	// Build block with greedy attestation selection.
 	block, attSigProofs, err := ProduceBlockWithSignatures(e.Store, slot, validatorID)
@@ -103,8 +110,11 @@ func (e *Engine) produceAttestations(slot uint64) {
 		logger.Info(logger.Validator, "produced attestation slot=%d validator=%d", slot, vid)
 
 		// Self-deliver for aggregation if we are the aggregator.
+		// Skip signature verification — we just signed it ourselves.
 		if e.IsAggregator {
-			e.onGossipAttestation(signedAtt)
+			dataRoot, _ := attData.HashTreeRoot()
+			sigHandle, parseErr := xmss.ParseSignature(sig[:])
+			e.Store.AttestationSignatures.InsertWithHandle(dataRoot, attData, vid, sig, sigHandle, parseErr)
 		}
 
 		// Publish to subnet.

@@ -50,11 +50,10 @@ func OnTick(
 		case 1:
 			// Vote propagation — no store action.
 		case 2:
-			// Aggregation interval.
-			if isAggregator {
-				aggs := AggregateCommitteeSignatures(s)
-				newAggregates = append(newAggregates, aggs...)
-			}
+			// Aggregation interval — handled async by Engine (see onTick).
+			// Recursive aggregation with children can take 14s+, so we
+			// fire it in a goroutine to avoid blocking the tick loop.
+			// Nothing to do here — Engine dispatches at interval 2.
 		case 3:
 			// Safe target update happens in Engine (it owns ForkChoice).
 		case 4:
