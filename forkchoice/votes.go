@@ -61,7 +61,6 @@ func (vs *VoteStore) getOrCreate(validatorID uint64) *VoteTracker {
 // RemapIndices adjusts all vote tracker indices after proto-array pruning.
 // Indices pointing to pruned nodes (< offset) are invalidated (-1 / nil).
 // Surviving indices are shifted by -offset to match the new array layout.
-// Cross-ref: zeam forkchoice.zig rebase (lines 760-796)
 func (vs *VoteStore) RemapIndices(offset int, newLen int) {
 	for _, tracker := range vs.Votes {
 		// Remap AppliedIndex.

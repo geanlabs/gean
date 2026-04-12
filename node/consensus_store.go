@@ -8,7 +8,7 @@ import (
 
 const (
 	// Buffer capacities rs L87-91.
-	aggregatedPayloadCap = 0 // unbounded, pruned on finalization only (matches zeam)
+	aggregatedPayloadCap = 0 // unbounded, pruned on finalization only
 	newPayloadCap        = 0 // unbounded
 )
 

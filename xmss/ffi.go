@@ -174,7 +174,7 @@ type ChildProof struct {
 }
 
 // LogInvRate controls proof compression depth.
-const LogInvRate = 2 // Production value; zeam uses LOG_INV_RATE_PROD=2
+const LogInvRate = 2 // Production value per spec PROD_CONFIG
 
 // AggregateSignatures aggregates raw XMSS signatures into a single ZK proof.
 // Backward-compatible wrapper: no children, just raw sigs.
@@ -189,7 +189,7 @@ func AggregateSignatures(
 
 // AggregateWithChildren aggregates raw XMSS signatures + children proofs into
 // a single recursive ZK proof. Matches spec AggregatedSignatureProof.aggregate().
-// Cross-ref: zeam xmss_aggregate with children, leanSpec aggregation.py
+// Spec: lean_spec/subspecs/containers/attestation.py AggregatedSignatureProof.aggregate
 func AggregateWithChildren(
 	pubkeys []CPubKey,
 	sigs []CSig,

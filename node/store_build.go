@@ -13,7 +13,6 @@ import (
 // ProduceBlockWithSignatures builds a block using per-AttestationData fixed-point selection.
 // Returns the block and per-attestation signature proofs.
 // Spec: lean_spec/subspecs/containers/state/state.py build_block
-// Cross-ref: zeam getProposalAttestationsUnlocked, ethlambda build_block
 func ProduceBlockWithSignatures(
 	s *ConsensusStore,
 	slot, validatorIndex uint64,

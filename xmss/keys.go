@@ -3,7 +3,6 @@ package xmss
 // Key management for XMSS validators.
 // Devnet-4: dual keys — separate attestation and proposal keypairs per validator.
 // Spec: lean_spec/subspecs/containers/validator.py
-// Cross-ref: ethlambda ValidatorKeyPair, zeam ValidatorKeys
 
 // #include <stdint.h>
 // #include <stdlib.h>

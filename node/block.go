@@ -334,7 +334,7 @@ func (e *Engine) discardPendingSubtree(blockRoot [32]byte) {
 // Per leanSpec store.py:385-386, only aggregator nodes store gossip signatures.
 // Non-aggregators validate and drop — they receive aggregated proofs via the
 // aggregation gossip topic instead.
-// Cross-ref: ethlambda lib.rs:481-484
+// Spec: lean_spec/subspecs/forkchoice/store.py on_gossip_attestation (line 385)
 func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	if !e.IsAggregator {
 		return

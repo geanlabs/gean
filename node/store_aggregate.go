@@ -17,7 +17,7 @@ import (
 //   2. Fill — collect raw gossip signatures for uncovered validators
 //   3. Aggregate — produce recursive proof with children + raw sigs
 //
-// Cross-ref: leanSpec store.py:936-1071, zeam forkchoice.zig aggregateUnlocked
+// Spec: lean_spec/subspecs/forkchoice/store.py aggregate
 func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
 	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
 		return nil
