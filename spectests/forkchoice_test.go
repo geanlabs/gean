@@ -65,8 +65,10 @@ type fcDataList struct {
 }
 
 type fcValidator struct {
-	Pubkey string `json:"pubkey"`
-	Index  uint64 `json:"index"`
+	AttestationPubkey string `json:"attestationPubkey"`
+	ProposalPubkey    string `json:"proposalPubkey"`
+	Pubkey            string `json:"pubkey"` // legacy fallback
+	Index             uint64 `json:"index"`
 }
 
 type fcValidatorList struct {
@@ -94,14 +96,8 @@ type fcStep struct {
 }
 
 type fcStepBlock struct {
-	Block               fcBlock        `json:"block"`
-	ProposerAttestation *fcAttestation `json:"proposerAttestation,omitempty"`
-	BlockRootLabel      string         `json:"blockRootLabel,omitempty"`
-}
-
-type fcAttestation struct {
-	ValidatorID uint64    `json:"validatorId"`
-	Data        fcAttData `json:"data"`
+	Block          fcBlock `json:"block"`
+	BlockRootLabel string  `json:"blockRootLabel,omitempty"`
 }
 
 type fcAttData struct {
@@ -198,10 +194,18 @@ func (fs *fcState) toState() *types.State {
 	}
 
 	for _, v := range fs.Validators.Data {
-		pk := fcParseHexPubkey(v.Pubkey)
+		var attPk, propPk [types.PubkeySize]byte
+		if v.AttestationPubkey != "" {
+			attPk = fcParseHexPubkey(v.AttestationPubkey)
+			propPk = fcParseHexPubkey(v.ProposalPubkey)
+		} else {
+			pk := fcParseHexPubkey(v.Pubkey)
+			attPk = pk
+			propPk = pk
+		}
 		state.Validators = append(state.Validators, &types.Validator{
-			AttestationPubkey: pk,
-			ProposalPubkey:    pk,
+			AttestationPubkey: attPk,
+			ProposalPubkey:    propPk,
 			Index:             v.Index,
 		})
 	}
@@ -274,28 +278,6 @@ func (fb *fcBlock) toBlock() *types.Block {
 	}
 
 	return block
-}
-
-// toAttestation converts a fixture proposer attestation to types.Attestation.
-func (fa *fcAttestation) toAttestation() *types.Attestation {
-	return &types.Attestation{
-		ValidatorID: fa.ValidatorID,
-		Data: &types.AttestationData{
-			Slot: fa.Data.Slot,
-			Head: &types.Checkpoint{
-				Root: fcParseHexRoot(fa.Data.Head.Root),
-				Slot: fa.Data.Head.Slot,
-			},
-			Target: &types.Checkpoint{
-				Root: fcParseHexRoot(fa.Data.Target.Root),
-				Slot: fa.Data.Target.Slot,
-			},
-			Source: &types.Checkpoint{
-				Root: fcParseHexRoot(fa.Data.Source.Root),
-				Slot: fa.Data.Source.Slot,
-			},
-		},
-	}
 }
 
 // --- Test runner ---

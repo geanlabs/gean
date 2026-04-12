@@ -72,6 +72,10 @@ type TestDataList struct {
 }
 
 type TestValidator struct {
+	// Devnet-4 dual-key fields (camelCase per spec CamelModel).
+	AttestationPubkey string `json:"attestationPubkey"`
+	ProposalPubkey    string `json:"proposalPubkey"`
+	// Legacy devnet-3 single-key field (fallback).
 	Pubkey string `json:"pubkey"`
 	Index  uint64 `json:"index"`
 }
@@ -163,12 +167,21 @@ func (ts *TestState) ToState() *types.State {
 		},
 	}
 
-	// Validators
+	// Validators — supports both devnet-4 dual-key and legacy single-key fixtures.
 	for _, v := range ts.Validators.Data {
-		pk := parseHexPubkey(v.Pubkey)
+		var attPk, propPk [types.PubkeySize]byte
+		if v.AttestationPubkey != "" {
+			attPk = parseHexPubkey(v.AttestationPubkey)
+			propPk = parseHexPubkey(v.ProposalPubkey)
+		} else {
+			// Legacy single-key fallback.
+			pk := parseHexPubkey(v.Pubkey)
+			attPk = pk
+			propPk = pk
+		}
 		state.Validators = append(state.Validators, &types.Validator{
-			AttestationPubkey: pk,
-			ProposalPubkey:    pk,
+			AttestationPubkey: attPk,
+			ProposalPubkey:    propPk,
 			Index:             v.Index,
 		})
 	}
