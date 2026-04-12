@@ -37,9 +37,20 @@ func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uin
 	return fc.Array.FindHead(justifiedRoot)
 }
 
-// Prune removes nodes below the finalized root.
+// Prune removes nodes below the finalized root and remaps vote indices.
+// Without remapping, VoteTracker.AppliedIndex references stale pre-prune
+// indices, causing phantom weight inflation and fork-choice divergence.
+// Cross-ref: zeam forkchoice.zig rebase (lines 760-796)
 func (fc *ForkChoice) Prune(finalizedRoot [32]byte) {
+	finalizedIdx, ok := fc.Array.indices[finalizedRoot]
+	if !ok || finalizedIdx == 0 {
+		return
+	}
+
 	fc.Array.Prune(finalizedRoot)
+
+	// Remap all vote tracker indices by the prune offset.
+	fc.Votes.RemapIndices(finalizedIdx, fc.Array.Len())
 }
 
 // NodeIndex returns the proto-array index for a root, or -1 if not found.
