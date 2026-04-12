@@ -22,13 +22,13 @@ import (
 type sigFixture map[string]sigTest
 
 type sigTest struct {
-	Network         string   `json:"network"`
-	LeanEnv         string   `json:"leanEnv"`
-	AnchorState     sigState `json:"anchorState"`
-	SignedBlock     sigSBA   `json:"signedBlock"`
+	Network     string   `json:"network"`
+	LeanEnv     string   `json:"leanEnv"`
+	AnchorState sigState `json:"anchorState"`
+	SignedBlock sigSBA   `json:"signedBlock"`
 	// Legacy devnet-3 field (fallback).
-	SignedBlockWithAttestation sigSBA `json:"signedBlockWithAttestation"`
-	ExpectException           *string `json:"expectException"`
+	SignedBlockWithAttestation sigSBA  `json:"signedBlockWithAttestation"`
+	ExpectException            *string `json:"expectException"`
 }
 
 type sigState struct {

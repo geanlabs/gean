@@ -13,9 +13,9 @@ import (
 // algorithm from leanSpec store.py aggregate().
 //
 // For each AttestationData with new payloads or raw gossip signatures:
-//   1. Select — greedily pick existing child proofs (new before known)
-//   2. Fill — collect raw gossip signatures for uncovered validators
-//   3. Aggregate — produce recursive proof with children + raw sigs
+//  1. Select — greedily pick existing child proofs (new before known)
+//  2. Fill — collect raw gossip signatures for uncovered validators
+//  3. Aggregate — produce recursive proof with children + raw sigs
 //
 // Spec: lean_spec/subspecs/forkchoice/store.py aggregate
 func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
@@ -137,7 +137,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 			allIDs = append(allIDs, vid)
 		}
 
-		participants := aggregationBitsFromValidatorIndices(allIDs)
+		participants := AggregationBitsFromIndices(allIDs)
 		proof := &types.AggregatedSignatureProof{
 			Participants: participants,
 			ProofData:    proofBytes,
@@ -222,8 +222,8 @@ func selectChildProofs(
 	}
 }
 
-// aggregationBitsFromValidatorIndices builds a bitlist from validator IDs.
-func aggregationBitsFromValidatorIndices(ids []uint64) []byte {
+// AggregationBitsFromIndices builds a bitlist from validator IDs.
+func AggregationBitsFromIndices(ids []uint64) []byte {
 	if len(ids) == 0 {
 		return types.NewBitlistSSZ(0)
 	}

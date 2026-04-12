@@ -46,13 +46,13 @@ func ProduceBlockWithSignatures(
 // with greedy proof coverage and MAX_ATTESTATIONS_DATA cap.
 //
 // Algorithm (per spec build_block):
-// 1. Sort payloads by target.slot for deterministic order
-// 2. For each AttestationData whose source == current_justified:
-//    a. Skip if head not in known_block_roots
-//    b. Skip if already processed
-//    c. Greedy proof selection: pick proofs maximizing new validator coverage
-// 3. Trial STF — if justified advances, update source and continue
-// 4. Enforce MAX_ATTESTATIONS_DATA cap
+//  1. Sort payloads by target.slot for deterministic order
+//  2. For each AttestationData whose source == current_justified:
+//     a. Skip if head not in known_block_roots
+//     b. Skip if already processed
+//     c. Greedy proof selection: pick proofs maximizing new validator coverage
+//  3. Trial STF — if justified advances, update source and continue
+//  4. Enforce MAX_ATTESTATIONS_DATA cap
 func buildBlock(
 	headState *types.State,
 	slot, proposerIndex uint64,

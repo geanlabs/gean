@@ -18,21 +18,21 @@ const (
 // Engine calls ForkChoice with store data as parameters.
 // with store data as parameters.
 type ConsensusStore struct {
-	Backend          storage.Backend
-	NewPayloads      *PayloadBuffer
-	KnownPayloads    *PayloadBuffer
+	Backend               storage.Backend
+	NewPayloads           *PayloadBuffer
+	KnownPayloads         *PayloadBuffer
 	AttestationSignatures AttestationSignatureMap
-	PubKeyCache      *xmss.PubKeyCache // cached parsed pubkey handles for aggregation
+	PubKeyCache           *xmss.PubKeyCache // cached parsed pubkey handles for aggregation
 }
 
 // NewConsensusStore creates a store backed by the given storage backend.
 func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 	return &ConsensusStore{
-		Backend:          backend,
-		NewPayloads:      NewPayloadBuffer(newPayloadCap),
-		KnownPayloads:    NewPayloadBuffer(aggregatedPayloadCap),
+		Backend:               backend,
+		NewPayloads:           NewPayloadBuffer(newPayloadCap),
+		KnownPayloads:         NewPayloadBuffer(aggregatedPayloadCap),
 		AttestationSignatures: make(AttestationSignatureMap),
-		PubKeyCache:      xmss.NewPubKeyCache(),
+		PubKeyCache:           xmss.NewPubKeyCache(),
 	}
 }
 

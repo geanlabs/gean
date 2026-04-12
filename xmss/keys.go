@@ -172,11 +172,11 @@ func (km *KeyManager) Close() {
 // annotatedValidator represents a validator entry from annotated_validators.yaml.
 // Devnet-4: dual key files per validator.
 type annotatedValidator struct {
-	Index              uint64 `yaml:"index"`
-	AttestationPubkey  string `yaml:"attestation_pubkey_hex"`
-	ProposalPubkey     string `yaml:"proposal_pubkey_hex"`
-	AttestationSkFile  string `yaml:"attestation_sk_file"`
-	ProposalSkFile     string `yaml:"proposal_sk_file"`
+	Index             uint64 `yaml:"index"`
+	AttestationPubkey string `yaml:"attestation_pubkey_hex"`
+	ProposalPubkey    string `yaml:"proposal_pubkey_hex"`
+	AttestationSkFile string `yaml:"attestation_sk_file"`
+	ProposalSkFile    string `yaml:"proposal_sk_file"`
 }
 
 // LoadValidatorKeys loads dual XMSS keypairs from annotated_validators.yaml + key files.

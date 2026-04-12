@@ -95,19 +95,18 @@ func onBlockCore(
 	// Cache state root in latest block header.
 	postState.LatestBlockHeader.StateRoot = block.StateRoot
 
-	// Check if justified/finalized advanced.
-	// Uses slot comparison with deterministic root tiebreak at the same slot.
-	// The tiebreak ensures all nodes converge to the same checkpoint regardless
-	// of block processing order. Without it, nodes that process blocks in
-	// different order permanently disagree on the justified root.
+	// Check if justified/finalized advanced (strict slot comparison).
+	// First root at a given slot wins — no same-slot tiebreak.
+	// drainPendingBlocks ensures all nodes process blocks before attesting,
+	// so the first-seen root is consistent across nodes.
 	var newJustified, newFinalized *types.Checkpoint
 	currentJustified := s.LatestJustified()
 	currentFinalized := s.LatestFinalized()
 
-	if checkpointSupersedes(postState.LatestJustified, currentJustified) {
+	if postState.LatestJustified.Slot > currentJustified.Slot {
 		newJustified = postState.LatestJustified
 	}
-	if checkpointSupersedes(postState.LatestFinalized, currentFinalized) {
+	if postState.LatestFinalized.Slot > currentFinalized.Slot {
 		newFinalized = postState.LatestFinalized
 	}
 
@@ -257,27 +256,4 @@ func processBlockAttestations(s *ConsensusStore, signedBlock *types.SignedBlock,
 		dataRoot, _ := att.Data.HashTreeRoot()
 		s.KnownPayloads.Push(dataRoot, att.Data, proof)
 	}
-}
-
-// checkpointSupersedes returns true if candidate should replace current.
-// Higher slot always wins. At the same slot, lexicographically higher root
-// wins — this ensures all nodes converge to the same checkpoint regardless
-// of block processing order.
-func checkpointSupersedes(candidate, current *types.Checkpoint) bool {
-	if candidate.Slot > current.Slot {
-		return true
-	}
-	if candidate.Slot < current.Slot {
-		return false
-	}
-	// Same slot: deterministic tiebreak by root.
-	for i := 0; i < 32; i++ {
-		if candidate.Root[i] > current.Root[i] {
-			return true
-		}
-		if candidate.Root[i] < current.Root[i] {
-			return false
-		}
-	}
-	return false // identical
 }
