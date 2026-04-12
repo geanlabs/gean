@@ -23,10 +23,6 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
-	// Drain any pending async aggregation results before building.
-	// Ensures the proposer has the freshest aggregated payloads.
-	e.drainAggResults()
-
 	// Spec get_proposal_head: promote pending attestations and update head
 	// immediately before building. Matches leanSpec get_proposal_head which
 	// calls accept_new_attestations (promote + updateHead) before reading head.

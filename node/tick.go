@@ -89,47 +89,6 @@ func (e *Engine) drainPendingAttestations() {
 	}
 }
 
-// drainAggResults applies all pending aggregation results from the background goroutine.
-// Called on the main goroutine before block building to ensure freshest payloads.
-func (e *Engine) drainAggResults() {
-	for {
-		select {
-		case result := <-e.AggResultCh:
-			e.applyAggregationResult(result)
-		default:
-			return
-		}
-	}
-}
-
-// runAggregation runs recursive aggregation on a snapshot in a background goroutine.
-// Ships results back to the main loop via AggResultCh.
-func (e *Engine) runAggregation(snap *AggregationSnapshot) {
-	defer e.aggregating.Store(false)
-	result := AggregateFromSnapshot(snap)
-	if len(result.Aggregates) == 0 {
-		return
-	}
-	select {
-	case e.AggResultCh <- result:
-	default:
-		logger.Warn(logger.Signature, "aggregation result channel full, dropping")
-	}
-}
-
-// applyAggregationResult applies results from background aggregation to the store.
-// Called on the main goroutine — safe to mutate store.
-func (e *Engine) applyAggregationResult(result AggregationResult) {
-	e.Store.KnownPayloads.PushBatch(result.PayloadEntries)
-	for _, agg := range result.Aggregates {
-		if e.P2P != nil {
-			e.P2P.PublishAggregatedAttestation(context.Background(), agg)
-		}
-	}
-	logger.Info(logger.Signature, "applied async aggregation: %d aggregates, %d payloads",
-		len(result.Aggregates), len(result.PayloadEntries))
-}
-
 // updateHead runs LMD GHOST using known attestations.
 func (e *Engine) updateHead(logTree bool) {
 	attestations := e.Store.ExtractLatestKnownAttestations()

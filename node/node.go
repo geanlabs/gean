@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -29,7 +28,6 @@ type Engine struct {
 	Keys                *xmss.KeyManager
 	IsAggregator        bool
 	CommitteeCount      uint64
-	aggregating         atomic.Bool
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
 	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
 	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
@@ -38,7 +36,6 @@ type Engine struct {
 	BlockCh       chan *types.SignedBlock
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
-	AggResultCh   chan AggregationResult // results from background aggregation goroutine
 	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
 	FetchRootCh   chan [32]byte // roots to fetch — coalesced into batches by the fetch batcher
 }
@@ -65,7 +62,6 @@ func New(
 		BlockCh:             make(chan *types.SignedBlock, 64),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
-		AggResultCh:         make(chan AggregationResult, 1),
 		FailedRootCh:        make(chan [32]byte, 64),
 		FetchRootCh:         make(chan [32]byte, 256),
 	}
@@ -119,9 +115,6 @@ func (e *Engine) Run(ctx context.Context) {
 
 		case agg := <-e.AggregationCh:
 			e.onGossipAggregatedAttestation(agg)
-
-		case result := <-e.AggResultCh:
-			e.applyAggregationResult(result)
 
 		case root := <-e.FailedRootCh:
 			e.onFailedRoot(root)
