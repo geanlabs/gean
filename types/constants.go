@@ -19,7 +19,7 @@ const (
 
 	// Byte sizes
 	PubkeySize     = 52
-	SignatureSize  = 3112
+	SignatureSize  = 2536
 	RootSize       = 32
 	ByteListMiBMax = 1 << 20 // 1048576
 

@@ -25,6 +25,7 @@ static VERIFIER_INIT: Once = Once::new();
 pub extern "C" fn xmss_setup_prover() {
     PROVER_INIT.call_once(|| {
         init_aggregation_bytecode();
+        backend::precompute_dft_twiddles::<backend::KoalaBear>(1 << 24);
     });
 }
 

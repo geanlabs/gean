@@ -358,7 +358,7 @@ func (b *BlockSignatures) MarshalSSZ() ([]byte, error) {
 // MarshalSSZTo ssz marshals the BlockSignatures object to a target array
 func (b *BlockSignatures) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
-	offset := int(3116)
+	offset := int(2540)
 
 	// Offset (0) 'AttestationSignatures'
 	dst = ssz.WriteOffset(dst, offset)
@@ -391,7 +391,7 @@ func (b *BlockSignatures) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size < 3116 {
+	if size < 2540 {
 		return ssz.ErrSize
 	}
 
@@ -403,12 +403,12 @@ func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 		return ssz.ErrOffset
 	}
 
-	if o0 != 3116 {
+	if o0 != 2540 {
 		return ssz.ErrInvalidVariableOffset
 	}
 
 	// Field (1) 'ProposerSignature'
-	copy(b.ProposerSignature[:], buf[4:3116])
+	copy(b.ProposerSignature[:], buf[4:2540])
 
 	// Field (0) 'AttestationSignatures'
 	{
@@ -436,7 +436,7 @@ func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 
 // SizeSSZ returns the ssz encoded size in bytes for the BlockSignatures object
 func (b *BlockSignatures) SizeSSZ() (size int) {
-	size = 3116
+	size = 2540
 
 	// Field (0) 'AttestationSignatures'
 	for ii := 0; ii < len(b.AttestationSignatures); ii++ {
