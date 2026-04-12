@@ -255,3 +255,25 @@ func processBlockAttestations(s *ConsensusStore, signedBlock *types.SignedBlock,
 	}
 }
 
+// checkpointSupersedes returns true if candidate should replace current.
+// Higher slot always wins. At the same slot, lexicographically higher root
+// wins — this ensures all nodes converge to the same checkpoint regardless
+// of block processing order.
+func checkpointSupersedes(candidate, current *types.Checkpoint) bool {
+	if candidate.Slot > current.Slot {
+		return true
+	}
+	if candidate.Slot < current.Slot {
+		return false
+	}
+	// Same slot: deterministic tiebreak by root.
+	for i := 0; i < 32; i++ {
+		if candidate.Root[i] > current.Root[i] {
+			return true
+		}
+		if candidate.Root[i] < current.Root[i] {
+			return false
+		}
+	}
+	return false // identical
+}

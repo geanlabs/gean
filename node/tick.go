@@ -29,8 +29,10 @@ func (e *Engine) onTick() {
 	// Aggregation is handled async below to avoid blocking the tick loop.
 	_ = OnTick(e.Store, timestampMs, hasProposal, e.IsAggregator)
 
-	// Interval 2: aggregation (synchronous for now — async causes thread-safety
-	// issues with the Rust prover's precomputed state).
+	// Interval 2: synchronous aggregation. Blocks the tick loop for 1-4s
+	// but keeps source consistency — headState doesn't change during proving.
+	// Async aggregation breaks source alignment because head drifts during
+	// the background prover run. Acceptable until prover is <800ms.
 	if currentInterval == 2 && e.IsAggregator {
 		e.drainPendingAttestations()
 		aggs := AggregateCommitteeSignatures(e.Store)
@@ -87,23 +89,45 @@ func (e *Engine) drainPendingAttestations() {
 	}
 }
 
-// asyncAggregate runs recursive aggregation in a background goroutine.
-// When complete, results are pushed to KnownPayloads and gossiped.
-// This avoids blocking the tick loop for the 14s+ recursive prover.
-func (e *Engine) asyncAggregate() {
-	defer e.aggregating.Store(false)
+// drainAggResults applies all pending aggregation results from the background goroutine.
+// Called on the main goroutine before block building to ensure freshest payloads.
+func (e *Engine) drainAggResults() {
+	for {
+		select {
+		case result := <-e.AggResultCh:
+			e.applyAggregationResult(result)
+		default:
+			return
+		}
+	}
+}
 
-	aggs := AggregateCommitteeSignatures(e.Store)
-	if len(aggs) == 0 {
+// runAggregation runs recursive aggregation on a snapshot in a background goroutine.
+// Ships results back to the main loop via AggResultCh.
+func (e *Engine) runAggregation(snap *AggregationSnapshot) {
+	defer e.aggregating.Store(false)
+	result := AggregateFromSnapshot(snap)
+	if len(result.Aggregates) == 0 {
 		return
 	}
+	select {
+	case e.AggResultCh <- result:
+	default:
+		logger.Warn(logger.Signature, "aggregation result channel full, dropping")
+	}
+}
 
-	// Publish aggregates to gossip network.
-	for _, agg := range aggs {
+// applyAggregationResult applies results from background aggregation to the store.
+// Called on the main goroutine — safe to mutate store.
+func (e *Engine) applyAggregationResult(result AggregationResult) {
+	e.Store.KnownPayloads.PushBatch(result.PayloadEntries)
+	for _, agg := range result.Aggregates {
 		if e.P2P != nil {
 			e.P2P.PublishAggregatedAttestation(context.Background(), agg)
 		}
 	}
+	logger.Info(logger.Signature, "applied async aggregation: %d aggregates, %d payloads",
+		len(result.Aggregates), len(result.PayloadEntries))
 }
 
 // updateHead runs LMD GHOST using known attestations.
