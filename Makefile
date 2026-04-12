@@ -12,7 +12,12 @@ help: ## Show help for each Makefile recipe
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
-	@cd xmss/rust && CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked
+	@cd xmss/rust && \
+		if [ "$$(uname -m)" = "x86_64" ]; then \
+			CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked; \
+		else \
+			cargo build --release --locked; \
+		fi
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
