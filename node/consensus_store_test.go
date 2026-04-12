@@ -289,7 +289,7 @@ func TestValidateAttestationDataTopology(t *testing.T) {
 }
 
 func TestAggregationBitsFromValidatorIndices(t *testing.T) {
-	bits := aggregationBitsFromValidatorIndices([]uint64{0, 3, 7})
+	bits := AggregationBitsFromIndices([]uint64{0, 3, 7})
 	if !types.BitlistGet(bits, 0) || !types.BitlistGet(bits, 3) || !types.BitlistGet(bits, 7) {
 		t.Fatal("expected bits 0, 3, 7 set")
 	}
