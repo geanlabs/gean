@@ -331,7 +331,15 @@ func (e *Engine) discardPendingSubtree(blockRoot [32]byte) {
 }
 
 // onGossipAttestation validates and stores an individual attestation.
+// Per leanSpec store.py:385-386, only aggregator nodes store gossip signatures.
+// Non-aggregators validate and drop — they receive aggregated proofs via the
+// aggregation gossip topic instead.
+// Cross-ref: ethlambda lib.rs:481-484
 func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
+	if !e.IsAggregator {
+		return
+	}
+
 	// Validate attestation data.
 	if err := ValidateAttestationData(e.Store, att.Data); err != nil {
 		return
