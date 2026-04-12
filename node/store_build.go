@@ -35,13 +35,12 @@ func ProduceBlockWithSignatures(
 	// right before reading latest_known_aggregated_payloads.
 	s.PromoteNewToKnown()
 
-	logger.Info(logger.Chain, "ProduceBlock: slot=%d head=0x%x stateJustified=0x%x/%d",
-		slot, headRoot, headState.LatestJustified.Root, headState.LatestJustified.Slot)
+	storeJustified := s.LatestJustified()
 
 	knownEntries := s.KnownPayloads.Entries()
 	knownBlockRoots := s.getBlockRoots()
 
-	return buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries)
+	return buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries, storeJustified)
 }
 
 // buildBlock builds a valid block using per-AttestationData fixed-point selection
@@ -61,27 +60,23 @@ func buildBlock(
 	parentRoot [32]byte,
 	knownBlockRoots map[[32]byte]bool,
 	payloads map[[32]byte]*PayloadEntry,
+	storeJustified *types.Checkpoint,
 ) (*types.Block, []*types.AggregatedSignatureProof, error) {
 	var attestations []*types.AggregatedAttestation
 	var signatures []*types.AggregatedSignatureProof
 
-	logger.Info(logger.Chain, "buildBlock: slot=%d payloads=%d knownRoots=%d headSlot=%d stateJustified=0x%x/%d",
-		slot, len(payloads), len(knownBlockRoots), headState.LatestBlockHeader.Slot,
-		headState.LatestJustified.Root, headState.LatestJustified.Slot)
-
 	if len(payloads) > 0 {
-		// Use head state's justified checkpoint for filtering, matching leanSpec
-		// build_block and ethlambda store.rs:1130. Both attestation producer and
-		// builder use the same head state, so sources match when the proposer
-		// aggregates + promotes + updateHead right before building.
+		// Use store justified (stable, converges via tiebreak).
+		// Both attestation source and builder use store justified,
+		// which converges across nodes via deterministic root tiebreak.
 		var currentJustified *types.Checkpoint
 		if headState.LatestBlockHeader.Slot == 0 {
 			currentJustified = &types.Checkpoint{
 				Root: parentRoot,
-				Slot: headState.LatestJustified.Slot,
+				Slot: storeJustified.Slot,
 			}
 		} else {
-			currentJustified = headState.LatestJustified
+			currentJustified = storeJustified
 		}
 
 		logger.Info(logger.Chain, "buildBlock: currentJustified root=0x%x slot=%d",
@@ -124,9 +119,6 @@ func buildBlock(
 				}
 				if item.entry.Data.Source.Root != currentJustified.Root ||
 					item.entry.Data.Source.Slot != currentJustified.Slot {
-					logger.Info(logger.Chain, "buildBlock: SKIP source mismatch attSlot=%d src_root=0x%x src_slot=%d want_root=0x%x want_slot=%d",
-						item.entry.Data.Slot, item.entry.Data.Source.Root, item.entry.Data.Source.Slot,
-						currentJustified.Root, currentJustified.Slot)
 					continue
 				}
 

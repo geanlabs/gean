@@ -68,7 +68,6 @@ run-setup: build ## Generate testnet config + XMSS keys (first run only, refresh
 
 run: build ## Run node0 (aggregator) — requires make run-setup first
 	@rm -rf data/node0
-	@bin/keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
 	@bin/gean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node0.key \

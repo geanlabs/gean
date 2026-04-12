@@ -16,16 +16,14 @@ func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationDa
 		return nil
 	}
 
-	// Derive source from head state's justified checkpoint.
-	// At genesis the checkpoint root is zero; substitute the real genesis block root.
-	var source *types.Checkpoint
+	// Source from store's justified (stable, converges via tiebreak).
+	// At genesis substitute the real genesis block root for the zero hash.
+	source := s.LatestJustified()
 	if headState.LatestBlockHeader.Slot == 0 {
 		source = &types.Checkpoint{
 			Root: headRoot,
-			Slot: headState.LatestJustified.Slot,
+			Slot: source.Slot,
 		}
-	} else {
-		source = headState.LatestJustified
 	}
 
 	headHeader := s.GetBlockHeader(headRoot)

@@ -96,14 +96,18 @@ func onBlockCore(
 	postState.LatestBlockHeader.StateRoot = block.StateRoot
 
 	// Check if justified/finalized advanced.
+	// Uses slot comparison with deterministic root tiebreak at the same slot.
+	// The tiebreak ensures all nodes converge to the same checkpoint regardless
+	// of block processing order. Without it, nodes that process blocks in
+	// different order permanently disagree on the justified root.
 	var newJustified, newFinalized *types.Checkpoint
 	currentJustified := s.LatestJustified()
 	currentFinalized := s.LatestFinalized()
 
-	if postState.LatestJustified.Slot > currentJustified.Slot {
+	if checkpointSupersedes(postState.LatestJustified, currentJustified) {
 		newJustified = postState.LatestJustified
 	}
-	if postState.LatestFinalized.Slot > currentFinalized.Slot {
+	if checkpointSupersedes(postState.LatestFinalized, currentFinalized) {
 		newFinalized = postState.LatestFinalized
 	}
 
