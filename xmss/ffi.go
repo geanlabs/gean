@@ -89,6 +89,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -211,6 +212,11 @@ func AggregateWithChildren(
 
 	EnsureProverReady()
 
+	// Pin Go memory passed to C. Go 1.21+ cgo checks reject passing slices
+	// containing Go pointers unless the backing memory is pinned.
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+
 	// Convert raw pubkeys/sigs to C arrays.
 	var rawPkPtr **C.PublicKey
 	var rawSigPtr **C.Signature
@@ -223,6 +229,8 @@ func AggregateWithChildren(
 		for i, s := range sigs {
 			cSigs[i] = (*C.Signature)(s)
 		}
+		pinner.Pin(&cPubkeys[0])
+		pinner.Pin(&cSigs[0])
 		rawPkPtr = (**C.PublicKey)(unsafe.Pointer(&cPubkeys[0]))
 		rawSigPtr = (**C.Signature)(unsafe.Pointer(&cSigs[0]))
 	}
@@ -245,13 +253,16 @@ func AggregateWithChildren(
 			for _, pk := range child.Pubkeys {
 				allChildPks = append(allChildPks, (*C.PublicKey)(pk))
 			}
+			pinner.Pin(&child.ProofData[0])
 			childProofPtrs[i] = (*C.uint8_t)(unsafe.Pointer(&child.ProofData[0]))
 			childProofLens[i] = C.size_t(len(child.ProofData))
 		}
 
 		if len(allChildPks) > 0 {
+			pinner.Pin(&allChildPks[0])
 			childAllPkPtr = (**C.PublicKey)(unsafe.Pointer(&allChildPks[0]))
 		}
+		pinner.Pin(&childProofPtrs[0])
 		childNumKeysPtr = (*C.size_t)(unsafe.Pointer(&childNumKeys[0]))
 		childProofPtrsPtr = (**C.uint8_t)(unsafe.Pointer(&childProofPtrs[0]))
 		childProofLensPtr = (*C.size_t)(unsafe.Pointer(&childProofLens[0]))
@@ -316,6 +327,10 @@ func VerifyAggregatedSignature(
 	for i, pk := range pubkeys {
 		cPubkeys[i] = (*C.PublicKey)(pk)
 	}
+
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+	pinner.Pin(&cPubkeys[0])
 
 	valid := C.xmss_verify_aggregated(
 		(**C.PublicKey)(unsafe.Pointer(&cPubkeys[0])),
