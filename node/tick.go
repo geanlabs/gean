@@ -57,7 +57,13 @@ func (e *Engine) onTick() {
 	}
 
 	// Interval 1: produce attestations + chain status log.
+	// Drain pending blocks first so all nodes converge on the same head
+	// before attesting. Without this, Go's select may fire the tick before
+	// processing a pending block, causing attestations with a stale head
+	// and divergent target/source roots across nodes.
 	if currentInterval == 1 {
+		e.drainPendingBlocks()
+		e.updateHead(false)
 		e.produceAttestations(currentSlot)
 		e.logChainStatus(currentSlot)
 	}
@@ -66,6 +72,25 @@ func (e *Engine) onTick() {
 	if currentInterval == 3 {
 		e.updateSafeTarget()
 		PeriodicPrune(e.Store, e.FC, currentSlot, e.Store.LatestFinalized().Slot)
+	}
+}
+
+// drainPendingBlocks processes all queued blocks from the channel before
+// attestation production. Ensures the node's head reflects the latest blocks
+// so attestation targets/sources match across nodes.
+func (e *Engine) drainPendingBlocks() {
+	drained := 0
+	for {
+		select {
+		case block := <-e.BlockCh:
+			e.onBlock(block)
+			drained++
+		default:
+			if drained > 0 {
+				logger.Info(logger.Chain, "drained %d pending blocks before attestation", drained)
+			}
+			return
+		}
 	}
 }
 

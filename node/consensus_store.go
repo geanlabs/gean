@@ -8,8 +8,8 @@ import (
 
 const (
 	// Buffer capacities rs L87-91.
-	aggregatedPayloadCap = 512
-	newPayloadCap        = 64
+	aggregatedPayloadCap = 0 // unbounded, pruned on finalization only (matches zeam)
+	newPayloadCap        = 0 // unbounded
 )
 
 // ConsensusStore holds all state required for fork choice and block processing.
