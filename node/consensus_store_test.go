@@ -198,7 +198,7 @@ func TestExtractLatestAllAttestations(t *testing.T) {
 }
 
 func TestAttestationSignatureInsertAndDelete(t *testing.T) {
-	gsm := make(AttestationSignatureMap)
+	gsm := NewAttestationSignatureMap()
 	var dr [32]byte
 	dr[0] = 1
 	data := &types.AttestationData{Slot: 5}
@@ -210,18 +210,20 @@ func TestAttestationSignatureInsertAndDelete(t *testing.T) {
 	if gsm.Len() != 1 {
 		t.Fatalf("expected 1 entry, got %d", gsm.Len())
 	}
-	if len(gsm[dr].Signatures) != 2 {
+	snap := gsm.Snapshot()
+	if len(snap[dr].Signatures) != 2 {
 		t.Fatal("expected 2 signatures")
 	}
 
 	gsm.Delete([]AttestationDeleteKey{{ValidatorID: 0, DataRoot: dr}})
-	if len(gsm[dr].Signatures) != 1 {
+	snap = gsm.Snapshot()
+	if len(snap[dr].Signatures) != 1 {
 		t.Fatal("expected 1 signature after delete")
 	}
 }
 
 func TestAttestationSignaturePruneBelow(t *testing.T) {
-	gsm := make(AttestationSignatureMap)
+	gsm := NewAttestationSignatureMap()
 	var sig [types.SignatureSize]byte
 	for i := uint64(0); i < 5; i++ {
 		var dr [32]byte

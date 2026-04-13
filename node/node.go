@@ -98,6 +98,17 @@ func (e *Engine) Run(ctx context.Context) {
 
 	logger.Info(logger.Node, "started")
 
+	// Process gossip attestations concurrently — each gets its own goroutine
+	// for XMSS verification (~500ms each). This matches zeam's inline model
+	// where attestations are verified as they arrive, not queued.
+	// AttestationSignatureMap is mutex-protected for safe concurrent writes.
+	go func() {
+		for att := range e.AttestationCh {
+			att := att
+			go e.onGossipAttestation(att)
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -109,9 +120,6 @@ func (e *Engine) Run(ctx context.Context) {
 
 		case block := <-e.BlockCh:
 			e.onBlock(block)
-
-		case att := <-e.AttestationCh:
-			e.onGossipAttestation(att)
 
 		case agg := <-e.AggregationCh:
 			e.onGossipAggregatedAttestation(agg)

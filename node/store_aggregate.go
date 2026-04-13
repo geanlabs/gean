@@ -32,9 +32,12 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 	var keysToDelete []AttestationDeleteKey
 	var payloadEntries []PayloadKV
 
+	// Snapshot attestation signatures to avoid holding the mutex during ZK proving.
+	attSigs := s.AttestationSignatures.Snapshot()
+
 	// Collect all data roots that have either gossip sigs or new payloads.
 	dataRoots := make(map[[32]byte]bool)
-	for dr := range s.AttestationSignatures {
+	for dr := range attSigs {
 		dataRoots[dr] = true
 	}
 	for dr := range s.NewPayloads.data {
@@ -42,7 +45,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 	}
 
 	for dataRoot := range dataRoots {
-		gossipEntry := s.AttestationSignatures[dataRoot]
+		gossipEntry := attSigs[dataRoot]
 		newEntry := s.NewPayloads.data[dataRoot]
 		knownEntry := s.KnownPayloads.data[dataRoot]
 

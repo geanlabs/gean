@@ -34,7 +34,6 @@ func (e *Engine) onTick() {
 	// Async aggregation breaks source alignment because head drifts during
 	// the background prover run. Acceptable until prover is <800ms.
 	if currentInterval == 2 && e.IsAggregator {
-		e.drainPendingAttestations()
 		aggs := AggregateCommitteeSignatures(e.Store)
 		for _, agg := range aggs {
 			if e.P2P != nil {
@@ -88,26 +87,6 @@ func (e *Engine) drainPendingBlocks() {
 		default:
 			if drained > 0 {
 				logger.Info(logger.Chain, "drained %d pending blocks before attestation", drained)
-			}
-			return
-		}
-	}
-}
-
-// drainPendingAttestations processes all queued gossip attestations from the
-// channel before aggregation. Each attestation requires XMSS verification
-// (~500ms), so without batching, the event loop only processes 1-2 between
-// ticks, starving the aggregator of signatures.
-func (e *Engine) drainPendingAttestations() {
-	drained := 0
-	for {
-		select {
-		case att := <-e.AttestationCh:
-			e.onGossipAttestation(att)
-			drained++
-		default:
-			if drained > 0 {
-				logger.Info(logger.Chain, "drained %d pending attestations before aggregation", drained)
 			}
 			return
 		}
