@@ -170,9 +170,16 @@ func (km *KeyManager) Close() {
 // --- Key loading from YAML + files ---
 
 // annotatedValidator represents a validator entry from annotated_validators.yaml.
-// Devnet-4: dual key files per validator.
+// Supports both formats:
+//   - lean-quickstart: two entries per validator with pubkey_hex + privkey_file
+//     (attester vs proposer inferred from filename containing "attester" or "proposer")
+//   - gean keygen: one entry per validator with attestation/proposal specific fields
 type annotatedValidator struct {
-	Index             uint64 `yaml:"index"`
+	Index uint64 `yaml:"index"`
+	// lean-quickstart format (shared by zeam, ethlambda, etc.)
+	PubkeyHex   string `yaml:"pubkey_hex"`
+	PrivkeyFile string `yaml:"privkey_file"`
+	// gean keygen format (dual keys in single entry)
 	AttestationPubkey string `yaml:"attestation_pubkey_hex"`
 	ProposalPubkey    string `yaml:"proposal_pubkey_hex"`
 	AttestationSkFile string `yaml:"attestation_sk_file"`
@@ -180,6 +187,8 @@ type annotatedValidator struct {
 }
 
 // LoadValidatorKeys loads dual XMSS keypairs from annotated_validators.yaml + key files.
+// Supports lean-quickstart format (two entries per validator: attester + proposer)
+// and gean keygen format (one entry per validator with both keys).
 func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, error) {
 	data, err := os.ReadFile(annotatedPath)
 	if err != nil {
@@ -196,21 +205,44 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 		return nil, fmt.Errorf("node ID %q not found in annotated validators", nodeID)
 	}
 
-	attestationKeys := make(map[uint64]*ValidatorKeyPair, len(validators))
-	proposalKeys := make(map[uint64]*ValidatorKeyPair, len(validators))
+	attestationKeys := make(map[uint64]*ValidatorKeyPair)
+	proposalKeys := make(map[uint64]*ValidatorKeyPair)
 
 	for _, v := range validators {
-		attKp, err := loadKeypair(keysDir, v.AttestationSkFile, v.AttestationPubkey, v.Index)
-		if err != nil {
-			return nil, fmt.Errorf("load attestation key for validator %d: %w", v.Index, err)
-		}
-		attestationKeys[v.Index] = attKp
+		if v.PrivkeyFile != "" {
+			// lean-quickstart format: pubkey_hex + privkey_file per entry.
+			// Attester vs proposer determined by filename.
+			kp, err := loadKeypair(keysDir, v.PrivkeyFile, v.PubkeyHex, v.Index)
+			if err != nil {
+				return nil, fmt.Errorf("load key for validator %d (%s): %w", v.Index, v.PrivkeyFile, err)
+			}
+			if strings.Contains(v.PrivkeyFile, "attester") || strings.Contains(v.PrivkeyFile, "attestation") {
+				attestationKeys[v.Index] = kp
+			} else if strings.Contains(v.PrivkeyFile, "proposer") || strings.Contains(v.PrivkeyFile, "proposal") {
+				proposalKeys[v.Index] = kp
+			} else {
+				// Unknown type — use as both (backward compat with single-key format).
+				if attestationKeys[v.Index] == nil {
+					attestationKeys[v.Index] = kp
+				}
+				if proposalKeys[v.Index] == nil {
+					proposalKeys[v.Index] = kp
+				}
+			}
+		} else if v.AttestationSkFile != "" {
+			// gean keygen format: one entry with both keys.
+			attKp, err := loadKeypair(keysDir, v.AttestationSkFile, v.AttestationPubkey, v.Index)
+			if err != nil {
+				return nil, fmt.Errorf("load attestation key for validator %d: %w", v.Index, err)
+			}
+			attestationKeys[v.Index] = attKp
 
-		propKp, err := loadKeypair(keysDir, v.ProposalSkFile, v.ProposalPubkey, v.Index)
-		if err != nil {
-			return nil, fmt.Errorf("load proposal key for validator %d: %w", v.Index, err)
+			propKp, err := loadKeypair(keysDir, v.ProposalSkFile, v.ProposalPubkey, v.Index)
+			if err != nil {
+				return nil, fmt.Errorf("load proposal key for validator %d: %w", v.Index, err)
+			}
+			proposalKeys[v.Index] = propKp
 		}
-		proposalKeys[v.Index] = propKp
 	}
 
 	return NewKeyManager(attestationKeys, proposalKeys), nil
