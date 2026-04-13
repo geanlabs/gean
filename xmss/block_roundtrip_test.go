@@ -7,7 +7,7 @@ import (
 )
 
 // TestProposerSigThroughBlockSSZ simulates the exact P2P path:
-// Node1 signs → builds SignedBlockWithAttestation → SSZ marshal → SSZ unmarshal →
+// Node1 signs → builds SignedBlock → SSZ marshal → SSZ unmarshal →
 // extract ProposerSignature → ParseSignature → aggregate.
 func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	kp, err := GenerateKeyPair("block-roundtrip-0", 0, 1<<18)
@@ -18,34 +18,22 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 
 	pkBytes, _ := kp.PublicKeyBytes()
 
-	// Sign a message (attestation data root)
-	var attDataRoot [32]byte
-	attDataRoot[0] = 0xab
-	attDataRoot[1] = 0xcd
+	// Build a block and sign its root
+	block := &types.Block{
+		Slot:          1,
+		ProposerIndex: 0,
+		Body:          &types.BlockBody{},
+	}
+	blockRoot, _ := block.HashTreeRoot()
 
-	sig, err := kp.Sign(1, attDataRoot) // slot 1
+	sig, err := kp.Sign(1, blockRoot) // slot 1
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
 
-	// Build a SignedBlockWithAttestation with this signature as ProposerSignature
-	signedBlock := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block: &types.Block{
-				Slot:          1,
-				ProposerIndex: 0,
-				Body:          &types.BlockBody{},
-			},
-			ProposerAttestation: &types.Attestation{
-				ValidatorID: 0,
-				Data: &types.AttestationData{
-					Slot:   1,
-					Head:   &types.Checkpoint{},
-					Target: &types.Checkpoint{},
-					Source: &types.Checkpoint{},
-				},
-			},
-		},
+	// Build a SignedBlock with this signature as ProposerSignature
+	signedBlock := &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
 			ProposerSignature: sig,
 		},
@@ -58,12 +46,12 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	}
 
 	// SSZ unmarshal (simulates P2P receive)
-	decoded := &types.SignedBlockWithAttestation{}
+	decoded := &types.SignedBlock{}
 	if err := decoded.UnmarshalSSZ(encoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Extract ProposerSignature from decoded block (this is what processProposerAttestation does)
+	// Extract ProposerSignature from decoded block
 	extractedSig := decoded.Signature.ProposerSignature
 
 	// Verify the raw bytes match
@@ -71,7 +59,7 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 		t.Fatal("signature bytes changed through block SSZ round-trip")
 	}
 
-	// Parse to C handle (what processProposerAttestation does)
+	// Parse to C handle
 	csig, err := ParseSignature(extractedSig[:])
 	if err != nil {
 		t.Fatalf("parse sig: %v", err)
@@ -84,9 +72,9 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	}
 	defer FreePublicKey(cpk)
 
-	// Aggregate with slot=1 and the attestation data root as message
+	// Aggregate with slot=1 and the block root as message
 	EnsureProverReady()
-	proof, err := AggregateSignatures([]CPubKey{cpk}, []CSig{csig}, attDataRoot, 1)
+	proof, err := AggregateSignatures([]CPubKey{cpk}, []CSig{csig}, blockRoot, 1)
 	if err != nil {
 		t.Fatalf("aggregate FAILED: %v", err)
 	}
@@ -94,7 +82,7 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 
 	// Verify
 	EnsureVerifierReady()
-	if err := VerifyAggregatedSignature(proof, []CPubKey{cpk}, attDataRoot, 1); err != nil {
+	if err := VerifyAggregatedSignature(proof, []CPubKey{cpk}, blockRoot, 1); err != nil {
 		t.Fatalf("verify FAILED: %v", err)
 	}
 	t.Log("verify succeeded")

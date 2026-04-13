@@ -12,7 +12,12 @@ help: ## Show help for each Makefile recipe
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
-	@cd xmss/rust && cargo build --release --locked
+	@cd xmss/rust && \
+		if [ "$$(uname -m)" = "x86_64" ]; then \
+			CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked; \
+		else \
+			cargo build --release --locked; \
+		fi
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
@@ -46,12 +51,11 @@ sszgen: ## Regenerate SSZ encoding files from struct tags
 	sszgen --path pkg/types --objs Checkpoint --output types/checkpoint_encoding.go
 	sszgen --path pkg/types --objs Validator --output types/validator_encoding.go
 	sszgen --path pkg/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SignedAggregatedAttestation --exclude-objs Checkpoint --output types/attestation_encoding.go
-	sszgen --path pkg/types --objs BlockHeader,BlockBody,Block,BlockWithAttestation,AggregatedSignatureProof,BlockSignatures,SignedBlockWithAttestation --exclude-objs Checkpoint,AttestationData,Attestation,AggregatedAttestation,AggregatedSignatureProof --output types/block_encoding.go
+	sszgen --path pkg/types --objs BlockHeader,BlockBody,Block,AggregatedSignatureProof,BlockSignatures,SignedBlock --exclude-objs Checkpoint,AttestationData,Attestation,AggregatedAttestation,AggregatedSignatureProof --output types/block_encoding.go
 	sszgen --path pkg/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output types/state_encoding.go
 
 clean: ## Remove build artifacts and generated files
 	rm -rf bin data
-	rm -f types/*_encoding.go
 	cd xmss/rust && cargo clean
 
 tidy: ## Tidy Go module dependencies
@@ -64,7 +68,6 @@ run-setup: build ## Generate testnet config + XMSS keys (first run only, refresh
 
 run: build ## Run node0 (aggregator) — requires make run-setup first
 	@rm -rf data/node0
-	@bin/keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
 	@bin/gean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node0.key \
@@ -99,9 +102,9 @@ run-node2: build ## Run node2 on port 9002
 
 # --- leanSpec fixtures ---
 
-LEAN_SPEC_COMMIT_HASH := be853180d21aa36d6401b8c1541aa6fcaad5008d
+LEAN_SPEC_COMMIT_HASH := 16e50a5fcc8be837f09aabf30c92e653bc36dad4
 
-leanSpec: ## Clone leanSpec at devnet-3 commit
+leanSpec: ## Clone leanSpec at pinned main commit (contains devnet-4 changes)
 	git clone https://github.com/leanEthereum/leanSpec.git --single-branch
 	cd leanSpec && git checkout $(LEAN_SPEC_COMMIT_HASH)
 

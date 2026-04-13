@@ -73,7 +73,7 @@ func getUint64LE(buf []byte) uint64 {
 }
 
 // RegisterReqRespHandlers registers stream handlers for status and blocks_by_root.
-func (h *Host) RegisterReqRespHandlers(statusFn func() *StatusMessage, blockByRootFn func(root [32]byte) *types.SignedBlockWithAttestation) {
+func (h *Host) RegisterReqRespHandlers(statusFn func() *StatusMessage, blockByRootFn func(root [32]byte) *types.SignedBlock) {
 	// Status handler.
 	h.host.SetStreamHandler(protocol.ID(StatusProtocol), func(s network.Stream) {
 		defer s.Close()
@@ -110,7 +110,7 @@ func handleStatusRequest(s network.Stream, statusFn func() *StatusMessage) {
 	s.Write(resp)
 }
 
-func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byte) *types.SignedBlockWithAttestation) {
+func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byte) *types.SignedBlock) {
 	reqBuf, err := io.ReadAll(io.LimitReader(s, int64(MaxCompressedPayloadSize)))
 	if err != nil {
 		logger.Warn(logger.Network, "blocks_by_root: read request failed: %v", err)
@@ -183,7 +183,7 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 
 // FetchBlocksByRoot requests blocks from a peer by their roots.
 // Returns successfully decoded blocks (partial success allowed).
-func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][32]byte) ([]*types.SignedBlockWithAttestation, error) {
+func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][32]byte) ([]*types.SignedBlock, error) {
 	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
 	defer cancel()
 
@@ -201,7 +201,7 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 	s.CloseWrite()
 
 	// Read multi-chunk response.
-	var blocks []*types.SignedBlockWithAttestation
+	var blocks []*types.SignedBlock
 	respBuf, err := io.ReadAll(io.LimitReader(s, int64(MaxCompressedPayloadSize)*int64(len(roots))))
 	if err != nil {
 		return nil, fmt.Errorf("read blocks response: %w", err)
@@ -216,7 +216,7 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 		if code != RespSuccess || blockData == nil {
 			continue // skip errors, partial success
 		}
-		block := &types.SignedBlockWithAttestation{}
+		block := &types.SignedBlock{}
 		if err := block.UnmarshalSSZ(blockData); err != nil {
 			continue
 		}

@@ -49,7 +49,12 @@ type Host struct {
 }
 
 // NewHost creates a libp2p host with QUIC transport and gossipsub.
-func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeCount uint64) (*Host, error) {
+// Subscribes to attestation subnets based on validator assignments:
+// - All nodes subscribe to their validators' subnets (for mesh/publishing)
+// - Aggregators additionally subscribe to explicit aggregateSubnetIDs
+// - Aggregator fallback: subnet 0 if no subnets derived
+// Spec: lean_spec/subspecs/node/node.py (lines 126-132)
+func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeCount uint64, validatorIDs []uint64, isAggregator bool, aggregateSubnetIDs []uint64) (*Host, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	// Load secp256k1 identity from hex-encoded node key file.
@@ -149,11 +154,30 @@ func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeC
 		return nil, fmt.Errorf("join aggregation topic: %w", err)
 	}
 
-	// Join attestation subnet topics.
-	for i := uint64(0); i < committeeCount; i++ {
-		if err := p2pHost.JoinTopic(AttestationSubnetTopic(i)); err != nil {
+	// Join attestation subnet topics — only subnets this node needs.
+	seen := make(map[uint64]bool)
+
+	// Aggregator: subscribe to explicit aggregate subnet IDs.
+	if isAggregator {
+		for _, subnetID := range aggregateSubnetIDs {
+			seen[subnetID] = true
+		}
+	}
+
+	// All nodes: subscribe to validator-derived subnets (for mesh/publishing).
+	for _, vid := range validatorIDs {
+		seen[SubnetID(vid, committeeCount)] = true
+	}
+
+	// Aggregator fallback: if no subnets derived, subscribe to subnet 0.
+	if isAggregator && len(seen) == 0 {
+		seen[0] = true
+	}
+
+	for subnetID := range seen {
+		if err := p2pHost.JoinTopic(AttestationSubnetTopic(subnetID)); err != nil {
 			p2pHost.Close()
-			return nil, fmt.Errorf("join attestation subnet %d: %w", i, err)
+			return nil, fmt.Errorf("join attestation subnet %d: %w", subnetID, err)
 		}
 	}
 

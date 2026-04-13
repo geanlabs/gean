@@ -50,11 +50,7 @@ func OnTick(
 		case 1:
 			// Vote propagation — no store action.
 		case 2:
-			// Aggregation interval.
-			if isAggregator {
-				aggs := AggregateCommitteeSignatures(s)
-				newAggregates = append(newAggregates, aggs...)
-			}
+			// Aggregation interval — dispatched by Engine (see onTick).
 		case 3:
 			// Safe target update happens in Engine (it owns ForkChoice).
 		case 4:

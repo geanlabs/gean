@@ -46,13 +46,15 @@ func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData,
 		pb.totalProofs++
 	}
 
-	// Evict oldest until under capacity.
-	for pb.totalProofs > pb.capacity && len(pb.order) > 0 {
-		evicted := pb.order[0]
-		pb.order = pb.order[1:]
-		if entry, ok := pb.data[evicted]; ok {
-			pb.totalProofs -= len(entry.Proofs)
-			delete(pb.data, evicted)
+	// Evict oldest until under capacity (skip if unbounded, capacity=0).
+	if pb.capacity > 0 {
+		for pb.totalProofs > pb.capacity && len(pb.order) > 0 {
+			evicted := pb.order[0]
+			pb.order = pb.order[1:]
+			if entry, ok := pb.data[evicted]; ok {
+				pb.totalProofs -= len(entry.Proofs)
+				delete(pb.data, evicted)
+			}
 		}
 	}
 }

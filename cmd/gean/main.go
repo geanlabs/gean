@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,7 +36,7 @@ func main() {
 	checkpointURL := flag.String("checkpoint-sync-url", "", "URL for checkpoint sync (optional)")
 	isAggregator := flag.Bool("is-aggregator", false, "Enable attestation aggregation")
 	committeeCount := flag.Uint64("attestation-committee-count", 1, "Number of attestation subnets")
-	_ = flag.String("aggregate-subnet-ids", "", "Comma-separated subnet IDs (requires --is-aggregator)")
+	aggregateSubnetIDsStr := flag.String("aggregate-subnet-ids", "", "Comma-separated subnet IDs (requires --is-aggregator)")
 	dataDir := flag.String("data-dir", "./data", "Pebble database directory")
 
 	flag.Parse()
@@ -144,7 +146,30 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	p2pHost, err := p2p.NewHost(ctx, *nodeKey, *gossipPort, *committeeCount)
+	// Parse explicit aggregate subnet IDs.
+	var aggregateSubnetIDs []uint64
+	if *aggregateSubnetIDsStr != "" {
+		for _, s := range strings.Split(*aggregateSubnetIDsStr, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			id, err := strconv.ParseUint(s, 10, 64)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid aggregate-subnet-id %q: %v\n", s, err)
+				os.Exit(1)
+			}
+			aggregateSubnetIDs = append(aggregateSubnetIDs, id)
+		}
+	}
+
+	// Collect validator IDs for subnet subscription.
+	var validatorIDs []uint64
+	if keyManager != nil {
+		validatorIDs = keyManager.ValidatorIDs()
+	}
+
+	p2pHost, err := p2p.NewHost(ctx, *nodeKey, *gossipPort, *committeeCount, validatorIDs, *isAggregator, aggregateSubnetIDs)
 	if err != nil {
 		logger.Error(logger.Network, "create p2p host: %v", err)
 		os.Exit(1)
@@ -156,6 +181,15 @@ func main() {
 	// Connect to bootnodes.
 	p2pHost.ConnectBootnodes(ctx, bootnodes)
 	p2pHost.StartBootnodeRedial(ctx, bootnodes)
+
+	// Pre-initialize the XMSS prover so the ~45s setup cost happens before
+	// the chain starts, not during the first live aggregation.
+	if *isAggregator {
+		logger.Info(logger.Node, "pre-initializing XMSS prover (this takes ~45s)...")
+		xmss.EnsureProverReady()
+		logger.Info(logger.Node, "XMSS prover ready")
+	}
+	xmss.EnsureVerifierReady()
 
 	// --- Initialize engine ---
 
@@ -172,7 +206,7 @@ func main() {
 				HeadSlot:      s.HeadSlot(),
 			}
 		},
-		func(root [32]byte) *types.SignedBlockWithAttestation {
+		func(root [32]byte) *types.SignedBlock {
 			return s.GetSignedBlock(root)
 		},
 	)

@@ -23,6 +23,12 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
+	// Spec get_proposal_head: promote pending attestations and update head
+	// immediately before building. Matches leanSpec get_proposal_head which
+	// calls accept_new_attestations (promote + updateHead) before reading head.
+	e.Store.PromoteNewToKnown()
+	e.updateHead(false)
+
 	// Build block with greedy attestation selection.
 	block, attSigProofs, err := ProduceBlockWithSignatures(e.Store, slot, validatorID)
 	if err != nil {
@@ -30,34 +36,25 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
-	// Produce proposer's own attestation.
-	attData := ProduceAttestationData(e.Store, slot)
-	if attData == nil {
-		logger.Error(logger.Validator, "failed to produce attestation data for proposal")
+	// Sign the block root with the PROPOSAL key.
+	signStart := time.Now()
+	propKey := e.Keys.GetProposalKey(validatorID)
+	if propKey == nil {
+		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
 		return
 	}
-
-	proposerAtt := &types.Attestation{
-		ValidatorID: validatorID,
-		Data:        attData,
-	}
-
-	// Sign proposer's attestation (this becomes the ProposerSignature in the block).
-	signStart := time.Now()
-	attSig, err := e.Keys.SignAttestation(validatorID, attData)
+	blockRoot, _ := block.HashTreeRoot()
+	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
 	ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
-		logger.Error(logger.Validator, "sign proposer attestation failed: %v", err)
+		logger.Error(logger.Validator, "sign block failed: %v", err)
 		return
 	}
 
-	signedBlock := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               block,
-			ProposerAttestation: proposerAtt,
-		},
+	signedBlock := &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
-			ProposerSignature:     attSig, // attestation signature, NOT block signature
+			ProposerSignature:     blockSig,
 			AttestationSignatures: attSigProofs,
 		},
 	}
@@ -73,11 +70,6 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	e.FC.OnBlock(slot, bRoot, block.ParentRoot)
 	e.updateHead(false)
 
-	// Store proposer's attestation signature in gossip for aggregation with C handle.
-	dataRoot, _ := attData.HashTreeRoot()
-	sigHandle, parseErr := xmss.ParseSignature(attSig[:])
-	e.Store.GossipSignatures.InsertWithHandle(dataRoot, attData, validatorID, attSig, sigHandle, parseErr)
-
 	// Publish to network.
 	if e.P2P != nil {
 		if err := e.P2P.PublishBlock(context.Background(), signedBlock); err != nil {
@@ -89,17 +81,11 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		slot, bRoot, len(block.Body.Attestations))
 }
 
-// produceAttestations creates and publishes attestations for non-proposing validators.
+// produceAttestations creates and publishes attestations for all local validators.
 func (e *Engine) produceAttestations(slot uint64) {
 	if e.Keys == nil {
 		return
 	}
-
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
-		return
-	}
-	numValidators := headState.NumValidators()
 
 	attData := ProduceAttestationData(e.Store, slot)
 	if attData == nil {
@@ -107,11 +93,6 @@ func (e *Engine) produceAttestations(slot uint64) {
 	}
 
 	for _, vid := range e.Keys.ValidatorIDs() {
-		// Skip proposer — they already attested via block.
-		if types.IsProposer(slot, vid, numValidators) {
-			continue
-		}
-
 		sStart := time.Now()
 		sig, err := e.Keys.SignAttestation(vid, attData)
 		ObservePqSigSigningTime(time.Since(sStart).Seconds())
@@ -127,6 +108,14 @@ func (e *Engine) produceAttestations(slot uint64) {
 		}
 
 		logger.Info(logger.Validator, "produced attestation slot=%d validator=%d", slot, vid)
+
+		// Self-deliver for aggregation if we are the aggregator.
+		// Skip signature verification — we just signed it ourselves.
+		if e.IsAggregator {
+			dataRoot, _ := attData.HashTreeRoot()
+			sigHandle, parseErr := xmss.ParseSignature(sig[:])
+			e.Store.AttestationSignatures.InsertWithHandle(dataRoot, attData, vid, sig, sigHandle, parseErr)
+		}
 
 		// Publish to subnet.
 		if e.P2P != nil {

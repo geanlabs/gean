@@ -22,11 +22,13 @@ import (
 type sigFixture map[string]sigTest
 
 type sigTest struct {
-	Network                    string   `json:"network"`
-	LeanEnv                    string   `json:"leanEnv"`
-	AnchorState                sigState `json:"anchorState"`
-	SignedBlockWithAttestation sigSBA   `json:"signedBlockWithAttestation"`
-	ExpectException            *string  `json:"expectException"`
+	Network     string   `json:"network"`
+	LeanEnv     string   `json:"leanEnv"`
+	AnchorState sigState `json:"anchorState"`
+	SignedBlock sigSBA   `json:"signedBlock"`
+	// Legacy devnet-3 field (fallback).
+	SignedBlockWithAttestation sigSBA  `json:"signedBlockWithAttestation"`
+	ExpectException            *string `json:"expectException"`
 }
 
 type sigState struct {
@@ -43,13 +45,15 @@ type sigState struct {
 }
 
 type sigSBA struct {
-	Message   sigMessage   `json:"message"`
+	// Devnet-4 flat structure: block + signature directly.
+	Block     fcBlock      `json:"block"`
 	Signature sigSignature `json:"signature"`
+	// Legacy devnet-3 wrapper (fallback).
+	Message *sigMessage `json:"message,omitempty"`
 }
 
 type sigMessage struct {
-	Block               fcBlock        `json:"block"`
-	ProposerAttestation *fcAttestation `json:"proposerAttestation,omitempty"`
+	Block fcBlock `json:"block"`
 }
 
 type sigSignature struct {
@@ -157,9 +161,19 @@ func (fs *sigState) toState() *types.State {
 	}
 
 	for _, v := range fs.Validators.Data {
+		var attPk, propPk [types.PubkeySize]byte
+		if v.AttestationPubkey != "" {
+			attPk = sigParseHexPubkey(v.AttestationPubkey)
+			propPk = sigParseHexPubkey(v.ProposalPubkey)
+		} else {
+			pk := sigParseHexPubkey(v.Pubkey)
+			attPk = pk
+			propPk = pk
+		}
 		state.Validators = append(state.Validators, &types.Validator{
-			Pubkey: sigParseHexPubkey(v.Pubkey),
-			Index:  v.Index,
+			AttestationPubkey: attPk,
+			ProposalPubkey:    propPk,
+			Index:             v.Index,
 		})
 	}
 
@@ -192,14 +206,16 @@ func (fs *sigState) toState() *types.State {
 	return state
 }
 
-// toSignedBlock converts fixture signed block with attestation to types.SignedBlockWithAttestation.
-func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
-	block := sba.Message.Block.toBlock()
-
-	var proposerAtt *types.Attestation
-	if sba.Message.ProposerAttestation != nil {
-		proposerAtt = sba.Message.ProposerAttestation.toAttestation()
+// toSignedBlock converts fixture signed block to types.SignedBlock.
+func (sba *sigSBA) toSignedBlock() *types.SignedBlock {
+	// Devnet-4: block is directly on sba. Legacy: block is in sba.Message.
+	var srcBlock fcBlock
+	if sba.Block.Slot > 0 || sba.Block.ParentRoot != "" {
+		srcBlock = sba.Block
+	} else if sba.Message != nil {
+		srcBlock = sba.Message.Block
 	}
+	block := srcBlock.toBlock()
 
 	proposerSig := sigParseHexSignature(sba.Signature.ProposerSignature)
 
@@ -213,11 +229,8 @@ func (sba *sigSBA) toSignedBlock() *types.SignedBlockWithAttestation {
 		})
 	}
 
-	return &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               block,
-			ProposerAttestation: proposerAtt,
-		},
+	return &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
 			ProposerSignature:     proposerSig,
 			AttestationSignatures: attSigs,
@@ -306,7 +319,11 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	s.SetLatestFinalized(&types.Checkpoint{Root: anchorRoot, Slot: header.Slot})
 
 	// 4. Convert fixture signed block.
-	signedBlock := tt.SignedBlockWithAttestation.toSignedBlock()
+	sba := tt.SignedBlock
+	if sba.Block.Slot == 0 && sba.Block.ParentRoot == "" {
+		sba = tt.SignedBlockWithAttestation // legacy fallback
+	}
+	signedBlock := sba.toSignedBlock()
 
 	// 5. Call OnBlock WITH signature verification.
 	err = node.OnBlock(s, signedBlock, nil)

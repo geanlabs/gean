@@ -197,8 +197,8 @@ func TestExtractLatestAllAttestations(t *testing.T) {
 	}
 }
 
-func TestGossipSignatureInsertAndDelete(t *testing.T) {
-	gsm := make(GossipSignatureMap)
+func TestAttestationSignatureInsertAndDelete(t *testing.T) {
+	gsm := NewAttestationSignatureMap()
 	var dr [32]byte
 	dr[0] = 1
 	data := &types.AttestationData{Slot: 5}
@@ -210,18 +210,20 @@ func TestGossipSignatureInsertAndDelete(t *testing.T) {
 	if gsm.Len() != 1 {
 		t.Fatalf("expected 1 entry, got %d", gsm.Len())
 	}
-	if len(gsm[dr].Signatures) != 2 {
+	snap := gsm.Snapshot()
+	if len(snap[dr].Signatures) != 2 {
 		t.Fatal("expected 2 signatures")
 	}
 
-	gsm.Delete([]GossipDeleteKey{{ValidatorID: 0, DataRoot: dr}})
-	if len(gsm[dr].Signatures) != 1 {
+	gsm.Delete([]AttestationDeleteKey{{ValidatorID: 0, DataRoot: dr}})
+	snap = gsm.Snapshot()
+	if len(snap[dr].Signatures) != 1 {
 		t.Fatal("expected 1 signature after delete")
 	}
 }
 
-func TestGossipSignaturePruneBelow(t *testing.T) {
-	gsm := make(GossipSignatureMap)
+func TestAttestationSignaturePruneBelow(t *testing.T) {
+	gsm := NewAttestationSignatureMap()
 	var sig [types.SignatureSize]byte
 	for i := uint64(0); i < 5; i++ {
 		var dr [32]byte
@@ -289,7 +291,7 @@ func TestValidateAttestationDataTopology(t *testing.T) {
 }
 
 func TestAggregationBitsFromValidatorIndices(t *testing.T) {
-	bits := aggregationBitsFromValidatorIndices([]uint64{0, 3, 7})
+	bits := AggregationBitsFromIndices([]uint64{0, 3, 7})
 	if !types.BitlistGet(bits, 0) || !types.BitlistGet(bits, 3) || !types.BitlistGet(bits, 7) {
 		t.Fatal("expected bits 0, 3, 7 set")
 	}

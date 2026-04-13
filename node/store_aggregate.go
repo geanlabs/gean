@@ -9,145 +9,224 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-// AggregateCommitteeSignatures collects gossip signatures and aggregates them
-// using real XMSS ZK aggregation via xmss.AggregateSignatures.
+// AggregateCommitteeSignatures implements the three-phase Select/Fill/Aggregate
+// algorithm from leanSpec store.py aggregate().
+//
+// For each AttestationData with new payloads or raw gossip signatures:
+//  1. Select — greedily pick existing child proofs (new before known)
+//  2. Fill — collect raw gossip signatures for uncovered validators
+//  3. Aggregate — produce recursive proof with children + raw sigs
+//
+// Spec: lean_spec/subspecs/forkchoice/store.py aggregate
 func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
-	if s.GossipSignatures.Len() == 0 {
+	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
+		return nil
+	}
+
+	headState := s.GetState(s.Head())
+	if headState == nil {
 		return nil
 	}
 
 	var newAggregates []*types.SignedAggregatedAttestation
-	var keysToDelete []GossipDeleteKey
+	var keysToDelete []AttestationDeleteKey
 	var payloadEntries []PayloadKV
 
-	for dataRoot, entry := range s.GossipSignatures {
-		if len(entry.Signatures) == 0 {
+	// Snapshot attestation signatures to avoid holding the mutex during ZK proving.
+	attSigs := s.AttestationSignatures.Snapshot()
+
+	// Collect all data roots that have either gossip sigs or new payloads.
+	dataRoots := make(map[[32]byte]bool)
+	for dr := range attSigs {
+		dataRoots[dr] = true
+	}
+	for dr := range s.NewPayloads.data {
+		dataRoots[dr] = true
+	}
+
+	for dataRoot := range dataRoots {
+		gossipEntry := attSigs[dataRoot]
+		newEntry := s.NewPayloads.data[dataRoot]
+		knownEntry := s.KnownPayloads.data[dataRoot]
+
+		// Need attestation data from any available source.
+		var attData *types.AttestationData
+		if gossipEntry != nil {
+			attData = gossipEntry.Data
+		} else if newEntry != nil {
+			attData = newEntry.Data
+		} else if knownEntry != nil {
+			attData = knownEntry.Data
+		}
+		if attData == nil {
 			continue
 		}
 
-		// Get target state for pubkey lookup.
-		targetState := s.GetState(entry.Data.Target.Root)
+		targetState := s.GetState(attData.Target.Root)
 		if targetState == nil {
-			logger.Warn(logger.Signature, "aggregate: missing target state for %x", entry.Data.Target.Root)
 			continue
 		}
 
-		// Sort signatures by validator ID for deterministic aggregation ordering.
-		// Verification side uses BitlistIndices which returns ascending order,
-		// so aggregation must match.
-		sortedSigs := make([]GossipSignatureEntry, len(entry.Signatures))
-		copy(sortedSigs, entry.Signatures)
-		sort.Slice(sortedSigs, func(i, j int) bool {
-			return sortedSigs[i].ValidatorID < sortedSigs[j].ValidatorID
-		})
+		// Phase 1: Select — greedy pick existing child proofs.
+		var childProofs []xmss.ChildProof
+		covered := make(map[uint64]bool)
 
-		// Collect pubkeys and signatures as opaque C handles.
-		var pubkeys []xmss.CPubKey
-		var sigs []xmss.CSig
-		var ids []uint64
-		var cleanupSigs []xmss.CSig // for fallback-parsed sigs only
+		selectChildProofs(newEntry, targetState, &childProofs, covered, s)
+		selectChildProofs(knownEntry, targetState, &childProofs, covered, s)
 
-		valid := true
-		for _, sigEntry := range sortedSigs {
-			if sigEntry.ValidatorID >= uint64(len(targetState.Validators)) {
-				logger.Error(logger.Signature, "aggregate: validator %d out of range", sigEntry.ValidatorID)
-				valid = false
-				break
-			}
+		// Phase 2: Fill — collect raw gossip signatures for uncovered validators.
+		var rawPubkeys []xmss.CPubKey
+		var rawSigs []xmss.CSig
+		var rawIDs []uint64
 
-			// Use stored C handle if available.
-			// If no handle, parse from SSZ bytes (fallback for P2P proposer attestations).
-			sigHandle := sigEntry.SigHandle
-			if sigHandle == nil {
-				parsed, err := xmss.ParseSignature(sigEntry.Signature[:])
-				if err != nil {
-					logger.Warn(logger.Signature, "aggregate: parse sig fallback for validator %d: %v", sigEntry.ValidatorID, err)
-					valid = false
-					break
+		if gossipEntry != nil && len(gossipEntry.Signatures) > 0 {
+			sortedSigs := make([]AttestationSignatureEntry, len(gossipEntry.Signatures))
+			copy(sortedSigs, gossipEntry.Signatures)
+			sort.Slice(sortedSigs, func(i, j int) bool {
+				return sortedSigs[i].ValidatorID < sortedSigs[j].ValidatorID
+			})
+
+			for _, sigEntry := range sortedSigs {
+				if covered[sigEntry.ValidatorID] {
+					continue
 				}
-				cleanupSigs = append(cleanupSigs, parsed)
-				sigHandle = parsed
-			}
+				if sigEntry.ValidatorID >= uint64(len(targetState.Validators)) {
+					continue
+				}
 
-			// Get cached pubkey handle (parsed once, reused across aggregation cycles).
-			pk, err := s.PubKeyCache.Get(targetState.Validators[sigEntry.ValidatorID].Pubkey)
-			if err != nil {
-				logger.Error(logger.Signature, "aggregate: parse pubkey %d: %v", sigEntry.ValidatorID, err)
-				valid = false
-				break
-			}
+				sigHandle := sigEntry.SigHandle
+				if sigHandle == nil {
+					parsed, err := xmss.ParseSignature(sigEntry.Signature[:])
+					if err != nil {
+						continue
+					}
+					defer xmss.FreeSignature(parsed)
+					sigHandle = parsed
+				}
 
-			pubkeys = append(pubkeys, pk)
-			sigs = append(sigs, sigHandle)
-			ids = append(ids, sigEntry.ValidatorID)
+				pk, err := s.PubKeyCache.Get(targetState.Validators[sigEntry.ValidatorID].AttestationPubkey)
+				if err != nil {
+					continue
+				}
+
+				rawPubkeys = append(rawPubkeys, pk)
+				rawSigs = append(rawSigs, sigHandle)
+				rawIDs = append(rawIDs, sigEntry.ValidatorID)
+			}
 		}
 
-		// Free only fallback-parsed sig handles. Pubkey handles are owned by the cache.
-		defer func() {
-			for _, sig := range cleanupSigs {
-				xmss.FreeSignature(sig)
-			}
-		}()
-
-		if !valid || len(ids) == 0 {
+		// Prover requires at least 2 total inputs.
+		totalInputs := len(rawIDs) + len(childProofs)
+		if totalInputs < 2 {
 			continue
 		}
 
-		// Aggregate via real XMSS ZK proof.
-		slot := uint32(entry.Data.Slot)
+		// Phase 3: Aggregate — produce recursive proof.
+		dataRootHash, _ := attData.HashTreeRoot()
+		slot := uint32(attData.Slot)
+
 		aggStart := time.Now()
-		proofBytes, err := xmss.AggregateSignatures(pubkeys, sigs, dataRoot, slot)
+		proofBytes, err := xmss.AggregateWithChildren(rawPubkeys, rawSigs, childProofs, dataRootHash, slot)
 		aggDuration := time.Since(aggStart)
 		if err != nil {
-			logger.Error(logger.Signature, "aggregate: failed slot=%d sigs=%d validators=%v duration=%v: %v",
-				slot, len(sigs), ids, aggDuration, err)
+			logger.Error(logger.Signature, "aggregate: failed slot=%d raw=%d children=%d duration=%v: %v",
+				slot, len(rawIDs), len(childProofs), aggDuration, err)
 			continue
 		}
-		logger.Info(logger.Signature, "aggregate: slot=%d sigs=%d validators=%v proof=%d bytes duration=%v",
-			slot, len(sigs), ids, len(proofBytes), aggDuration)
 
-		// Metrics — imported from engine package via function references to avoid circular deps.
-		if AggregateMetricsFunc != nil {
-			AggregateMetricsFunc(aggDuration.Seconds(), len(ids))
+		allIDs := make([]uint64, 0, len(rawIDs))
+		allIDs = append(allIDs, rawIDs...)
+		for vid := range covered {
+			allIDs = append(allIDs, vid)
 		}
 
-		participants := aggregationBitsFromValidatorIndices(ids)
+		participants := AggregationBitsFromIndices(allIDs)
 		proof := &types.AggregatedSignatureProof{
 			Participants: participants,
 			ProofData:    proofBytes,
 		}
 
+		logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
+			slot, len(rawIDs), len(childProofs), len(allIDs), len(proofBytes), aggDuration)
+
+		if AggregateMetricsFunc != nil {
+			AggregateMetricsFunc(aggDuration.Seconds(), len(allIDs))
+		}
+
 		newAggregates = append(newAggregates, &types.SignedAggregatedAttestation{
-			Data:  entry.Data,
+			Data:  attData,
 			Proof: proof,
 		})
 
 		payloadEntries = append(payloadEntries, PayloadKV{
 			DataRoot: dataRoot,
-			Data:     entry.Data,
+			Data:     attData,
 			Proof:    proof,
 		})
 
-		for _, id := range ids {
-			keysToDelete = append(keysToDelete, GossipDeleteKey{
-				ValidatorID: id,
-				DataRoot:    dataRoot,
-			})
+		if gossipEntry != nil {
+			for _, sig := range gossipEntry.Signatures {
+				keysToDelete = append(keysToDelete, AttestationDeleteKey{
+					ValidatorID: sig.ValidatorID,
+					DataRoot:    dataRoot,
+				})
+			}
 		}
 	}
 
-	// Insert into known (immediately usable for block building and fork choice).
-
 	s.KnownPayloads.PushBatch(payloadEntries)
-
-	// Delete aggregated signatures from gossip store.
-	s.GossipSignatures.Delete(keysToDelete)
+	s.AttestationSignatures.Delete(keysToDelete)
 
 	return newAggregates
 }
 
-// aggregationBitsFromValidatorIndices builds a bitlist from validator IDs.
-func aggregationBitsFromValidatorIndices(ids []uint64) []byte {
+// selectChildProofs greedily selects existing proofs from a payload entry,
+// adding them as children and tracking covered validators.
+func selectChildProofs(
+	entry *PayloadEntry,
+	state *types.State,
+	children *[]xmss.ChildProof,
+	covered map[uint64]bool,
+	s *ConsensusStore,
+) {
+	if entry == nil || len(entry.Proofs) == 0 {
+		return
+	}
+
+	for _, proof := range entry.Proofs {
+		newCoverage := 0
+		bitsLen := types.BitlistLen(proof.Participants)
+		for vid := uint64(0); vid < bitsLen; vid++ {
+			if types.BitlistGet(proof.Participants, vid) && !covered[vid] {
+				newCoverage++
+			}
+		}
+		if newCoverage == 0 {
+			continue
+		}
+
+		var pubkeys []xmss.CPubKey
+		for vid := uint64(0); vid < bitsLen; vid++ {
+			if types.BitlistGet(proof.Participants, vid) {
+				if vid < uint64(len(state.Validators)) {
+					pk, err := s.PubKeyCache.Get(state.Validators[vid].AttestationPubkey)
+					if err == nil {
+						pubkeys = append(pubkeys, pk)
+					}
+				}
+				covered[vid] = true
+			}
+		}
+
+		*children = append(*children, xmss.ChildProof{
+			Pubkeys:   pubkeys,
+			ProofData: proof.ProofData,
+		})
+	}
+}
+
+// AggregationBitsFromIndices builds a bitlist from validator IDs.
+func AggregationBitsFromIndices(ids []uint64) []byte {
 	if len(ids) == 0 {
 		return types.NewBitlistSSZ(0)
 	}

@@ -23,12 +23,6 @@ type Block struct {
 	Body          *BlockBody     `json:"body"`
 }
 
-// BlockWithAttestation pairs a block with the proposer's own attestation.
-type BlockWithAttestation struct {
-	Block               *Block       `json:"block"`
-	ProposerAttestation *Attestation `json:"proposer_attestation"`
-}
-
 // AggregatedSignatureProof is a zkVM proof that a set of validators signed.
 type AggregatedSignatureProof struct {
 	Participants []byte `json:"participants" ssz:"bitlist" ssz-max:"4096"`
@@ -36,13 +30,17 @@ type AggregatedSignatureProof struct {
 }
 
 // BlockSignatures carries the XMSS signatures for a block.
+// ProposerSignature signs hash_tree_root(block) with the proposer's proposal key.
 type BlockSignatures struct {
 	AttestationSignatures []*AggregatedSignatureProof `json:"attestation_signatures" ssz-max:"4096"`
-	ProposerSignature     [SignatureSize]byte         `json:"proposer_signature" ssz-size:"3112"`
+	ProposerSignature     [SignatureSize]byte         `json:"proposer_signature" ssz-size:"2536"`
 }
 
-// SignedBlockWithAttestation is the complete signed block as gossiped on the network.
-type SignedBlockWithAttestation struct {
-	Block     *BlockWithAttestation `json:"block"`
-	Signature *BlockSignatures      `json:"signature"`
+// SignedBlock is the complete signed block as gossiped on the network.
+// Devnet-4: proposer signs hash_tree_root(block) with proposal key.
+// BlockWithAttestation removed per leanSpec PR #449.
+// Spec: lean_spec/subspecs/containers/block/block.py
+type SignedBlock struct {
+	Block     *Block           `json:"block"`
+	Signature *BlockSignatures `json:"signature"`
 }

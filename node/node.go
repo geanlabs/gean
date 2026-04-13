@@ -33,7 +33,7 @@ type Engine struct {
 	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
 
 	// Channels for receiving messages from P2P goroutine.
-	BlockCh       chan *types.SignedBlockWithAttestation
+	BlockCh       chan *types.SignedBlock
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
 	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
@@ -59,7 +59,7 @@ func New(
 		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
 		PendingBlockParents: make(map[[32]byte][32]byte),
 		PendingBlockDepths:  make(map[[32]byte]int),
-		BlockCh:             make(chan *types.SignedBlockWithAttestation, 64),
+		BlockCh:             make(chan *types.SignedBlock, 64),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
 		FailedRootCh:        make(chan [32]byte, 64),
@@ -98,6 +98,17 @@ func (e *Engine) Run(ctx context.Context) {
 
 	logger.Info(logger.Node, "started")
 
+	// Process gossip attestations concurrently — each gets its own goroutine
+	// for XMSS verification (~500ms each). This matches zeam's inline model
+	// where attestations are verified as they arrive, not queued.
+	// AttestationSignatureMap is mutex-protected for safe concurrent writes.
+	go func() {
+		for att := range e.AttestationCh {
+			att := att
+			go e.onGossipAttestation(att)
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -110,9 +121,6 @@ func (e *Engine) Run(ctx context.Context) {
 		case block := <-e.BlockCh:
 			e.onBlock(block)
 
-		case att := <-e.AttestationCh:
-			e.onGossipAttestation(att)
-
 		case agg := <-e.AggregationCh:
 			e.onGossipAggregatedAttestation(agg)
 
@@ -124,7 +132,7 @@ func (e *Engine) Run(ctx context.Context) {
 
 // --- MessageHandler interface for P2P ---
 
-func (e *Engine) OnBlock(block *types.SignedBlockWithAttestation) {
+func (e *Engine) OnBlock(block *types.SignedBlock) {
 	select {
 	case e.BlockCh <- block:
 	default:
