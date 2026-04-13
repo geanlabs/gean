@@ -51,11 +51,6 @@ LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 COPY --from=builder /app/bin/gean /usr/local/bin/
 COPY --from=builder /app/bin/keygen /usr/local/bin/
 
-# Copy only the .py source files needed at runtime by rec_aggregation's
-# source fingerprint verification (reads .py files from CARGO_MANIFEST_DIR).
-# Full checkout would add hundreds of MB; these 8 files are a few KB.
-COPY --from=builder /root/.cargo/git/checkouts/leanmultisig-f4c4eb5eca99429a/fd88140/crates/rec_aggregation/*.py \
-     /root/.cargo/git/checkouts/leanmultisig-f4c4eb5eca99429a/fd88140/crates/rec_aggregation/
 
 # 9000/udp - P2P QUIC
 # 5052 - API
