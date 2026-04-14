@@ -120,7 +120,7 @@ docker-build: ## Build Docker image
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		-t gean:$(VERSION) \
-		-t ghcr.io/geanlabs/gean:devnet3 .
+		-t ghcr.io/geanlabs/gean:devnet4 .
 
 # --- Multi-client devnet ---
 

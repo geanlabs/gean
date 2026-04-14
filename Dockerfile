@@ -18,7 +18,10 @@ WORKDIR /app
 COPY xmss/rust/ xmss/rust/
 
 # Build Rust FFI libraries
-RUN cd xmss/rust && cargo build --release --locked
+# -Ctarget-cpu=haswell enables AVX2 SIMD in leanMultisig's backend crate
+# for ~6x prover speedup. Haswell (2013+) is the portable baseline matching
+# the Makefile and equivalent to zeam's x86-64-v3.
+RUN cd xmss/rust && CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked
 
 # Copy Go module files for dependency caching
 COPY go.mod go.sum ./
