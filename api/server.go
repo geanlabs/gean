@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/pprof"
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/node"
@@ -31,9 +32,17 @@ func StartAPIServer(address string, s *node.ConsensusStore) error {
 }
 
 // StartMetricsServer starts the metrics server on the given address.
+// Also exposes Go runtime pprof endpoints under /debug/pprof/ on the same
+// port for heap, goroutine, CPU, block, and mutex profiling.
 func StartMetricsServer(address string) error {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promhttp.Handler())
+
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
