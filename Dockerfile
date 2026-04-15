@@ -18,10 +18,25 @@ WORKDIR /app
 COPY xmss/rust/ xmss/rust/
 
 # Build Rust FFI libraries
-# -Ctarget-cpu=haswell enables AVX2 SIMD in leanMultisig's backend crate
-# for ~6x prover speedup. Haswell (2013+) is the portable baseline matching
-# the Makefile and equivalent to zeam's x86-64-v3.
-RUN cd xmss/rust && CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked
+# On amd64: -Ctarget-cpu=haswell enables AVX2 SIMD in leanMultisig's backend
+# for ~6x prover speedup. Haswell (2013+) is the portable x86 baseline.
+# On arm64: build without x86 flags; native NEON is used automatically.
+ARG TARGETARCH
+RUN cd xmss/rust && \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+      CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked; \
+    else \
+      cargo build --release --locked; \
+    fi
+
+# Stage leanMultisig Python sources at the exact checkout path the binary expects.
+# The lean_compiler resolves .py files via CARGO_MANIFEST_DIR baked at compile time;
+# on arm64 the pre-committed bytecode cache misses and triggers a recompile from source.
+RUN CHECKOUT_DIR=$(ls -d /root/.cargo/git/checkouts/leanmultisig-*/*/crates/rec_aggregation | head -1 | sed 's|/crates/rec_aggregation||') && \
+    mkdir -p /leanmultisig-staged && \
+    echo "$CHECKOUT_DIR" > /leanmultisig-staged/.checkout_root && \
+    cp -r "$CHECKOUT_DIR/crates/rec_aggregation" /leanmultisig-staged/rec_aggregation && \
+    cp -r "$CHECKOUT_DIR/crates/lean_compiler" /leanmultisig-staged/lean_compiler
 
 # Copy Go module files for dependency caching
 COPY go.mod go.sum ./
@@ -53,6 +68,17 @@ LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 # Copy binaries
 COPY --from=builder /app/bin/gean /usr/local/bin/
 COPY --from=builder /app/bin/keygen /usr/local/bin/
+
+# leanMultisig's lean_compiler reads .py files at runtime when the embedded
+# cached_bytecode.bin fingerprint doesn't match the build target (arm64 builds
+# hit this because the repo's cache is x86-only). Restore the Python sources
+# at the exact CARGO_MANIFEST_DIR path baked into the binary at compile time.
+COPY --from=builder /leanmultisig-staged/ /tmp/leanmultisig-staged/
+RUN CHECKOUT_ROOT=$(cat /tmp/leanmultisig-staged/.checkout_root) && \
+    mkdir -p "$CHECKOUT_ROOT/crates" && \
+    cp -r /tmp/leanmultisig-staged/rec_aggregation "$CHECKOUT_ROOT/crates/" && \
+    cp -r /tmp/leanmultisig-staged/lean_compiler "$CHECKOUT_ROOT/crates/" && \
+    rm -rf /tmp/leanmultisig-staged
 
 
 # 9000/udp - P2P QUIC
