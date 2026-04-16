@@ -95,6 +95,7 @@ type fcStep struct {
 	Attestation *fcGossipAttestation `json:"attestation,omitempty"`
 	Checks      *fcChecks            `json:"checks,omitempty"`
 	Time        *uint64              `json:"time,omitempty"`
+	Interval    *uint64              `json:"interval,omitempty"`
 }
 
 // fcGossipAttestation represents an individual gossip attestation step.
@@ -625,10 +626,13 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 		case "tick":
-			if step.Time == nil {
-				t.Fatalf("step %d: tick step without time", i)
+			if step.Time != nil {
+				s.SetTime(*step.Time)
+			} else if step.Interval != nil {
+				s.SetTime(*step.Interval)
+			} else {
+				t.Fatalf("step %d: tick step without time or interval", i)
 			}
-			s.SetTime(*step.Time)
 
 		default:
 			t.Fatalf("step %d: unknown step type %q", i, step.StepType)

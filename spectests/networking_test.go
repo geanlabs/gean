@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/geanlabs/gean/p2p"
 )
 
@@ -103,6 +105,8 @@ func runNetCodecFixture(t *testing.T, fx netFixture) string {
 		return testGossipMessageID(t, fx)
 	case "enr":
 		return testENR(t, fx)
+	case "discv5_message":
+		return testDiscv5Message(t, fx)
 	default:
 		t.Skipf("codec %q not yet wired into gean test harness", fx.CodecName)
 		return "skip"
@@ -250,6 +254,77 @@ func testENR(t *testing.T, fx netFixture) string {
 
 	if wantMultiaddr != "" && fields.Multiaddr != wantMultiaddr {
 		t.Errorf("multiaddr: got %q, want %q", fields.Multiaddr, wantMultiaddr)
+		return "fail"
+	}
+	return "pass"
+}
+
+// --- discv5_message ---
+
+var discv5TypeByte = map[string]byte{
+	"ping":     0x01,
+	"pong":     0x02,
+	"findnode": 0x03,
+	"nodes":    0x04,
+	"talkreq":  0x05,
+	"talkresp": 0x06,
+}
+
+func testDiscv5Message(t *testing.T, fx netFixture) string {
+	msgType, _ := fx.Input["type"].(string)
+	wantHex, _ := fx.Output["encoded"].(string)
+	want, err := decodeHex(wantHex)
+	if err != nil {
+		t.Errorf("decode expected hex: %v", err)
+		return "fail"
+	}
+
+	typeByte, ok := discv5TypeByte[msgType]
+	if !ok {
+		t.Skipf("unknown discv5 message type %q", msgType)
+		return "skip"
+	}
+
+	var fields []interface{}
+	reqIDHex, _ := fx.Input["requestId"].(string)
+	reqID, _ := decodeHex(reqIDHex)
+	// Strip leading zeros per discv5 minimal encoding.
+	for len(reqID) > 1 && reqID[0] == 0 {
+		reqID = reqID[1:]
+	}
+	fields = append(fields, reqID)
+
+	switch msgType {
+	case "ping":
+		enrSeq := uint64(fx.Input["enrSeq"].(float64))
+		fields = append(fields, enrSeq)
+	case "pong":
+		enrSeq := uint64(fx.Input["enrSeq"].(float64))
+		ipHex, _ := fx.Input["recipientIp"].(string)
+		ip, _ := decodeHex(ipHex)
+		port := uint16(fx.Input["recipientPort"].(float64))
+		fields = append(fields, enrSeq, ip, port)
+	case "findnode":
+		dists, _ := fx.Input["distances"].([]interface{})
+		var ds []uint64
+		for _, d := range dists {
+			ds = append(ds, uint64(d.(float64)))
+		}
+		fields = append(fields, ds)
+	default:
+		t.Skipf("discv5 message type %q encoding not yet implemented", msgType)
+		return "skip"
+	}
+
+	encoded, err := rlp.EncodeToBytes(fields)
+	if err != nil {
+		t.Errorf("rlp encode: %v", err)
+		return "fail"
+	}
+
+	got := append([]byte{typeByte}, encoded...)
+	if fmt.Sprintf("%x", got) != fmt.Sprintf("%x", want) {
+		t.Errorf("type=%s: got %x, want %x", msgType, got, want)
 		return "fail"
 	}
 	return "pass"
