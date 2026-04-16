@@ -142,10 +142,12 @@ func onBlockCore(
 	if block.Body != nil {
 		attCount = len(block.Body.Attestations)
 	}
+	elapsed := time.Since(start)
 	logger.Info(logger.Chain, "block slot=%d block_root=0x%x parent_root=0x%x proposer=%d attestations=%d justified_slot=%d finalized_slot=%d proc_time=%s",
 		slot, blockRoot, block.ParentRoot, block.ProposerIndex, attCount,
 		s.LatestJustified().Slot, s.LatestFinalized().Slot,
-		time.Since(start).Round(time.Millisecond))
+		elapsed.Round(time.Millisecond))
+	ObserveBlockProcessingTime(elapsed.Seconds())
 
 	return nil
 }

@@ -23,6 +23,9 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 		return nil
 	}
 
+	passStart := time.Now()
+	defer func() { ObserveCommitteeAggregationTime(time.Since(passStart).Seconds()) }()
+
 	headState := s.GetState(s.Head())
 	if headState == nil {
 		return nil
