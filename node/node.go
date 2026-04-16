@@ -94,7 +94,11 @@ func (e *Engine) Run(ctx context.Context) {
 	SetIsAggregator(e.IsAggregator)
 	SetAttestationCommitteeCount(e.CommitteeCount)
 	if e.Keys != nil {
-		SetValidatorsCount(len(e.Keys.ValidatorIDs()))
+		vids := e.Keys.ValidatorIDs()
+		SetValidatorsCount(len(vids))
+		if len(vids) > 0 && e.CommitteeCount > 0 {
+			SetAttestationCommitteeSubnet(vids[0] % e.CommitteeCount)
+		}
 	}
 
 	ticker := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
