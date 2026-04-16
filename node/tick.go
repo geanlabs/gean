@@ -17,6 +17,7 @@ func (e *Engine) onTick() {
 	currentInterval := e.currentInterval(timestampMs)
 
 	SetCurrentSlot(currentSlot)
+	e.updateSyncStatus(currentSlot)
 
 	// Check if we're the proposer for this slot.
 	hasProposal := false
@@ -264,4 +265,28 @@ func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// SyncLagSlots is the threshold beyond which the node is considered "syncing"
+// rather than "synced". Two slots is generous enough to ride out brief network
+// hiccups without flapping.
+const SyncLagSlots = 2
+
+// updateSyncStatus sets the lean_node_sync_status gauge based on the current
+// head's distance from wall-clock slot.
+//   - synced:  head within SyncLagSlots of wall clock
+//   - syncing: head behind by more than SyncLagSlots, but we have peers
+//   - idle:    no peers connected (so we cannot make progress)
+func (e *Engine) updateSyncStatus(currentSlot uint64) {
+	if e.P2P != nil && e.P2P.ConnectedPeers() == 0 {
+		SetSyncStatus("idle")
+		return
+	}
+
+	headSlot := e.Store.HeadSlot()
+	if headSlot+SyncLagSlots >= currentSlot {
+		SetSyncStatus("synced")
+		return
+	}
+	SetSyncStatus("syncing")
 }

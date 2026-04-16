@@ -80,6 +80,14 @@ func (e *Engine) Run(ctx context.Context) {
 		IncPqSigAttestationsInAggregated(numAttestations)
 	}
 
+	// Wire gossip-size hooks into the p2p layer.
+	p2p.GossipBlockSizeHook = ObserveGossipBlockSize
+	p2p.GossipAttestationSizeHook = ObserveGossipAttestationSize
+	p2p.GossipAggregationSizeHook = ObserveGossipAggregationSize
+
+	// Initial sync status is "idle" until peers connect.
+	SetSyncStatus("idle")
+
 	// Initialize static metrics.
 	SetNodeInfo("gean", "dev")
 	SetNodeStartTime(float64(time.Now().Unix()))

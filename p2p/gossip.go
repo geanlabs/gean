@@ -19,6 +19,13 @@ type MessageHandler interface {
 	OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation)
 }
 
+// Gossip-size metric hooks set by node package at startup. Nil-safe.
+var (
+	GossipBlockSizeHook       func(bytes int)
+	GossipAttestationSizeHook func(bytes int)
+	GossipAggregationSizeHook func(bytes int)
+)
+
 // StartGossipListeners starts goroutines that read from each subscribed topic
 // and dispatch decoded messages to the handler.
 func (h *Host) StartGossipListeners(handler MessageHandler) {
@@ -60,6 +67,9 @@ func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscr
 func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler) error {
 	switch {
 	case topic == BlockTopic():
+		if GossipBlockSizeHook != nil {
+			GossipBlockSizeHook(len(data))
+		}
 		block := &types.SignedBlock{}
 		if err := block.UnmarshalSSZ(data); err != nil {
 			return fmt.Errorf("unmarshal block (%d bytes): %w", len(data), err)
@@ -71,6 +81,9 @@ func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler
 		handler.OnBlock(block)
 
 	case strings.Contains(topic, AttestationTopicKind+"_"):
+		if GossipAttestationSizeHook != nil {
+			GossipAttestationSizeHook(len(data))
+		}
 		att := &types.SignedAttestation{}
 		if err := att.UnmarshalSSZ(data); err != nil {
 			return fmt.Errorf("unmarshal attestation (%d bytes): %w", len(data), err)
@@ -78,6 +91,9 @@ func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler
 		handler.OnGossipAttestation(att)
 
 	case topic == AggregationTopic():
+		if GossipAggregationSizeHook != nil {
+			GossipAggregationSizeHook(len(data))
+		}
 		agg := &types.SignedAggregatedAttestation{}
 		if err := agg.UnmarshalSSZ(data); err != nil {
 			return fmt.Errorf("unmarshal aggregation (%d bytes): %w", len(data), err)

@@ -173,7 +173,54 @@ var (
 		Help:    "Time to process attestations",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
 	})
+	metricBlockBuildingTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_block_building_time_seconds",
+		Help:    "Time to build a block",
+		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1},
+	})
+	metricBlockBuildingPayloadAggregationTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_block_building_payload_aggregation_time_seconds",
+		Help:    "Time to build aggregated_payloads during block building",
+		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 2, 3, 4},
+	})
+	metricBlockAggregatedPayloads = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_block_aggregated_payloads",
+		Help:    "Number of aggregated_payloads in a block",
+		Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128},
+	})
+	metricGossipBlockSize = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_gossip_block_size_bytes",
+		Help:    "Bytes size of a gossip block message",
+		Buckets: []float64{10000, 50000, 100000, 250000, 500000, 1000000, 2000000, 5000000},
+	})
+	metricGossipAttestationSize = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_gossip_attestation_size_bytes",
+		Help:    "Bytes size of a gossip attestation message",
+		Buckets: []float64{512, 1024, 2048, 4096, 8192, 16384},
+	})
+	metricGossipAggregationSize = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_gossip_aggregation_size_bytes",
+		Help:    "Bytes size of a gossip aggregated attestation message",
+		Buckets: []float64{1024, 4096, 16384, 65536, 131072, 262144, 524288, 1048576},
+	})
 )
+
+// --- Counters for block production ---
+
+var (
+	metricBlockBuildingSuccess = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_block_building_success_total", Help: "Successful block builds",
+	})
+	metricBlockBuildingFailures = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_block_building_failures_total", Help: "Failed block builds",
+	})
+)
+
+// --- Sync status gauge ---
+
+var metricNodeSyncStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "lean_node_sync_status", Help: "Node sync status (one of idle/syncing/synced is set to 1)",
+}, []string{"status"})
 
 // --- Public update functions ---
 
@@ -243,3 +290,29 @@ func ObserveSTFTime(seconds float64)             { metricSTFTime.Observe(seconds
 func ObserveSTFSlotsTime(seconds float64)        { metricSTFSlotsTime.Observe(seconds) }
 func ObserveSTFBlockTime(seconds float64)        { metricSTFBlockTime.Observe(seconds) }
 func ObserveSTFAttestationsTime(seconds float64) { metricSTFAttestationsTime.Observe(seconds) }
+
+// Block production observers/counters.
+func ObserveBlockBuildingTime(seconds float64) { metricBlockBuildingTime.Observe(seconds) }
+func ObserveBlockBuildingPayloadAggregationTime(seconds float64) {
+	metricBlockBuildingPayloadAggregationTime.Observe(seconds)
+}
+func ObserveBlockAggregatedPayloads(n int) { metricBlockAggregatedPayloads.Observe(float64(n)) }
+func IncBlockBuildingSuccess()             { metricBlockBuildingSuccess.Inc() }
+func IncBlockBuildingFailures()            { metricBlockBuildingFailures.Inc() }
+
+// Network gossip size observers.
+func ObserveGossipBlockSize(bytes int)       { metricGossipBlockSize.Observe(float64(bytes)) }
+func ObserveGossipAttestationSize(bytes int) { metricGossipAttestationSize.Observe(float64(bytes)) }
+func ObserveGossipAggregationSize(bytes int) { metricGossipAggregationSize.Observe(float64(bytes)) }
+
+// SetSyncStatus sets the active sync status to 1 and the others to 0.
+// Valid values: "idle", "syncing", "synced".
+func SetSyncStatus(status string) {
+	for _, s := range []string{"idle", "syncing", "synced"} {
+		if s == status {
+			metricNodeSyncStatus.WithLabelValues(s).Set(1)
+		} else {
+			metricNodeSyncStatus.WithLabelValues(s).Set(0)
+		}
+	}
+}

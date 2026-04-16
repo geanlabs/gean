@@ -19,15 +19,19 @@ func ProduceBlockWithSignatures(
 	s *ConsensusStore,
 	slot, validatorIndex uint64,
 ) (*types.Block, []*types.AggregatedSignatureProof, error) {
+	buildStart := time.Now()
+
 	headRoot := s.Head()
 	headState := s.GetState(headRoot)
 	if headState == nil {
+		IncBlockBuildingFailures()
 		return nil, nil, &StoreError{ErrMissingParentState,
 			fmt.Sprintf("head state missing for slot %d", slot)}
 	}
 
 	numValidators := headState.NumValidators()
 	if !types.IsProposer(slot, validatorIndex, numValidators) {
+		IncBlockBuildingFailures()
 		return nil, nil, errNotProposer(validatorIndex, slot)
 	}
 
@@ -41,7 +45,18 @@ func ProduceBlockWithSignatures(
 	knownEntries := s.KnownPayloads.Entries()
 	knownBlockRoots := s.getBlockRoots()
 
-	return buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries, storeJustified, s.PubKeyCache)
+	block, sigs, err := buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries, storeJustified, s.PubKeyCache)
+
+	ObserveBlockBuildingTime(time.Since(buildStart).Seconds())
+	if err != nil {
+		IncBlockBuildingFailures()
+		return nil, nil, err
+	}
+	IncBlockBuildingSuccess()
+	if block != nil && block.Body != nil {
+		ObserveBlockAggregatedPayloads(len(block.Body.Attestations))
+	}
+	return block, sigs, nil
 }
 
 // buildBlock builds a valid block using per-AttestationData fixed-point selection
@@ -68,6 +83,8 @@ func buildBlock(
 	var signatures []*types.AggregatedSignatureProof
 
 	if len(payloads) > 0 {
+		aggStart := time.Now()
+		defer func() { ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds()) }()
 		// Use store justified (stable, converges via tiebreak).
 		// Both attestation source and builder use store justified,
 		// which converges across nodes via deterministic root tiebreak.
