@@ -51,6 +51,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--attestation-committee-count must be >= 1")
 		os.Exit(1)
 	}
+	if !*isAggregator && *aggregateSubnetIDsStr != "" {
+		fmt.Fprintln(os.Stderr, "--aggregate-subnet-ids requires --is-aggregator")
+		os.Exit(1)
+	}
 
 	logger.Info(logger.Node, "gean consensus client starting")
 
