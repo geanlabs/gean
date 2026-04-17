@@ -155,26 +155,27 @@ func testGossipTopic(t *testing.T, fx netFixture) string {
 	subnetID, hasSubnet := fx.Input["subnetId"].(float64)
 	wantTopic, _ := fx.Output["topicString"].(string)
 
-	// Gean currently uses a fixed network name (devnet0) where the spec uses
-	// forkDigest hex. This is expected to fail all gossip_topic tests until
-	// clients agree on the topic-path format.
-	var got string
+	// The fixture parameterizes on forkDigest; exercise gean's builder with the
+	// fixture value rather than the runtime constant so every digest in the
+	// suite is covered (leanSpec PR #622: bare hex, no 0x prefix).
+	var topicName string
 	switch kind {
 	case "block":
-		got = p2p.BlockTopic()
+		topicName = p2p.BlockTopicKind
 	case "aggregation":
-		got = p2p.AggregationTopic()
+		topicName = p2p.AggregationTopicKind
 	case "attestation":
 		if !hasSubnet {
 			t.Errorf("attestation topic missing subnetId")
 			return "fail"
 		}
-		got = p2p.AttestationSubnetTopic(uint64(subnetID))
+		topicName = fmt.Sprintf("%s_%d", p2p.AttestationTopicKind, uint64(subnetID))
 	default:
 		t.Skipf("unknown topic kind %q", kind)
 		return "skip"
 	}
 
+	got := p2p.BuildGossipTopic(forkDigest, topicName)
 	if got != wantTopic {
 		t.Errorf("kind=%s forkDigest=%s: got %q, want %q", kind, forkDigest, got, wantTopic)
 		return "fail"

@@ -74,16 +74,16 @@ func TestResponseEncoding(t *testing.T) {
 // --- Topic tests ---
 
 func TestTopicStrings(t *testing.T) {
-	if BlockTopic() != "/leanconsensus/devnet0/block/ssz_snappy" {
+	if BlockTopic() != "/leanconsensus/12345678/block/ssz_snappy" {
 		t.Fatalf("block topic: %s", BlockTopic())
 	}
-	if AggregationTopic() != "/leanconsensus/devnet0/aggregation/ssz_snappy" {
+	if AggregationTopic() != "/leanconsensus/12345678/aggregation/ssz_snappy" {
 		t.Fatalf("aggregation topic: %s", AggregationTopic())
 	}
-	if AttestationSubnetTopic(0) != "/leanconsensus/devnet0/attestation_0/ssz_snappy" {
+	if AttestationSubnetTopic(0) != "/leanconsensus/12345678/attestation_0/ssz_snappy" {
 		t.Fatalf("attestation subnet 0: %s", AttestationSubnetTopic(0))
 	}
-	if AttestationSubnetTopic(3) != "/leanconsensus/devnet0/attestation_3/ssz_snappy" {
+	if AttestationSubnetTopic(3) != "/leanconsensus/12345678/attestation_3/ssz_snappy" {
 		t.Fatalf("attestation subnet 3: %s", AttestationSubnetTopic(3))
 	}
 }
