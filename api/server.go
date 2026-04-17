@@ -18,10 +18,10 @@ import (
 func StartAPIServer(address string, s *node.ConsensusStore, fc *forkchoice.ForkChoice) error {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /lean/v0/health", handleHealth)
-	mux.HandleFunc("GET /lean/v0/states/finalized", handleFinalizedState(s))
-	mux.HandleFunc("GET /lean/v0/checkpoints/justified", handleJustifiedCheckpoint(s))
-	mux.HandleFunc("GET /lean/v0/fork_choice", handleForkChoice(s, fc))
+	mux.HandleFunc("GET /lean/v0/health", HealthHandler)
+	mux.HandleFunc("GET /lean/v0/states/finalized", FinalizedStateHandler(s))
+	mux.HandleFunc("GET /lean/v0/checkpoints/justified", JustifiedCheckpointHandler(s))
+	mux.HandleFunc("GET /lean/v0/fork_choice", ForkChoiceHandler(s, fc))
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -55,14 +55,14 @@ func StartMetricsServer(address string) error {
 }
 
 // handleHealth returns a simple health check.
-func handleHealth(w http.ResponseWriter, r *http.Request) {
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"healthy","service":"lean-rpc-api"}`))
 }
 
 // handleFinalizedState returns the finalized state as SSZ bytes.
 // Zeros state_root in latest_block_header for canonical post-state form.
-func handleFinalizedState(s *node.ConsensusStore) http.HandlerFunc {
+func FinalizedStateHandler(s *node.ConsensusStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		finalized := s.LatestFinalized()
 		state := s.GetState(finalized.Root)
@@ -87,7 +87,7 @@ func handleFinalizedState(s *node.ConsensusStore) http.HandlerFunc {
 }
 
 // handleJustifiedCheckpoint returns the justified checkpoint as JSON.
-func handleJustifiedCheckpoint(s *node.ConsensusStore) http.HandlerFunc {
+func JustifiedCheckpointHandler(s *node.ConsensusStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cp := s.LatestJustified()
 		w.Header().Set("Content-Type", "application/json")
@@ -100,7 +100,7 @@ func handleJustifiedCheckpoint(s *node.ConsensusStore) http.HandlerFunc {
 
 // handleForkChoice returns fork choice info as JSON, matching leanSpec's
 // api_endpoint fixture schema: {nodes[], head, justified, finalized, safe_target, validator_count}.
-func handleForkChoice(s *node.ConsensusStore, fc *forkchoice.ForkChoice) http.HandlerFunc {
+func ForkChoiceHandler(s *node.ConsensusStore, fc *forkchoice.ForkChoice) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		head := s.Head()
 		justified := s.LatestJustified()
