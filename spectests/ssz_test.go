@@ -184,4 +184,3 @@ func runSSZFixture(t *testing.T, fx sszFixture) {
 		t.Errorf("hash_tree_root mismatch:\n got:  %s\n want: %s", gotRoot, wantRoot)
 	}
 }
-

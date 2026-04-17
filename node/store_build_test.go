@@ -17,8 +17,8 @@ func mockProof(ids []uint64) *types.AggregatedSignatureProof {
 func TestSelectGreedyProofs_SingleProof(t *testing.T) {
 	entry := &PayloadEntry{
 		Data: &types.AttestationData{
-			Slot: 10,
-			Head: &types.Checkpoint{Slot: 10},
+			Slot:   10,
+			Head:   &types.Checkpoint{Slot: 10},
 			Target: &types.Checkpoint{Slot: 8},
 			Source: &types.Checkpoint{Slot: 4},
 		},
@@ -55,14 +55,14 @@ func TestSelectGreedyProofs_GreedyOrder(t *testing.T) {
 	// Greedy should pick B first (more coverage), then A adds {0, 1}.
 	entry := &PayloadEntry{
 		Data: &types.AttestationData{
-			Slot: 10,
-			Head: &types.Checkpoint{Slot: 10},
+			Slot:   10,
+			Head:   &types.Checkpoint{Slot: 10},
 			Target: &types.Checkpoint{Slot: 8},
 			Source: &types.Checkpoint{Slot: 4},
 		},
 		Proofs: []*types.AggregatedSignatureProof{
-			mockProof([]uint64{0, 1, 2}),       // Proof A: 3 validators
-			mockProof([]uint64{2, 3, 4, 5}),     // Proof B: 4 validators
+			mockProof([]uint64{0, 1, 2}),    // Proof A: 3 validators
+			mockProof([]uint64{2, 3, 4, 5}), // Proof B: 4 validators
 		},
 	}
 
@@ -86,8 +86,8 @@ func TestSelectGreedyProofs_NoOverlap(t *testing.T) {
 	// Both should be selected by greedy, then merged.
 	entry := &PayloadEntry{
 		Data: &types.AttestationData{
-			Slot: 10,
-			Head: &types.Checkpoint{Slot: 10},
+			Slot:   10,
+			Head:   &types.Checkpoint{Slot: 10},
 			Target: &types.Checkpoint{Slot: 8},
 			Source: &types.Checkpoint{Slot: 4},
 		},
@@ -111,8 +111,8 @@ func TestSelectGreedyProofs_NoOverlap(t *testing.T) {
 func TestSelectGreedyProofs_EmptyProofs(t *testing.T) {
 	entry := &PayloadEntry{
 		Data: &types.AttestationData{
-			Slot: 10,
-			Head: &types.Checkpoint{Slot: 10},
+			Slot:   10,
+			Head:   &types.Checkpoint{Slot: 10},
 			Target: &types.Checkpoint{Slot: 8},
 			Source: &types.Checkpoint{Slot: 4},
 		},
@@ -136,8 +136,8 @@ func TestSelectGreedyProofs_SubsetProofSkipped(t *testing.T) {
 	// Single proof selected → used directly.
 	entry := &PayloadEntry{
 		Data: &types.AttestationData{
-			Slot: 10,
-			Head: &types.Checkpoint{Slot: 10},
+			Slot:   10,
+			Head:   &types.Checkpoint{Slot: 10},
 			Target: &types.Checkpoint{Slot: 8},
 			Source: &types.Checkpoint{Slot: 4},
 		},

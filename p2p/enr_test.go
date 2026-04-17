@@ -29,10 +29,10 @@ func TestBuildTransportMultiaddr(t *testing.T) {
 	ip6 := net.ParseIP("2001:db8::1")
 
 	tests := []struct {
-		name                                       string
-		ip4, ip6                                   net.IP
-		udpPort, quicPort, udp6Port, quic6Port     uint16
-		want                                       string
+		name                                   string
+		ip4, ip6                               net.IP
+		udpPort, quicPort, udp6Port, quic6Port uint16
+		want                                   string
 	}{
 		{"ip4 quic only", ip4, nil, 0, 9001, 0, 0, "/ip4/10.0.0.1/udp/9001/quic-v1"},
 		{"ip4 udp fallback", ip4, nil, 9001, 0, 0, 0, "/ip4/10.0.0.1/udp/9001/quic-v1"},
