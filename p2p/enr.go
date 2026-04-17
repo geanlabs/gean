@@ -55,8 +55,9 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 		return nil, fmt.Errorf("decode ENR seq: %w", err)
 	}
 
-	var ip net.IP
+	var ip4, ip6 net.IP
 	var udpPort, quicPort uint16
+	var udp6Port, quic6Port uint16
 	var pubkeyBytes []byte
 
 	for i := 2; i+1 < len(items); i += 2 {
@@ -68,17 +69,32 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 		case "ip":
 			var ipBytes []byte
 			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 4 {
-				ip = net.IP(ipBytes)
+				ip4 = net.IP(ipBytes)
+			}
+		case "ip6":
+			var ipBytes []byte
+			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 16 {
+				ip6 = net.IP(ipBytes)
 			}
 		case "udp":
 			var port uint16
 			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
 				udpPort = port
 			}
+		case "udp6":
+			var port uint16
+			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
+				udp6Port = port
+			}
 		case "quic":
 			var port uint16
 			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
 				quicPort = port
+			}
+		case "quic6":
+			var port uint16
+			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
+				quic6Port = port
 			}
 		case "secp256k1":
 			var raw []byte
@@ -106,25 +122,16 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 	}
 
 	// Build transport-only multiaddr when possible. No /p2p/<peerID> suffix.
-	var maStr string
-	if ip != nil {
-		port := quicPort
-		if port == 0 {
-			port = udpPort
-		}
-		if port != 0 {
-			maStr = fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", ip, port)
-		}
-	}
+	// Prefer IPv4 when both are present (standard devp2p convention); fall back to IPv6.
+	maStr := buildTransportMultiaddr(ip4, ip6, udpPort, quicPort, udp6Port, quic6Port)
 
 	return &ENRFields{Seq: seq, PeerID: peerID, Multiaddr: maStr}, nil
 }
 
-// ParseENR decodes an ENR string and returns a multiaddr.
+// ParseENR decodes an ENR string and returns a dial-ready multiaddr.
 // ENR format: "enr:<base64url-encoded RLP>"
-// Extracts ip, udp/quic port, and secp256k1 pubkey to build:
-//
-//	/ip4/{ip}/udp/{port}/quic-v1/p2p/{peer_id}
+// Prefers IPv4 when both ip and ip6 are present; falls back to IPv6.
+// Emits /ip4/<addr>/udp/<port>/quic-v1/p2p/<peer_id> or /ip6/... depending on the address family.
 func ParseENR(enrStr string) (multiaddr.Multiaddr, error) {
 	enrStr = strings.TrimSpace(enrStr)
 	if !strings.HasPrefix(enrStr, "enr:") {
@@ -148,8 +155,9 @@ func ParseENR(enrStr string) (multiaddr.Multiaddr, error) {
 	}
 
 	// Parse key-value pairs (skip signature at index 0, seq at index 1).
-	var ip net.IP
+	var ip4, ip6 net.IP
 	var udpPort, quicPort uint16
+	var udp6Port, quic6Port uint16
 	var pubkeyBytes []byte
 
 	for i := 2; i+1 < len(items); i += 2 {
@@ -162,17 +170,32 @@ func ParseENR(enrStr string) (multiaddr.Multiaddr, error) {
 		case "ip":
 			var ipBytes []byte
 			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 4 {
-				ip = net.IP(ipBytes)
+				ip4 = net.IP(ipBytes)
+			}
+		case "ip6":
+			var ipBytes []byte
+			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 16 {
+				ip6 = net.IP(ipBytes)
 			}
 		case "udp":
 			var port uint16
 			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
 				udpPort = port
 			}
+		case "udp6":
+			var port uint16
+			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
+				udp6Port = port
+			}
 		case "quic":
 			var port uint16
 			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
 				quicPort = port
+			}
+		case "quic6":
+			var port uint16
+			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
+				quic6Port = port
 			}
 		case "secp256k1":
 			var raw []byte
@@ -182,18 +205,9 @@ func ParseENR(enrStr string) (multiaddr.Multiaddr, error) {
 		}
 	}
 
-	if ip == nil {
-		return nil, fmt.Errorf("ENR missing ip field")
+	if ip4 == nil && ip6 == nil {
+		return nil, fmt.Errorf("ENR missing ip/ip6 field")
 	}
-
-	port := quicPort
-	if port == 0 {
-		port = udpPort
-	}
-	if port == 0 {
-		return nil, fmt.Errorf("ENR missing udp/quic port")
-	}
-
 	if len(pubkeyBytes) == 0 {
 		return nil, fmt.Errorf("ENR missing secp256k1 key")
 	}
@@ -214,12 +228,48 @@ func ParseENR(enrStr string) (multiaddr.Multiaddr, error) {
 		return nil, fmt.Errorf("derive peer ID: %w", err)
 	}
 
-	// Build multiaddr.
-	maStr := fmt.Sprintf("/ip4/%s/udp/%d/quic-v1/p2p/%s", ip, port, peerID)
-	ma, err := multiaddr.NewMultiaddr(maStr)
+	// Build transport multiaddr, then append /p2p/<peerID> for dialing.
+	// Prefer IPv4 when both are present; fall back to IPv6.
+	transport := buildTransportMultiaddr(ip4, ip6, udpPort, quicPort, udp6Port, quic6Port)
+	if transport == "" {
+		return nil, fmt.Errorf("ENR missing udp/quic port")
+	}
+	ma, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", transport, peerID))
 	if err != nil {
 		return nil, fmt.Errorf("build multiaddr: %w", err)
 	}
 
 	return ma, nil
+}
+
+// buildTransportMultiaddr emits a /ip4/.../udp/N/quic-v1 or /ip6/.../udp/N/quic-v1
+// string from parsed ENR fields. Prefers IPv4 when both address families are present.
+// Returns empty string when no usable (ip, port) pair is available.
+func buildTransportMultiaddr(ip4, ip6 net.IP, udpPort, quicPort, udp6Port, quic6Port uint16) string {
+	if ip4 != nil {
+		port := quicPort
+		if port == 0 {
+			port = udpPort
+		}
+		if port != 0 {
+			return fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", ip4, port)
+		}
+	}
+	if ip6 != nil {
+		port := quic6Port
+		if port == 0 {
+			port = udp6Port
+		}
+		if port == 0 {
+			// Fallback: some ENRs reuse the ip4 quic/udp port for ip6.
+			port = quicPort
+			if port == 0 {
+				port = udpPort
+			}
+		}
+		if port != 0 {
+			return fmt.Sprintf("/ip6/%s/udp/%d/quic-v1", ip6, port)
+		}
+	}
+	return ""
 }
