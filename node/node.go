@@ -26,7 +26,7 @@ type Engine struct {
 	FC                  *forkchoice.ForkChoice
 	P2P                 *p2p.Host
 	Keys                *xmss.KeyManager
-	IsAggregator        bool
+	AggCtl              *AggregatorController
 	CommitteeCount      uint64
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
 	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
@@ -46,7 +46,7 @@ func New(
 	fc *forkchoice.ForkChoice,
 	p2pHost *p2p.Host,
 	keys *xmss.KeyManager,
-	isAggregator bool,
+	aggCtl *AggregatorController,
 	committeeCount uint64,
 ) *Engine {
 	return &Engine{
@@ -54,7 +54,7 @@ func New(
 		FC:                  fc,
 		P2P:                 p2pHost,
 		Keys:                keys,
-		IsAggregator:        isAggregator,
+		AggCtl:              aggCtl,
 		CommitteeCount:      committeeCount,
 		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
 		PendingBlockParents: make(map[[32]byte][32]byte),
@@ -89,9 +89,10 @@ func (e *Engine) Run(ctx context.Context) {
 	SetSyncStatus("idle")
 
 	// Initialize static metrics.
+	// lean_is_aggregator is kept in sync via AggregatorController.Set on
+	// every transition; NewAggregatorController already seeded it at boot.
 	SetNodeInfo("gean", "dev")
 	SetNodeStartTime(float64(time.Now().Unix()))
-	SetIsAggregator(e.IsAggregator)
 	SetAttestationCommitteeCount(e.CommitteeCount)
 	if e.Keys != nil {
 		vids := e.Keys.ValidatorIDs()

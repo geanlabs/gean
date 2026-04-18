@@ -42,7 +42,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot)
 
-	return New(s, fc, nil, nil, false, 1)
+	return New(s, fc, nil, nil, NewAggregatorController(false), 1)
 }
 
 func TestEngineCreation(t *testing.T) {
