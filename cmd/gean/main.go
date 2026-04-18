@@ -234,7 +234,7 @@ func main() {
 	metricsAddr := fmt.Sprintf("%s:%d", *httpAddr, *metricsPort)
 
 	go func() {
-		if err := api.StartAPIServer(apiAddr, s, fc); err != nil {
+		if err := api.StartAPIServer(apiAddr, s, fc, aggCtl); err != nil {
 			logger.Error(logger.Node, "api server error: %v", err)
 		}
 	}()
