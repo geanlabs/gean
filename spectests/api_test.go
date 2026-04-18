@@ -3,6 +3,7 @@
 package spectests
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -37,7 +38,10 @@ type apiFixture struct {
 	Network             string                 `json:"network"`
 	LeanEnv             string                 `json:"leanEnv"`
 	Endpoint            string                 `json:"endpoint"`
+	Method              string                 `json:"method"` // leanSpec PR #636; defaults "GET" when absent
 	GenesisParams       apiGenesisParams       `json:"genesisParams"`
+	RequestBody         json.RawMessage        `json:"requestBody"`         // POST bodies (admin endpoints)
+	InitialIsAggregator *bool                  `json:"initialIsAggregator"` // seeds AggregatorController before replay
 	ExpectedStatusCode  int                    `json:"expectedStatusCode"`
 	ExpectedContentType string                 `json:"expectedContentType"`
 	ExpectedBody        json.RawMessage        `json:"expectedBody"`
@@ -129,14 +133,33 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 
 	fc := forkchoice.New(0, blockRoot)
 
+	// Per-fixture aggregator controller, seeded from initialIsAggregator
+	// (leanSpec PR #636). Nil means the fixture doesn't exercise the admin
+	// endpoints; defaulting to false keeps the controller present for every
+	// replay so lookupAPIHandler never hits a nil pointer.
+	initialAgg := false
+	if fx.InitialIsAggregator != nil {
+		initialAgg = *fx.InitialIsAggregator
+	}
+	aggCtl := node.NewAggregatorController(initialAgg)
+
+	method := fx.Method
+	if method == "" {
+		method = "GET"
+	}
+
 	// Resolve and invoke the handler via httptest.
-	handler := lookupAPIHandler(fx.Endpoint, s, fc)
+	handler := lookupAPIHandler(method, fx.Endpoint, s, fc, aggCtl)
 	if handler == nil {
-		t.Skipf("endpoint %q not wired into test harness", fx.Endpoint)
+		t.Skipf("endpoint %q (%s) not wired into test harness", fx.Endpoint, method)
 		return
 	}
 
-	req := httptest.NewRequest("GET", fx.Endpoint, nil)
+	var reqBody io.Reader
+	if len(fx.RequestBody) > 0 && string(fx.RequestBody) != "null" {
+		reqBody = bytes.NewReader(fx.RequestBody)
+	}
+	req := httptest.NewRequest(method, fx.Endpoint, reqBody)
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -182,18 +205,22 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 	}
 }
 
-// lookupAPIHandler maps a spec endpoint to the in-process http.HandlerFunc.
-// Matches the route registrations in api.StartAPIServer.
-func lookupAPIHandler(endpoint string, s *node.ConsensusStore, fc *forkchoice.ForkChoice) http.HandlerFunc {
-	switch endpoint {
-	case "/lean/v0/health":
+// lookupAPIHandler maps a spec (method, endpoint) to the in-process
+// http.HandlerFunc. Matches the route registrations in api.StartAPIServer.
+func lookupAPIHandler(method, endpoint string, s *node.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *node.AggregatorController) http.HandlerFunc {
+	switch method + " " + endpoint {
+	case "GET /lean/v0/health":
 		return api.HealthHandler
-	case "/lean/v0/checkpoints/justified":
+	case "GET /lean/v0/checkpoints/justified":
 		return api.JustifiedCheckpointHandler(s)
-	case "/lean/v0/fork_choice":
+	case "GET /lean/v0/fork_choice":
 		return api.ForkChoiceHandler(s, fc)
-	case "/lean/v0/states/finalized":
+	case "GET /lean/v0/states/finalized":
 		return api.FinalizedStateHandler(s)
+	case "GET /lean/v0/admin/aggregator":
+		return api.AggregatorStatusHandler(aggCtl)
+	case "POST /lean/v0/admin/aggregator":
+		return api.AggregatorToggleHandler(aggCtl)
 	default:
 		return nil
 	}
