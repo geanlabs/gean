@@ -15,13 +15,15 @@ import (
 )
 
 // StartAPIServer starts the API server on the given address.
-func StartAPIServer(address string, s *node.ConsensusStore, fc *forkchoice.ForkChoice) error {
+func StartAPIServer(address string, s *node.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *node.AggregatorController) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /lean/v0/health", HealthHandler)
 	mux.HandleFunc("GET /lean/v0/states/finalized", FinalizedStateHandler(s))
 	mux.HandleFunc("GET /lean/v0/checkpoints/justified", JustifiedCheckpointHandler(s))
 	mux.HandleFunc("GET /lean/v0/fork_choice", ForkChoiceHandler(s, fc))
+	mux.HandleFunc("GET /lean/v0/admin/aggregator", AggregatorStatusHandler(aggCtl))
+	mux.HandleFunc("POST /lean/v0/admin/aggregator", AggregatorToggleHandler(aggCtl))
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

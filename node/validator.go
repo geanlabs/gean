@@ -111,7 +111,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 
 		// Self-deliver for aggregation if we are the aggregator.
 		// Skip signature verification — we just signed it ourselves.
-		if e.IsAggregator {
+		if e.AggCtl.Get() {
 			dataRoot, _ := attData.HashTreeRoot()
 			sigHandle, parseErr := xmss.ParseSignature(sig[:])
 			e.Store.AttestationSignatures.InsertWithHandle(dataRoot, attData, vid, sig, sigHandle, parseErr)

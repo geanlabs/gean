@@ -19,6 +19,11 @@ func (e *Engine) onTick() {
 	SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)
 
+	// Snapshot the aggregator role once per tick. A mid-tick toggle must
+	// not cause OnTick below and the interval-2 branch to observe different
+	// values (store_tick relies on the bool being stable for the tick).
+	isAgg := e.AggCtl.Get()
+
 	// Check if we're the proposer for this slot.
 	hasProposal := false
 	var proposerValidatorID uint64
@@ -28,13 +33,13 @@ func (e *Engine) onTick() {
 
 	// Tick the store — handles interval dispatch (promote attestations).
 	// Aggregation is handled async below to avoid blocking the tick loop.
-	_ = OnTick(e.Store, timestampMs, hasProposal, e.IsAggregator)
+	_ = OnTick(e.Store, timestampMs, hasProposal, isAgg)
 
 	// Interval 2: synchronous aggregation. Blocks the tick loop for 1-4s
 	// but keeps source consistency — headState doesn't change during proving.
 	// Async aggregation breaks source alignment because head drifts during
 	// the background prover run. Acceptable until prover is <800ms.
-	if currentInterval == 2 && e.IsAggregator {
+	if currentInterval == 2 && isAgg {
 		aggs := AggregateCommitteeSignatures(e.Store)
 		for _, agg := range aggs {
 			if e.P2P != nil {

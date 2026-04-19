@@ -197,7 +197,14 @@ func main() {
 
 	// --- Initialize engine ---
 
-	n := node.New(s, fc, p2pHost, keyManager, *isAggregator, *committeeCount)
+	// Runtime-toggleable aggregator role. Seeded from --is-aggregator; the
+	// admin API endpoint flips this without restart. Boot-time subscription
+	// decisions (p2p.NewHost above, XMSS prover pre-init below) still use
+	// the CLI flag per leanSpec PR #636 — only publishing behavior follows
+	// the controller at runtime.
+	aggCtl := node.NewAggregatorController(*isAggregator)
+
+	n := node.New(s, fc, p2pHost, keyManager, aggCtl, *committeeCount)
 
 	// Register P2P stream handlers.
 	p2pHost.RegisterReqRespHandlers(
@@ -227,7 +234,7 @@ func main() {
 	metricsAddr := fmt.Sprintf("%s:%d", *httpAddr, *metricsPort)
 
 	go func() {
-		if err := api.StartAPIServer(apiAddr, s, fc); err != nil {
+		if err := api.StartAPIServer(apiAddr, s, fc, aggCtl); err != nil {
 			logger.Error(logger.Node, "api server error: %v", err)
 		}
 	}()

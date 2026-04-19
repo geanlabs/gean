@@ -336,7 +336,7 @@ func (e *Engine) discardPendingSubtree(blockRoot [32]byte) {
 // aggregation gossip topic instead.
 // Spec: lean_spec/subspecs/forkchoice/store.py on_gossip_attestation (line 385)
 func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
-	if !e.IsAggregator {
+	if !e.AggCtl.Get() {
 		return
 	}
 
