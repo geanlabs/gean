@@ -93,6 +93,8 @@ func (e *Engine) produceAttestations(slot uint64) {
 	}
 
 	for _, vid := range e.Keys.ValidatorIDs() {
+		prodStart := time.Now()
+
 		sStart := time.Now()
 		sig, err := e.Keys.SignAttestation(vid, attData)
 		ObservePqSigSigningTime(time.Since(sStart).Seconds())
@@ -125,5 +127,11 @@ func (e *Engine) produceAttestations(slot uint64) {
 				logger.Info(logger.Network, "published attestation to network slot=%d validator=%d", slot, vid)
 			}
 		}
+
+		// Sign failures hit `continue` above and are not sampled — the
+		// histogram only records iterations that actually produced an
+		// attestation. Publish failures still count as produced (the
+		// attestation exists; only delivery to gossip failed).
+		ObserveAttestationsProductionTime(time.Since(prodStart).Seconds())
 	}
 }
