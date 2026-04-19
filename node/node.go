@@ -21,6 +21,15 @@ const (
 	MaxPendingBlocks   = 1024 // Max pending blocks before rejecting new ones
 )
 
+// Pending-attestation buffer caps. perRoot bounds the depth of any single
+// head-root bucket; total bounds the sum across all buckets. Sized for
+// devnet-4 expectations (low validator counts, short propagation windows);
+// promote to flags if a future deployment needs different ceilings.
+const (
+	PendingAttestationsPerRootCap = 8
+	PendingAttestationsTotalCap   = 512
+)
+
 type Engine struct {
 	Store               *ConsensusStore
 	FC                  *forkchoice.ForkChoice
@@ -31,6 +40,7 @@ type Engine struct {
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
 	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
 	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
+	PendingAttestations *PendingAttestationBuffer      // gossip atts buffered by unknown head root
 
 	// Channels for receiving messages from P2P goroutine.
 	BlockCh       chan *types.SignedBlock
@@ -59,6 +69,7 @@ func New(
 		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
 		PendingBlockParents: make(map[[32]byte][32]byte),
 		PendingBlockDepths:  make(map[[32]byte]int),
+		PendingAttestations: NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		BlockCh:             make(chan *types.SignedBlock, 64),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),

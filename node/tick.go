@@ -135,6 +135,7 @@ func (e *Engine) updateHead(logTree bool) {
 			SetAttestationSignatures(e.Store.AttestationSignatures.Len())
 			SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
 			SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
+			SetPendingAttestationsTotal(e.PendingAttestations.Total())
 
 			if isReorg {
 				IncForkChoiceReorgs()

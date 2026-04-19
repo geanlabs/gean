@@ -43,6 +43,9 @@ var (
 	metricLatestKnownAggregatedPayloads = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_latest_known_aggregated_payloads", Help: "Number of known (active) aggregated payloads",
 	})
+	metricPendingAttestationsTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_pending_attestations_total", Help: "Gossip attestations buffered awaiting an unknown head block",
+	})
 	metricNodeInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lean_node_info", Help: "Node information",
 	}, []string{"name", "version"})
@@ -248,6 +251,7 @@ func SetAttestationCommitteeCount(n uint64) { metricAttestationCommitteeCount.Se
 func SetAttestationSignatures(n int)        { metricAttestationSignatures.Set(float64(n)) }
 func SetNewAggregatedPayloads(n int)        { metricLatestNewAggregatedPayloads.Set(float64(n)) }
 func SetKnownAggregatedPayloads(n int)      { metricLatestKnownAggregatedPayloads.Set(float64(n)) }
+func SetPendingAttestationsTotal(n int)     { metricPendingAttestationsTotal.Set(float64(n)) }
 func SetTableBytes(table string, bytes uint64) {
 	metricTableBytes.WithLabelValues(table).Set(float64(bytes))
 }
