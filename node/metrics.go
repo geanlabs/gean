@@ -133,6 +133,11 @@ var (
 		Help:    "Time to sign an attestation",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
 	})
+	metricAttestationsProductionTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_attestations_production_time_seconds",
+		Help:    "Time taken to produce attestation",
+		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1},
+	})
 	metricPqSigVerificationTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_attestation_verification_time_seconds",
 		Help:    "Time to verify an individual attestation signature",
@@ -269,7 +274,10 @@ func ObserveAttestationValidationTime(seconds float64) {
 func ObserveCommitteeAggregationTime(seconds float64) {
 	metricCommitteeAggregationTime.Observe(seconds)
 }
-func ObservePqSigSigningTime(seconds float64)      { metricPqSigSigningTime.Observe(seconds) }
+func ObservePqSigSigningTime(seconds float64) { metricPqSigSigningTime.Observe(seconds) }
+func ObserveAttestationsProductionTime(seconds float64) {
+	metricAttestationsProductionTime.Observe(seconds)
+}
 func ObservePqSigVerificationTime(seconds float64) { metricPqSigVerificationTime.Observe(seconds) }
 func ObservePqSigAggBuildingTime(seconds float64)  { metricPqSigAggBuildingTime.Observe(seconds) }
 func ObservePqSigAggVerificationTime(seconds float64) {
