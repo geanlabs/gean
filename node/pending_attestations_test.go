@@ -15,6 +15,18 @@ func makeAtt(slot uint64) *types.SignedAttestation {
 	}
 }
 
+// makeAttForHead is like makeAtt but also fills in Head.Root so a test can
+// assert which head bucket an attestation lives under without sharing
+// fixtures across tests.
+func makeAttForHead(slot uint64, head [32]byte) *types.SignedAttestation {
+	return &types.SignedAttestation{
+		Data: &types.AttestationData{
+			Slot: slot,
+			Head: &types.Checkpoint{Root: head},
+		},
+	}
+}
+
 func TestPendingAttestationBuffer_AddAndDrain(t *testing.T) {
 	buf := NewPendingAttestationBuffer(8, 64)
 
