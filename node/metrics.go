@@ -72,6 +72,9 @@ var (
 	metricAttestationsInvalid = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_attestations_invalid_total", Help: "Total invalid attestations rejected",
 	})
+	metricAttestationsBufferEvicted = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_attestations_buffer_evicted_total", Help: "Pending attestations dropped due to per-root FIFO overflow",
+	})
 	metricForkChoiceReorgs = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_fork_choice_reorgs_total", Help: "Total fork choice reorgs",
 	})
@@ -262,6 +265,7 @@ func SetAttestationCommitteeSubnet(n uint64) { metricAttestationCommitteeSubnet.
 
 func IncAttestationsValid(n uint64)          { metricAttestationsValid.Add(float64(n)) }
 func IncAttestationsInvalid()                { metricAttestationsInvalid.Inc() }
+func IncAttestationsBufferEvicted(n int)     { metricAttestationsBufferEvicted.Add(float64(n)) }
 func IncForkChoiceReorgs()                   { metricForkChoiceReorgs.Inc() }
 func IncPqSigAggregatedTotal()               { metricPqSigAggregatedSignaturesTotal.Inc() }
 func IncPqSigAttestationsInAggregated(n int) { metricPqSigAttestationsInAggregated.Add(float64(n)) }

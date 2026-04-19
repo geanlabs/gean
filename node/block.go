@@ -372,8 +372,30 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 		return
 	}
 
-	// Validate attestation data.
+	// Validate attestation data. If the attestation references a head block
+	// we don't yet know about, buffer it under that head root and fire a
+	// targeted BlocksByRoot fetch — when the block arrives, the block import
+	// path drains the bucket and replays each attestation through this same
+	// function. Source/target unknowns stay strict-drop for now: head is the
+	// dominant ordering race in practice (proposer's own block delayed in
+	// gossip dispersion); source/target races are rarer and can be handled
+	// the same way later if metrics show it matters.
 	if err := ValidateAttestationData(e.Store, att.Data); err != nil {
+		if se, ok := err.(*StoreError); ok && se.Kind == ErrUnknownHeadBlock && att.Data.Head != nil {
+			added, dropped := e.PendingAttestations.Add(att.Data.Head.Root, att)
+			if added {
+				select {
+				case e.FetchRootCh <- att.Data.Head.Root:
+				default:
+					// Batcher channel full — that's fine. Multiple attestations
+					// for the same root would otherwise produce one extra fetch
+					// each anyway, and the batcher dedups within its grace window.
+				}
+			}
+			if dropped > 0 {
+				IncAttestationsBufferEvicted(dropped)
+			}
+		}
 		return
 	}
 
