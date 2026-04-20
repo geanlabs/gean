@@ -75,6 +75,19 @@ func FinalizedStateHandler(s *node.ConsensusStore) http.HandlerFunc {
 
 		state.LatestBlockHeader.StateRoot = types.ZeroRoot
 
+		// Align embedded checkpoints with the store's current view. The stored
+		// post-state's latest_finalized reflects only what this block's own
+		// attestations finalized, so it lags behind the store once a descendant
+		// block causes this block to itself be finalized. Returning the store's
+		// current finalized checkpoint keeps the served state consistent with
+		// /lean/v0/fork_choice. Also lift latest_justified when it would fall
+		// behind the new finalized slot, preserving the latest_justified.slot
+		// >= latest_finalized.slot invariant.
+		state.LatestFinalized = finalized
+		if state.LatestJustified.Slot < finalized.Slot {
+			state.LatestJustified = s.LatestJustified()
+		}
+
 		data, err := state.MarshalSSZ()
 		if err != nil {
 			http.Error(w, "ssz marshal failed", http.StatusInternalServerError)
