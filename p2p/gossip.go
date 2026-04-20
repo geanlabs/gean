@@ -26,6 +26,18 @@ var (
 	GossipAggregationSizeHook func(bytes int)
 )
 
+// Peer event metric hooks set by node package at startup. Nil-safe.
+// Direction is "inbound" or "outbound" per the libp2p connection stat.
+// Reason on disconnect is best-effort; libp2p doesn't always expose a
+// precise cause, so callers default to "remote_close" for ordinary
+// disconnects. PeerCountHook reports the aggregate connected peer count
+// after every connect/disconnect.
+var (
+	PeerConnectedHook    func(direction string)
+	PeerDisconnectedHook func(direction, reason string)
+	PeerCountHook        func(count int)
+)
+
 // StartGossipListeners starts goroutines that read from each subscribed topic
 // and dispatch decoded messages to the handler.
 func (h *Host) StartGossipListeners(handler MessageHandler) {

@@ -96,6 +96,19 @@ func (e *Engine) Run(ctx context.Context) {
 	p2p.GossipAttestationSizeHook = ObserveGossipAttestationSize
 	p2p.GossipAggregationSizeHook = ObserveGossipAggregationSize
 
+	// Wire peer event hooks. Client label is "unknown" until libp2p
+	// identify-based client detection is added (follow-up); spec result
+	// label is "success" for the accepted-connection path.
+	p2p.PeerConnectedHook = func(direction string) {
+		IncPeerConnection(direction, "success")
+	}
+	p2p.PeerDisconnectedHook = func(direction, reason string) {
+		IncPeerDisconnection(direction, reason)
+	}
+	p2p.PeerCountHook = func(count int) {
+		SetConnectedPeers("unknown", count)
+	}
+
 	// Initial sync status is "idle" until peers connect.
 	SetSyncStatus("idle")
 
