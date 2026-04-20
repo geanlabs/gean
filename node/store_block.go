@@ -116,6 +116,7 @@ func onBlockCore(
 	}
 	if newFinalized != nil {
 		s.SetLatestFinalized(newFinalized)
+		IncFinalization("success")
 	}
 
 	// Store block header, state, and live chain entry.

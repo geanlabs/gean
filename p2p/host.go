@@ -129,16 +129,34 @@ func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeC
 		ConnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
 			p2pHost.peerStore.Add(peerID)
+			direction := directionLabel(conn.Stat().Direction)
+			count := p2pHost.peerStore.Count()
 			logger.Info(logger.Network, "peer connected peer_id=%s direction=%s peers=%d",
-				peerID, conn.Stat().Direction, p2pHost.peerStore.Count())
+				peerID, conn.Stat().Direction, count)
+			if PeerConnectedHook != nil {
+				PeerConnectedHook(direction)
+			}
+			if PeerCountHook != nil {
+				PeerCountHook(count)
+			}
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
 			// Only remove if fully disconnected (no remaining connections).
 			if n.Connectedness(peerID) != network.Connected {
 				p2pHost.peerStore.Remove(peerID)
+				direction := directionLabel(conn.Stat().Direction)
+				count := p2pHost.peerStore.Count()
 				logger.Info(logger.Network, "peer disconnected peer_id=%s peers=%d",
-					peerID, p2pHost.peerStore.Count())
+					peerID, count)
+				if PeerDisconnectedHook != nil {
+					// libp2p doesn't expose a structured cause here;
+					// default to remote_close for ordinary peer churn.
+					PeerDisconnectedHook(direction, "remote_close")
+				}
+				if PeerCountHook != nil {
+					PeerCountHook(count)
+				}
 			}
 		},
 	})

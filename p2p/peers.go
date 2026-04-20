@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
@@ -83,6 +84,15 @@ func (ps *PeerStore) AllPeers() []peer.ID {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// directionLabel maps a libp2p connection direction to the spec's
+// "inbound"/"outbound" label values.
+func directionLabel(d network.Direction) string {
+	if d == network.DirOutbound {
+		return "outbound"
+	}
+	return "inbound"
 }
 
 // ConnectBootnodes connects to a list of bootnode multiaddrs.

@@ -43,6 +43,9 @@ var (
 	metricLatestKnownAggregatedPayloads = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_latest_known_aggregated_payloads", Help: "Number of known (active) aggregated payloads",
 	})
+	metricPendingAttestationsTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_pending_attestations_total", Help: "Gossip attestations buffered awaiting an unknown head block",
+	})
 	metricNodeInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lean_node_info", Help: "Node information",
 	}, []string{"name", "version"})
@@ -68,6 +71,9 @@ var (
 	})
 	metricAttestationsInvalid = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_attestations_invalid_total", Help: "Total invalid attestations rejected",
+	})
+	metricAttestationsBufferEvicted = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_attestations_buffer_evicted_total", Help: "Pending attestations dropped due to per-root FIFO overflow",
 	})
 	metricForkChoiceReorgs = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_fork_choice_reorgs_total", Help: "Total fork choice reorgs",
@@ -248,6 +254,7 @@ func SetAttestationCommitteeCount(n uint64) { metricAttestationCommitteeCount.Se
 func SetAttestationSignatures(n int)        { metricAttestationSignatures.Set(float64(n)) }
 func SetNewAggregatedPayloads(n int)        { metricLatestNewAggregatedPayloads.Set(float64(n)) }
 func SetKnownAggregatedPayloads(n int)      { metricLatestKnownAggregatedPayloads.Set(float64(n)) }
+func SetPendingAttestationsTotal(n int)     { metricPendingAttestationsTotal.Set(float64(n)) }
 func SetTableBytes(table string, bytes uint64) {
 	metricTableBytes.WithLabelValues(table).Set(float64(bytes))
 }
@@ -258,6 +265,7 @@ func SetAttestationCommitteeSubnet(n uint64) { metricAttestationCommitteeSubnet.
 
 func IncAttestationsValid(n uint64)          { metricAttestationsValid.Add(float64(n)) }
 func IncAttestationsInvalid()                { metricAttestationsInvalid.Inc() }
+func IncAttestationsBufferEvicted(n int)     { metricAttestationsBufferEvicted.Add(float64(n)) }
 func IncForkChoiceReorgs()                   { metricForkChoiceReorgs.Inc() }
 func IncPqSigAggregatedTotal()               { metricPqSigAggregatedSignaturesTotal.Inc() }
 func IncPqSigAttestationsInAggregated(n int) { metricPqSigAttestationsInAggregated.Add(float64(n)) }

@@ -156,8 +156,33 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types
 	// Clear depth tracking for this block (now processed).
 	delete(e.PendingBlockDepths, blockRoot)
 
+	// Replay any gossip attestations that were buffered awaiting this exact
+	// head block. Fires for every successful import — cascaded children
+	// (added via collectPendingChildren below) re-enter processOneBlock and
+	// run their own replay pass, so a multi-block chain repair drains the
+	// buffer for each block in order. Replay fans out to one goroutine per
+	// attestation, matching the existing live-gossip pattern in Run().
+	e.replayPendingAttestations(blockRoot)
+
 	// Cascade: enqueue pending children for processing.
 	e.collectPendingChildren(blockRoot, queue)
+}
+
+// replayPendingAttestations drains every gossip attestation that was buffered
+// awaiting this head block and fires each one back through onGossipAttestation.
+// Each replay runs in its own goroutine because XMSS verification is ~500ms
+// per attestation and would otherwise serialize behind the engine main loop.
+func (e *Engine) replayPendingAttestations(headRoot [32]byte) {
+	pending := e.PendingAttestations.Drain(headRoot)
+	if len(pending) == 0 {
+		return
+	}
+	logger.Info(logger.Gossip, "replaying %d buffered attestations for newly arrived head=0x%x",
+		len(pending), headRoot)
+	for _, att := range pending {
+		att := att
+		go e.onGossipAttestation(att)
+	}
 }
 
 // collectPendingChildren moves pending children of parent into the work queue.
@@ -220,6 +245,13 @@ func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
 
 	if discarded > 0 {
 		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
+	}
+
+	// Drop buffered attestations whose target slot is at or below the new
+	// finalized slot — their head block (if it ever arrives) will likewise
+	// be too old to act on, so the attestation can never be replayed.
+	if removed := e.PendingAttestations.PruneBelow(finalizedSlot); removed > 0 {
+		logger.Info(logger.Store, "discarded %d finalized pending attestations (finalized_slot=%d)", removed, finalizedSlot)
 	}
 }
 
@@ -340,8 +372,30 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 		return
 	}
 
-	// Validate attestation data.
+	// Validate attestation data. If the attestation references a head block
+	// we don't yet know about, buffer it under that head root and fire a
+	// targeted BlocksByRoot fetch — when the block arrives, the block import
+	// path drains the bucket and replays each attestation through this same
+	// function. Source/target unknowns stay strict-drop for now: head is the
+	// dominant ordering race in practice (proposer's own block delayed in
+	// gossip dispersion); source/target races are rarer and can be handled
+	// the same way later if metrics show it matters.
 	if err := ValidateAttestationData(e.Store, att.Data); err != nil {
+		if se, ok := err.(*StoreError); ok && se.Kind == ErrUnknownHeadBlock && att.Data.Head != nil {
+			added, dropped := e.PendingAttestations.Add(att.Data.Head.Root, att)
+			if added {
+				select {
+				case e.FetchRootCh <- att.Data.Head.Root:
+				default:
+					// Batcher channel full — that's fine. Multiple attestations
+					// for the same root would otherwise produce one extra fetch
+					// each anyway, and the batcher dedups within its grace window.
+				}
+			}
+			if dropped > 0 {
+				IncAttestationsBufferEvicted(dropped)
+			}
+		}
 		return
 	}
 
