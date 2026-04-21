@@ -2,12 +2,14 @@ package node
 
 import (
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
+	"golang.org/x/sync/errgroup"
 )
 
 // OnBlock processes a new signed block with signature verification.
@@ -241,15 +243,32 @@ func verifyBlockSignatures(
 		})
 	}
 
-	// Verify pass: sequential in this phase. Phase 2 will parallelize via
-	// errgroup while keeping the same first-error-wins contract.
+	// Verify pass: parallel. errgroup.Group with a limit of GOMAXPROCS(0)
+	// (not NumCPU — respects container CPU quotas and GOMAXPROCS env). Each
+	// VerifyAggregatedSignature is a ~40–50ms cgo call into the Rust XMSS
+	// verifier; thread-safety is guaranteed by a single OnceLock<Bytecode>
+	// in rec_aggregation that's written once at init and read-only after.
+	// Pubkey handles are owned by s.PubKeyCache and stable across goroutines.
+	//
+	// Note on cancellation: g.Wait() returns the first non-nil error, but
+	// the underlying cgo call can't be cancelled — any verifies already
+	// dispatched run to completion. Worst case on a single bad signature
+	// at the head of a full 16-attestation block is ~GOMAXPROCS verifies'
+	// worth of wasted work before g.Wait returns. Acceptable; the
+	// alternative (polling a shared cancel flag between calls) buys
+	// nothing because verify is a single cgo call, not a loop.
+	var g errgroup.Group
+	g.SetLimit(runtime.GOMAXPROCS(0))
 	for _, job := range jobs {
-		if err := xmss.VerifyAggregatedSignature(job.proofData, job.pubkeys, job.dataRoot, job.slot); err != nil {
-			return &StoreError{ErrAggregateVerificationFailed, fmt.Sprintf("attestation %d proof: %v", job.attIdx, err)}
-		}
+		job := job
+		g.Go(func() error {
+			if err := xmss.VerifyAggregatedSignature(job.proofData, job.pubkeys, job.dataRoot, job.slot); err != nil {
+				return &StoreError{ErrAggregateVerificationFailed, fmt.Sprintf("attestation %d proof: %v", job.attIdx, err)}
+			}
+			return nil
+		})
 	}
-
-	return nil
+	return g.Wait()
 }
 
 // storeBlockParts stores block body and full signed block across split tables.
