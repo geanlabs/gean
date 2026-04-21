@@ -185,6 +185,23 @@ func verifyBlockSignatures(
 	if block.Body == nil {
 		return nil
 	}
+
+	// Prepare pass: collect everything needed to verify each attestation into
+	// a job list. Pubkeys come from ConsensusStore.PubKeyCache so the expensive
+	// FFI ParsePublicKey runs at most once per validator across the process
+	// lifetime; the cache owns the handle, so there's no free list to unwind
+	// on error or to carry across the verify pass. Structural errors (mismatch,
+	// invalid validator index, pubkey decode) fail fast here before any
+	// verification work begins.
+	type verifyJob struct {
+		attIdx    int
+		proofData []byte
+		pubkeys   []xmss.CPubKey
+		dataRoot  [32]byte
+		slot      uint32
+	}
+
+	jobs := make([]verifyJob, 0, len(block.Body.Attestations))
 	for i, att := range block.Body.Attestations {
 		if i >= len(sigs.AttestationSignatures) {
 			return &StoreError{ErrAttestationSignatureMismatch,
@@ -192,49 +209,43 @@ func verifyBlockSignatures(
 		}
 		proof := sigs.AttestationSignatures[i]
 
-		// Get participant pubkeys.
 		// During checkpoint sync backfill, target states may not exist for
-		// attestations referencing blocks before the checkpoint. Skip verification
-		// for these — the block was already validated by the originating node.
+		// attestations referencing blocks before the checkpoint. Skip
+		// verification for these — the block was already validated by the
+		// originating node.
 		targetState := s.GetState(att.Data.Target.Root)
 		if targetState == nil {
-			continue // skip attestation verification when target state unavailable
+			continue
 		}
 
 		participantIDs := types.BitlistIndices(proof.Participants)
-		var pubkeys []([types.PubkeySize]byte)
+		pubkeys := make([]xmss.CPubKey, 0, len(participantIDs))
 		for _, vid := range participantIDs {
 			if vid >= uint64(len(targetState.Validators)) {
 				return &StoreError{ErrInvalidValidatorIndex, fmt.Sprintf("validator %d out of range", vid)}
 			}
-			pubkeys = append(pubkeys, targetState.Validators[vid].AttestationPubkey)
-		}
-
-		// Verify aggregated proof.
-		dataRoot, _ := att.Data.HashTreeRoot()
-		attSlot := uint32(att.Data.Slot)
-
-		parsedPubkeys := make([]xmss.CPubKey, len(pubkeys))
-		for j, pk := range pubkeys {
-			parsed, err := xmss.ParsePublicKey(pk)
+			handle, err := s.PubKeyCache.Get(targetState.Validators[vid].AttestationPubkey)
 			if err != nil {
-				// Free already parsed keys before returning.
-				for k := 0; k < j; k++ {
-					xmss.FreePublicKey(parsedPubkeys[k])
-				}
-				return &StoreError{ErrPubkeyDecodingFailed, fmt.Sprintf("pubkey %d: %v", participantIDs[j], err)}
+				return &StoreError{ErrPubkeyDecodingFailed, fmt.Sprintf("validator %d: %v", vid, err)}
 			}
-			parsedPubkeys[j] = parsed
+			pubkeys = append(pubkeys, handle)
 		}
-		// Free all parsed pubkeys after verification.
-		defer func() {
-			for _, pk := range parsedPubkeys {
-				xmss.FreePublicKey(pk)
-			}
-		}()
 
-		if err := xmss.VerifyAggregatedSignature(proof.ProofData, parsedPubkeys, dataRoot, attSlot); err != nil {
-			return &StoreError{ErrAggregateVerificationFailed, fmt.Sprintf("attestation %d proof: %v", i, err)}
+		dataRoot, _ := att.Data.HashTreeRoot()
+		jobs = append(jobs, verifyJob{
+			attIdx:    i,
+			proofData: proof.ProofData,
+			pubkeys:   pubkeys,
+			dataRoot:  dataRoot,
+			slot:      uint32(att.Data.Slot),
+		})
+	}
+
+	// Verify pass: sequential in this phase. Phase 2 will parallelize via
+	// errgroup while keeping the same first-error-wins contract.
+	for _, job := range jobs {
+		if err := xmss.VerifyAggregatedSignature(job.proofData, job.pubkeys, job.dataRoot, job.slot); err != nil {
+			return &StoreError{ErrAggregateVerificationFailed, fmt.Sprintf("attestation %d proof: %v", job.attIdx, err)}
 		}
 	}
 
