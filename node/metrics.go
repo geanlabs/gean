@@ -159,6 +159,11 @@ var (
 		Help:    "Time to verify an aggregated signature proof",
 		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
 	})
+	metricBlockSignatureVerificationTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_block_signature_verification_time_seconds",
+		Help:    "Time to verify all signatures (proposer + aggregated attestations) for an incoming block",
+		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2},
+	})
 	metricForkChoiceReorgDepth = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_fork_choice_reorg_depth",
 		Help:    "Depth of fork choice reorgs",
@@ -290,6 +295,9 @@ func ObservePqSigVerificationTime(seconds float64) { metricPqSigVerificationTime
 func ObservePqSigAggBuildingTime(seconds float64)  { metricPqSigAggBuildingTime.Observe(seconds) }
 func ObservePqSigAggVerificationTime(seconds float64) {
 	metricPqSigAggVerificationTime.Observe(seconds)
+}
+func ObserveBlockSignatureVerificationTime(seconds float64) {
+	metricBlockSignatureVerificationTime.Observe(seconds)
 }
 func ObserveForkChoiceReorgDepth(depth float64) { metricForkChoiceReorgDepth.Observe(depth) }
 

@@ -62,7 +62,10 @@ func onBlockCore(
 	// Verify signatures BEFORE state transition.
 	// Uses parent_state for validator lookup.
 	if verify {
-		if err := verifyBlockSignatures(s, signedBlock, parentState); err != nil {
+		verifyStart := time.Now()
+		err := verifyBlockSignatures(s, signedBlock, parentState)
+		ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
+		if err != nil {
 			return err
 		}
 	}
