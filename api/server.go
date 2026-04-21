@@ -83,6 +83,15 @@ func FinalizedStateHandler(s *node.ConsensusStore) http.HandlerFunc {
 		// /lean/v0/fork_choice. Also lift latest_justified when it would fall
 		// behind the new finalized slot, preserving the latest_justified.slot
 		// >= latest_finalized.slot invariant.
+		//
+		// Only these two checkpoint fields are projected onto the served blob.
+		// The historical arrays (HistoricalBlockHashes, JustifiedSlots,
+		// JustificationsRoots, JustificationsValidators) intentionally remain
+		// as-of-block-R — they are the input state to block R's STF, not a
+		// live view of the chain. Re-projecting them would require re-running
+		// finalization bookkeeping against the store's current view, which is
+		// out of scope for a read handler. Consumers that want live justification
+		// bookkeeping should use /lean/v0/fork_choice.
 		state.LatestFinalized = finalized
 		if state.LatestJustified.Slot < finalized.Slot {
 			state.LatestJustified = s.LatestJustified()
