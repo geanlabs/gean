@@ -1,15 +1,24 @@
 package statetransition
 
 import (
+	"time"
+
 	"github.com/geanlabs/gean/types"
 )
 
 // ProcessBlock validates a block and applies it to the state.
 func ProcessBlock(state *types.State, block *types.Block) error {
+	start := time.Now()
 	if err := ProcessBlockHeader(state, block); err != nil {
 		return err
 	}
-	return ProcessAttestations(state, block.Body.Attestations)
+	if err := ProcessAttestations(state, block.Body.Attestations); err != nil {
+		return err
+	}
+	if ObserveBlockTimeHook != nil {
+		ObserveBlockTimeHook(time.Since(start).Seconds())
+	}
+	return nil
 }
 
 // ProcessBlockHeader validates the block header and updates the state.

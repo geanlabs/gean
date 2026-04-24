@@ -1,12 +1,16 @@
 package statetransition
 
 import (
+	"time"
+
 	"github.com/geanlabs/gean/types"
 )
 
 // StateTransition applies a block to a state, producing the post-block state.
 // Steps: process_slots → process_block → verify state_root.
 func StateTransition(state *types.State, block *types.Block) error {
+	start := time.Now()
+
 	// 1. Advance through empty slots to the block's slot.
 	if err := ProcessSlots(state, block.Slot); err != nil {
 		return err
@@ -29,5 +33,8 @@ func StateTransition(state *types.State, block *types.Block) error {
 		}
 	}
 
+	if ObserveTotalTimeHook != nil {
+		ObserveTotalTimeHook(time.Since(start).Seconds())
+	}
 	return nil
 }
