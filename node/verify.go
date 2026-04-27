@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
@@ -49,5 +50,13 @@ func verifyAggregatedProof(
 	}
 
 	slot := uint32(data.Slot)
-	return xmss.VerifyAggregatedSignature(proofData, parsedPubkeys, dataRoot, slot)
+	verifyStart := time.Now()
+	err = xmss.VerifyAggregatedSignature(proofData, parsedPubkeys, dataRoot, slot)
+	ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
+	if err != nil {
+		IncPqSigAggregatedInvalid()
+		return err
+	}
+	IncPqSigAggregatedValid()
+	return nil
 }

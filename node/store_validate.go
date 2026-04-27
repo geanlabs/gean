@@ -1,11 +1,16 @@
 package node
 
 import (
+	"time"
+
 	"github.com/geanlabs/gean/types"
 )
 
 // ValidateAttestationData checks 9 validation branches for incoming attestations.
 func ValidateAttestationData(s *ConsensusStore, data *types.AttestationData) error {
+	start := time.Now()
+	defer func() { ObserveAttestationValidationTime(time.Since(start).Seconds()) }()
+
 	// 1-3. Availability: source, target, head blocks must exist.
 	sourceHeader := s.GetBlockHeader(data.Source.Root)
 	if sourceHeader == nil {

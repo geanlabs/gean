@@ -8,6 +8,7 @@ import (
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
 )
@@ -95,6 +96,14 @@ func (e *Engine) Run(ctx context.Context) {
 	p2p.GossipBlockSizeHook = ObserveGossipBlockSize
 	p2p.GossipAttestationSizeHook = ObserveGossipAttestationSize
 	p2p.GossipAggregationSizeHook = ObserveGossipAggregationSize
+
+	// Wire state-transition observability hooks.
+	statetransition.ObserveTotalTimeHook = ObserveSTFTime
+	statetransition.ObserveSlotsTimeHook = ObserveSTFSlotsTime
+	statetransition.ObserveBlockTimeHook = ObserveSTFBlockTime
+	statetransition.ObserveAttestationsTimeHook = ObserveSTFAttestationsTime
+	statetransition.IncSlotsProcessedHook = IncSTFSlotsProcessed
+	statetransition.IncAttestationsProcessedHook = IncSTFAttestationsProcessed
 
 	// Wire peer event hooks. Client label is "unknown" until libp2p
 	// identify-based client detection is added (follow-up); spec result

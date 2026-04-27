@@ -172,7 +172,7 @@ var (
 	metricSTFTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_state_transition_time_seconds",
 		Help:    "Time to process full state transition",
-		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
 	})
 	metricSTFSlotsTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_state_transition_slots_processing_time_seconds",

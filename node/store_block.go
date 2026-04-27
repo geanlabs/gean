@@ -265,9 +265,14 @@ func verifyBlockSignatures(
 	for _, job := range jobs {
 		job := job
 		g.Go(func() error {
-			if err := xmss.VerifyAggregatedSignature(job.proofData, job.pubkeys, job.dataRoot, job.slot); err != nil {
+			verifyStart := time.Now()
+			err := xmss.VerifyAggregatedSignature(job.proofData, job.pubkeys, job.dataRoot, job.slot)
+			ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
+			if err != nil {
+				IncPqSigAggregatedInvalid()
 				return &StoreError{ErrAggregateVerificationFailed, fmt.Sprintf("attestation %d proof: %v", job.attIdx, err)}
 			}
+			IncPqSigAggregatedValid()
 			return nil
 		})
 	}

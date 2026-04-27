@@ -2,6 +2,7 @@ package statetransition
 
 import (
 	"sort"
+	"time"
 
 	"github.com/geanlabs/gean/types"
 )
@@ -9,6 +10,7 @@ import (
 // ProcessAttestations processes all aggregated attestations in a block body,
 // updating justification and finalization state.
 func ProcessAttestations(state *types.State, attestations []*types.AggregatedAttestation) error {
+	start := time.Now()
 	validatorCount := int(state.NumValidators())
 	if validatorCount == 0 {
 		return nil
@@ -30,6 +32,7 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 	// Build root → slot lookup for finalization pruning.
 	rootToSlot := buildRootToSlot(state)
 
+	var processed uint64
 	for _, agg := range attestations {
 		source := agg.Data.Source
 		target := agg.Data.Target
@@ -71,11 +74,19 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 			// Try to finalize source.
 			tryFinalize(state, source, target, &justifications, rootToSlot)
 		}
+
+		processed++
 	}
 
 	// Serialize back to flat SSZ storage (sorted for determinism).
 	serializeJustifications(state, justifications, validatorCount)
 
+	if IncAttestationsProcessedHook != nil && processed > 0 {
+		IncAttestationsProcessedHook(processed)
+	}
+	if ObserveAttestationsTimeHook != nil {
+		ObserveAttestationsTimeHook(time.Since(start).Seconds())
+	}
 	return nil
 }
 
