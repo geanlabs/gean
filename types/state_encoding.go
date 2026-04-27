@@ -62,7 +62,7 @@ func (s *State) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 
 	// Offset (7) 'Validators'
 	dst = ssz.WriteOffset(dst, offset)
-	offset += len(s.Validators) * 60
+	offset += len(s.Validators) * 112
 
 	// Offset (8) 'JustificationsRoots'
 	dst = ssz.WriteOffset(dst, offset)
@@ -231,7 +231,7 @@ func (s *State) UnmarshalSSZ(buf []byte) error {
 	// Field (7) 'Validators'
 	{
 		buf = tail[o7:o8]
-		num, err := ssz.DivideInt2(len(buf), 60, 4096)
+		num, err := ssz.DivideInt2(len(buf), 112, 4096)
 		if err != nil {
 			return err
 		}
@@ -240,7 +240,7 @@ func (s *State) UnmarshalSSZ(buf []byte) error {
 			if s.Validators[ii] == nil {
 				s.Validators[ii] = new(Validator)
 			}
-			if err = s.Validators[ii].UnmarshalSSZ(buf[ii*60 : (ii+1)*60]); err != nil {
+			if err = s.Validators[ii].UnmarshalSSZ(buf[ii*112 : (ii+1)*112]); err != nil {
 				return err
 			}
 		}
@@ -287,7 +287,7 @@ func (s *State) SizeSSZ() (size int) {
 	size += len(s.JustifiedSlots)
 
 	// Field (7) 'Validators'
-	size += len(s.Validators) * 60
+	size += len(s.Validators) * 112
 
 	// Field (8) 'JustificationsRoots'
 	size += len(s.JustificationsRoots) * 32

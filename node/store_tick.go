@@ -42,19 +42,17 @@ func OnTick(
 
 		switch interval {
 		case 0:
-			// Start of slot — promote attestations if proposal exists.
+			// Start of slot — promote attestations if a proposal exists.
+			// When this node will propose, migrate new→known so the head
+			// update + block-builder both read fresh known. Non-proposer
+			// nodes do nothing here; their migration runs at interval 4.
 			if shouldSignalProposal {
 				s.PromoteNewToKnown()
-				// Head update happens in Engine.
 			}
 		case 1:
 			// Vote propagation — no store action.
 		case 2:
-			// Aggregation interval.
-			if isAggregator {
-				aggs := AggregateCommitteeSignatures(s)
-				newAggregates = append(newAggregates, aggs...)
-			}
+			// Aggregation interval — dispatched by Engine (see onTick).
 		case 3:
 			// Safe target update happens in Engine (it owns ForkChoice).
 		case 4:

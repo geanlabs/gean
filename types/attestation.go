@@ -18,7 +18,7 @@ type Attestation struct {
 type SignedAttestation struct {
 	ValidatorID uint64              `json:"validator_id"`
 	Data        *AttestationData    `json:"data"`
-	Signature   [SignatureSize]byte `json:"signature" ssz-size:"3112"`
+	Signature   [SignatureSize]byte `json:"signature" ssz-size:"2536"`
 }
 
 // AggregatedAttestation is a combined vote from multiple validators.

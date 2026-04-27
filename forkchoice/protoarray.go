@@ -37,6 +37,14 @@ func NewProtoArray(anchorSlot uint64, anchorRoot [32]byte) *ProtoArray {
 	return pa
 }
 
+// Nodes returns a snapshot copy of all proto-array nodes. Safe to expose to
+// callers since the returned slice is detached from internal storage.
+func (pa *ProtoArray) Nodes() []ProtoNode {
+	out := make([]ProtoNode, len(pa.nodes))
+	copy(out, pa.nodes)
+	return out
+}
+
 // OnBlock registers a new block in the proto-array.
 
 func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {

@@ -21,19 +21,29 @@ const (
 	MaxPendingBlocks   = 1024 // Max pending blocks before rejecting new ones
 )
 
+// Pending-attestation buffer caps. perRoot bounds the depth of any single
+// head-root bucket; total bounds the sum across all buckets. Sized for
+// devnet-4 expectations (low validator counts, short propagation windows);
+// promote to flags if a future deployment needs different ceilings.
+const (
+	PendingAttestationsPerRootCap = 8
+	PendingAttestationsTotalCap   = 512
+)
+
 type Engine struct {
 	Store               *ConsensusStore
 	FC                  *forkchoice.ForkChoice
 	P2P                 *p2p.Host
 	Keys                *xmss.KeyManager
-	IsAggregator        bool
+	AggCtl              *AggregatorController
 	CommitteeCount      uint64
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
 	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
 	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
+	PendingAttestations *PendingAttestationBuffer      // gossip atts buffered by unknown head root
 
 	// Channels for receiving messages from P2P goroutine.
-	BlockCh       chan *types.SignedBlockWithAttestation
+	BlockCh       chan *types.SignedBlock
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
 	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
@@ -46,7 +56,7 @@ func New(
 	fc *forkchoice.ForkChoice,
 	p2pHost *p2p.Host,
 	keys *xmss.KeyManager,
-	isAggregator bool,
+	aggCtl *AggregatorController,
 	committeeCount uint64,
 ) *Engine {
 	return &Engine{
@@ -54,12 +64,13 @@ func New(
 		FC:                  fc,
 		P2P:                 p2pHost,
 		Keys:                keys,
-		IsAggregator:        isAggregator,
+		AggCtl:              aggCtl,
 		CommitteeCount:      committeeCount,
 		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
 		PendingBlockParents: make(map[[32]byte][32]byte),
 		PendingBlockDepths:  make(map[[32]byte]int),
-		BlockCh:             make(chan *types.SignedBlockWithAttestation, 64),
+		PendingAttestations: NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		BlockCh:             make(chan *types.SignedBlock, 64),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
 		FailedRootCh:        make(chan [32]byte, 64),
@@ -80,13 +91,39 @@ func (e *Engine) Run(ctx context.Context) {
 		IncPqSigAttestationsInAggregated(numAttestations)
 	}
 
+	// Wire gossip-size hooks into the p2p layer.
+	p2p.GossipBlockSizeHook = ObserveGossipBlockSize
+	p2p.GossipAttestationSizeHook = ObserveGossipAttestationSize
+	p2p.GossipAggregationSizeHook = ObserveGossipAggregationSize
+
+	// Wire peer event hooks. Client label is "unknown" until libp2p
+	// identify-based client detection is added (follow-up); spec result
+	// label is "success" for the accepted-connection path.
+	p2p.PeerConnectedHook = func(direction string) {
+		IncPeerConnection(direction, "success")
+	}
+	p2p.PeerDisconnectedHook = func(direction, reason string) {
+		IncPeerDisconnection(direction, reason)
+	}
+	p2p.PeerCountHook = func(count int) {
+		SetConnectedPeers("unknown", count)
+	}
+
+	// Initial sync status is "idle" until peers connect.
+	SetSyncStatus("idle")
+
 	// Initialize static metrics.
+	// lean_is_aggregator is kept in sync via AggregatorController.Set on
+	// every transition; NewAggregatorController already seeded it at boot.
 	SetNodeInfo("gean", "dev")
 	SetNodeStartTime(float64(time.Now().Unix()))
-	SetIsAggregator(e.IsAggregator)
 	SetAttestationCommitteeCount(e.CommitteeCount)
 	if e.Keys != nil {
-		SetValidatorsCount(len(e.Keys.ValidatorIDs()))
+		vids := e.Keys.ValidatorIDs()
+		SetValidatorsCount(len(vids))
+		if len(vids) > 0 && e.CommitteeCount > 0 {
+			SetAttestationCommitteeSubnet(vids[0] % e.CommitteeCount)
+		}
 	}
 
 	ticker := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
@@ -97,6 +134,17 @@ func (e *Engine) Run(ctx context.Context) {
 	go e.runFetchBatcher(ctx)
 
 	logger.Info(logger.Node, "started")
+
+	// Process gossip attestations concurrently — each gets its own goroutine
+	// for XMSS verification (~500ms each). This matches zeam's inline model
+	// where attestations are verified as they arrive, not queued.
+	// AttestationSignatureMap is mutex-protected for safe concurrent writes.
+	go func() {
+		for att := range e.AttestationCh {
+			att := att
+			go e.onGossipAttestation(att)
+		}
+	}()
 
 	for {
 		select {
@@ -110,9 +158,6 @@ func (e *Engine) Run(ctx context.Context) {
 		case block := <-e.BlockCh:
 			e.onBlock(block)
 
-		case att := <-e.AttestationCh:
-			e.onGossipAttestation(att)
-
 		case agg := <-e.AggregationCh:
 			e.onGossipAggregatedAttestation(agg)
 
@@ -124,7 +169,7 @@ func (e *Engine) Run(ctx context.Context) {
 
 // --- MessageHandler interface for P2P ---
 
-func (e *Engine) OnBlock(block *types.SignedBlockWithAttestation) {
+func (e *Engine) OnBlock(block *types.SignedBlock) {
 	select {
 	case e.BlockCh <- block:
 	default:

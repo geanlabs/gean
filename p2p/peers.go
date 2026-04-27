@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
@@ -85,6 +86,15 @@ func (ps *PeerStore) AllPeers() []peer.ID {
 	return ids
 }
 
+// directionLabel maps a libp2p connection direction to the spec's
+// "inbound"/"outbound" label values.
+func directionLabel(d network.Direction) string {
+	if d == network.DirOutbound {
+		return "outbound"
+	}
+	return "inbound"
+}
+
 // ConnectBootnodes connects to a list of bootnode multiaddrs.
 func (h *Host) ConnectBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr) {
 	for _, addr := range addrs {
@@ -132,12 +142,12 @@ func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multia
 // FetchBlocksByRootWithRetry fetches blocks with exponential backoff retry.
 // Backoff: 5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560 ms.
 // Random peer selection, exclude previously-failed peers per root.
-func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte) ([]*SignedBlockWithAttestationResult, error) {
-	var results []*SignedBlockWithAttestationResult
+func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte) ([]*SignedBlockResult, error) {
+	var results []*SignedBlockResult
 
 	for _, root := range roots {
 		block, err := h.fetchSingleBlockWithRetry(ctx, root)
-		results = append(results, &SignedBlockWithAttestationResult{
+		results = append(results, &SignedBlockResult{
 			Root:  root,
 			Block: block,
 			Err:   err,
@@ -154,7 +164,7 @@ func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte)
 // Returns the blocks the peer delivered (may be fewer than requested if the
 // peer doesn't have all of them) and the set of roots that were not delivered
 // after exhausting retries.
-func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlockWithAttestation, [][32]byte, error) {
+func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error) {
 	if len(roots) == 0 {
 		return nil, nil, nil
 	}
@@ -197,10 +207,10 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 }
 
 // computeMissingRoots returns the roots that the peer did not deliver.
-func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlockWithAttestation) [][32]byte {
+func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlock) [][32]byte {
 	deliveredRoots := make(map[[32]byte]bool, len(delivered))
 	for _, b := range delivered {
-		root, err := b.Block.Block.HashTreeRoot()
+		root, err := b.Block.HashTreeRoot()
 		if err != nil {
 			continue
 		}
@@ -215,14 +225,14 @@ func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlockWit
 	return missing
 }
 
-// SignedBlockWithAttestationResult holds the result of fetching a single block.
-type SignedBlockWithAttestationResult struct {
+// SignedBlockResult holds the result of fetching a single block.
+type SignedBlockResult struct {
 	Root  [32]byte
-	Block []*types.SignedBlockWithAttestation
+	Block []*types.SignedBlock
 	Err   error
 }
 
-func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]*types.SignedBlockWithAttestation, error) {
+func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]*types.SignedBlock, error) {
 	excluded := make(map[peer.ID]bool)
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 

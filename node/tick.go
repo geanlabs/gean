@@ -17,6 +17,12 @@ func (e *Engine) onTick() {
 	currentInterval := e.currentInterval(timestampMs)
 
 	SetCurrentSlot(currentSlot)
+	e.updateSyncStatus(currentSlot)
+
+	// Snapshot the aggregator role once per tick. A mid-tick toggle must
+	// not cause OnTick below and the interval-2 branch to observe different
+	// values (store_tick relies on the bool being stable for the tick).
+	isAgg := e.AggCtl.Get()
 
 	// Check if we're the proposer for this slot.
 	hasProposal := false
@@ -25,14 +31,29 @@ func (e *Engine) onTick() {
 		proposerValidatorID, hasProposal = e.getOurProposer(currentSlot)
 	}
 
-	// Tick the store — handles interval dispatch (promote attestations, aggregate).
-	newAggregates := OnTick(e.Store, timestampMs, hasProposal, e.IsAggregator)
+	// Tick the store — handles interval dispatch (promote attestations).
+	// Aggregation is handled async below to avoid blocking the tick loop.
+	_ = OnTick(e.Store, timestampMs, hasProposal, isAgg)
 
-	// Publish new aggregates from interval 2.
-	for _, agg := range newAggregates {
-		if e.P2P != nil {
-			e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+	// Interval 2: synchronous aggregation. Blocks the tick loop for 1-4s
+	// but keeps source consistency — headState doesn't change during proving.
+	// Async aggregation breaks source alignment because head drifts during
+	// the background prover run. Acceptable until prover is <800ms.
+	if currentInterval == 2 && isAgg {
+		aggs := AggregateCommitteeSignatures(e.Store)
+		for _, agg := range aggs {
+			if e.P2P != nil {
+				e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+			}
 		}
+	}
+
+	// Interval 0/4: update head after attestation promotion.
+	// Must run BEFORE proposal so the builder uses the freshest head.
+	// Spec: get_proposal_head calls accept_new_attestations (promote + updateHead)
+	// before reading self.head for block building.
+	if currentInterval == 0 || currentInterval == 4 {
+		e.updateHead(false)
 	}
 
 	// Interval 0: propose block if we're the proposer.
@@ -40,13 +61,14 @@ func (e *Engine) onTick() {
 		e.maybePropose(currentSlot, proposerValidatorID)
 	}
 
-	// Interval 0/4: update head after attestation promotion.
-	if currentInterval == 0 || currentInterval == 4 {
-		e.updateHead(false)
-	}
-
 	// Interval 1: produce attestations + chain status log.
+	// Drain pending blocks first so all nodes converge on the same head
+	// before attesting. Without this, Go's select may fire the tick before
+	// processing a pending block, causing attestations with a stale head
+	// and divergent target/source roots across nodes.
 	if currentInterval == 1 {
+		e.drainPendingBlocks()
+		e.updateHead(false)
 		e.produceAttestations(currentSlot)
 		e.logChainStatus(currentSlot)
 	}
@@ -55,6 +77,25 @@ func (e *Engine) onTick() {
 	if currentInterval == 3 {
 		e.updateSafeTarget()
 		PeriodicPrune(e.Store, e.FC, currentSlot, e.Store.LatestFinalized().Slot)
+	}
+}
+
+// drainPendingBlocks processes all queued blocks from the channel before
+// attestation production. Ensures the node's head reflects the latest blocks
+// so attestation targets/sources match across nodes.
+func (e *Engine) drainPendingBlocks() {
+	drained := 0
+	for {
+		select {
+		case block := <-e.BlockCh:
+			e.onBlock(block)
+			drained++
+		default:
+			if drained > 0 {
+				logger.Info(logger.Chain, "drained %d pending blocks before attestation", drained)
+			}
+			return
+		}
 	}
 }
 
@@ -91,9 +132,10 @@ func (e *Engine) updateHead(logTree bool) {
 			SetHeadSlot(newHeader.Slot)
 			SetLatestJustifiedSlot(justified.Slot)
 			SetLatestFinalizedSlot(finalized.Slot)
-			SetGossipSignatures(e.Store.GossipSignatures.Len())
+			SetAttestationSignatures(e.Store.AttestationSignatures.Len())
 			SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
 			SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
+			SetPendingAttestationsTotal(e.PendingAttestations.Total())
 
 			if isReorg {
 				IncForkChoiceReorgs()
@@ -111,12 +153,15 @@ func (e *Engine) updateHead(logTree bool) {
 	}
 }
 
-// updateSafeTarget runs LMD GHOST with 2/3 threshold using all attestations.
+// updateSafeTarget runs LMD GHOST with 2/3 threshold using only the new pool.
+// Per leanSpec PR #680, safe target is an availability signal: it must reflect
+// only freshly received votes from the current slot, not historical knowledge
+// migrated into the known pool.
 func (e *Engine) updateSafeTarget() {
-	attestations := e.Store.ExtractLatestAllAttestations()
+	attestations := e.Store.ExtractLatestNewAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
-	// Feed merged attestations to vote store as "new" for safe target.
+	// Feed new-pool attestations to vote store as "new" for safe target.
 	for vid, data := range attestations {
 		idx := e.FC.NodeIndex(data.Head.Root)
 		if idx >= 0 {
@@ -166,7 +211,7 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 		peerCount = e.P2P.ConnectedPeers()
 	}
 
-	gossipSigs := e.Store.GossipSignatures.Len()
+	gossipSigs := e.Store.AttestationSignatures.Len()
 	knownPayloads := e.Store.KnownPayloads.Len()
 	statesCount := e.Store.StatesCount()
 	fcNodesCount := 0
@@ -229,4 +274,28 @@ func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// SyncLagSlots is the threshold beyond which the node is considered "syncing"
+// rather than "synced". Two slots is generous enough to ride out brief network
+// hiccups without flapping.
+const SyncLagSlots = 2
+
+// updateSyncStatus sets the lean_node_sync_status gauge based on the current
+// head's distance from wall-clock slot.
+//   - synced:  head within SyncLagSlots of wall clock
+//   - syncing: head behind by more than SyncLagSlots, but we have peers
+//   - idle:    no peers connected (so we cannot make progress)
+func (e *Engine) updateSyncStatus(currentSlot uint64) {
+	if e.P2P != nil && e.P2P.ConnectedPeers() == 0 {
+		SetSyncStatus("idle")
+		return
+	}
+
+	headSlot := e.Store.HeadSlot()
+	if headSlot+SyncLagSlots >= currentSlot {
+		SetSyncStatus("synced")
+		return
+	}
+	SetSyncStatus("syncing")
 }

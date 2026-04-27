@@ -174,31 +174,36 @@ func TestPromoteNewToKnown(t *testing.T) {
 	}
 }
 
-func TestExtractLatestAllAttestations(t *testing.T) {
+// TestExtractLatestNewAttestations verifies the new-pool-only accessor used by
+// updateSafeTarget. Per leanSpec PR #680, safe target must ignore the known pool.
+func TestExtractLatestNewAttestations(t *testing.T) {
 	s := makeTestStore()
 
-	// Validator 0 in known at slot 5.
+	// Validator 0 lives only in the known pool — must be ignored.
 	var dr1 [32]byte
 	dr1[0] = 1
-	bits1 := types.NewBitlistSSZ(1)
+	bits1 := types.NewBitlistSSZ(2)
 	types.BitlistSet(bits1, 0)
 	s.KnownPayloads.Push(dr1, &types.AttestationData{Slot: 5}, &types.AggregatedSignatureProof{Participants: bits1})
 
-	// Validator 0 in new at slot 8 (newer).
+	// Validator 1 lives only in the new pool — must be returned.
 	var dr2 [32]byte
 	dr2[0] = 2
-	bits2 := types.NewBitlistSSZ(1)
-	types.BitlistSet(bits2, 0)
+	bits2 := types.NewBitlistSSZ(2)
+	types.BitlistSet(bits2, 1)
 	s.NewPayloads.Push(dr2, &types.AttestationData{Slot: 8}, &types.AggregatedSignatureProof{Participants: bits2})
 
-	all := s.ExtractLatestAllAttestations()
-	if all[0].Slot != 8 {
-		t.Fatalf("expected slot 8 (newer), got %d", all[0].Slot)
+	got := s.ExtractLatestNewAttestations()
+	if _, found := got[0]; found {
+		t.Fatal("validator 0 lives only in known pool — must not appear")
+	}
+	if got[1] == nil || got[1].Slot != 8 {
+		t.Fatalf("validator 1 should appear at slot 8, got %v", got[1])
 	}
 }
 
-func TestGossipSignatureInsertAndDelete(t *testing.T) {
-	gsm := make(GossipSignatureMap)
+func TestAttestationSignatureInsertAndDelete(t *testing.T) {
+	gsm := NewAttestationSignatureMap()
 	var dr [32]byte
 	dr[0] = 1
 	data := &types.AttestationData{Slot: 5}
@@ -210,18 +215,20 @@ func TestGossipSignatureInsertAndDelete(t *testing.T) {
 	if gsm.Len() != 1 {
 		t.Fatalf("expected 1 entry, got %d", gsm.Len())
 	}
-	if len(gsm[dr].Signatures) != 2 {
+	snap := gsm.Snapshot()
+	if len(snap[dr].Signatures) != 2 {
 		t.Fatal("expected 2 signatures")
 	}
 
-	gsm.Delete([]GossipDeleteKey{{ValidatorID: 0, DataRoot: dr}})
-	if len(gsm[dr].Signatures) != 1 {
+	gsm.Delete([]AttestationDeleteKey{{ValidatorID: 0, DataRoot: dr}})
+	snap = gsm.Snapshot()
+	if len(snap[dr].Signatures) != 1 {
 		t.Fatal("expected 1 signature after delete")
 	}
 }
 
-func TestGossipSignaturePruneBelow(t *testing.T) {
-	gsm := make(GossipSignatureMap)
+func TestAttestationSignaturePruneBelow(t *testing.T) {
+	gsm := NewAttestationSignatureMap()
 	var sig [types.SignatureSize]byte
 	for i := uint64(0); i < 5; i++ {
 		var dr [32]byte
@@ -289,7 +296,7 @@ func TestValidateAttestationDataTopology(t *testing.T) {
 }
 
 func TestAggregationBitsFromValidatorIndices(t *testing.T) {
-	bits := aggregationBitsFromValidatorIndices([]uint64{0, 3, 7})
+	bits := AggregationBitsFromIndices([]uint64{0, 3, 7})
 	if !types.BitlistGet(bits, 0) || !types.BitlistGet(bits, 3) || !types.BitlistGet(bits, 7) {
 		t.Fatal("expected bits 0, 3, 7 set")
 	}

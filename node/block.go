@@ -11,10 +11,10 @@ import (
 )
 
 // onBlock processes a received block using an iterative work queue.
-func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
+func (e *Engine) onBlock(signedBlock *types.SignedBlock) {
 	oldFinalizedSlot := e.Store.LatestFinalized().Slot
 
-	queue := []*types.SignedBlockWithAttestation{signedBlock}
+	queue := []*types.SignedBlock{signedBlock}
 
 	for len(queue) > 0 {
 		current := queue[0]
@@ -30,8 +30,8 @@ func (e *Engine) onBlock(signedBlock *types.SignedBlockWithAttestation) {
 	}
 }
 
-func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, queue *[]*types.SignedBlockWithAttestation) {
-	block := signedBlock.Block.Block
+func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types.SignedBlock) {
+	block := signedBlock.Block
 	blockRoot, _ := block.HashTreeRoot()
 	parentRoot := block.ParentRoot
 
@@ -150,21 +150,43 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlockWithAttestation, 
 		e.FC.Prune(finalized.Root)
 	}
 
-	// Update head BEFORE processing proposer attestation.
+	// Update head.
 	e.updateHead(false)
-
-	// Process proposer attestation.
-	ProcessProposerAttestation(e.Store, signedBlock, true)
 
 	// Clear depth tracking for this block (now processed).
 	delete(e.PendingBlockDepths, blockRoot)
+
+	// Replay any gossip attestations that were buffered awaiting this exact
+	// head block. Fires for every successful import — cascaded children
+	// (added via collectPendingChildren below) re-enter processOneBlock and
+	// run their own replay pass, so a multi-block chain repair drains the
+	// buffer for each block in order. Replay fans out to one goroutine per
+	// attestation, matching the existing live-gossip pattern in Run().
+	e.replayPendingAttestations(blockRoot)
 
 	// Cascade: enqueue pending children for processing.
 	e.collectPendingChildren(blockRoot, queue)
 }
 
+// replayPendingAttestations drains every gossip attestation that was buffered
+// awaiting this head block and fires each one back through onGossipAttestation.
+// Each replay runs in its own goroutine because XMSS verification is ~500ms
+// per attestation and would otherwise serialize behind the engine main loop.
+func (e *Engine) replayPendingAttestations(headRoot [32]byte) {
+	pending := e.PendingAttestations.Drain(headRoot)
+	if len(pending) == 0 {
+		return
+	}
+	logger.Info(logger.Gossip, "replaying %d buffered attestations for newly arrived head=0x%x",
+		len(pending), headRoot)
+	for _, att := range pending {
+		att := att
+		go e.onGossipAttestation(att)
+	}
+}
+
 // collectPendingChildren moves pending children of parent into the work queue.
-func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.SignedBlockWithAttestation) {
+func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.SignedBlock) {
 	childRoots, ok := e.PendingBlocks[parentRoot]
 	if !ok {
 		return
@@ -223,6 +245,13 @@ func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
 
 	if discarded > 0 {
 		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
+	}
+
+	// Drop buffered attestations whose target slot is at or below the new
+	// finalized slot — their head block (if it ever arrives) will likewise
+	// be too old to act on, so the attestation can never be replayed.
+	if removed := e.PendingAttestations.PruneBelow(finalizedSlot); removed > 0 {
+		logger.Info(logger.Store, "discarded %d finalized pending attestations (finalized_slot=%d)", removed, finalizedSlot)
 	}
 }
 
@@ -334,9 +363,39 @@ func (e *Engine) discardPendingSubtree(blockRoot [32]byte) {
 }
 
 // onGossipAttestation validates and stores an individual attestation.
+// Per leanSpec store.py:385-386, only aggregator nodes store gossip signatures.
+// Non-aggregators validate and drop — they receive aggregated proofs via the
+// aggregation gossip topic instead.
+// Spec: lean_spec/subspecs/forkchoice/store.py on_gossip_attestation (line 385)
 func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
-	// Validate attestation data.
+	if !e.AggCtl.Get() {
+		return
+	}
+
+	// Validate attestation data. If the attestation references a head block
+	// we don't yet know about, buffer it under that head root and fire a
+	// targeted BlocksByRoot fetch — when the block arrives, the block import
+	// path drains the bucket and replays each attestation through this same
+	// function. Source/target unknowns stay strict-drop for now: head is the
+	// dominant ordering race in practice (proposer's own block delayed in
+	// gossip dispersion); source/target races are rarer and can be handled
+	// the same way later if metrics show it matters.
 	if err := ValidateAttestationData(e.Store, att.Data); err != nil {
+		if se, ok := err.(*StoreError); ok && se.Kind == ErrUnknownHeadBlock && att.Data.Head != nil {
+			added, dropped := e.PendingAttestations.Add(att.Data.Head.Root, att)
+			if added {
+				select {
+				case e.FetchRootCh <- att.Data.Head.Root:
+				default:
+					// Batcher channel full — that's fine. Multiple attestations
+					// for the same root would otherwise produce one extra fetch
+					// each anyway, and the batcher dedups within its grace window.
+				}
+			}
+			if dropped > 0 {
+				IncAttestationsBufferEvicted(dropped)
+			}
+		}
 		return
 	}
 
@@ -348,7 +407,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	if att.ValidatorID >= uint64(len(targetState.Validators)) {
 		return
 	}
-	pubkey := targetState.Validators[att.ValidatorID].Pubkey
+	pubkey := targetState.Validators[att.ValidatorID].AttestationPubkey
 
 	// Verify XMSS signature.
 	dataRoot, _ := att.Data.HashTreeRoot()
@@ -371,7 +430,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 
 	// Store for aggregation.
 	logger.Info(logger.Gossip, "attestation verified: validator=%d slot=%d dataRoot=%x", att.ValidatorID, att.Data.Slot, dataRoot)
-	e.Store.GossipSignatures.InsertWithHandle(dataRoot, att.Data, att.ValidatorID, att.Signature, sigHandle, parseErr)
+	e.Store.AttestationSignatures.InsertWithHandle(dataRoot, att.Data, att.ValidatorID, att.Signature, sigHandle, parseErr)
 }
 
 // onGossipAggregatedAttestation validates and stores an aggregated attestation.

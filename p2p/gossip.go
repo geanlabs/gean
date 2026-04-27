@@ -14,10 +14,29 @@ import (
 // MessageHandler defines callbacks for gossipsub messages.
 // Engine implements this interface and processes messages on its own goroutine.
 type MessageHandler interface {
-	OnBlock(block *types.SignedBlockWithAttestation)
+	OnBlock(block *types.SignedBlock)
 	OnGossipAttestation(att *types.SignedAttestation)
 	OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation)
 }
+
+// Gossip-size metric hooks set by node package at startup. Nil-safe.
+var (
+	GossipBlockSizeHook       func(bytes int)
+	GossipAttestationSizeHook func(bytes int)
+	GossipAggregationSizeHook func(bytes int)
+)
+
+// Peer event metric hooks set by node package at startup. Nil-safe.
+// Direction is "inbound" or "outbound" per the libp2p connection stat.
+// Reason on disconnect is best-effort; libp2p doesn't always expose a
+// precise cause, so callers default to "remote_close" for ordinary
+// disconnects. PeerCountHook reports the aggregate connected peer count
+// after every connect/disconnect.
+var (
+	PeerConnectedHook    func(direction string)
+	PeerDisconnectedHook func(direction, reason string)
+	PeerCountHook        func(count int)
+)
 
 // StartGossipListeners starts goroutines that read from each subscribed topic
 // and dispatch decoded messages to the handler.
@@ -60,17 +79,23 @@ func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscr
 func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler) error {
 	switch {
 	case topic == BlockTopic():
-		block := &types.SignedBlockWithAttestation{}
+		if GossipBlockSizeHook != nil {
+			GossipBlockSizeHook(len(data))
+		}
+		block := &types.SignedBlock{}
 		if err := block.UnmarshalSSZ(data); err != nil {
 			return fmt.Errorf("unmarshal block (%d bytes): %w", len(data), err)
 		}
-		blockRoot, _ := block.Block.Block.HashTreeRoot()
+		blockRoot, _ := block.Block.HashTreeRoot()
 		logger.Info(logger.Gossip, "received block slot=%d proposer=%d block_root=0x%x parent_root=0x%x",
-			block.Block.Block.Slot, block.Block.Block.ProposerIndex,
-			blockRoot, block.Block.Block.ParentRoot)
+			block.Block.Slot, block.Block.ProposerIndex,
+			blockRoot, block.Block.ParentRoot)
 		handler.OnBlock(block)
 
 	case strings.Contains(topic, AttestationTopicKind+"_"):
+		if GossipAttestationSizeHook != nil {
+			GossipAttestationSizeHook(len(data))
+		}
 		att := &types.SignedAttestation{}
 		if err := att.UnmarshalSSZ(data); err != nil {
 			return fmt.Errorf("unmarshal attestation (%d bytes): %w", len(data), err)
@@ -78,6 +103,9 @@ func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler
 		handler.OnGossipAttestation(att)
 
 	case topic == AggregationTopic():
+		if GossipAggregationSizeHook != nil {
+			GossipAggregationSizeHook(len(data))
+		}
 		agg := &types.SignedAggregatedAttestation{}
 		if err := agg.UnmarshalSSZ(data); err != nil {
 			return fmt.Errorf("unmarshal aggregation (%d bytes): %w", len(data), err)

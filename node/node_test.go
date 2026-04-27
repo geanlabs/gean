@@ -42,7 +42,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot)
 
-	return New(s, fc, nil, nil, false, 1)
+	return New(s, fc, nil, nil, NewAggregatorController(false), 1)
 }
 
 func TestEngineCreation(t *testing.T) {
@@ -73,6 +73,86 @@ func TestEngineUpdateSafeTarget(t *testing.T) {
 	if types.IsZeroRoot(safeTarget) {
 		t.Fatal("safe target should not be zero")
 	}
+}
+
+// makeSafeTargetEngine builds an engine with a 3-block chain and N validators
+// in head state. Returns the engine and the slot-2 block root used as the
+// safe-target candidate by the regression test below.
+func makeSafeTargetEngine(t *testing.T, numValidators int) (*Engine, [32]byte) {
+	t.Helper()
+	e := makeTestEngine()
+
+	genesis := e.Store.Head()
+	var block1, block2 [32]byte
+	block1[0] = 0x11
+	block2[0] = 0x22
+
+	e.Store.InsertBlockHeader(block1, &types.BlockHeader{Slot: 1, ParentRoot: genesis})
+	e.Store.InsertBlockHeader(block2, &types.BlockHeader{Slot: 2, ParentRoot: block1})
+	e.FC.OnBlock(1, block1, genesis)
+	e.FC.OnBlock(2, block2, block1)
+
+	headState := e.Store.GetState(genesis)
+	headState.Validators = make([]*types.Validator, numValidators)
+	for i := range headState.Validators {
+		headState.Validators[i] = &types.Validator{}
+	}
+	e.Store.InsertState(genesis, headState)
+
+	return e, block2
+}
+
+// planAggregatedVoteForBlock returns an attestation-data payload + proof where
+// the first `numVoters` validators vote for the given head/target block.
+func planAggregatedVoteForBlock(targetRoot [32]byte, targetSlot, numValidators, numVoters uint64) ([32]byte, *types.AttestationData, *types.AggregatedSignatureProof) {
+	bits := types.NewBitlistSSZ(numValidators)
+	for i := uint64(0); i < numVoters; i++ {
+		types.BitlistSet(bits, i)
+	}
+	data := &types.AttestationData{
+		Slot:   targetSlot,
+		Head:   &types.Checkpoint{Root: targetRoot, Slot: targetSlot},
+		Target: &types.Checkpoint{Root: targetRoot, Slot: targetSlot},
+		Source: &types.Checkpoint{},
+	}
+	dataRoot, _ := data.HashTreeRoot()
+	return dataRoot, data, &types.AggregatedSignatureProof{Participants: bits}
+}
+
+// TestUpdateSafeTarget_IgnoresKnownPool reproduces the leanSpec PR #680
+// scenario: votes living only in the known pool must not advance safe target.
+// The same votes via the new pool must advance it.
+func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
+	const numValidators = 6 // threshold = ceil(2*6/3) = 4
+
+	t.Run("known_pool_only_does_not_advance", func(t *testing.T) {
+		e, block2 := makeSafeTargetEngine(t, numValidators)
+		genesis := e.Store.Head()
+
+		dataRoot, data, proof := planAggregatedVoteForBlock(block2, 2, numValidators, 4)
+		e.Store.KnownPayloads.Push(dataRoot, data, proof)
+
+		e.updateSafeTarget()
+
+		if e.Store.SafeTarget() != genesis {
+			t.Fatalf("safe target advanced past genesis from known-pool-only votes (root=0x%x); leanSpec #680 forbids this",
+				e.Store.SafeTarget())
+		}
+	})
+
+	t.Run("new_pool_advances", func(t *testing.T) {
+		e, block2 := makeSafeTargetEngine(t, numValidators)
+
+		dataRoot, data, proof := planAggregatedVoteForBlock(block2, 2, numValidators, 4)
+		e.Store.NewPayloads.Push(dataRoot, data, proof)
+
+		e.updateSafeTarget()
+
+		if e.Store.SafeTarget() != block2 {
+			t.Fatalf("safe target did not advance to block_2 with 4-of-6 new-pool votes; got 0x%x",
+				e.Store.SafeTarget())
+		}
+	})
 }
 
 func TestEnginePendingBlocks(t *testing.T) {
@@ -116,7 +196,7 @@ func TestEngineCascadePending(t *testing.T) {
 	}
 
 	// collectPendingChildren removes entries and returns blocks to process.
-	var queue []*types.SignedBlockWithAttestation
+	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
 	if len(e.PendingBlocks) != 0 {
@@ -131,11 +211,8 @@ func TestEngineMessageHandler(t *testing.T) {
 	e := makeTestEngine()
 
 	// Verify Engine implements the MessageHandler interface.
-	block := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               &types.Block{Slot: 1},
-			ProposerAttestation: &types.Attestation{},
-		},
+	block := &types.SignedBlock{
+		Block:     &types.Block{Slot: 1},
 		Signature: &types.BlockSignatures{},
 	}
 
@@ -145,7 +222,7 @@ func TestEngineMessageHandler(t *testing.T) {
 	// Check channel received it.
 	select {
 	case received := <-e.BlockCh:
-		if received.Block.Block.Slot != 1 {
+		if received.Block.Slot != 1 {
 			t.Fatal("wrong block slot")
 		}
 	default:
@@ -284,7 +361,7 @@ func TestCascadeClearsDepth(t *testing.T) {
 	children[child1] = true
 	e.PendingBlocks[parentRoot] = children
 
-	var queue []*types.SignedBlockWithAttestation
+	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
 	// Depth should be cleared after cascade.

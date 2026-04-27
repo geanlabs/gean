@@ -3,88 +3,153 @@ package node
 import (
 	"fmt"
 	"sort"
+	"time"
 
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
-// ProduceBlockWithSignatures builds a block using per-validator latest-vote selection.
+// ProduceBlockWithSignatures builds a block using per-AttestationData fixed-point selection.
 // Returns the block and per-attestation signature proofs.
+// Spec: lean_spec/subspecs/containers/state/state.py build_block
 func ProduceBlockWithSignatures(
 	s *ConsensusStore,
 	slot, validatorIndex uint64,
 ) (*types.Block, []*types.AggregatedSignatureProof, error) {
+	buildStart := time.Now()
+
 	headRoot := s.Head()
 	headState := s.GetState(headRoot)
 	if headState == nil {
+		IncBlockBuildingFailures()
 		return nil, nil, &StoreError{ErrMissingParentState,
 			fmt.Sprintf("head state missing for slot %d", slot)}
 	}
 
 	numValidators := headState.NumValidators()
 	if !types.IsProposer(slot, validatorIndex, numValidators) {
+		IncBlockBuildingFailures()
 		return nil, nil, errNotProposer(validatorIndex, slot)
 	}
+
+	// Flush any pending NewPayloads → KnownPayloads before building.
+	// Matches leanSpec get_proposal_head which calls accept_new_attestations
+	// right before reading latest_known_aggregated_payloads.
+	s.PromoteNewToKnown()
+
+	storeJustified := s.LatestJustified()
 
 	knownEntries := s.KnownPayloads.Entries()
 	knownBlockRoots := s.getBlockRoots()
 
-	return buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries)
+	block, sigs, err := buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries, storeJustified, s.PubKeyCache)
+
+	ObserveBlockBuildingTime(time.Since(buildStart).Seconds())
+	if err != nil {
+		IncBlockBuildingFailures()
+		return nil, nil, err
+	}
+	IncBlockBuildingSuccess()
+	if block != nil && block.Body != nil {
+		ObserveBlockAggregatedPayloads(len(block.Body.Attestations))
+	}
+	return block, sigs, nil
 }
 
-// buildBlock builds a valid block using per-validator latest-vote selection.
+// buildBlock builds a valid block using per-AttestationData fixed-point selection
+// with greedy proof coverage and MAX_ATTESTATIONS_DATA cap.
 //
-// For each validator, we pick their latest vote whose source matches the
-// current justified checkpoint, then group validators by their vote's data
-// root and emit one attestation per (data root, validator subset) pair.
-//
-// This bounds block size by the validator count: at most numValidators
-// distinct attestations per fixed-point iteration. Multiple validators
-// voting for the same target share a single AggregatedAttestation.
+// Algorithm (per spec build_block):
+//  1. Sort payloads by target.slot for deterministic order
+//  2. For each AttestationData whose source == current_justified:
+//     a. Skip if head not in known_block_roots
+//     b. Skip if already processed
+//     c. Greedy proof selection: pick proofs maximizing new validator coverage
+//  3. Trial STF — if justified advances, update source and continue
+//  4. Enforce MAX_ATTESTATIONS_DATA cap
 func buildBlock(
 	headState *types.State,
 	slot, proposerIndex uint64,
 	parentRoot [32]byte,
 	knownBlockRoots map[[32]byte]bool,
 	payloads map[[32]byte]*PayloadEntry,
+	storeJustified *types.Checkpoint,
+	pkCache *xmss.PubKeyCache,
 ) (*types.Block, []*types.AggregatedSignatureProof, error) {
 	var attestations []*types.AggregatedAttestation
 	var signatures []*types.AggregatedSignatureProof
 
 	if len(payloads) > 0 {
-		// Genesis edge case: derive justified checkpoint matching process_block_header.
+		aggStart := time.Now()
+		defer func() { ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds()) }()
+		// Use store justified (stable, converges via tiebreak).
+		// Both attestation source and builder use store justified,
+		// which converges across nodes via deterministic root tiebreak.
 		var currentJustified *types.Checkpoint
 		if headState.LatestBlockHeader.Slot == 0 {
 			currentJustified = &types.Checkpoint{
 				Root: parentRoot,
-				Slot: headState.LatestJustified.Slot,
+				Slot: storeJustified.Slot,
 			}
 		} else {
-			currentJustified = headState.LatestJustified
+			currentJustified = storeJustified
 		}
 
-		// Track validators already included to avoid duplication across iterations.
-		processedValidators := make(map[uint64]bool)
+		logger.Info(logger.Chain, "buildBlock: currentJustified root=0x%x slot=%d",
+			currentJustified.Root, currentJustified.Slot)
+
+		// Sort payloads by target.slot for deterministic processing order.
+		type payloadItem struct {
+			dataRoot [32]byte
+			entry    *PayloadEntry
+		}
+		sorted := make([]payloadItem, 0, len(payloads))
+		for dr, entry := range payloads {
+			sorted = append(sorted, payloadItem{dataRoot: dr, entry: entry})
+		}
+		sort.Slice(sorted, func(i, j int) bool {
+			if sorted[i].entry.Data.Target.Slot != sorted[j].entry.Data.Target.Slot {
+				return sorted[i].entry.Data.Target.Slot < sorted[j].entry.Data.Target.Slot
+			}
+			return compareRoots(sorted[i].dataRoot, sorted[j].dataRoot) < 0
+		})
+
+		processedAttData := make(map[[32]byte]bool)
 
 		for {
-			// For the current justified source, find each validator's latest vote.
-			// The result maps each validator to the payload entry containing their
-			// latest matching vote (highest data.Slot).
-			perValidator := selectLatestPerValidator(payloads, knownBlockRoots, currentJustified, processedValidators)
-			if len(perValidator) == 0 {
-				break
+			foundEntries := false
+
+			for _, item := range sorted {
+				// MAX_ATTESTATIONS_DATA cap on build side.
+				if len(processedAttData) >= int(types.MaxAttestationsData) {
+					break
+				}
+
+				if processedAttData[item.dataRoot] {
+					continue
+				}
+				if !knownBlockRoots[item.entry.Data.Head.Root] {
+					logger.Info(logger.Chain, "buildBlock: SKIP unknown head root=0x%x attSlot=%d",
+						item.entry.Data.Head.Root, item.entry.Data.Slot)
+					continue
+				}
+				if item.entry.Data.Source.Root != currentJustified.Root ||
+					item.entry.Data.Source.Slot != currentJustified.Slot {
+					continue
+				}
+
+				processedAttData[item.dataRoot] = true
+				foundEntries = true
+
+				// Greedy set-cover: select proofs maximizing validator coverage.
+				// If multiple proofs selected, merge via recursive aggregation.
+				selectGreedyProofs(item.entry, headState, pkCache, &attestations, &signatures)
 			}
 
-			// Group validators by their selected payload entry. Multiple validators
-			// pointing at the same entry will share AggregatedAttestations.
-			groups := groupValidatorsByEntry(perValidator)
-
-			added := 0
-			for _, group := range groups {
-				added += emitAttestationsForGroup(group.entry, group.validators, &attestations, &signatures, processedValidators)
-			}
-			if added == 0 {
+			if !foundEntries {
 				break
 			}
 
@@ -105,10 +170,10 @@ func buildBlock(
 			if trialState.LatestJustified.Slot != currentJustified.Slot ||
 				trialState.LatestJustified.Root != currentJustified.Root {
 				currentJustified = trialState.LatestJustified
-				// Continue: new checkpoint may unlock more attestation data.
-			} else {
-				break
+				continue
 			}
+
+			break
 		}
 	}
 
@@ -134,125 +199,192 @@ func buildBlock(
 	stateRoot, _ := postState.HashTreeRoot()
 	finalBlock.StateRoot = stateRoot
 
+	// Spec assertion: the fixed-point loop must close any justified divergence.
+	// The produced block's post-state justified must be >= store justified.
+	if postState.LatestJustified.Slot < storeJustified.Slot {
+		logger.Error(logger.Chain, "buildBlock: justified divergence not closed: block_justified=%d < store_justified=%d",
+			postState.LatestJustified.Slot, storeJustified.Slot)
+	}
+
 	return finalBlock, signatures, nil
 }
 
-// selectLatestPerValidator finds, for each validator, the payload entry that
-// contains their latest vote whose source matches `currentJustified`.
+// selectGreedyProofs uses greedy set-cover to select proofs maximizing validator
+// coverage for a single AttestationData. If multiple proofs are selected, they
+// are merged via recursive aggregation (AggregateWithChildren) into a single
+// compound proof — producing one attestation per AttestationData in the block.
 //
-// Validators in `excluded` are skipped (used to avoid re-selecting validators
-// already included in earlier fixed-point iterations).
-func selectLatestPerValidator(
-	payloads map[[32]byte]*PayloadEntry,
-	knownBlockRoots map[[32]byte]bool,
-	currentJustified *types.Checkpoint,
-	excluded map[uint64]bool,
-) map[uint64]*PayloadEntry {
-	perValidator := make(map[uint64]*PayloadEntry)
-	for _, entry := range payloads {
-		if !knownBlockRoots[entry.Data.Head.Root] {
-			continue
-		}
-		if entry.Data.Source.Root != currentJustified.Root ||
-			entry.Data.Source.Slot != currentJustified.Slot {
-			continue
-		}
-		for _, proof := range entry.Proofs {
-			for _, vid := range types.BitlistIndices(proof.Participants) {
-				if excluded[vid] {
-					continue
-				}
-				existing, ok := perValidator[vid]
-				if !ok || entry.Data.Slot > existing.Data.Slot {
-					perValidator[vid] = entry
-				}
-			}
-		}
-	}
-	return perValidator
-}
-
-// validatorGroup holds a payload entry and the validators selected from it.
-type validatorGroup struct {
-	entry      *PayloadEntry
-	validators []uint64
-}
-
-// groupValidatorsByEntry inverts perValidator into groups keyed by entry,
-// returning a deterministically-sorted slice. Multiple validators pointing
-// at the same entry are batched so we can pick proofs that cover them all.
-func groupValidatorsByEntry(perValidator map[uint64]*PayloadEntry) []validatorGroup {
-	byEntry := make(map[*PayloadEntry][]uint64)
-	for vid, entry := range perValidator {
-		byEntry[entry] = append(byEntry[entry], vid)
-	}
-	groups := make([]validatorGroup, 0, len(byEntry))
-	for entry, vids := range byEntry {
-		sort.Slice(vids, func(i, j int) bool { return vids[i] < vids[j] })
-		groups = append(groups, validatorGroup{entry: entry, validators: vids})
-	}
-	// Deterministic order: by target slot then by data root.
-	sort.Slice(groups, func(i, j int) bool {
-		ei, ej := groups[i].entry, groups[j].entry
-		if ei.Data.Target.Slot != ej.Data.Target.Slot {
-			return ei.Data.Target.Slot < ej.Data.Target.Slot
-		}
-		ri, _ := ei.Data.HashTreeRoot()
-		rj, _ := ej.Data.HashTreeRoot()
-		return compareRoots(ri, rj) < 0
-	})
-	return groups
-}
-
-// emitAttestationsForGroup picks the smallest set of proofs from `entry` that
-// covers all validators in `wanted`, appending one AggregatedAttestation per
-// chosen proof. Returns the number of attestations emitted.
-func emitAttestationsForGroup(
+// Spec: select_greedily + AggregatedSignatureProof.aggregate(children=...)
+func selectGreedyProofs(
 	entry *PayloadEntry,
-	wanted []uint64,
+	state *types.State,
+	pkCache *xmss.PubKeyCache,
 	attestations *[]*types.AggregatedAttestation,
 	signatures *[]*types.AggregatedSignatureProof,
-	processedValidators map[uint64]bool,
-) int {
-	needed := make(map[uint64]bool, len(wanted))
-	for _, vid := range wanted {
-		needed[vid] = true
+) {
+	if len(entry.Proofs) == 0 {
+		return
 	}
 
-	emitted := 0
-	for len(needed) > 0 {
-		bestIdx := -1
-		bestCount := 0
-		for i, proof := range entry.Proofs {
-			count := 0
-			for _, vid := range types.BitlistIndices(proof.Participants) {
-				if needed[vid] {
-					count++
-				}
-			}
-			if count > bestCount {
-				bestCount = count
-				bestIdx = i
-			}
+	// Single proof: use directly, no merging needed.
+	if len(entry.Proofs) == 1 {
+		proof := entry.Proofs[0]
+		if countParticipants(proof.Participants) == 0 {
+			return
 		}
-		if bestIdx < 0 || bestCount == 0 {
-			break
-		}
-
-		proof := entry.Proofs[bestIdx]
 		*attestations = append(*attestations, &types.AggregatedAttestation{
 			AggregationBits: proof.Participants,
 			Data:            entry.Data,
 		})
 		*signatures = append(*signatures, proof)
-		emitted++
+		return
+	}
 
-		for _, vid := range types.BitlistIndices(proof.Participants) {
-			delete(needed, vid)
-			processedValidators[vid] = true
+	// Greedy set-cover: iteratively pick the proof covering the most
+	// uncovered validators until no new coverage is gained.
+	covered := make(map[uint64]bool)
+	remaining := make(map[int]bool, len(entry.Proofs))
+	for i := range entry.Proofs {
+		remaining[i] = true
+	}
+
+	var selected []*types.AggregatedSignatureProof
+	for len(remaining) > 0 {
+		bestIdx := -1
+		bestNew := 0
+
+		for idx := range remaining {
+			newCount := 0
+			bitsLen := types.BitlistLen(entry.Proofs[idx].Participants)
+			for vid := uint64(0); vid < bitsLen; vid++ {
+				if types.BitlistGet(entry.Proofs[idx].Participants, vid) && !covered[vid] {
+					newCount++
+				}
+			}
+			if newCount > bestNew {
+				bestNew = newCount
+				bestIdx = idx
+			}
+		}
+
+		if bestIdx < 0 || bestNew == 0 {
+			break
+		}
+
+		proof := entry.Proofs[bestIdx]
+		selected = append(selected, proof)
+		delete(remaining, bestIdx)
+
+		// Mark covered validators.
+		bitsLen := types.BitlistLen(proof.Participants)
+		for vid := uint64(0); vid < bitsLen; vid++ {
+			if types.BitlistGet(proof.Participants, vid) {
+				covered[vid] = true
+			}
 		}
 	}
-	return emitted
+
+	if len(selected) == 0 {
+		return
+	}
+
+	// Single proof selected: use directly.
+	if len(selected) == 1 {
+		*attestations = append(*attestations, &types.AggregatedAttestation{
+			AggregationBits: selected[0].Participants,
+			Data:            entry.Data,
+		})
+		*signatures = append(*signatures, selected[0])
+		return
+	}
+
+	// Multiple proofs: merge via recursive aggregation.
+	merged := mergeProofs(selected, entry.Data, state, pkCache)
+	if merged == nil {
+		return // skip this AttestationData if merge fails
+	}
+	*attestations = append(*attestations, &types.AggregatedAttestation{
+		AggregationBits: merged.Participants,
+		Data:            entry.Data,
+	})
+	*signatures = append(*signatures, merged)
+}
+
+// mergeProofs recursively aggregates multiple proofs for the same AttestationData
+// into a single compound proof using AggregateWithChildren.
+// Returns nil if merging fails (caller should fall back to single best proof).
+func mergeProofs(
+	proofs []*types.AggregatedSignatureProof,
+	attData *types.AttestationData,
+	state *types.State,
+	pkCache *xmss.PubKeyCache,
+) *types.AggregatedSignatureProof {
+	if len(proofs) < 2 || state == nil || pkCache == nil {
+		return nil
+	}
+
+	// Build ChildProof structs for the FFI call.
+	children := make([]xmss.ChildProof, 0, len(proofs))
+	var allIDs []uint64
+
+	for _, proof := range proofs {
+		var pubkeys []xmss.CPubKey
+		bitsLen := types.BitlistLen(proof.Participants)
+		for vid := uint64(0); vid < bitsLen; vid++ {
+			if !types.BitlistGet(proof.Participants, vid) {
+				continue
+			}
+			if int(vid) >= len(state.Validators) {
+				continue
+			}
+			pk, err := pkCache.Get(state.Validators[vid].AttestationPubkey)
+			if err != nil {
+				logger.Error(logger.Chain, "mergeProofs: pubkey parse failed vid=%d: %v", vid, err)
+				return nil
+			}
+			pubkeys = append(pubkeys, pk)
+			allIDs = append(allIDs, vid)
+		}
+
+		children = append(children, xmss.ChildProof{
+			Pubkeys:   pubkeys,
+			ProofData: proof.ProofData,
+		})
+	}
+
+	dataRootHash, _ := attData.HashTreeRoot()
+	slot := uint32(attData.Slot)
+
+	mergeStart := time.Now()
+	mergedBytes, err := xmss.AggregateWithChildren(nil, nil, children, dataRootHash, slot)
+	mergeDuration := time.Since(mergeStart)
+
+	if err != nil {
+		logger.Error(logger.Chain, "mergeProofs: AggregateWithChildren failed slot=%d children=%d duration=%v: %v",
+			slot, len(children), mergeDuration, err)
+		return nil
+	}
+
+	logger.Info(logger.Chain, "mergeProofs: merged %d proofs into 1, slot=%d validators=%d proof=%d bytes duration=%v",
+		len(proofs), slot, len(allIDs), len(mergedBytes), mergeDuration)
+
+	participants := AggregationBitsFromIndices(allIDs)
+	return &types.AggregatedSignatureProof{
+		Participants: participants,
+		ProofData:    mergedBytes,
+	}
+}
+
+// countParticipants returns the number of set bits in a participant bitlist.
+func countParticipants(bits []byte) int {
+	count := 0
+	bitsLen := types.BitlistLen(bits)
+	for vid := uint64(0); vid < bitsLen; vid++ {
+		if types.BitlistGet(bits, vid) {
+			count++
+		}
+	}
+	return count
 }
 
 // getBlockRoots returns all known block roots from the store.
