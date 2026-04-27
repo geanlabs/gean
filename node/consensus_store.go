@@ -264,19 +264,12 @@ func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.Atte
 	return s.KnownPayloads.ExtractLatestAttestations()
 }
 
-// ExtractLatestAllAttestations returns per-validator latest from known+new merged.
-// Used by updateSafeTarget. rs extract_latest_all_attestations (L104).
-func (s *ConsensusStore) ExtractLatestAllAttestations() map[uint64]*types.AttestationData {
-	known := s.KnownPayloads.ExtractLatestAttestations()
-	newAtts := s.NewPayloads.ExtractLatestAttestations()
-	// Merge: new overwrites known if newer.
-	for vid, data := range newAtts {
-		existing, ok := known[vid]
-		if !ok || existing.Slot < data.Slot {
-			known[vid] = data
-		}
-	}
-	return known
+// ExtractLatestNewAttestations returns per-validator latest from new pool only.
+// Used by updateSafeTarget. Per leanSpec PR #680, safe target is an availability
+// signal computed strictly from the new pool — votes already migrated into
+// known are historical and intentionally excluded.
+func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.AttestationData {
+	return s.NewPayloads.ExtractLatestAttestations()
 }
 
 // --- Internal metadata helpers ---

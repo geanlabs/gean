@@ -174,26 +174,31 @@ func TestPromoteNewToKnown(t *testing.T) {
 	}
 }
 
-func TestExtractLatestAllAttestations(t *testing.T) {
+// TestExtractLatestNewAttestations verifies the new-pool-only accessor used by
+// updateSafeTarget. Per leanSpec PR #680, safe target must ignore the known pool.
+func TestExtractLatestNewAttestations(t *testing.T) {
 	s := makeTestStore()
 
-	// Validator 0 in known at slot 5.
+	// Validator 0 lives only in the known pool — must be ignored.
 	var dr1 [32]byte
 	dr1[0] = 1
-	bits1 := types.NewBitlistSSZ(1)
+	bits1 := types.NewBitlistSSZ(2)
 	types.BitlistSet(bits1, 0)
 	s.KnownPayloads.Push(dr1, &types.AttestationData{Slot: 5}, &types.AggregatedSignatureProof{Participants: bits1})
 
-	// Validator 0 in new at slot 8 (newer).
+	// Validator 1 lives only in the new pool — must be returned.
 	var dr2 [32]byte
 	dr2[0] = 2
-	bits2 := types.NewBitlistSSZ(1)
-	types.BitlistSet(bits2, 0)
+	bits2 := types.NewBitlistSSZ(2)
+	types.BitlistSet(bits2, 1)
 	s.NewPayloads.Push(dr2, &types.AttestationData{Slot: 8}, &types.AggregatedSignatureProof{Participants: bits2})
 
-	all := s.ExtractLatestAllAttestations()
-	if all[0].Slot != 8 {
-		t.Fatalf("expected slot 8 (newer), got %d", all[0].Slot)
+	got := s.ExtractLatestNewAttestations()
+	if _, found := got[0]; found {
+		t.Fatal("validator 0 lives only in known pool — must not appear")
+	}
+	if got[1] == nil || got[1].Slot != 8 {
+		t.Fatalf("validator 1 should appear at slot 8, got %v", got[1])
 	}
 }
 

@@ -153,12 +153,15 @@ func (e *Engine) updateHead(logTree bool) {
 	}
 }
 
-// updateSafeTarget runs LMD GHOST with 2/3 threshold using all attestations.
+// updateSafeTarget runs LMD GHOST with 2/3 threshold using only the new pool.
+// Per leanSpec PR #680, safe target is an availability signal: it must reflect
+// only freshly received votes from the current slot, not historical knowledge
+// migrated into the known pool.
 func (e *Engine) updateSafeTarget() {
-	attestations := e.Store.ExtractLatestAllAttestations()
+	attestations := e.Store.ExtractLatestNewAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
-	// Feed merged attestations to vote store as "new" for safe target.
+	// Feed new-pool attestations to vote store as "new" for safe target.
 	for vid, data := range attestations {
 		idx := e.FC.NodeIndex(data.Head.Root)
 		if idx >= 0 {
