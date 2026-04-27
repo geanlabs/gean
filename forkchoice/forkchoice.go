@@ -28,8 +28,10 @@ func (fc *ForkChoice) UpdateHead(justifiedRoot [32]byte) [32]byte {
 }
 
 // UpdateSafeTarget computes the head using a 2/3 supermajority threshold.
-// Uses all attestations (both known and new merged) — fromKnown=false reads LatestNew
-// which at call time should contain the merged pool.
+// Reads votes from VoteTracker.LatestNew (fromKnown=false). The caller is
+// responsible for populating LatestNew from the new pool only — per leanSpec
+// PR #680, safe target is an availability signal derived strictly from
+// freshly received votes, not historical knowledge from the known pool.
 func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uint64) [32]byte {
 	minScore := int64((2*numValidators + 2) / 3) // ceil(2n/3)
 	deltas := ComputeDeltas(fc.Array.Len(), fc.Votes, false)
