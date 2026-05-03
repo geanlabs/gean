@@ -16,11 +16,12 @@ A consensus client should be something a developer can read, understand, and ver
 
 ## Current status
 
-gean targets **Lean Consensus devnet-3** (single attestation committee).
+gean targets **Lean Consensus devnet-4**.
 
 | Network | Status | Spec pin |
 |---------|--------|----------|
-| devnet-3 | Active | `leanSpec@be85318` |
+| devnet-4 | Active | `leanSpec@e845240` |
+| devnet-3 | Superseded | `leanSpec@be85318` |
 
 ## Prerequisites
 
