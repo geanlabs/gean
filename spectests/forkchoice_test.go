@@ -378,13 +378,39 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 		anchorHeader.BodyRoot = bodyRoot
 	}
 
-	// Cache state root in anchor state's latest block header.
-	anchorState.LatestBlockHeader.StateRoot = anchorBlock.StateRoot
+	// Verify the anchor pair is self-consistent: the anchor block's state_root
+	// must match hash_tree_root(anchor_state). Per leanSpec PR #678 — without
+	// this check, a malformed fixture (or attacker-served (state, block) pair
+	// in production) would be accepted after the runner silently rewrote
+	// state.LatestBlockHeader.StateRoot to match. Direct compare; the spec
+	// expects the input state to arrive with LatestBlockHeader.StateRoot
+	// already in the canonical form that makes the equality hold.
+	//
+	// Empty-steps fixtures with a mismatched pair are negative tests: the
+	// spec expected init to abort here. Treat the rejection as pass.
+	computedStateRoot, err := anchorState.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hashing anchor state: %v", err)
+	}
+	if computedStateRoot != anchorBlock.StateRoot {
+		if len(tt.Steps) == 0 {
+			t.Logf("anchor init rejected (expected): block=%x state=%x",
+				anchorBlock.StateRoot, computedStateRoot)
+			return
+		}
+		t.Fatalf("anchor state-root mismatch: block=%x state=%x",
+			anchorBlock.StateRoot, computedStateRoot)
+	}
 
 	s.InsertBlockHeader(anchorRoot, anchorHeader)
 	s.InsertState(anchorRoot, anchorState)
 	s.InsertLiveChainEntry(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot)
 	s.SetHead(anchorRoot)
+	// Seed checkpoints from the anchor block itself, not from
+	// anchorState.LatestJustified/LatestFinalized. Per leanSpec PR #677, the
+	// store treats the anchor as the new genesis: justified/finalized point
+	// at the anchor block, and any pre-anchor history embedded in the state's
+	// checkpoints is intentionally ignored.
 	s.SetLatestJustified(&types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot})
 	s.SetLatestFinalized(&types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot})
 
