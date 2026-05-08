@@ -237,6 +237,11 @@ func (h *Host) ConnectedPeers() int {
 	return h.peerStore.Count()
 }
 
+// Peers returns all currently connected peer IDs.
+func (h *Host) Peers() []peer.ID {
+	return h.peerStore.AllPeers()
+}
+
 // TopicMeshSizes returns a map of topic name to mesh peer count.
 func (h *Host) TopicMeshSizes() map[string]int {
 	sizes := make(map[string]int)

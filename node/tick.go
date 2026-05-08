@@ -281,21 +281,31 @@ func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
 // hiccups without flapping.
 const SyncLagSlots = 2
 
-// updateSyncStatus sets the lean_node_sync_status gauge based on the current
-// head's distance from wall-clock slot.
-//   - synced:  head within SyncLagSlots of wall clock
-//   - syncing: head behind by more than SyncLagSlots, but we have peers
-//   - idle:    no peers connected (so we cannot make progress)
+// updateSyncStatus computes the typed SyncStatus and updates the
+// lean_node_sync_status gauge.
+//   - SyncSynced:  head within SyncLagSlots of wall clock
+//   - SyncSyncing: head behind by more than SyncLagSlots, but we have peers
+//   - SyncIdle:    no peers connected (so we cannot make progress)
 func (e *Engine) updateSyncStatus(currentSlot uint64) {
-	if e.P2P != nil && e.P2P.ConnectedPeers() == 0 {
-		SetSyncStatus("idle")
-		return
-	}
+	status := e.computeSyncStatus(currentSlot)
+	SetSyncStatus(status.String())
+}
 
+// computeSyncStatus returns the typed status without mutating any state.
+func (e *Engine) computeSyncStatus(currentSlot uint64) SyncStatus {
+	if e.P2P != nil && e.P2P.ConnectedPeers() == 0 {
+		return SyncIdle
+	}
 	headSlot := e.Store.HeadSlot()
 	if headSlot+SyncLagSlots >= currentSlot {
-		SetSyncStatus("synced")
-		return
+		return SyncSynced
 	}
-	SetSyncStatus("syncing")
+	return SyncSyncing
+}
+
+// GetSyncStatus returns the current typed sync status. Computed on demand
+// from wall-clock + head-slot + peer count; cheap (no I/O), safe to call
+// from any goroutine.
+func (e *Engine) GetSyncStatus() SyncStatus {
+	return e.computeSyncStatus(e.currentSlot(uint64(time.Now().UnixMilli())))
 }

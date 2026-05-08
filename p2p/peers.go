@@ -24,11 +24,18 @@ const (
 	// MaxBlocksPerRequest matches leanSpec MAX_BLOCKS_PER_REQUEST.
 	MaxBlocksPerRequest = 10
 	// BlocksByRangeSyncThreshold is the gap (in slots) above which sync should
-	// prefer BlocksByRange over per-block BlocksByRoot fetches. Below this gap,
-	// root-based fetches are cheaper because the local node can supply the
-	// specific roots it's missing instead of asking the peer to walk a range.
-	BlocksByRangeSyncThreshold = 5
+	// prefer BlocksByRange over per-block BlocksByRoot fetches. Below this
+	// gap, reactive gossip + missing-parent fetches handle the lag without
+	// extra network traffic. Matches zeam BLOCKS_BY_RANGE_SYNC_THRESHOLD
+	// (constants.zig:45) for cross-client consistency: ~64 slots is the
+	// scale at which "I've genuinely fallen behind" stops being noise.
+	BlocksByRangeSyncThreshold = 64
 )
+
+// SyncPollInterval is how often SyncDriver checks peers for backfill needs
+// when the node is in SyncSyncing state. Matches zeam's
+// SYNC_STATUS_REFRESH_INTERVAL_SLOTS (8 slots * 4s/slot = 32s).
+const SyncPollInterval = 32 * time.Second
 
 // PeerStore tracks connected peers.
 type PeerStore struct {

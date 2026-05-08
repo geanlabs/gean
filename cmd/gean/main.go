@@ -234,6 +234,11 @@ func main() {
 	// Start engine goroutine.
 	go n.Run(ctx)
 
+	// Start sync driver: periodic status-poll + BlocksByRange backfill when
+	// peers are far enough ahead. No-op while node is synced or has no peers.
+	syncDriver := node.NewSyncDriver(n, p2pHost)
+	go syncDriver.Run(ctx)
+
 	// --- Start HTTP servers ---
 
 	apiAddr := fmt.Sprintf("%s:%d", *httpAddr, *apiPort)
