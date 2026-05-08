@@ -18,8 +18,9 @@ import (
 
 // Protocol IDs rs.
 const (
-	StatusProtocol       = "/leanconsensus/req/status/1/ssz_snappy"
-	BlocksByRootProtocol = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+	StatusProtocol        = "/leanconsensus/req/status/1/ssz_snappy"
+	BlocksByRootProtocol  = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+	BlocksByRangeProtocol = "/leanconsensus/req/blocks_by_range/1/ssz_snappy"
 )
 
 // Request/response timeout.
@@ -72,8 +73,22 @@ func getUint64LE(buf []byte) uint64 {
 	return v
 }
 
-// RegisterReqRespHandlers registers stream handlers for status and blocks_by_root.
-func (h *Host) RegisterReqRespHandlers(statusFn func() *StatusMessage, blockByRootFn func(root [32]byte) *types.SignedBlock) {
+// RegisterReqRespHandlers registers stream handlers for status, blocks_by_root,
+// and blocks_by_range.
+//
+// currentSlotFn returns the local node's notion of the current slot (used by
+// BlocksByRange to enforce the MIN_SLOTS_FOR_BLOCK_REQUESTS sliding-window
+// history bound).
+//
+// blocksInRangeFn returns canonical-chain blocks whose slots fall in
+// [startSlot, startSlot+count) in ascending-slot order. Empty slots
+// produce no entry.
+func (h *Host) RegisterReqRespHandlers(
+	statusFn func() *StatusMessage,
+	blockByRootFn func(root [32]byte) *types.SignedBlock,
+	currentSlotFn func() uint64,
+	blocksInRangeFn func(startSlot, count uint64) []*types.SignedBlock,
+) {
 	// Status handler.
 	h.host.SetStreamHandler(protocol.ID(StatusProtocol), func(s network.Stream) {
 		defer s.Close()
@@ -84,6 +99,12 @@ func (h *Host) RegisterReqRespHandlers(statusFn func() *StatusMessage, blockByRo
 	h.host.SetStreamHandler(protocol.ID(BlocksByRootProtocol), func(s network.Stream) {
 		defer s.Close()
 		handleBlocksByRootRequest(s, blockByRootFn)
+	})
+
+	// BlocksByRange handler.
+	h.host.SetStreamHandler(protocol.ID(BlocksByRangeProtocol), func(s network.Stream) {
+		defer s.Close()
+		handleBlocksByRangeRequest(s, currentSlotFn, blocksInRangeFn)
 	})
 }
 
@@ -143,6 +164,80 @@ func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byt
 			continue
 		}
 
+		s.Write(EncodeResponse(RespSuccess, blockData))
+	}
+}
+
+// handleBlocksByRangeRequest processes a BlocksByRange request stream.
+//
+// Wire flow:
+//  1. Read & SSZ-decode BlocksByRangeRequest{ start_slot, count }.
+//  2. If start_slot is below the sliding-window history bound
+//     (current_slot - MIN_SLOTS_FOR_BLOCK_REQUESTS), reply
+//     RESOURCE_UNAVAILABLE.
+//  3. Cap count at MAX_REQUEST_BLOCKS to bound work per request.
+//  4. Look up canonical-chain blocks via blocksInRangeFn (empty slots are
+//     skipped, no chunk emitted for them) and stream one SUCCESS chunk per
+//     block in ascending-slot order.
+//
+// Spec: leanSpec/src/lean_spec/subspecs/networking/reqresp/handler.py.
+func handleBlocksByRangeRequest(
+	s network.Stream,
+	currentSlotFn func() uint64,
+	blocksInRangeFn func(startSlot, count uint64) []*types.SignedBlock,
+) {
+	reqBuf, err := io.ReadAll(io.LimitReader(s, int64(MaxCompressedPayloadSize)))
+	if err != nil {
+		logger.Warn(logger.Network, "blocks_by_range: read request failed: %v", err)
+		return
+	}
+
+	payload, err := DecodeReqRespPayload(reqBuf)
+	if err != nil {
+		logger.Error(logger.Network, "blocks_by_range: decode request failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("decode failed")))
+		return
+	}
+
+	req := &types.BlocksByRangeRequest{}
+	if err := req.UnmarshalSSZ(payload); err != nil {
+		logger.Error(logger.Network, "blocks_by_range: ssz unmarshal failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("ssz unmarshal failed")))
+		return
+	}
+
+	if req.Count == 0 {
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("count must be > 0")))
+		return
+	}
+
+	currentSlot := currentSlotFn()
+	historyFloor := uint64(0)
+	if currentSlot > types.MinSlotsForBlockRequests {
+		historyFloor = currentSlot - types.MinSlotsForBlockRequests
+	}
+	if req.StartSlot < historyFloor {
+		s.Write(EncodeResponse(RespResourceUnavailable, []byte("start_slot below history horizon")))
+		return
+	}
+
+	// Cap count at MaxRequestBlocks.
+	count := req.Count
+	if count > types.MaxRequestBlocks {
+		count = types.MaxRequestBlocks
+	}
+
+	logger.Info(logger.Network, "blocks_by_range: peer requested start_slot=%d count=%d (capped=%d, current_slot=%d)",
+		req.StartSlot, req.Count, count, currentSlot)
+
+	blocks := blocksInRangeFn(req.StartSlot, count)
+	for _, block := range blocks {
+		blockData, err := block.MarshalSSZ()
+		if err != nil {
+			logger.Warn(logger.Network, "blocks_by_range: marshal block at slot %d failed: %v", block.Block.Slot, err)
+			s.Write(EncodeResponse(RespServerError, []byte("marshal failed")))
+			continue
+		}
 		s.Write(EncodeResponse(RespSuccess, blockData))
 	}
 }

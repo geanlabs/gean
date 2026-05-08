@@ -220,6 +220,12 @@ func main() {
 		func(root [32]byte) *types.SignedBlock {
 			return s.GetSignedBlock(root)
 		},
+		func() uint64 {
+			return s.HeadSlot()
+		},
+		func(startSlot, count uint64) []*types.SignedBlock {
+			return s.GetCanonicalBlocksInRange(startSlot, count)
+		},
 	)
 
 	// Wire gossip handlers — P2P pushes to engine channels.

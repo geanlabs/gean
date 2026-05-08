@@ -252,6 +252,46 @@ func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]
 	wb.Commit()
 }
 
+// GetCanonicalBlocksInRange returns canonical-chain blocks whose slots fall in
+// [startSlot, startSlot+count). Walks backward from current head following parent
+// pointers; empty slots produce no entry. Result is in ascending-slot order.
+//
+// Used by the BlocksByRange req/resp server handler to assemble a response.
+func (s *ConsensusStore) GetCanonicalBlocksInRange(startSlot, count uint64) []*types.SignedBlock {
+	if count == 0 {
+		return nil
+	}
+	endSlot := startSlot + count // exclusive
+
+	var blocks []*types.SignedBlock
+	root := s.Head()
+	for {
+		header := s.GetBlockHeader(root)
+		if header == nil {
+			break
+		}
+		if header.Slot < startSlot {
+			break
+		}
+		if header.Slot < endSlot {
+			if block := s.GetSignedBlock(root); block != nil {
+				blocks = append(blocks, block)
+			}
+		}
+		if header.Slot == 0 {
+			break // genesis, no parent
+		}
+		root = header.ParentRoot
+	}
+
+	// Reverse to chronological order.
+	for i, j := 0, len(blocks)-1; i < j; i, j = i+1, j-1 {
+		blocks[i], blocks[j] = blocks[j], blocks[i]
+	}
+
+	return blocks
+}
+
 // PromoteNewToKnown moves all new payloads to known.
 func (s *ConsensusStore) PromoteNewToKnown() {
 	entries := s.NewPayloads.Drain()
