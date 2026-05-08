@@ -1,6 +1,8 @@
 package node
 
 import (
+	"math"
+
 	"github.com/geanlabs/gean/types"
 )
 
@@ -41,10 +43,15 @@ func ValidateAttestationData(s *ConsensusStore, data *types.AttestationData) err
 		return errHeadSlotMismatch(data.Head.Slot, headHeader.Slot)
 	}
 
-	// 9. Time: attestation not > 1 slot in future.
-	currentSlot := s.Time() / types.IntervalsPerSlot
-	if data.Slot > currentSlot+1 {
-		return errAttestationTooFarInFuture(data.Slot, currentSlot)
+	// 9. Time: attestation's start interval must not exceed store time by
+	// more than GossipDisparityIntervals (clock-skew tolerance, ~800ms).
+	// Per leanSpec PR #682, the bound is in intervals, not slots — a whole-slot
+	// margin would let an adversary pre-publish next-slot aggregates ahead of
+	// any honest validator. The first conjunct guards against uint64 overflow
+	// for malicious slot values near MaxUint64.
+	if data.Slot > math.MaxUint64/types.IntervalsPerSlot ||
+		data.Slot*types.IntervalsPerSlot > s.Time()+types.GossipDisparityIntervals {
+		return errAttestationTooFarInFuture(data.Slot, s.Time())
 	}
 
 	return nil

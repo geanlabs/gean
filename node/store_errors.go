@@ -76,8 +76,8 @@ func errHeadSlotMismatch(cpSlot, blockSlot uint64) error {
 	return &StoreError{ErrHeadSlotMismatch, fmt.Sprintf("head checkpoint slot %d != block slot %d", cpSlot, blockSlot)}
 }
 
-func errAttestationTooFarInFuture(attSlot, currentSlot uint64) error {
-	return &StoreError{ErrAttestationTooFarInFuture, fmt.Sprintf("attestation slot %d too far in future (current %d)", attSlot, currentSlot)}
+func errAttestationTooFarInFuture(attSlot, storeTime uint64) error {
+	return &StoreError{ErrAttestationTooFarInFuture, fmt.Sprintf("attestation slot %d too far in future (store time %d intervals)", attSlot, storeTime)}
 }
 
 func errNotProposer(vid, slot uint64) error {

@@ -69,6 +69,14 @@ func runStateTransitionTest(t *testing.T, tt *StateTransitionTest) {
 
 	expectError := tt.ExpectException != "" || tt.Post == nil
 
+	// Empty blocks list with an expected exception means the spec filler
+	// raised the assertion internally (e.g., process_slots target == state.slot
+	// rejected before any block was constructed). The spec framework's verdict
+	// stands; nothing for us to replay.
+	if len(tt.Blocks) == 0 && tt.ExpectException != "" {
+		return
+	}
+
 	state := tt.Pre.ToState()
 
 	var lastErr error
