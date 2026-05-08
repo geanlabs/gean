@@ -226,10 +226,10 @@ func (h *Host) FetchBlocksByRangeWithRetry(
 	startSlot, count uint64,
 ) ([]*types.SignedBlock, error) {
 	if count == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("blocks_by_range: count must be > 0")
 	}
 	if count > types.MaxRequestBlocks {
-		count = types.MaxRequestBlocks
+		return nil, fmt.Errorf("blocks_by_range: count %d > MaxRequestBlocks %d", count, types.MaxRequestBlocks)
 	}
 
 	excluded := make(map[peer.ID]bool)

@@ -207,8 +207,11 @@ func handleBlocksByRangeRequest(
 		return
 	}
 
-	if req.Count == 0 {
-		s.Write(EncodeResponse(RespInvalidRequest, []byte("count must be > 0")))
+	// Per leanSpec networking/reqresp/handler.py:285-287, count must be in
+	// (0, MAX_REQUEST_BLOCKS]; anything else is INVALID_REQUEST. We reject
+	// rather than silently cap so misbehaving peers see a clean error.
+	if req.Count == 0 || req.Count > types.MaxRequestBlocks {
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("invalid count")))
 		return
 	}
 
@@ -222,16 +225,10 @@ func handleBlocksByRangeRequest(
 		return
 	}
 
-	// Cap count at MaxRequestBlocks.
-	count := req.Count
-	if count > types.MaxRequestBlocks {
-		count = types.MaxRequestBlocks
-	}
+	logger.Info(logger.Network, "blocks_by_range: peer requested start_slot=%d count=%d current_slot=%d",
+		req.StartSlot, req.Count, currentSlot)
 
-	logger.Info(logger.Network, "blocks_by_range: peer requested start_slot=%d count=%d (capped=%d, current_slot=%d)",
-		req.StartSlot, req.Count, count, currentSlot)
-
-	blocks := blocksInRangeFn(req.StartSlot, count)
+	blocks := blocksInRangeFn(req.StartSlot, req.Count)
 	for _, block := range blocks {
 		blockData, err := block.MarshalSSZ()
 		if err != nil {
