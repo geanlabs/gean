@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -334,6 +335,122 @@ func EncodeBlocksByRootRequest(roots [][32]byte) []byte {
 	binary.LittleEndian.PutUint32(container[:4], 4)
 	copy(container[4:], rootsData)
 	return container
+}
+
+// FetchBlocksByRange requests canonical-chain blocks from a peer covering
+// [startSlot, startSlot+count). Returns blocks in ascending-slot order with
+// slot monotonicity and parent-root continuity validated across empty slots.
+//
+// Spec: leanSpec/src/lean_spec/subspecs/networking/client/reqresp_client.py.
+func (h *Host) FetchBlocksByRange(
+	ctx context.Context,
+	peerID peer.ID,
+	startSlot, count uint64,
+) ([]*types.SignedBlock, error) {
+	// Input validation.
+	if count == 0 {
+		return nil, fmt.Errorf("blocks_by_range: count must be > 0")
+	}
+	if count > types.MaxRequestBlocks {
+		return nil, fmt.Errorf("blocks_by_range: count %d > MaxRequestBlocks %d", count, types.MaxRequestBlocks)
+	}
+	if startSlot > math.MaxUint64-count {
+		return nil, fmt.Errorf("blocks_by_range: startSlot+count overflows uint64")
+	}
+	endSlot := startSlot + count // exclusive
+
+	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
+	defer cancel()
+
+	s, err := h.host.NewStream(ctx, peerID, protocol.ID(BlocksByRangeProtocol))
+	if err != nil {
+		return nil, fmt.Errorf("open blocks_by_range stream: %w", err)
+	}
+	defer s.Close()
+
+	// SSZ-encode and send the request.
+	req := &types.BlocksByRangeRequest{StartSlot: startSlot, Count: count}
+	reqSSZ, err := req.MarshalSSZ()
+	if err != nil {
+		return nil, fmt.Errorf("marshal blocks_by_range request: %w", err)
+	}
+	if _, err := s.Write(EncodeReqRespPayload(reqSSZ)); err != nil {
+		return nil, fmt.Errorf("write blocks_by_range request: %w", err)
+	}
+	s.CloseWrite()
+
+	// Read multi-chunk response, validate as we go.
+	respBuf, err := io.ReadAll(io.LimitReader(s, int64(MaxCompressedPayloadSize)*int64(count)))
+	if err != nil {
+		return nil, fmt.Errorf("read blocks_by_range response: %w", err)
+	}
+
+	var blocks []*types.SignedBlock
+	var prevHeaderRoot [32]byte
+	var hasPrev bool
+
+	reader := bytes.NewReader(respBuf)
+	for reader.Len() > 0 {
+		code, blockData, err := DecodeResponse(reader)
+		if err != nil {
+			break // end of stream
+		}
+		if code == RespResourceUnavailable {
+			return nil, fmt.Errorf("blocks_by_range: peer returned RESOURCE_UNAVAILABLE")
+		}
+		if code != RespSuccess {
+			return nil, fmt.Errorf("blocks_by_range: peer returned error code %d", code)
+		}
+
+		block := &types.SignedBlock{}
+		if err := block.UnmarshalSSZ(blockData); err != nil {
+			return nil, fmt.Errorf("unmarshal block: %w", err)
+		}
+
+		// Slot range check.
+		if block.Block.Slot < startSlot || block.Block.Slot >= endSlot {
+			return nil, fmt.Errorf("blocks_by_range: block slot %d outside requested range [%d, %d)",
+				block.Block.Slot, startSlot, endSlot)
+		}
+
+		if hasPrev {
+			prevSlot := blocks[len(blocks)-1].Block.Slot
+			// Slot monotonicity: chunks must be strictly increasing.
+			if block.Block.Slot <= prevSlot {
+				return nil, fmt.Errorf("blocks_by_range: non-monotonic slots %d <= %d",
+					block.Block.Slot, prevSlot)
+			}
+			// Parent-root continuity across empty slots: this block's parent
+			// must be the previous delivered block's header root, regardless
+			// of how many empty slots sit between them.
+			if block.Block.ParentRoot != prevHeaderRoot {
+				return nil, fmt.Errorf("blocks_by_range: parent_root mismatch at slot %d (got 0x%x, want 0x%x)",
+					block.Block.Slot, block.Block.ParentRoot, prevHeaderRoot)
+			}
+		}
+
+		// Compute this block's header root for the next chunk's continuity check.
+		bodyRoot, err := block.Block.Body.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("body hash_tree_root: %w", err)
+		}
+		header := &types.BlockHeader{
+			Slot:          block.Block.Slot,
+			ProposerIndex: block.Block.ProposerIndex,
+			ParentRoot:    block.Block.ParentRoot,
+			StateRoot:     block.Block.StateRoot,
+			BodyRoot:      bodyRoot,
+		}
+		prevHeaderRoot, err = header.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("header hash_tree_root: %w", err)
+		}
+		hasPrev = true
+
+		blocks = append(blocks, block)
+	}
+
+	return blocks, nil
 }
 
 // DecodeBlocksByRootRequest decodes an SSZ container: BlocksByRootRequest { roots: List[Root, 1024] }.
