@@ -25,4 +25,10 @@ const (
 
 	// Sync
 	SyncToleranceSlots = 2
+
+	// GossipDisparityIntervals bounds the clock skew the time check is willing
+	// to absorb when admitting a vote whose slot has not yet started locally.
+	// One interval is roughly 800ms, the lean analogue of mainnet's
+	// MAXIMUM_GOSSIP_CLOCK_DISPARITY. Per leanSpec PR #682.
+	GossipDisparityIntervals = 1
 )
