@@ -199,10 +199,13 @@ func buildBlock(
 	stateRoot, _ := postState.HashTreeRoot()
 	finalBlock.StateRoot = stateRoot
 
-	// Spec assertion: the fixed-point loop must close any justified divergence.
+	// Spec invariant: the fixed-point loop must close any justified divergence.
 	// The produced block's post-state justified must be >= store justified.
+	// Without this, peers processing the block would never see the
+	// justification advance, degrading consensus liveness — only nodes that
+	// happened to receive the minority fork would know justification moved.
 	if postState.LatestJustified.Slot < storeJustified.Slot {
-		logger.Error(logger.Chain, "buildBlock: justified divergence not closed: block_justified=%d < store_justified=%d",
+		return nil, nil, errJustifiedDivergenceNotClosed(
 			postState.LatestJustified.Slot, storeJustified.Slot)
 	}
 

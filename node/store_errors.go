@@ -38,6 +38,7 @@ const (
 	ErrNotProposer
 	ErrDuplicateAttestationData
 	ErrTooManyAttestationData
+	ErrJustifiedDivergenceNotClosed
 )
 
 func errMissingParentState(parentRoot [32]byte, slot uint64) error {
@@ -86,4 +87,12 @@ func errNotProposer(vid, slot uint64) error {
 
 func errMissingTargetState(root [32]byte) error {
 	return &StoreError{ErrMissingTargetState, fmt.Sprintf("missing target state: %x", root[:4])}
+}
+
+func errJustifiedDivergenceNotClosed(blockJustifiedSlot, storeJustifiedSlot uint64) error {
+	return &StoreError{
+		ErrJustifiedDivergenceNotClosed,
+		fmt.Sprintf("produced block justified slot %d is behind store justified slot %d; fixed-point attestation loop did not converge",
+			blockJustifiedSlot, storeJustifiedSlot),
+	}
 }

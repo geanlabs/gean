@@ -177,3 +177,65 @@ func TestCountParticipants(t *testing.T) {
 		t.Errorf("countParticipants(empty): got %d, want 0", countParticipants(empty))
 	}
 }
+
+// TestBuildBlock_RejectsUnclosedDivergence pins the spec invariant: when the
+// fixed-point attestation loop cannot raise the produced block's post-state
+// justified to at least the store's justified, block production must fail.
+// Without this rejection, a non-converged proposal would ship and degrade
+// liveness — only nodes that received the minority fork would see
+// justification advance.
+func TestBuildBlock_RejectsUnclosedDivergence(t *testing.T) {
+	headState := &types.State{
+		Config:                   &types.ChainConfig{GenesisTime: 1000},
+		Slot:                     0,
+		LatestBlockHeader:        &types.BlockHeader{Slot: 0},
+		LatestJustified:          &types.Checkpoint{Slot: 0},
+		LatestFinalized:          &types.Checkpoint{Slot: 0},
+		JustifiedSlots:           types.NewBitlistSSZ(0),
+		JustificationsValidators: types.NewBitlistSSZ(0),
+		Validators:               []*types.Validator{{}},
+	}
+
+	// Pre-cache the state root in LatestBlockHeader, mirroring what
+	// ProcessSlots does on first call after genesis. Without this, buildBlock's
+	// trial ProcessSlots would mutate the header's StateRoot field, changing
+	// its HashTreeRoot — and the parent-root check inside ProcessBlock would
+	// fail with a mismatch unrelated to what we're testing here.
+	stateRoot, err := headState.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("compute pre-cache state root: %v", err)
+	}
+	headState.LatestBlockHeader.StateRoot = stateRoot
+
+	parentRoot, err := headState.LatestBlockHeader.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("compute parent root: %v", err)
+	}
+
+	// Store justified is artificially ahead of the head state — simulates a
+	// minority-fork advance that this proposer's chain cannot close because
+	// it has no attestations to apply.
+	storeJustified := &types.Checkpoint{Root: [32]byte{0x99}, Slot: 5}
+
+	block, sigs, err := buildBlock(
+		headState,
+		1, // slot (proposer index = 1 % 1 = 0)
+		0, // proposer index
+		parentRoot,
+		nil, // knownBlockRoots — unused with empty payloads
+		nil, // payloads — empty so the fixed-point loop is skipped, divergence stays open
+		storeJustified,
+		nil, // pkCache — unused with empty payloads
+	)
+
+	if block != nil || sigs != nil {
+		t.Fatalf("expected nil block/sigs on rejection, got block=%v sigs=%v", block, sigs)
+	}
+	if err == nil {
+		t.Fatal("expected error for unclosed divergence, got nil")
+	}
+	se, ok := err.(*StoreError)
+	if !ok || se.Kind != ErrJustifiedDivergenceNotClosed {
+		t.Fatalf("expected ErrJustifiedDivergenceNotClosed, got %v", err)
+	}
+}
