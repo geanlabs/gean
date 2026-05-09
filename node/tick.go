@@ -132,7 +132,7 @@ func (e *Engine) updateHead(logTree bool) {
 			SetHeadSlot(newHeader.Slot)
 			SetLatestJustifiedSlot(justified.Slot)
 			SetLatestFinalizedSlot(finalized.Slot)
-			SetAttestationSignatures(e.Store.AttestationSignatures.Len())
+			SetGossipSignatures(e.Store.AttestationSignatures.Len())
 			SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
 			SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
 			SetPendingAttestationsTotal(e.PendingAttestations.Total())

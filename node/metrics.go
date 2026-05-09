@@ -34,8 +34,8 @@ var (
 	metricAttestationCommitteeCount = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_attestation_committee_count", Help: "Number of attestation committees/subnets",
 	})
-	metricAttestationSignatures = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "lean_attestation_signatures", Help: "Number of attestation signature entries",
+	metricGossipSignatures = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_gossip_signatures", Help: "Number of gossip signatures in fork-choice store",
 	})
 	metricLatestNewAggregatedPayloads = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_latest_new_aggregated_payloads", Help: "Number of new (pending) aggregated payloads",
@@ -256,7 +256,7 @@ func SetIsAggregator(b bool) {
 	}
 }
 func SetAttestationCommitteeCount(n uint64) { metricAttestationCommitteeCount.Set(float64(n)) }
-func SetAttestationSignatures(n int)        { metricAttestationSignatures.Set(float64(n)) }
+func SetGossipSignatures(n int)             { metricGossipSignatures.Set(float64(n)) }
 func SetNewAggregatedPayloads(n int)        { metricLatestNewAggregatedPayloads.Set(float64(n)) }
 func SetKnownAggregatedPayloads(n int)      { metricLatestKnownAggregatedPayloads.Set(float64(n)) }
 func SetPendingAttestationsTotal(n int)     { metricPendingAttestationsTotal.Set(float64(n)) }
