@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -18,8 +19,9 @@ import (
 
 // Protocol IDs rs.
 const (
-	StatusProtocol       = "/leanconsensus/req/status/1/ssz_snappy"
-	BlocksByRootProtocol = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+	StatusProtocol        = "/leanconsensus/req/status/1/ssz_snappy"
+	BlocksByRootProtocol  = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
+	BlocksByRangeProtocol = "/leanconsensus/req/blocks_by_range/1/ssz_snappy"
 )
 
 // Request/response timeout.
@@ -72,8 +74,22 @@ func getUint64LE(buf []byte) uint64 {
 	return v
 }
 
-// RegisterReqRespHandlers registers stream handlers for status and blocks_by_root.
-func (h *Host) RegisterReqRespHandlers(statusFn func() *StatusMessage, blockByRootFn func(root [32]byte) *types.SignedBlock) {
+// RegisterReqRespHandlers registers stream handlers for status, blocks_by_root,
+// and blocks_by_range.
+//
+// currentSlotFn returns the local node's notion of the current slot (used by
+// BlocksByRange to enforce the MIN_SLOTS_FOR_BLOCK_REQUESTS sliding-window
+// history bound).
+//
+// blocksInRangeFn returns canonical-chain blocks whose slots fall in
+// [startSlot, startSlot+count) in ascending-slot order. Empty slots
+// produce no entry.
+func (h *Host) RegisterReqRespHandlers(
+	statusFn func() *StatusMessage,
+	blockByRootFn func(root [32]byte) *types.SignedBlock,
+	currentSlotFn func() uint64,
+	blocksInRangeFn func(startSlot, count uint64) []*types.SignedBlock,
+) {
 	// Status handler.
 	h.host.SetStreamHandler(protocol.ID(StatusProtocol), func(s network.Stream) {
 		defer s.Close()
@@ -84,6 +100,12 @@ func (h *Host) RegisterReqRespHandlers(statusFn func() *StatusMessage, blockByRo
 	h.host.SetStreamHandler(protocol.ID(BlocksByRootProtocol), func(s network.Stream) {
 		defer s.Close()
 		handleBlocksByRootRequest(s, blockByRootFn)
+	})
+
+	// BlocksByRange handler.
+	h.host.SetStreamHandler(protocol.ID(BlocksByRangeProtocol), func(s network.Stream) {
+		defer s.Close()
+		handleBlocksByRangeRequest(s, currentSlotFn, blocksInRangeFn)
 	})
 }
 
@@ -143,6 +165,77 @@ func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byt
 			continue
 		}
 
+		s.Write(EncodeResponse(RespSuccess, blockData))
+	}
+}
+
+// handleBlocksByRangeRequest processes a BlocksByRange request stream.
+//
+// Wire flow:
+//  1. Read & SSZ-decode BlocksByRangeRequest{ start_slot, count }.
+//  2. If start_slot is below the sliding-window history bound
+//     (current_slot - MIN_SLOTS_FOR_BLOCK_REQUESTS), reply
+//     RESOURCE_UNAVAILABLE.
+//  3. Cap count at MAX_REQUEST_BLOCKS to bound work per request.
+//  4. Look up canonical-chain blocks via blocksInRangeFn (empty slots are
+//     skipped, no chunk emitted for them) and stream one SUCCESS chunk per
+//     block in ascending-slot order.
+//
+// Spec: leanSpec/src/lean_spec/subspecs/networking/reqresp/handler.py.
+func handleBlocksByRangeRequest(
+	s network.Stream,
+	currentSlotFn func() uint64,
+	blocksInRangeFn func(startSlot, count uint64) []*types.SignedBlock,
+) {
+	reqBuf, err := io.ReadAll(io.LimitReader(s, int64(MaxCompressedPayloadSize)))
+	if err != nil {
+		logger.Warn(logger.Network, "blocks_by_range: read request failed: %v", err)
+		return
+	}
+
+	payload, err := DecodeReqRespPayload(reqBuf)
+	if err != nil {
+		logger.Error(logger.Network, "blocks_by_range: decode request failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("decode failed")))
+		return
+	}
+
+	req := &types.BlocksByRangeRequest{}
+	if err := req.UnmarshalSSZ(payload); err != nil {
+		logger.Error(logger.Network, "blocks_by_range: ssz unmarshal failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("ssz unmarshal failed")))
+		return
+	}
+
+	// Per leanSpec networking/reqresp/handler.py:285-287, count must be in
+	// (0, MAX_REQUEST_BLOCKS]; anything else is INVALID_REQUEST. We reject
+	// rather than silently cap so misbehaving peers see a clean error.
+	if req.Count == 0 || req.Count > types.MaxRequestBlocks {
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("invalid count")))
+		return
+	}
+
+	currentSlot := currentSlotFn()
+	historyFloor := uint64(0)
+	if currentSlot > types.MinSlotsForBlockRequests {
+		historyFloor = currentSlot - types.MinSlotsForBlockRequests
+	}
+	if req.StartSlot < historyFloor {
+		s.Write(EncodeResponse(RespResourceUnavailable, []byte("start_slot below history horizon")))
+		return
+	}
+
+	logger.Info(logger.Network, "blocks_by_range: peer requested start_slot=%d count=%d current_slot=%d",
+		req.StartSlot, req.Count, currentSlot)
+
+	blocks := blocksInRangeFn(req.StartSlot, req.Count)
+	for _, block := range blocks {
+		blockData, err := block.MarshalSSZ()
+		if err != nil {
+			logger.Warn(logger.Network, "blocks_by_range: marshal block at slot %d failed: %v", block.Block.Slot, err)
+			s.Write(EncodeResponse(RespServerError, []byte("marshal failed")))
+			continue
+		}
 		s.Write(EncodeResponse(RespSuccess, blockData))
 	}
 }
@@ -239,6 +332,122 @@ func EncodeBlocksByRootRequest(roots [][32]byte) []byte {
 	binary.LittleEndian.PutUint32(container[:4], 4)
 	copy(container[4:], rootsData)
 	return container
+}
+
+// FetchBlocksByRange requests canonical-chain blocks from a peer covering
+// [startSlot, startSlot+count). Returns blocks in ascending-slot order with
+// slot monotonicity and parent-root continuity validated across empty slots.
+//
+// Spec: leanSpec/src/lean_spec/subspecs/networking/client/reqresp_client.py.
+func (h *Host) FetchBlocksByRange(
+	ctx context.Context,
+	peerID peer.ID,
+	startSlot, count uint64,
+) ([]*types.SignedBlock, error) {
+	// Input validation.
+	if count == 0 {
+		return nil, fmt.Errorf("blocks_by_range: count must be > 0")
+	}
+	if count > types.MaxRequestBlocks {
+		return nil, fmt.Errorf("blocks_by_range: count %d > MaxRequestBlocks %d", count, types.MaxRequestBlocks)
+	}
+	if startSlot > math.MaxUint64-count {
+		return nil, fmt.Errorf("blocks_by_range: startSlot+count overflows uint64")
+	}
+	endSlot := startSlot + count // exclusive
+
+	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
+	defer cancel()
+
+	s, err := h.host.NewStream(ctx, peerID, protocol.ID(BlocksByRangeProtocol))
+	if err != nil {
+		return nil, fmt.Errorf("open blocks_by_range stream: %w", err)
+	}
+	defer s.Close()
+
+	// SSZ-encode and send the request.
+	req := &types.BlocksByRangeRequest{StartSlot: startSlot, Count: count}
+	reqSSZ, err := req.MarshalSSZ()
+	if err != nil {
+		return nil, fmt.Errorf("marshal blocks_by_range request: %w", err)
+	}
+	if _, err := s.Write(EncodeReqRespPayload(reqSSZ)); err != nil {
+		return nil, fmt.Errorf("write blocks_by_range request: %w", err)
+	}
+	s.CloseWrite()
+
+	// Read multi-chunk response, validate as we go.
+	respBuf, err := io.ReadAll(io.LimitReader(s, int64(MaxCompressedPayloadSize)*int64(count)))
+	if err != nil {
+		return nil, fmt.Errorf("read blocks_by_range response: %w", err)
+	}
+
+	var blocks []*types.SignedBlock
+	var prevHeaderRoot [32]byte
+	var hasPrev bool
+
+	reader := bytes.NewReader(respBuf)
+	for reader.Len() > 0 {
+		code, blockData, err := DecodeResponse(reader)
+		if err != nil {
+			break // end of stream
+		}
+		if code == RespResourceUnavailable {
+			return nil, fmt.Errorf("blocks_by_range: peer returned RESOURCE_UNAVAILABLE")
+		}
+		if code != RespSuccess {
+			return nil, fmt.Errorf("blocks_by_range: peer returned error code %d", code)
+		}
+
+		block := &types.SignedBlock{}
+		if err := block.UnmarshalSSZ(blockData); err != nil {
+			return nil, fmt.Errorf("unmarshal block: %w", err)
+		}
+
+		// Slot range check.
+		if block.Block.Slot < startSlot || block.Block.Slot >= endSlot {
+			return nil, fmt.Errorf("blocks_by_range: block slot %d outside requested range [%d, %d)",
+				block.Block.Slot, startSlot, endSlot)
+		}
+
+		if hasPrev {
+			prevSlot := blocks[len(blocks)-1].Block.Slot
+			// Slot monotonicity: chunks must be strictly increasing.
+			if block.Block.Slot <= prevSlot {
+				return nil, fmt.Errorf("blocks_by_range: non-monotonic slots %d <= %d",
+					block.Block.Slot, prevSlot)
+			}
+			// Parent-root continuity across empty slots: this block's parent
+			// must be the previous delivered block's header root, regardless
+			// of how many empty slots sit between them.
+			if block.Block.ParentRoot != prevHeaderRoot {
+				return nil, fmt.Errorf("blocks_by_range: parent_root mismatch at slot %d (got 0x%x, want 0x%x)",
+					block.Block.Slot, block.Block.ParentRoot, prevHeaderRoot)
+			}
+		}
+
+		// Compute this block's header root for the next chunk's continuity check.
+		bodyRoot, err := block.Block.Body.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("body hash_tree_root: %w", err)
+		}
+		header := &types.BlockHeader{
+			Slot:          block.Block.Slot,
+			ProposerIndex: block.Block.ProposerIndex,
+			ParentRoot:    block.Block.ParentRoot,
+			StateRoot:     block.Block.StateRoot,
+			BodyRoot:      bodyRoot,
+		}
+		prevHeaderRoot, err = header.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("header hash_tree_root: %w", err)
+		}
+		hasPrev = true
+
+		blocks = append(blocks, block)
+	}
+
+	return blocks, nil
 }
 
 // DecodeBlocksByRootRequest decodes an SSZ container: BlocksByRootRequest { roots: List[Root, 1024] }.

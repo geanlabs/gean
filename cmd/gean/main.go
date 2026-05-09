@@ -220,6 +220,12 @@ func main() {
 		func(root [32]byte) *types.SignedBlock {
 			return s.GetSignedBlock(root)
 		},
+		func() uint64 {
+			return s.HeadSlot()
+		},
+		func(startSlot, count uint64) []*types.SignedBlock {
+			return s.GetCanonicalBlocksInRange(startSlot, count)
+		},
 	)
 
 	// Wire gossip handlers — P2P pushes to engine channels.
@@ -227,6 +233,11 @@ func main() {
 
 	// Start engine goroutine.
 	go n.Run(ctx)
+
+	// Start sync driver: periodic status-poll + BlocksByRange backfill when
+	// peers are far enough ahead. No-op while node is synced or has no peers.
+	syncDriver := node.NewSyncDriver(n, p2pHost)
+	go syncDriver.Run(ctx)
 
 	// --- Start HTTP servers ---
 
