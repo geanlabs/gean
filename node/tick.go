@@ -146,8 +146,10 @@ func (e *Engine) updateHead(logTree bool) {
 
 			if isReorg {
 				IncForkChoiceReorgs()
-				logger.Warn(logger.Forkchoice, "REORG slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
-					newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
+				depth := e.FC.ReorgDepth(oldHead, newHead)
+				ObserveForkChoiceReorgDepth(float64(depth))
+				logger.Warn(logger.Forkchoice, "REORG depth=%d slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
+					depth, newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
 					justified.Slot, justified.Root,
 					finalized.Slot, finalized.Root)
 			} else {
