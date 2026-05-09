@@ -61,6 +61,9 @@ var (
 	metricAttestationCommitteeSubnet = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_attestation_committee_subnet", Help: "Node's attestation committee subnet",
 	})
+	metricGossipMeshPeers = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_gossip_mesh_peers", Help: "Number of peers in the gossipsub mesh",
+	})
 )
 
 // --- Counters ---
@@ -272,6 +275,7 @@ func SetConnectedPeers(client string, n int) {
 	metricConnectedPeers.WithLabelValues(client).Set(float64(n))
 }
 func SetAttestationCommitteeSubnet(n uint64) { metricAttestationCommitteeSubnet.Set(float64(n)) }
+func SetGossipMeshPeers(n int)               { metricGossipMeshPeers.Set(float64(n)) }
 
 func IncAttestationsValid(n uint64)          { metricAttestationsValid.Add(float64(n)) }
 func IncAttestationsInvalid()                { metricAttestationsInvalid.Inc() }

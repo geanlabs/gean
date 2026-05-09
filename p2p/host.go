@@ -251,6 +251,19 @@ func (h *Host) TopicMeshSizes() map[string]int {
 	return sizes
 }
 
+// MeshPeerCount returns the number of distinct remote peers across all
+// subscribed gossipsub mesh topics. A peer in N meshes is counted once,
+// matching rust-libp2p's all_mesh_peers().count() semantic.
+func (h *Host) MeshPeerCount() int {
+	seen := make(map[peer.ID]struct{})
+	for _, topic := range h.topics {
+		for _, p := range topic.ListPeers() {
+			seen[p] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
 // LibP2PHost returns the underlying libp2p host for req-resp stream handlers.
 func (h *Host) LibP2PHost() host.Host {
 	return h.host

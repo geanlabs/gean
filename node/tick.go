@@ -24,6 +24,7 @@ func (e *Engine) onTick() {
 
 	SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)
+	e.refreshGossipMeshPeers()
 
 	// Snapshot the aggregator role once per tick. A mid-tick toggle must
 	// not cause OnTick below and the interval-2 branch to observe different
@@ -280,6 +281,13 @@ func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func (e *Engine) refreshGossipMeshPeers() {
+	if e.P2P == nil {
+		return
+	}
+	SetGossipMeshPeers(e.P2P.MeshPeerCount())
 }
 
 // SyncLagSlots is the threshold beyond which the node is considered "syncing"
