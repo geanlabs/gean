@@ -48,6 +48,11 @@ type Engine struct {
 	AggregationCh chan *types.SignedAggregatedAttestation
 	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
 	FetchRootCh   chan [32]byte // roots to fetch — coalesced into batches by the fetch batcher
+
+	// lastTick holds the wall time of the previous onTick invocation. Zero
+	// means no prior tick — the very first tick records no observation
+	// (would otherwise pollute the histogram with a process-startup delta).
+	lastTick time.Time
 }
 
 // New creates a new Engine.

@@ -11,7 +11,13 @@ import (
 
 // onTick processes an 800ms tick event.
 func (e *Engine) onTick() {
-	timestampMs := uint64(time.Now().UnixMilli())
+	now := time.Now()
+	if !e.lastTick.IsZero() {
+		ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
+	}
+	e.lastTick = now
+
+	timestampMs := uint64(now.UnixMilli())
 
 	currentSlot := e.currentSlot(timestampMs)
 	currentInterval := e.currentInterval(timestampMs)

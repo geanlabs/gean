@@ -219,6 +219,11 @@ var (
 		Help:    "Bytes size of a gossip aggregated attestation message",
 		Buckets: []float64{1024, 4096, 16384, 65536, 131072, 262144, 524288, 1048576},
 	})
+	metricTickIntervalDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_tick_interval_duration_seconds",
+		Help:    "Elapsed time between clock ticks in seconds (nominal 0.8s = 4s slot / 5 intervals)",
+		Buckets: []float64{0.4, 0.6, 0.75, 0.8, 0.805, 0.81, 0.815, 0.82, 0.825, 0.85, 0.9, 1.0, 1.2, 1.6},
+	})
 )
 
 // --- Counters for block production ---
@@ -310,10 +315,11 @@ func IncPeerConnection(direction, result string) {
 func IncPeerDisconnection(direction, reason string) {
 	metricPeerDisconnectionEvents.WithLabelValues(direction, reason).Inc()
 }
-func ObserveSTFTime(seconds float64)             { metricSTFTime.Observe(seconds) }
-func ObserveSTFSlotsTime(seconds float64)        { metricSTFSlotsTime.Observe(seconds) }
-func ObserveSTFBlockTime(seconds float64)        { metricSTFBlockTime.Observe(seconds) }
-func ObserveSTFAttestationsTime(seconds float64) { metricSTFAttestationsTime.Observe(seconds) }
+func ObserveTickIntervalDuration(seconds float64) { metricTickIntervalDuration.Observe(seconds) }
+func ObserveSTFTime(seconds float64)              { metricSTFTime.Observe(seconds) }
+func ObserveSTFSlotsTime(seconds float64)         { metricSTFSlotsTime.Observe(seconds) }
+func ObserveSTFBlockTime(seconds float64)         { metricSTFBlockTime.Observe(seconds) }
+func ObserveSTFAttestationsTime(seconds float64)  { metricSTFAttestationsTime.Observe(seconds) }
 
 // Block production observers/counters.
 func ObserveBlockBuildingTime(seconds float64) { metricBlockBuildingTime.Observe(seconds) }
