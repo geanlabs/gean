@@ -19,7 +19,7 @@ import (
 )
 
 // Spec fixture directory root rs `leanSpec/fixtures/consensus/networking_codec`.
-const netCodecFixturesRoot = "../leanSpec/fixtures/consensus/networking_codec/devnet/networking"
+const netCodecFixturesRoot = "../leanSpec/fixtures/consensus/networking_codec/lstar/networking"
 
 // netFixtureOuter is the top-level JSON shape: one fixture file contains one
 // outer map whose single key is the pytest test ID and whose value is the fixture.
