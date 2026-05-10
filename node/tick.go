@@ -11,13 +11,20 @@ import (
 
 // onTick processes an 800ms tick event.
 func (e *Engine) onTick() {
-	timestampMs := uint64(time.Now().UnixMilli())
+	now := time.Now()
+	if !e.lastTick.IsZero() {
+		ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
+	}
+	e.lastTick = now
+
+	timestampMs := uint64(now.UnixMilli())
 
 	currentSlot := e.currentSlot(timestampMs)
 	currentInterval := e.currentInterval(timestampMs)
 
 	SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)
+	e.refreshGossipMeshPeers()
 
 	// Snapshot the aggregator role once per tick. A mid-tick toggle must
 	// not cause OnTick below and the interval-2 branch to observe different
@@ -132,15 +139,17 @@ func (e *Engine) updateHead(logTree bool) {
 			SetHeadSlot(newHeader.Slot)
 			SetLatestJustifiedSlot(justified.Slot)
 			SetLatestFinalizedSlot(finalized.Slot)
-			SetAttestationSignatures(e.Store.AttestationSignatures.Len())
+			SetGossipSignatures(e.Store.AttestationSignatures.Len())
 			SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
 			SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
 			SetPendingAttestationsTotal(e.PendingAttestations.Total())
 
 			if isReorg {
 				IncForkChoiceReorgs()
-				logger.Warn(logger.Forkchoice, "REORG slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
-					newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
+				depth := e.FC.ReorgDepth(oldHead, newHead)
+				ObserveForkChoiceReorgDepth(float64(depth))
+				logger.Warn(logger.Forkchoice, "REORG depth=%d slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
+					depth, newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
 					justified.Slot, justified.Root,
 					finalized.Slot, finalized.Root)
 			} else {
@@ -274,6 +283,13 @@ func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func (e *Engine) refreshGossipMeshPeers() {
+	if e.P2P == nil {
+		return
+	}
+	SetGossipMeshPeers(e.P2P.MeshPeerCount())
 }
 
 // SyncLagSlots is the threshold beyond which the node is considered "syncing"

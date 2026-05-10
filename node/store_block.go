@@ -93,9 +93,11 @@ func onBlockCore(
 	postState.UnmarshalSSZ(stateBytes)
 
 	// Execute state transition.
+	stfStart := time.Now()
 	if err := statetransition.StateTransition(postState, block); err != nil {
 		return &StoreError{ErrStateTransitionFailed, fmt.Sprintf("state transition: %v", err)}
 	}
+	ObserveSTFTime(time.Since(stfStart).Seconds())
 
 	// Cache state root in latest block header.
 	postState.LatestBlockHeader.StateRoot = block.StateRoot

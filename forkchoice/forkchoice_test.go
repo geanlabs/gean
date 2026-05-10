@@ -324,3 +324,39 @@ func TestDebugOracleTiebreak(t *testing.T) {
 		t.Fatalf("ORACLE MISMATCH: spec=%x proto=%x", specHead[:4], protoHead[:4])
 	}
 }
+
+func TestReorgDepth(t *testing.T) {
+	// Anchor (slot 0) -> A (slot 1) -> A2 (slot 2) -> A3 (slot 3)
+	//                  \-> B (slot 1) -> B2 (slot 2)
+	anchor, a, a2, a3, b, b2 := root(1), root(2), root(3), root(4), root(5), root(6)
+	fc := New(0, anchor)
+	fc.OnBlock(1, a, anchor)
+	fc.OnBlock(2, a2, a)
+	fc.OnBlock(3, a3, a2)
+	fc.OnBlock(1, b, anchor)
+	fc.OnBlock(2, b2, b)
+
+	cases := []struct {
+		name      string
+		oldHead   [32]byte
+		newHead   [32]byte
+		wantDepth uint64
+	}{
+		{"same head no reorg", a3, a3, 0},
+		{"normal extension a → a2 (no reorg)", a, a2, 0},
+		{"1-block reorg a → b at slot 1", a, b, 1},
+		{"2-block reorg a2 → b2 at slot 2", a2, b2, 2},
+		{"3-block reorg a3 → b at slot 1", a3, b, 3},
+		{"unknown old root", root(99), a, 0},
+		{"unknown new root", a, root(99), 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fc.ReorgDepth(tc.oldHead, tc.newHead)
+			if got != tc.wantDepth {
+				t.Fatalf("ReorgDepth(old=%x, new=%x) = %d, want %d",
+					tc.oldHead[:1], tc.newHead[:1], got, tc.wantDepth)
+			}
+		})
+	}
+}

@@ -115,6 +115,38 @@ func (fc *ForkChoice) GetCanonicalAnalysis(anchorRoot [32]byte) (canonical, nonC
 	return canonical, nonCanonical
 }
 
+// ReorgDepth returns the number of blocks abandoned from oldHead during a
+// reorg to newHead — i.e. the count of oldHead's ancestors (including oldHead
+// itself) that are not also ancestors of newHead. Returns 0 when oldHead and
+// newHead share a chain (no reorg, normal extension, or unknown root).
+func (fc *ForkChoice) ReorgDepth(oldHead, newHead [32]byte) uint64 {
+	if oldHead == newHead {
+		return 0
+	}
+	newIdx, ok := fc.Array.indices[newHead]
+	if !ok {
+		return 0
+	}
+	oldIdx, ok := fc.Array.indices[oldHead]
+	if !ok {
+		return 0
+	}
+
+	newAncestors := make(map[[32]byte]struct{})
+	for cur := newIdx; cur >= 0; cur = fc.Array.nodes[cur].Parent {
+		newAncestors[fc.Array.nodes[cur].Root] = struct{}{}
+	}
+
+	depth := uint64(0)
+	for cur := oldIdx; cur >= 0; cur = fc.Array.nodes[cur].Parent {
+		if _, hit := newAncestors[fc.Array.nodes[cur].Root]; hit {
+			return depth
+		}
+		depth++
+	}
+	return depth
+}
+
 // GetCanonicalAncestorAtDepth returns the canonical block at depth steps back from head.
 // Walks parent pointers from head backwards by depth steps.
 func (fc *ForkChoice) GetCanonicalAncestorAtDepth(depth int) (root [32]byte, slot uint64, ok bool) {

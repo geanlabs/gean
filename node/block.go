@@ -372,6 +372,15 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 		return
 	}
 
+	// Match leanMetrics observe_on_attestation: emit on clean success only.
+	start := time.Now()
+	success := false
+	defer func() {
+		if success {
+			ObserveAttestationValidationTime(time.Since(start).Seconds())
+		}
+	}()
+
 	// Validate attestation data. If the attestation references a head block
 	// we don't yet know about, buffer it under that head root and fire a
 	// targeted BlocksByRoot fetch — when the block arrives, the block import
@@ -431,6 +440,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	// Store for aggregation.
 	logger.Info(logger.Gossip, "attestation verified: validator=%d slot=%d dataRoot=%x", att.ValidatorID, att.Data.Slot, dataRoot)
 	e.Store.AttestationSignatures.InsertWithHandle(dataRoot, att.Data, att.ValidatorID, att.Signature, sigHandle, parseErr)
+	success = true
 }
 
 // onGossipAggregatedAttestation validates and stores an aggregated attestation.
