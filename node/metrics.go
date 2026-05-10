@@ -35,8 +35,8 @@ var (
 		Name: "lean_attestation_committee_count", Help: "Number of attestation committees/subnets",
 	})
 	// lean_gossip_signatures is the leanMetrics-standard name (data-source
-	// flavored). It tracks the same pool that leanSpec PR #680-era renamed
-	// from gossip_signatures → attestation_signatures on the spec side; the
+	// flavored). It tracks the same pool that leanSpec renamed from
+	// gossip_signatures → attestation_signatures on the spec side; the
 	// metric and field names move in opposite directions on purpose — the
 	// metric is named for where the data comes from (gossip), the field for
 	// what it contains (attestation signatures).
