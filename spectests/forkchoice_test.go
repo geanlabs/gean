@@ -821,12 +821,56 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *node.Consens
 		}
 	}
 
-	// AttestationChecks parses cleanly but per-validator attestation validation
-	// against gean's payload pools is a follow-up — needs Location ("known",
-	// "new", etc.) → store-pool routing logic that doesn't exist yet.
-	if len(checks.AttestationChecks) > 0 {
-		t.Logf("step %d: %d attestationChecks not yet validated (follow-up)",
-			stepIdx, len(checks.AttestationChecks))
+	for _, ac := range checks.AttestationChecks {
+		validateAttestationCheck(t, stepIdx, fc, ac)
+	}
+}
+
+// validateAttestationCheck asserts a per-validator attestation expectation
+// against fc.Votes. Location selects the pool: "new" reads LatestNew, "known"
+// reads LatestKnown. Slot fields not set on the check are skipped.
+func validateAttestationCheck(t *testing.T, stepIdx int, fc *forkchoice.ForkChoice, ac fcAttestationCheck) {
+	t.Helper()
+	tracker, ok := fc.Votes.Votes[ac.Validator]
+	if !ok {
+		t.Fatalf("step %d: attestationCheck v=%d location=%q: no vote tracker", stepIdx, ac.Validator, ac.Location)
+	}
+	var target *forkchoice.VoteTarget
+	switch ac.Location {
+	case "new":
+		target = tracker.LatestNew
+	case "known":
+		target = tracker.LatestKnown
+	default:
+		t.Fatalf("step %d: attestationCheck v=%d: unsupported location %q (want \"new\" or \"known\")",
+			stepIdx, ac.Validator, ac.Location)
+	}
+	if target == nil {
+		t.Fatalf("step %d: attestationCheck v=%d %s: no attestation present in pool",
+			stepIdx, ac.Validator, ac.Location)
+	}
+	if ac.AttestationSlot != nil && target.Slot != *ac.AttestationSlot {
+		t.Errorf("step %d: attestationCheck v=%d %s: attestationSlot got %d, want %d",
+			stepIdx, ac.Validator, ac.Location, target.Slot, *ac.AttestationSlot)
+	}
+	if target.Data == nil {
+		if ac.HeadSlot != nil || ac.SourceSlot != nil || ac.TargetSlot != nil {
+			t.Fatalf("step %d: attestationCheck v=%d %s: tracker has no AttestationData",
+				stepIdx, ac.Validator, ac.Location)
+		}
+		return
+	}
+	if ac.HeadSlot != nil && target.Data.Head != nil && target.Data.Head.Slot != *ac.HeadSlot {
+		t.Errorf("step %d: attestationCheck v=%d %s: headSlot got %d, want %d",
+			stepIdx, ac.Validator, ac.Location, target.Data.Head.Slot, *ac.HeadSlot)
+	}
+	if ac.SourceSlot != nil && target.Data.Source != nil && target.Data.Source.Slot != *ac.SourceSlot {
+		t.Errorf("step %d: attestationCheck v=%d %s: sourceSlot got %d, want %d",
+			stepIdx, ac.Validator, ac.Location, target.Data.Source.Slot, *ac.SourceSlot)
+	}
+	if ac.TargetSlot != nil && target.Data.Target != nil && target.Data.Target.Slot != *ac.TargetSlot {
+		t.Errorf("step %d: attestationCheck v=%d %s: targetSlot got %d, want %d",
+			stepIdx, ac.Validator, ac.Location, target.Data.Target.Slot, *ac.TargetSlot)
 	}
 }
 
