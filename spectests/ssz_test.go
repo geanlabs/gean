@@ -63,15 +63,17 @@ var hashSkipTypes = map[string]bool{
 	"SignedBlock":       true,
 }
 
-// sszFactories maps the spec typeName to a zero-value gean struct. Only types
-// whose gean implementation already satisfies sszCodec are registered here;
-// fixtures for other types (Signature, PublicKey, HashTreeLayer, HashTreeOpening)
-// are skipped at runtime with a clear reason.
+// sszFactories maps the spec typeName to a zero-value gean struct.
 //
 // Networking req/resp types (Status, BlocksByRootRequest) are registered via
 // thin adapters in networking_ssz_adapters_test.go because their gean
 // implementations live in p2p/ with hand-rolled SSZ that doesn't match the
 // fastssz-generated sszCodec contract.
+//
+// XMSS containers (PublicKey, Signature, HashTreeLayer, HashTreeOpening) are
+// registered via xmss_ssz_adapters_test.go. Gean stores XMSS payloads as
+// opaque byte arrays — the inner spec structure exists only in the Rust FFI
+// — so the adapters reconstruct the field layout for hash_tree_root.
 var sszFactories = map[string]func() sszCodec{
 	"Checkpoint":                  func() sszCodec { return new(types.Checkpoint) },
 	"Config":                      func() sszCodec { return new(types.ChainConfig) },
@@ -90,6 +92,10 @@ var sszFactories = map[string]func() sszCodec{
 	"State":                       func() sszCodec { return new(types.State) },
 	"Status":                      func() sszCodec { return new(sszStatusAdapter) },
 	"BlocksByRootRequest":         func() sszCodec { return new(sszBlocksByRootRequestAdapter) },
+	"PublicKey":                   func() sszCodec { return new(sszPublicKeyAdapter) },
+	"Signature":                   func() sszCodec { return new(sszSignatureAdapter) },
+	"HashTreeLayer":               func() sszCodec { return new(sszHashTreeLayerAdapter) },
+	"HashTreeOpening":             func() sszCodec { return new(sszHashTreeOpeningAdapter) },
 }
 
 // sszDecodeFailureFactories provides decode-only entry points for fixtures
