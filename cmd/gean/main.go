@@ -139,6 +139,13 @@ func main() {
 		initStoreFromState(s, genesisState)
 	}
 
+	// Rehydrate store.time from wall clock before any consumer reads it.
+	// On DB restore the persisted time is stale; on genesis/checkpoint init
+	// it is unset. A zero time makes the gossip validator (store_validate.go)
+	// reject every attestation as "too far in future" until the first onTick
+	// fires, opening an 800ms hole at every boot.
+	recoverStoreTime(s, genesisConfig.GenesisTime)
+
 	// --- Initialize fork choice ---
 
 	headRoot := s.Head()
@@ -302,7 +309,8 @@ func initStoreFromState(s *node.ConsensusStore, state *types.State) {
 	s.SetSafeTarget(blockRoot)
 	s.SetLatestJustified(anchor)
 	s.SetLatestFinalized(anchor)
-	s.SetTime(0)
+	// Store time is rehydrated from wall clock by recoverStoreTime after
+	// every init path; no need to seed it here.
 
 	// Store block header and state.
 	s.InsertBlockHeader(blockRoot, header)
@@ -311,4 +319,19 @@ func initStoreFromState(s *node.ConsensusStore, state *types.State) {
 
 	logger.Info(logger.Store, "store initialized from anchor: slot=%d head=%x parent_root=%x state_root=%x",
 		header.Slot, blockRoot, header.ParentRoot, stateRoot)
+}
+
+// recoverStoreTime sets store.time to the interval index corresponding to the
+// current wall clock relative to genesis. Stays at 0 before genesis.
+func recoverStoreTime(s *node.ConsensusStore, genesisTimeSec uint64) {
+	genesisMs := genesisTimeSec * 1000
+	nowMs := uint64(time.Now().UnixMilli())
+	if nowMs <= genesisMs {
+		s.SetTime(0)
+		return
+	}
+	intervals := (nowMs - genesisMs) / types.MillisecondsPerInterval
+	s.SetTime(intervals)
+	logger.Info(logger.Node, "store time rehydrated: intervals=%d genesis_time=%d now_ms=%d",
+		intervals, genesisTimeSec, nowMs)
 }
