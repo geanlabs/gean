@@ -1,8 +1,10 @@
 package node
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
@@ -174,6 +176,45 @@ func TestEnginePendingBlocks(t *testing.T) {
 	if len(e.PendingBlockParents) != 1 {
 		t.Fatalf("expected 1 pending block, got %d", len(e.PendingBlockParents))
 	}
+}
+
+// Engine.Run must invoke onTick once before the for-select loop accepts
+// ticker fires. Without the bootstrap call there is up to one tick interval
+// (800ms) of dead time after start where store.time stays at its boot value.
+// The polling check below trips well inside that window.
+func TestEngineRun_InvokesInitialOnTick(t *testing.T) {
+	e := makeTestEngine()
+
+	if got := e.Store.Time(); got != 0 {
+		t.Fatalf("precondition: expected store.time=0 at start, got %d", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		e.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
+			t.Error("Engine.Run did not exit after context cancel")
+		}
+	}()
+
+	// The ticker fires every MillisecondsPerInterval (800ms). Anything
+	// observed before that came from the bootstrap call.
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if e.Store.Time() > 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatalf("Engine.Run did not invoke initial onTick within 200ms; store.time=%d", e.Store.Time())
 }
 
 func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
