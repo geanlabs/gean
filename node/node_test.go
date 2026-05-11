@@ -176,6 +176,65 @@ func TestEnginePendingBlocks(t *testing.T) {
 	}
 }
 
+func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
+	e := makeTestEngine()
+
+	var finalizedRoot, parentRoot [32]byte
+	finalizedRoot[0] = 0x05
+	parentRoot[0] = 0xBB
+	e.Store.SetLatestFinalized(&types.Checkpoint{Root: finalizedRoot, Slot: 10})
+
+	signedBlock := &types.SignedBlock{
+		Block: &types.Block{
+			Slot:       5,
+			ParentRoot: parentRoot,
+			Body:       &types.BlockBody{},
+		},
+		Signature: &types.BlockSignatures{},
+	}
+
+	var queue []*types.SignedBlock
+	e.processOneBlock(signedBlock, &queue)
+
+	if len(e.PendingBlocks) != 0 {
+		t.Fatalf("pre-finalized block was buffered as pending; PendingBlocks=%d", len(e.PendingBlocks))
+	}
+	if len(e.PendingBlockParents) != 0 {
+		t.Fatalf("pre-finalized block recorded a missing-parent entry; PendingBlockParents=%d", len(e.PendingBlockParents))
+	}
+	if len(queue) != 0 {
+		t.Fatalf("pre-finalized block produced cascade work; queue=%d", len(queue))
+	}
+}
+
+func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
+	e := makeTestEngine()
+
+	var finalizedRoot, parentRoot [32]byte
+	finalizedRoot[0] = 0x05
+	parentRoot[0] = 0xBB
+	e.Store.SetLatestFinalized(&types.Checkpoint{Root: finalizedRoot, Slot: 10})
+
+	// Block AT the finalized slot must pass the guard (strict less-than). With
+	// no parent state available it gets buffered as pending; that's the proof
+	// the new guard didn't drop it.
+	signedBlock := &types.SignedBlock{
+		Block: &types.Block{
+			Slot:       10,
+			ParentRoot: parentRoot,
+			Body:       &types.BlockBody{},
+		},
+		Signature: &types.BlockSignatures{},
+	}
+
+	var queue []*types.SignedBlock
+	e.processOneBlock(signedBlock, &queue)
+
+	if len(e.PendingBlockParents) == 0 {
+		t.Fatal("block at finalized slot was rejected by the strict-less-than guard")
+	}
+}
+
 func TestEngineCascadePending(t *testing.T) {
 	e := makeTestEngine()
 
