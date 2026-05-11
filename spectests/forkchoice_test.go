@@ -766,36 +766,36 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *node.Consens
 		}
 	}
 
-	// SafeTarget validation requires the runner to simulate
-	// Engine.updateSafeTarget() at interval 3 (extract new-pool attestations,
-	// feed fork-choice votes, recompute the threshold-gated head). The runner
-	// doesn't do that yet, so SafeTarget stays at its anchor-init value.
-	// Parse + log for now; a follow-up wires the simulation.
+	// Simulate Engine.updateSafeTarget() before reading SafeTarget. Engine
+	// fires this at interval 3; the runner cannot model interval cadence
+	// directly, so it runs on demand whenever a safeTarget* check is set.
+	// fc.Votes still carries LatestNew entries from prior SetNew calls
+	// (the runner promotes the store pool but not the fc.Votes pool), so
+	// UpdateSafeTarget with fromKnown=false reads the right "new pool".
+	if checks.SafeTarget != nil || checks.SafeTargetSlot != nil || checks.SafeTargetRootLabel != nil {
+		simulateUpdateSafeTarget(s, fc)
+	}
 	st := s.SafeTarget()
-	if (checks.SafeTarget != nil || checks.SafeTargetSlot != nil || checks.SafeTargetRootLabel != nil) && st == [32]byte{} {
-		t.Logf("step %d: safeTarget assertions deferred — spec runner does not yet simulate updateSafeTarget", stepIdx)
-	} else {
-		if checks.SafeTarget != nil {
-			want := fcParseHexRoot(*checks.SafeTarget)
-			if st != want {
-				t.Fatalf("step %d check: safeTarget got 0x%x, want 0x%x", stepIdx, st, want)
-			}
+	if checks.SafeTarget != nil {
+		want := fcParseHexRoot(*checks.SafeTarget)
+		if st != want {
+			t.Fatalf("step %d check: safeTarget got 0x%x, want 0x%x", stepIdx, st, want)
 		}
-		if checks.SafeTargetRootLabel != nil {
-			if labelRoot, ok := labelRoots[*checks.SafeTargetRootLabel]; ok && st != labelRoot {
-				t.Fatalf("step %d check: safeTargetRootLabel %q got 0x%x, want 0x%x",
-					stepIdx, *checks.SafeTargetRootLabel, st, labelRoot)
-			}
+	}
+	if checks.SafeTargetRootLabel != nil {
+		if labelRoot, ok := labelRoots[*checks.SafeTargetRootLabel]; ok && st != labelRoot {
+			t.Fatalf("step %d check: safeTargetRootLabel %q got 0x%x, want 0x%x",
+				stepIdx, *checks.SafeTargetRootLabel, st, labelRoot)
 		}
-		if checks.SafeTargetSlot != nil {
-			stHeader := s.GetBlockHeader(st)
-			if stHeader == nil {
-				t.Fatalf("step %d check: safe target header not found for root 0x%x", stepIdx, st)
-			}
-			if stHeader.Slot != *checks.SafeTargetSlot {
-				t.Fatalf("step %d check: safeTargetSlot got %d, want %d",
-					stepIdx, stHeader.Slot, *checks.SafeTargetSlot)
-			}
+	}
+	if checks.SafeTargetSlot != nil {
+		stHeader := s.GetBlockHeader(st)
+		if stHeader == nil {
+			t.Fatalf("step %d check: safe target header not found for root 0x%x", stepIdx, st)
+		}
+		if stHeader.Slot != *checks.SafeTargetSlot {
+			t.Fatalf("step %d check: safeTargetSlot got %d, want %d",
+				stepIdx, stHeader.Slot, *checks.SafeTargetSlot)
 		}
 	}
 
@@ -828,4 +828,20 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *node.Consens
 		t.Logf("step %d: %d attestationChecks not yet validated (follow-up)",
 			stepIdx, len(checks.AttestationChecks))
 	}
+}
+
+// simulateUpdateSafeTarget mirrors Engine.updateSafeTarget (node/tick.go) so
+// the spec runner can validate safeTarget assertions on demand. The runner
+// keeps fc.Votes "new" entries populated from prior SetNew calls (store-side
+// promotion does not clear fc.Votes), so UpdateSafeTarget reads the right
+// new pool.
+func simulateUpdateSafeTarget(s *node.ConsensusStore, fc *forkchoice.ForkChoice) {
+	headState := s.GetState(s.Head())
+	if headState == nil {
+		return
+	}
+	justifiedRoot := s.LatestJustified().Root
+	numValidators := uint64(len(headState.Validators))
+	safeTarget := fc.UpdateSafeTarget(justifiedRoot, numValidators)
+	s.SetSafeTarget(safeTarget)
 }
