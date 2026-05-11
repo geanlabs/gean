@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/golang/snappy"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -112,6 +113,18 @@ func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
 	_, _, err := DecodeResponse(bytes.NewReader(encoded))
 	if err == nil {
 		t.Fatal("expected error for oversize error-body decode, got nil")
+	}
+}
+
+// Rejects block-format snappy data (the historic self-to-self fallback path).
+// Spec requires framed-only on req/resp.
+func TestReqRespPayloadRejectsBlockFormatSnappy(t *testing.T) {
+	raw := []byte("hello world")
+	blockFormat := snappy.Encode(nil, raw)
+	chunk := append(EncodeVarint(uint32(len(raw))), blockFormat...)
+	_, err := DecodeReqRespPayload(chunk)
+	if err == nil {
+		t.Fatal("expected error decoding block-format snappy as framed, got nil")
 	}
 }
 

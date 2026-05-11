@@ -74,22 +74,17 @@ func EncodeReqRespPayload(data []byte) []byte {
 }
 
 // DecodeReqRespPayload decodes a payload: varint(uncompressed_len) + snappy_framed(data).
-// Uses snappy FRAMED format (not block) for req-resp cross-client compatibility.
+// Uses snappy FRAMED format only, per Ethereum ssz_snappy req/resp spec.
 func DecodeReqRespPayload(buf []byte) ([]byte, error) {
 	declaredLen, rest, err := DecodeVarint(buf)
 	if err != nil {
 		return nil, fmt.Errorf("decode varint: %w", err)
 	}
 
-	// Try framed format first (cross-client), fall back to block format (self-to-self).
 	r := snappy.NewReader(bytes.NewReader(rest))
 	decoded, err := io.ReadAll(r)
 	if err != nil {
-		// Fallback: try block format (for self-to-self communication).
-		decoded, err = snappy.Decode(nil, rest)
-		if err != nil {
-			return nil, fmt.Errorf("snappy decode: %w", err)
-		}
+		return nil, fmt.Errorf("snappy framed decode: %w", err)
 	}
 
 	if declaredLen > 0 && uint32(len(decoded)) != declaredLen {
