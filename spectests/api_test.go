@@ -25,7 +25,7 @@ import (
 )
 
 // Spec fixture directory for api endpoint tests.
-const apiFixturesRoot = "../leanSpec/fixtures/consensus/api_endpoint/devnet/api/test_api_endpoints"
+const apiFixturesRoot = "../leanSpec/fixtures/consensus/api_endpoint/lstar/api/test_api_endpoints"
 
 // leanSpec ships its deterministic test keys here. The fixture's leanEnv
 // ("prod"/"test") selects the subdirectory; each N.json has hex-encoded

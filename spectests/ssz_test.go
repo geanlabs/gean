@@ -17,20 +17,22 @@ import (
 // Spec fixture roots for SSZ conformance tests. Each directory holds fixtures
 // that carry typeName / serialized (SSZ hex) / root (hash_tree_root hex).
 var sszFixtureRoots = []string{
-	"../leanSpec/fixtures/consensus/ssz/devnet/ssz/test_consensus_containers",
-	"../leanSpec/fixtures/consensus/ssz/devnet/ssz/test_networking_containers",
-	"../leanSpec/fixtures/consensus/ssz/devnet/ssz/test_xmss_containers",
+	"../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_consensus_containers",
+	"../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_networking_containers",
+	"../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_xmss_containers",
 }
 
 type sszFixtureOuter map[string]sszFixture
 
 type sszFixture struct {
-	Network    string          `json:"network"`
-	LeanEnv    string          `json:"leanEnv"`
-	TypeName   string          `json:"typeName"`
-	Value      json.RawMessage `json:"value"`
-	Serialized string          `json:"serialized"`
-	Root       string          `json:"root"`
+	Network         string          `json:"network"`
+	LeanEnv         string          `json:"leanEnv"`
+	TypeName        string          `json:"typeName"`
+	Value           json.RawMessage `json:"value"`
+	Serialized      string          `json:"serialized"`
+	Root            string          `json:"root"`
+	ExpectException string          `json:"expectException"`
+	RawBytes        string          `json:"rawBytes"`
 }
 
 // sszCodec is the uniform contract every gean SSZ type satisfies (sszgen
@@ -63,8 +65,13 @@ var hashSkipTypes = map[string]bool{
 
 // sszFactories maps the spec typeName to a zero-value gean struct. Only types
 // whose gean implementation already satisfies sszCodec are registered here;
-// fixtures for other types (Signature, PublicKey, HashTreeLayer, HashTreeOpening,
-// Status, BlocksByRootRequest) are skipped at runtime with a clear reason.
+// fixtures for other types (Signature, PublicKey, HashTreeLayer, HashTreeOpening)
+// are skipped at runtime with a clear reason.
+//
+// Networking req/resp types (Status, BlocksByRootRequest) are registered via
+// thin adapters in networking_ssz_adapters_test.go because their gean
+// implementations live in p2p/ with hand-rolled SSZ that doesn't match the
+// fastssz-generated sszCodec contract.
 var sszFactories = map[string]func() sszCodec{
 	"Checkpoint":                  func() sszCodec { return new(types.Checkpoint) },
 	"Config":                      func() sszCodec { return new(types.ChainConfig) },
@@ -81,7 +88,20 @@ var sszFactories = map[string]func() sszCodec{
 	"SignedAggregatedAttestation": func() sszCodec { return new(types.SignedAggregatedAttestation) },
 	"AggregatedSignatureProof":    func() sszCodec { return new(types.AggregatedSignatureProof) },
 	"State":                       func() sszCodec { return new(types.State) },
+	"Status":                      func() sszCodec { return new(sszStatusAdapter) },
+	"BlocksByRootRequest":         func() sszCodec { return new(sszBlocksByRootRequestAdapter) },
 }
+
+// sszDecodeFailureFactories provides decode-only entry points for fixtures
+// from leanSpec PR #649 that carry expectException + rawBytes and assert the
+// decoder rejects malformed input. Empty for now: the rejection fixtures
+// currently target spec-internal parameterized type wrappers (DecodeBitlist8,
+// DecodeBitvector16) plus basic types (Bytes4, Uint32) that gean never
+// exposes as standalone decoders. The harness skips with a clear reason
+// when typeName isn't registered, so future fixtures targeting types gean
+// does decode (e.g. via UnmarshalSSZ on a registered struct) auto-work
+// once added here.
+var sszDecodeFailureFactories = map[string]func([]byte) error{}
 
 // TestSpecSSZ walks the ssz container fixture directories and, for each
 // fixture, exercises the gean codec end-to-end:
@@ -139,6 +159,11 @@ func TestSpecSSZ(t *testing.T) {
 func runSSZFixture(t *testing.T, fx sszFixture) {
 	t.Helper()
 
+	if fx.ExpectException != "" {
+		runSSZDecodeFailure(t, fx)
+		return
+	}
+
 	factory, ok := sszFactories[fx.TypeName]
 	if !ok {
 		t.Skipf("type %q not wired into ssz harness", fx.TypeName)
@@ -182,5 +207,29 @@ func runSSZFixture(t *testing.T, fx sszFixture) {
 	}
 	if gotRoot != wantRoot {
 		t.Errorf("hash_tree_root mismatch:\n got:  %s\n want: %s", gotRoot, wantRoot)
+	}
+}
+
+// runSSZDecodeFailure handles fixtures with expectException set: the rawBytes
+// payload is decoded against the registered decoder for typeName, and the
+// decode MUST fail. Skips cleanly when typeName isn't registered so future
+// fixtures auto-work as types are wired in.
+func runSSZDecodeFailure(t *testing.T, fx sszFixture) {
+	t.Helper()
+
+	decoder, ok := sszDecodeFailureFactories[fx.TypeName]
+	if !ok {
+		t.Skipf("decode-failure type %q not wired into ssz harness", fx.TypeName)
+		return
+	}
+
+	raw, err := hex.DecodeString(strings.TrimPrefix(fx.RawBytes, "0x"))
+	if err != nil {
+		t.Fatalf("decode rawBytes hex: %v", err)
+	}
+
+	if err := decoder(raw); err == nil {
+		t.Errorf("expected decode of typeName=%q to fail with %s, but it succeeded",
+			fx.TypeName, fx.ExpectException)
 	}
 }
