@@ -13,6 +13,7 @@ import (
 const (
 	MaxPayloadSize           = 10 * 1024 * 1024                              // 10 MiB uncompressed
 	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024 // ~12 MiB
+	MaxErrorMessageSize      = 256                                           // ErrorMessage: List[byte, 256]
 )
 
 // --- Gossipsub encoding: raw snappy ---
@@ -106,7 +107,12 @@ const (
 )
 
 // EncodeResponse encodes a response chunk: code + varint(len) + snappy(data).
+// Error response bodies are truncated to MaxErrorMessageSize before encoding
+// per the ErrorMessage: List[byte, 256] wire limit.
 func EncodeResponse(code byte, data []byte) []byte {
+	if code != RespSuccess && len(data) > MaxErrorMessageSize {
+		data = data[:MaxErrorMessageSize]
+	}
 	payload := EncodeReqRespPayload(data)
 	result := make([]byte, 1+len(payload))
 	result[0] = code
@@ -137,6 +143,10 @@ func DecodeResponse(r io.Reader) (byte, []byte, error) {
 	decoded, err := DecodeReqRespPayload(rest)
 	if err != nil {
 		return code, nil, fmt.Errorf("decode response payload: %w", err)
+	}
+
+	if code != RespSuccess && len(decoded) > MaxErrorMessageSize {
+		return code, nil, fmt.Errorf("error message %d bytes exceeds MaxErrorMessageSize %d", len(decoded), MaxErrorMessageSize)
 	}
 
 	return code, decoded, nil
