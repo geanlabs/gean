@@ -15,10 +15,10 @@ import (
 // the Rust FFI; these adapters reconstruct the spec-defined inner structure
 // solely to drive hash_tree_root for the spec SSZ conformance test.
 const (
-	xmssHashLenFE       = 8       // Vector[Fp, 8] — 32 bytes
-	xmssParameterLen    = 5       // Vector[Fp, 5] — 20 bytes
-	xmssRandLenFE       = 7       // Vector[Fp, 7] — 28 bytes
-	xmssFpBytes         = 4       // KoalaBear Fp serialized width
+	xmssHashLenFE       = 8                           // Vector[Fp, 8] — 32 bytes
+	xmssParameterLen    = 5                           // Vector[Fp, 5] — 20 bytes
+	xmssRandLenFE       = 7                           // Vector[Fp, 7] — 28 bytes
+	xmssFpBytes         = 4                           // KoalaBear Fp serialized width
 	xmssHashDigestBytes = xmssHashLenFE * xmssFpBytes // 32
 
 	// NODE_LIST_LIMIT = 1 << (LOG_LIFETIME/2 + 1) = 1 << 17 = 131072 for

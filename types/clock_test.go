@@ -6,8 +6,8 @@ func TestCurrentSlot(t *testing.T) {
 	const gt = 1700000000
 	const gtMs = gt * 1000
 	tests := []struct {
-		name        string
-		currentMs   uint64
+		name         string
+		currentMs    uint64
 		expectedSlot uint64
 	}{
 		{"before_genesis", gtMs - 5000, 0},
