@@ -39,8 +39,11 @@ func TestSlotIsJustifiableAfter(t *testing.T) {
 		{19, 0, false}, // 19
 		{21, 0, false}, // 21
 
-		// Edge: slot <= finalized
-		{0, 0, false},
+		// Edge: finalized slot itself is justifiable (delta = 0 falls in delta <= 5).
+		{0, 0, true},
+		{10, 10, true},
+
+		// Edge: slot strictly before finalized.
 		{5, 10, false},
 	}
 
