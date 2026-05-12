@@ -151,6 +151,11 @@ func (e *Engine) Run(ctx context.Context) {
 		}
 	}()
 
+	// Initial-tick catch-up: run onTick once before the ticker fires so the
+	// store, head, and sync status reflect wall-clock time immediately
+	// instead of sitting at boot state for up to one tick interval (800ms).
+	e.onTick()
+
 	for {
 		select {
 		case <-ctx.Done():

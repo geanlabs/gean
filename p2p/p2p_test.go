@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/golang/snappy"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -68,6 +69,77 @@ func TestResponseEncoding(t *testing.T) {
 	}
 	if !bytes.Equal(data, decoded) {
 		t.Fatal("response roundtrip mismatch")
+	}
+}
+
+func TestErrorMessageTruncatedOnEncode(t *testing.T) {
+	oversized := bytes.Repeat([]byte("A"), MaxErrorMessageSize+100)
+	encoded := EncodeResponse(RespInvalidRequest, oversized)
+	code, decoded, err := DecodeResponse(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if code != RespInvalidRequest {
+		t.Fatalf("code: expected %d, got %d", RespInvalidRequest, code)
+	}
+	if len(decoded) != MaxErrorMessageSize {
+		t.Fatalf("decoded length: expected %d, got %d", MaxErrorMessageSize, len(decoded))
+	}
+}
+
+func TestErrorMessageAtBoundaryRoundtrips(t *testing.T) {
+	data := bytes.Repeat([]byte("B"), MaxErrorMessageSize)
+	encoded := EncodeResponse(RespServerError, data)
+	code, decoded, err := DecodeResponse(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if code != RespServerError {
+		t.Fatalf("code: expected %d, got %d", RespServerError, code)
+	}
+	if !bytes.Equal(data, decoded) {
+		t.Fatal("boundary-size error message roundtrip mismatch")
+	}
+}
+
+// Verifies that a hand-crafted error chunk whose body exceeds
+// MaxErrorMessageSize is rejected by DecodeResponse. Constructed by
+// encoding a >256-byte payload as if for SUCCESS (no truncation) and
+// then rewriting byte 0 to an error code.
+func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
+	oversized := bytes.Repeat([]byte("C"), MaxErrorMessageSize+1)
+	encoded := EncodeResponse(RespSuccess, oversized)
+	encoded[0] = RespServerError
+	_, _, err := DecodeResponse(bytes.NewReader(encoded))
+	if err == nil {
+		t.Fatal("expected error for oversize error-body decode, got nil")
+	}
+}
+
+// Rejects block-format snappy data (the historic self-to-self fallback path).
+// Spec requires framed-only on req/resp.
+func TestReqRespPayloadRejectsBlockFormatSnappy(t *testing.T) {
+	raw := []byte("hello world")
+	blockFormat := snappy.Encode(nil, raw)
+	chunk := append(EncodeVarint(uint32(len(raw))), blockFormat...)
+	_, err := DecodeReqRespPayload(chunk)
+	if err == nil {
+		t.Fatal("expected error decoding block-format snappy as framed, got nil")
+	}
+}
+
+func TestSuccessUntouchedByErrorMessageCap(t *testing.T) {
+	large := bytes.Repeat([]byte("D"), MaxErrorMessageSize+1024)
+	encoded := EncodeResponse(RespSuccess, large)
+	code, decoded, err := DecodeResponse(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if code != RespSuccess {
+		t.Fatalf("code: expected %d, got %d", RespSuccess, code)
+	}
+	if !bytes.Equal(large, decoded) {
+		t.Fatal("success payload should not be truncated")
 	}
 }
 

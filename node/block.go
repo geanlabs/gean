@@ -40,6 +40,15 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types
 		return
 	}
 
+	// Reject blocks strictly below the finalized slot: their parent state has
+	// been pruned and they cannot extend the canonical chain.
+	finalizedSlot := e.Store.LatestFinalized().Slot
+	if block.Slot < finalizedSlot {
+		logger.Warn(logger.Chain, "rejecting pre-finalized block slot=%d block_root=0x%x finalized_slot=%d",
+			block.Slot, blockRoot, finalizedSlot)
+		return
+	}
+
 	hasParent := e.Store.HasState(parentRoot)
 	logger.Info(logger.Chain, "processing block slot=%d block_root=0x%x has_parent=%t", block.Slot, blockRoot, hasParent)
 
