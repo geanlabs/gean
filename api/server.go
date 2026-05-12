@@ -20,6 +20,7 @@ func StartAPIServer(address string, s *node.ConsensusStore, fc *forkchoice.ForkC
 
 	mux.HandleFunc("GET /lean/v0/health", HealthHandler)
 	mux.HandleFunc("GET /lean/v0/states/finalized", FinalizedStateHandler(s))
+	mux.HandleFunc("GET /lean/v0/blocks/finalized", FinalizedBlockHandler(s))
 	mux.HandleFunc("GET /lean/v0/checkpoints/justified", JustifiedCheckpointHandler(s))
 	mux.HandleFunc("GET /lean/v0/fork_choice", ForkChoiceHandler(s, fc))
 	mux.HandleFunc("GET /lean/v0/admin/aggregator", AggregatorStatusHandler(aggCtl))
@@ -60,6 +61,34 @@ func StartMetricsServer(address string) error {
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"healthy","service":"lean-rpc-api"}`))
+}
+
+// FinalizedBlockHandler returns the SignedBlock at the latest finalized root
+// as SSZ bytes. Per leanSpec PR #713, checkpoint-sync clients pair this with
+// /lean/v0/states/finalized and verify state_root == hash_tree_root(state) to
+// detect synthetic-block fabrication: peers that respond to BlocksByRoot for
+// the anchor root will reject a synthetic body whose hash_tree_root does not
+// match what the state claims.
+func FinalizedBlockHandler(s *node.ConsensusStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		finalized := s.LatestFinalized()
+		if finalized.Root == types.ZeroRoot {
+			http.Error(w, "no finalized block yet", http.StatusNotFound)
+			return
+		}
+		signedBlock := s.GetSignedBlock(finalized.Root)
+		if signedBlock == nil {
+			http.Error(w, "finalized block not available", http.StatusNotFound)
+			return
+		}
+		data, err := signedBlock.MarshalSSZ()
+		if err != nil {
+			http.Error(w, "ssz marshal failed", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(data)
+	}
 }
 
 // handleFinalizedState returns the finalized state as SSZ bytes.
