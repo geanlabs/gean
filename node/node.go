@@ -36,6 +36,7 @@ type Engine struct {
 	P2P                 *p2p.Host
 	Keys                *xmss.KeyManager
 	AggCtl              *AggregatorController
+	DutyGate            *DutyGate // gates validator signing when local view is stale
 	CommitteeCount      uint64
 	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
 	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
@@ -70,6 +71,7 @@ func New(
 		P2P:                 p2pHost,
 		Keys:                keys,
 		AggCtl:              aggCtl,
+		DutyGate:            NewDutyGate(),
 		CommitteeCount:      committeeCount,
 		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
 		PendingBlockParents: make(map[[32]byte][32]byte),
