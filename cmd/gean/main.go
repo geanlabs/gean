@@ -119,9 +119,13 @@ func main() {
 			existingHeader.Slot, existingHead,
 			s.LatestJustified().Slot, s.LatestFinalized().Slot)
 	} else if *checkpointURL != "" {
-		// Checkpoint sync.
+		// Checkpoint sync. Per leanSpec PR #713, fetch both the finalized
+		// state and the matching SignedBlock and verify the pair via
+		// block.state_root == hash_tree_root(state) before trusting the
+		// anchor. Storing the SignedBlock lets gean serve /blocks/finalized
+		// to the next bootstrap peer without fabricating a synthetic body.
 		logger.Info(logger.Sync, "checkpoint sync: %s", *checkpointURL)
-		state, err := checkpoint.FetchCheckpointState(*checkpointURL, genesisConfig.GenesisTime, genesisValidators)
+		state, signedBlock, err := checkpoint.FetchCheckpointAnchor(*checkpointURL, genesisConfig.GenesisTime, genesisValidators)
 		if err != nil {
 			logger.Error(logger.Sync, "checkpoint sync failed: %v", err)
 			os.Exit(1)
@@ -132,6 +136,7 @@ func main() {
 		logger.Info(logger.Sync, "checkpoint sync: slot=%d finalized_root=%x justified_root=%x head_root=%x parent_root=%x state_root=%x",
 			state.Slot, state.LatestFinalized.Root, state.LatestJustified.Root, blockRoot, header.ParentRoot, stateRoot)
 		initStoreFromState(s, state)
+		s.StorePendingBlock(blockRoot, signedBlock)
 	} else {
 		// Genesis.
 		logger.Info(logger.Node, "initializing from genesis")
