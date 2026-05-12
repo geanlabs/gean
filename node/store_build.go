@@ -85,17 +85,24 @@ func buildBlock(
 	if len(payloads) > 0 {
 		aggStart := time.Now()
 		defer func() { ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds()) }()
-		// Use store justified (stable, converges via tiebreak).
-		// Both attestation source and builder use store justified,
-		// which converges across nodes via deterministic root tiebreak.
+		// Filter attestations by the head state's justified checkpoint.
+		// The post-block invariant at the end of this function still gates on
+		// storeJustified — if process_attestations advances state.LatestJustified
+		// past the anchor, the invariant holds; if no usable attestations exist
+		// in the pool, the invariant fires with a clear error.
+		//
+		// At genesis (LatestBlockHeader.Slot == 0), process_block_header
+		// rewrites state.LatestJustified.Root to parent_root. Apply that
+		// derivation here so attestation sources match what the STF observes
+		// post-header.
 		var currentJustified *types.Checkpoint
 		if headState.LatestBlockHeader.Slot == 0 {
 			currentJustified = &types.Checkpoint{
 				Root: parentRoot,
-				Slot: storeJustified.Slot,
+				Slot: headState.LatestJustified.Slot,
 			}
 		} else {
-			currentJustified = storeJustified
+			currentJustified = headState.LatestJustified
 		}
 
 		logger.Info(logger.Chain, "buildBlock: currentJustified root=0x%x slot=%d",
