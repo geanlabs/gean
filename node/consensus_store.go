@@ -1,6 +1,8 @@
 package node
 
 import (
+	"encoding/binary"
+
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
@@ -224,6 +226,39 @@ func (s *ConsensusStore) HeadSlot() uint64 {
 		return 0
 	}
 	return h.Slot
+}
+
+// MaxStoredBlockSlot returns the highest slot across every block header
+// currently in the store, regardless of canonicality. Only signature-verified
+// blocks enter the header table, so the value is an authenticated lower
+// bound on the network tip — useful for the validator duty-gate to detect
+// network stalls without trusting peer-reported head slots.
+//
+// Reads only the first 8 bytes (slot field) of each header value rather
+// than decoding the full SSZ struct; this keeps the cost linear in the
+// number of stored blocks with a small constant.
+func (s *ConsensusStore) MaxStoredBlockSlot() uint64 {
+	rv, err := s.Backend.BeginRead()
+	if err != nil {
+		return 0
+	}
+	it, err := rv.PrefixIterator(storage.TableBlockHeaders, nil)
+	if err != nil {
+		return 0
+	}
+	defer it.Close()
+	var max uint64
+	for it.Next() {
+		v := it.Value()
+		if len(v) < 8 {
+			continue
+		}
+		slot := binary.LittleEndian.Uint64(v[:8])
+		if slot > max {
+			max = slot
+		}
+	}
+	return max
 }
 
 // StorePendingBlock stores block in DB without LiveChain entry (invisible to fork choice).

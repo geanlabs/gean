@@ -252,6 +252,24 @@ var metricNodeSyncStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "lean_node_sync_status", Help: "Node sync status (one of idle/syncing/synced is set to 1)",
 }, []string{"status"})
 
+// --- Duty-gate skip counters (leanSpec PR #708) ---
+//
+// Increment once per slot the duty gate denied production. The node-local
+// prefix matches gean's convention for per-node state (lean_node_*) rather
+// than the chain-level lean_* prefix because gating is informative and may
+// differ across clients without breaking consensus.
+
+var (
+	metricBlocksSkippedLag = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_node_blocks_skipped_lag_total",
+		Help: "Block proposals skipped because the local view was too stale (leanSpec PR #708 duty gate).",
+	})
+	metricAttestationsSkippedLag = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_node_attestations_skipped_lag_total",
+		Help: "Attestation batches skipped because the local view was too stale (leanSpec PR #708 duty gate).",
+	})
+)
+
 // --- Public update functions ---
 
 func SetNodeInfo(name, version string) { metricNodeInfo.WithLabelValues(name, version).Set(1) }
@@ -287,6 +305,8 @@ func IncAttestationsValid(n uint64)          { metricAttestationsValid.Add(float
 func IncAttestationsInvalid()                { metricAttestationsInvalid.Inc() }
 func IncAttestationsBufferEvicted(n int)     { metricAttestationsBufferEvicted.Add(float64(n)) }
 func IncForkChoiceReorgs()                   { metricForkChoiceReorgs.Inc() }
+func IncBlocksSkippedLag()                   { metricBlocksSkippedLag.Inc() }
+func IncAttestationsSkippedLag()             { metricAttestationsSkippedLag.Inc() }
 func IncPqSigAggregatedTotal()               { metricPqSigAggregatedSignaturesTotal.Inc() }
 func IncPqSigAttestationsInAggregated(n int) { metricPqSigAttestationsInAggregated.Add(float64(n)) }
 func IncPqSigAggregatedValid()               { metricPqSigAggregatedValid.Inc() }

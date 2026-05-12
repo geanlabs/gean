@@ -21,6 +21,13 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
+	// Sync-lag duty gate (leanSpec PR #708). Skip when the local view is
+	// too stale relative to a network that is otherwise making progress.
+	if e.DutyGate != nil && !e.DutyGate.Decide("block", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
+		IncBlocksSkippedLag()
+		return
+	}
+
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
 	// Spec get_proposal_head: promote pending attestations and update head
@@ -84,6 +91,14 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 // produceAttestations creates and publishes attestations for all local validators.
 func (e *Engine) produceAttestations(slot uint64) {
 	if e.Keys == nil {
+		return
+	}
+
+	// Sync-lag duty gate (leanSpec PR #708). Skip the whole batch when the
+	// local view is too stale relative to a network that is otherwise
+	// making progress. Counter ticks once per skipped slot, not per validator.
+	if e.DutyGate != nil && !e.DutyGate.Decide("attestation", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
+		IncAttestationsSkippedLag()
 		return
 	}
 
