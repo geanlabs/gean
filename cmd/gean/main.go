@@ -257,8 +257,20 @@ func main() {
 	metricsAddr := fmt.Sprintf("%s:%d", *httpAddr, *metricsPort)
 
 	go func() {
-		if err := api.StartAPIServer(apiAddr, s, fc, aggCtl); err != nil {
-			logger.Error(logger.Node, "api server error: %v", err)
+		// Test-driver routes are gated at server-construction time on
+		// HIVE_LEAN_TEST_DRIVER=1 (or "true"/"yes"). The hive lean simulator
+		// sets this for lean-spec-tests conformance fixtures; production
+		// deployments never see it, so the test-driver routes are absent
+		// from the mux entirely under normal operation.
+		var apiErr error
+		if api.IsTestDriverEnabled(os.Getenv(api.TestDriverEnvVar)) {
+			logger.Info(logger.Node, "%s=1: enabling test-driver routes", api.TestDriverEnvVar)
+			apiErr = api.StartAPIServerWithTestDriver(apiAddr, s, fc, aggCtl)
+		} else {
+			apiErr = api.StartAPIServer(apiAddr, s, fc, aggCtl)
+		}
+		if apiErr != nil {
+			logger.Error(logger.Node, "api server error: %v", apiErr)
 		}
 	}()
 

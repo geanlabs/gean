@@ -14,8 +14,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// StartAPIServer starts the API server on the given address.
-func StartAPIServer(address string, s *node.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *node.AggregatorController) error {
+// buildAPIMux registers gean's runtime API routes on a fresh ServeMux. The
+// mux is returned so callers can attach additional routes (e.g. the test
+// driver routes under StartAPIServerWithTestDriver) before binding it to a
+// listener.
+func buildAPIMux(s *node.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *node.AggregatorController) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /lean/v0/health", HealthHandler)
@@ -26,12 +29,41 @@ func StartAPIServer(address string, s *node.ConsensusStore, fc *forkchoice.ForkC
 	mux.HandleFunc("GET /lean/v0/admin/aggregator", AggregatorStatusHandler(aggCtl))
 	mux.HandleFunc("POST /lean/v0/admin/aggregator", AggregatorToggleHandler(aggCtl))
 
+	return mux
+}
+
+// StartAPIServer starts the API server on the given address. Only runtime
+// routes are exposed; test-driver endpoints are unavailable.
+func StartAPIServer(address string, s *node.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *node.AggregatorController) error {
+	mux := buildAPIMux(s, fc, aggCtl)
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("api listen: %w", err)
 	}
 
 	logger.Info(logger.Network, "api server listening on %s", address)
+	return http.Serve(listener, mux)
+}
+
+// StartAPIServerWithTestDriver starts the API server with the production
+// routes plus the four test-driver endpoints under /lean/v0/test_driver/.
+// The test-driver routes are gated on HIVE_LEAN_TEST_DRIVER being truthy at
+// process start; callers should branch on IsTestDriverEnabled before
+// invoking this constructor. The split-constructor pattern (rather than an
+// in-handler env-var check) keeps production binaries from accidentally
+// exposing the test-driver session even when the env var is set, because
+// the routes simply do not exist on the mux when StartAPIServer is used.
+func StartAPIServerWithTestDriver(address string, s *node.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *node.AggregatorController) error {
+	mux := buildAPIMux(s, fc, aggCtl)
+	RegisterTestDriverRoutes(mux, NewTestDriverSession())
+
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("api listen: %w", err)
+	}
+
+	logger.Info(logger.Network, "api server listening on %s (test-driver routes enabled)", address)
 	return http.Serve(listener, mux)
 }
 
