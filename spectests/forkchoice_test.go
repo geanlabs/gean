@@ -538,26 +538,37 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// For valid steps, advance time so attestation passes the future check.
-			// Invalid steps keep current time to test rejection.
+			// Invalid steps keep current time so the time-bound branch of
+			// ValidateAttestationData fires as expected on fixtures designed to
+			// exercise that rejection path.
 			if step.Valid {
 				minTime := attData.Slot * types.IntervalsPerSlot
 				if s.Time() < minTime {
 					s.SetTime(minTime)
 				}
 			}
-			err := node.ValidateAttestationData(s, attData)
-			if err != nil {
-				if step.Valid {
-					t.Fatalf("step %d: ValidateAttestationData failed: %v", i, err)
-				}
-				if step.Checks != nil {
-					validateChecks(t, i, step.Checks, s, fc, labelRoots)
-				}
-				continue
+
+			// Run the full validation chain (data → bounds → sig) regardless
+			// of step.Valid, then assert the outcome matches the fixture's
+			// label. Mirrors what the HTTP test driver does in
+			// api/test_driver.go::applyAttestation. Previously this case
+			// skipped on !step.Valid which silently accepted rejection
+			// fixtures without actually exercising the validator — a false-
+			// positive coverage gap.
+			dataRoot, _ := attData.HashTreeRoot()
+			var validationErr error
+			if validationErr = node.ValidateAttestationData(s, attData); validationErr == nil {
+				validationErr = node.VerifyGossipAttestation(s, att.ValidatorID, attData, dataRoot, fcParseHexBytes(att.Signature))
+			}
+			if step.Valid && validationErr != nil {
+				t.Fatalf("step %d: expected valid attestation, got error: %v", i, validationErr)
+			}
+			if !step.Valid && validationErr == nil {
+				t.Fatalf("step %d: expected invalid attestation, got accepted", i)
 			}
 			if !step.Valid {
-				// Sig/validator checks can't fail in test mode (no sig verification).
-				// Skip rather than fail — these tests exercise the full gossip pipeline.
+				// Validation correctly rejected — no state mutation, just
+				// assert any checks the fixture carried then continue.
 				if step.Checks != nil {
 					validateChecks(t, i, step.Checks, s, fc, labelRoots)
 				}
@@ -566,7 +577,6 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 			// Store in new payloads with dummy proof.
 			participants := node.AggregationBitsFromIndices([]uint64{att.ValidatorID})
-			dataRoot, _ := attData.HashTreeRoot()
 			proof := &types.AggregatedSignatureProof{
 				Participants: participants,
 				ProofData:    nil,
@@ -609,41 +619,43 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// For valid steps, advance time so attestation passes the future check.
-			// Invalid steps keep current time to test rejection.
+			// Invalid steps keep current time to exercise the time-bound branch.
 			if step.Valid {
 				minTime := attData.Slot * types.IntervalsPerSlot
 				if s.Time() < minTime {
 					s.SetTime(minTime)
 				}
 			}
-			err := node.ValidateAttestationData(s, attData)
-			if err != nil {
-				if step.Valid {
-					t.Fatalf("step %d: ValidateAttestationData failed: %v", i, err)
-				}
-				if step.Checks != nil {
-					validateChecks(t, i, step.Checks, s, fc, labelRoots)
-				}
-				continue
+
+			var participants []byte
+			var proofData []byte
+			if att.Proof != nil {
+				participants = fcParseBoolBitlist(att.Proof.Participants.Data)
+				proofData = fcParseHexBytes(att.Proof.ProofData.Data)
+			}
+
+			// Run the full validation chain (data → bounds + aggregated sig
+			// verify) regardless of step.Valid and assert the outcome matches
+			// the fixture's label. Symmetric with the individual-attestation
+			// case and with api/test_driver.go::applyAggregatedAttestation.
+			dataRoot, _ := attData.HashTreeRoot()
+			var validationErr error
+			if validationErr = node.ValidateAttestationData(s, attData); validationErr == nil {
+				validationErr = node.VerifyAggregatedGossipAttestation(s, attData, participants, proofData)
+			}
+			if step.Valid && validationErr != nil {
+				t.Fatalf("step %d: expected valid aggregated attestation, got error: %v", i, validationErr)
+			}
+			if !step.Valid && validationErr == nil {
+				t.Fatalf("step %d: expected invalid aggregated attestation, got accepted", i)
 			}
 			if !step.Valid {
-				// Skip — sig/proof verification not performed in test mode.
 				if step.Checks != nil {
 					validateChecks(t, i, step.Checks, s, fc, labelRoots)
 				}
 				continue
 			}
 
-			// Parse participants and store in new payloads.
-			var participants []byte
-			if att.Proof != nil {
-				participants = fcParseBoolBitlist(att.Proof.Participants.Data)
-			}
-			dataRoot, _ := attData.HashTreeRoot()
-			var proofData []byte
-			if att.Proof != nil {
-				proofData = fcParseHexBytes(att.Proof.ProofData.Data)
-			}
 			proof := &types.AggregatedSignatureProof{
 				Participants: participants,
 				ProofData:    proofData,
@@ -677,8 +689,23 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 		case "tick":
+			// step.Time is wall-clock seconds since the UNIX epoch; step.Interval
+			// is a raw interval count. Both ream and ethlambda's tick handlers
+			// treat the fields this way. Convert seconds to intervals before
+			// storing so subsequent assertions on store.time match the
+			// simulator's checks.time field. Per-interval hooks (interval-3
+			// safe-target, interval-0/4 promote) are intentionally NOT fired
+			// here — gean's runtime fires them via Engine.onTick which owns
+			// ForkChoice; the spec runner mirrors that boundary to avoid
+			// mutating proto-array state across unrelated test steps.
 			if step.Time != nil {
-				s.SetTime(*step.Time)
+				genesisMs := s.Config().GenesisTime * 1000
+				timestampMs := *step.Time * 1000
+				if timestampMs < genesisMs {
+					s.SetTime(0)
+				} else {
+					s.SetTime((timestampMs - genesisMs) / types.MillisecondsPerInterval)
+				}
 			} else if step.Interval != nil {
 				s.SetTime(*step.Interval)
 			} else {
