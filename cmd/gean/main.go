@@ -130,18 +130,24 @@ func main() {
 			logger.Error(logger.Sync, "checkpoint sync failed: %v", err)
 			os.Exit(1)
 		}
-		stateRoot, _ := state.HashTreeRoot()
-		header := state.LatestBlockHeader
-		blockRoot, _ := header.HashTreeRoot()
+		// initStoreFromState mutates state.LatestBlockHeader.StateRoot from
+		// zero (canonical post-state form) to hash_tree_root(state), so the
+		// canonical anchor block root must be read from its return value —
+		// computing header.HashTreeRoot() before that mutation yields the
+		// pre-canonicalization root, which would not match the anchor
+		// checkpoint the store sets. Using the wrong key for StorePendingBlock
+		// is what caused /lean/v0/blocks/finalized to return 404 on a freshly
+		// checkpoint-synced node despite the block being stored.
+		canonicalRoot := initStoreFromState(s, state)
+		stateRoot := state.LatestBlockHeader.StateRoot
 		logger.Info(logger.Sync, "checkpoint sync: slot=%d finalized_root=%x justified_root=%x head_root=%x parent_root=%x state_root=%x",
-			state.Slot, state.LatestFinalized.Root, state.LatestJustified.Root, blockRoot, header.ParentRoot, stateRoot)
-		initStoreFromState(s, state)
-		s.StorePendingBlock(blockRoot, signedBlock)
+			state.Slot, state.LatestFinalized.Root, state.LatestJustified.Root, canonicalRoot, state.LatestBlockHeader.ParentRoot, stateRoot)
+		s.StorePendingBlock(canonicalRoot, signedBlock)
 	} else {
 		// Genesis.
 		logger.Info(logger.Node, "initializing from genesis")
 		genesisState := genesisConfig.GenesisState()
-		initStoreFromState(s, genesisState)
+		_ = initStoreFromState(s, genesisState)
 	}
 
 	// Rehydrate store.time from wall clock before any consumer reads it.
@@ -294,7 +300,8 @@ func main() {
 	time.Sleep(500 * time.Millisecond)
 }
 
-// initStoreFromState initializes the consensus store from an anchor state.
+// initStoreFromState initializes the consensus store from an anchor state
+// and returns the canonical anchor block root.
 //
 // The anchor state becomes the new latest justified AND latest finalized
 // checkpoint — both pointing at the served block at header.Slot. This
@@ -302,11 +309,18 @@ func main() {
 // trusts the served state as the new finalization anchor and starts forward
 // sync from there.
 //
+// The returned root is the canonical anchor block root — computed AFTER the
+// header.StateRoot canonicalization step. Callers that need to associate
+// out-of-band data with the anchor block (e.g. StorePendingBlock for the
+// checkpoint-sync SignedBlock) must use this return value, not a root
+// computed before the function ran; the pre-canonicalization root would not
+// match what the store records as latest_finalized.Root.
+//
 // Note: state.LatestJustified and state.LatestFinalized inside the served
 // state point to EARLIER slots (the finalization status from when the block
 // was processed). We deliberately do NOT use those — the served block IS
 // the new anchor, regardless of what its internal pointers say.
-func initStoreFromState(s *node.ConsensusStore, state *types.State) {
+func initStoreFromState(s *node.ConsensusStore, state *types.State) [32]byte {
 	// Compute anchor block root from header.
 	stateRoot, _ := state.HashTreeRoot()
 	header := state.LatestBlockHeader
@@ -336,6 +350,7 @@ func initStoreFromState(s *node.ConsensusStore, state *types.State) {
 
 	logger.Info(logger.Store, "store initialized from anchor: slot=%d head=%x parent_root=%x state_root=%x",
 		header.Slot, blockRoot, header.ParentRoot, stateRoot)
+	return blockRoot
 }
 
 // recoverStoreTime sets store.time to the interval index corresponding to the
