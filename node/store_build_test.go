@@ -239,3 +239,77 @@ func TestBuildBlock_RejectsUnclosedDivergence(t *testing.T) {
 		t.Fatalf("expected ErrJustifiedDivergenceNotClosed, got %v", err)
 	}
 }
+
+// TestBuildBlock_SucceedsWhenStateAndStoreAgree pins the happy path: when
+// state.LatestJustified equals storeJustified (the steady state outside of
+// checkpoint sync), buildBlock must succeed for an empty payload pool by
+// producing a valid empty block.
+//
+// Contrapositive of TestBuildBlock_RejectsUnclosedDivergence: that test
+// verifies the invariant fires when divergence is unclosable; this one
+// verifies the invariant does NOT fire when there is no divergence. Combined,
+// they pin "use state.LatestJustified for the fixed-point loop, use
+// storeJustified for the post-block invariant."
+func TestBuildBlock_SucceedsWhenStateAndStoreAgree(t *testing.T) {
+	headState := &types.State{
+		Config:                   &types.ChainConfig{GenesisTime: 1000},
+		Slot:                     0,
+		LatestBlockHeader:        &types.BlockHeader{Slot: 0},
+		LatestJustified:          &types.Checkpoint{Slot: 0},
+		LatestFinalized:          &types.Checkpoint{Slot: 0},
+		JustifiedSlots:           types.NewBitlistSSZ(0),
+		JustificationsValidators: types.NewBitlistSSZ(0),
+		Validators:               []*types.Validator{{}},
+	}
+
+	// Pre-cache state root in LatestBlockHeader, mirroring what ProcessSlots
+	// does on first call after genesis. Without this, buildBlock's trial
+	// ProcessSlots would mutate the header's StateRoot field and the parent
+	// root check inside ProcessBlock would fail with a mismatch unrelated to
+	// what we're testing here.
+	stateRoot, err := headState.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("compute pre-cache state root: %v", err)
+	}
+	headState.LatestBlockHeader.StateRoot = stateRoot
+
+	parentRoot, err := headState.LatestBlockHeader.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("compute parent root: %v", err)
+	}
+
+	// State and store agree at genesis. With no divergence, the invariant
+	// trivially holds for an empty block — the regression we are guarding
+	// against is the previous behavior that bound currentJustified to
+	// storeJustified, which forced an extra layer of comparison-by-root in
+	// scenarios where state.LatestJustified and storeJustified pointed at the
+	// same slot via different roots.
+	storeJustified := &types.Checkpoint{Slot: 0, Root: parentRoot}
+
+	block, sigs, err := buildBlock(
+		headState,
+		1, // slot (validator 0 is proposer for slot 1 in a 1-validator registry)
+		0, // proposer index
+		parentRoot,
+		nil, // knownBlockRoots — unused with empty payloads
+		nil, // payloads — empty
+		storeJustified,
+		nil, // pkCache — unused with empty payloads
+	)
+
+	if err != nil {
+		t.Fatalf("expected success when state and store justified agree, got: %v", err)
+	}
+	if block == nil {
+		t.Fatal("expected non-nil block")
+	}
+	if len(sigs) != 0 {
+		t.Fatalf("expected no signatures with empty payloads, got %d", len(sigs))
+	}
+	if block.Body == nil {
+		t.Fatal("expected non-nil block body")
+	}
+	if len(block.Body.Attestations) != 0 {
+		t.Fatalf("expected empty attestations slice, got %d", len(block.Body.Attestations))
+	}
+}
