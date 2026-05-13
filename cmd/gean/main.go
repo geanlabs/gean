@@ -254,8 +254,14 @@ func main() {
 
 	// Start sync driver: periodic status-poll + BlocksByRange backfill when
 	// peers are far enough ahead. No-op while node is synced or has no peers.
-	syncDriver := node.NewSyncDriver(n, p2pHost)
-	go syncDriver.Run(ctx)
+	// Wire OnPeerConnected as the libp2p PeerStatusHook BEFORE starting the
+	// driver so a fast initial dial that completes during start-up still
+	// fires the on-connect Status handshake. Sending Status only from the
+	// periodic poll is too slow for cold-start single-peer scenarios to
+	// learn the peer's head and drive backfill.
+	syncDriver := node.NewSyncDriver(ctx, n, p2pHost)
+	p2p.PeerStatusHook = syncDriver.OnPeerConnected
+	go syncDriver.Run()
 
 	// --- Start HTTP servers ---
 

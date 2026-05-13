@@ -34,6 +34,13 @@ type SyncDriver struct {
 	engine *Engine
 	p2p    SyncDriverP2P
 
+	// ctx captured at construction so OnPeerConnected (invoked from libp2p's
+	// network goroutine via p2p.PeerStatusHook) can derive request contexts
+	// without a data race against Run setting it. Construction happens in
+	// main before any goroutine can call OnPeerConnected, so the field is
+	// safely published by happens-before of subsequent goroutine starts.
+	ctx context.Context
+
 	// Per-peer in-flight fetch dedup. Prevents stacking range requests to the
 	// same peer across overlapping polling cycles.
 	mu       sync.Mutex
@@ -41,16 +48,19 @@ type SyncDriver struct {
 }
 
 // NewSyncDriver constructs a driver bound to the given engine and p2p host.
-func NewSyncDriver(engine *Engine, p2pHost SyncDriverP2P) *SyncDriver {
+// ctx is captured for use by OnPeerConnected callbacks (see field doc); Run
+// reads cancellation from the same ctx.
+func NewSyncDriver(ctx context.Context, engine *Engine, p2pHost SyncDriverP2P) *SyncDriver {
 	return &SyncDriver{
+		ctx:      ctx,
 		engine:   engine,
 		p2p:      p2pHost,
 		inFlight: make(map[libp2ppeer.ID]bool),
 	}
 }
 
-// Run is the polling loop. Cancel ctx to stop.
-func (sd *SyncDriver) Run(ctx context.Context) {
+// Run is the polling loop. Cancel the ctx passed to NewSyncDriver to stop.
+func (sd *SyncDriver) Run() {
 	ticker := time.NewTicker(p2p.SyncPollInterval)
 	defer ticker.Stop()
 
@@ -59,17 +69,32 @@ func (sd *SyncDriver) Run(ctx context.Context) {
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-sd.ctx.Done():
 			return
 		case <-ticker.C:
 			switch sd.engine.GetSyncStatus() {
 			case SyncSyncing:
-				sd.refreshSyncFromPeers(ctx)
+				sd.refreshSyncFromPeers(sd.ctx)
 			case SyncIdle, SyncSynced:
 				// No work: no peers to poll, or already at chain head.
 			}
 		}
 	}
+}
+
+// OnPeerConnected is the p2p.PeerStatusHook callback. Fires once per
+// newly-connected peer (gated by PeerStore.AddNew upstream) and initiates
+// the lean P2P Status reqresp handshake using the same pollPeer code path
+// the periodic loop uses. Bounded by a 10s timeout so a slow or
+// unresponsive peer cannot hold the goroutine indefinitely; on success the
+// resulting peer status drives the usual checkAndBackfill dispatch.
+//
+// Wired by cmd/gean/main.go: p2p.PeerStatusHook = syncDriver.OnPeerConnected
+func (sd *SyncDriver) OnPeerConnected(peerID libp2ppeer.ID) {
+	ctx, cancel := context.WithTimeout(sd.ctx, 10*time.Second)
+	defer cancel()
+	ourStatus := sd.makeStatusMessage()
+	sd.pollPeer(ctx, peerID, ourStatus)
 }
 
 // refreshSyncFromPeers polls every connected peer for status, in parallel.

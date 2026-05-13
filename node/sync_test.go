@@ -101,7 +101,7 @@ func drainBlockCh(t *testing.T, e *Engine, expected int, timeout time.Duration) 
 func TestSyncDriver_CheckAndBackfill_PeerNotAhead(t *testing.T) {
 	e := makeTestEngine()
 	mock := &mockSyncP2P{}
-	sd := NewSyncDriver(e, mock)
+	sd := NewSyncDriver(context.Background(), e, mock)
 
 	// Engine head is at slot 0. Peer is also at slot 0 — not ahead.
 	peerStatus := &p2p.StatusMessage{HeadSlot: 0}
@@ -115,7 +115,7 @@ func TestSyncDriver_CheckAndBackfill_PeerNotAhead(t *testing.T) {
 func TestSyncDriver_CheckAndBackfill_GapBelowThreshold(t *testing.T) {
 	e := makeTestEngine()
 	mock := &mockSyncP2P{}
-	sd := NewSyncDriver(e, mock)
+	sd := NewSyncDriver(context.Background(), e, mock)
 
 	// Gap of 10 < BlocksByRangeSyncThreshold (64). Should NOT trigger range fetch.
 	peerStatus := &p2p.StatusMessage{HeadSlot: 10}
@@ -134,7 +134,7 @@ func TestSyncDriver_CheckAndBackfill_FetchesWhenAhead(t *testing.T) {
 			{Block: &types.Block{Slot: 2, Body: &types.BlockBody{}}},
 		},
 	}
-	sd := NewSyncDriver(e, mock)
+	sd := NewSyncDriver(context.Background(), e, mock)
 
 	// Gap of 100 > BlocksByRangeSyncThreshold (64). Should trigger range fetch.
 	peerStatus := &p2p.StatusMessage{HeadSlot: 100}
@@ -158,7 +158,7 @@ func TestSyncDriver_CheckAndBackfill_FallsBackToRoot(t *testing.T) {
 			{Block: &types.Block{Slot: 100, Body: &types.BlockBody{}}},
 		},
 	}
-	sd := NewSyncDriver(e, mock)
+	sd := NewSyncDriver(context.Background(), e, mock)
 
 	var headRoot [32]byte
 	headRoot[0] = 0xAB
@@ -187,7 +187,7 @@ func TestSyncDriver_CheckAndBackfill_PerPeerDedup(t *testing.T) {
 		},
 		rangeBlock: rangeBlock,
 	}
-	sd := NewSyncDriver(e, mock)
+	sd := NewSyncDriver(context.Background(), e, mock)
 
 	peerStatus := &p2p.StatusMessage{HeadSlot: 100}
 	peerID := libp2ppeer.ID("p1")

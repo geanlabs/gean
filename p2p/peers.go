@@ -55,6 +55,20 @@ func (ps *PeerStore) Add(id peer.ID) {
 	ps.peers[id] = true
 }
 
+// AddNew atomically registers a peer and reports whether the peer was newly
+// added (true) or was already present (false). Used by the libp2p connection
+// notifier to gate on-connect work (e.g. firing the Status reqresp) so that
+// reconnect events for an already-known peer do not retrigger the work.
+func (ps *PeerStore) AddNew(id peer.ID) bool {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if ps.peers[id] {
+		return false
+	}
+	ps.peers[id] = true
+	return true
+}
+
 // Remove unregisters a peer.
 func (ps *PeerStore) Remove(id peer.ID) {
 	ps.mu.Lock()
