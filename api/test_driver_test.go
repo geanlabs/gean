@@ -64,7 +64,11 @@ func postJSON(t *testing.T, handler http.HandlerFunc, payload any, target any) i
 	handler(rec, req)
 	resp := rec.Result()
 	defer resp.Body.Close()
-	if target != nil && resp.StatusCode < 400 && resp.ContentLength != 0 {
+	// Decode regardless of status — the test_driver returns structured JSON
+	// bodies on error paths too (writeInitFailure returns 400 with the same
+	// driverStepResponse shape), so tests need to be able to assert on the
+	// error message.
+	if target != nil && resp.ContentLength != 0 {
 		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 			t.Fatalf("decode response: %v (status=%d)", err, resp.StatusCode)
 		}
@@ -148,8 +152,11 @@ func TestStateTransitionHandler_MalformedBody(t *testing.T) {
 
 // TestForkChoiceInit_RejectsMismatchedAnchor confirms the anchor pair
 // consistency check fires when block.state_root doesn't match
-// hash_tree_root(state). Returns 200 with accepted:false so the simulator
-// reads .error uniformly across init and step failures.
+// hash_tree_root(state). Returns HTTP 400 — the lean hive simulator at
+// spec_assets.rs:297-310 treats any non-2xx status as "init rejected" and
+// only 204 NO_CONTENT as "init accepted". The structured body (accepted=
+// false, error="...") remains the same shape as step responses so callers
+// can read .error uniformly.
 func TestForkChoiceInit_RejectsMismatchedAnchor(t *testing.T) {
 	state := genesisTestState()
 	anchorBlock := map[string]any{
@@ -165,8 +172,8 @@ func TestForkChoiceInit_RejectsMismatchedAnchor(t *testing.T) {
 	var resp driverStepResponse
 	status := postJSON(t, sess.ForkChoiceInitHandler(), req, &resp)
 
-	if status != http.StatusOK {
-		t.Fatalf("expected 200 even on logical failure, got %d", status)
+	if status != http.StatusBadRequest {
+		t.Fatalf("expected 400 on anchor state-root mismatch, got %d", status)
 	}
 	if resp.Accepted {
 		t.Fatal("expected accepted=false for state-root mismatch, got true")

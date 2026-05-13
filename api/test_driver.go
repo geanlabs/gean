@@ -266,10 +266,14 @@ func (sess *TestDriverSession) ForkChoiceInitHandler() http.HandlerFunc {
 
 func writeInitFailure(w http.ResponseWriter, msg string) {
 	// Init failures use the step response shape with an empty snapshot so
-	// the simulator can call /init and immediately read .error without
-	// having to call /step first.
+	// the simulator can call /init and immediately read .error if it wants
+	// the structured detail. HTTP 400 is what the hive lean simulator keys
+	// off — see spec_assets.rs:297-310, which treats any non-2xx status as
+	// "init rejected" and only treats 204 NO_CONTENT as "init accepted".
+	// Returning 200 here would make hive fall through to the 204 assertion
+	// and fail the test even though the init was correctly rejected.
 	resp := driverStepResponse{Accepted: false, Error: &msg, Snapshot: driverSnapshot{}}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusBadRequest, resp)
 }
 
 // ForkChoiceStepHandler answers POST /lean/v0/test_driver/fork_choice/step.
@@ -430,14 +434,25 @@ func (sess *TestDriverSession) applyAttestation(step *specfixtures.ForkChoiceSte
 		return err
 	}
 
-	// Single-validator gossip attestation: synthesize a participants bitlist
-	// containing just this validator id so downstream aggregation and vote
-	// tracking can treat it like any other proof.
-	participants := node.AggregationBitsFromIndices([]uint64{step.Attestation.ValidatorID})
 	dataRoot, err := attData.HashTreeRoot()
 	if err != nil {
 		return err
 	}
+
+	// Validator-id bounds check + XMSS signature verification against the
+	// target state's validator registry. Rejection happens here, before any
+	// state mutation, so a bad attestation cannot leave behind a vote-tracker
+	// entry, an applied delta, or a NewPayloads push that subsequent steps
+	// would observe. Mirrors ethlambda's on_gossip_attestation flow at
+	// crates/blockchain/src/store.rs:285-306.
+	if err := sess.verifyGossipAttestation(step.Attestation.ValidatorID, attData, dataRoot, step.Attestation.Signature); err != nil {
+		return err
+	}
+
+	// Single-validator gossip attestation: synthesize a participants bitlist
+	// containing just this validator id so downstream aggregation and vote
+	// tracking can treat it like any other proof.
+	participants := node.AggregationBitsFromIndices([]uint64{step.Attestation.ValidatorID})
 	proof := &types.AggregatedSignatureProof{Participants: participants}
 	sess.store.NewPayloads.Push(dataRoot, attData, proof)
 
@@ -490,6 +505,16 @@ func (sess *TestDriverSession) applyAggregatedAttestation(step *specfixtures.For
 	if err != nil {
 		return err
 	}
+
+	// Bounds-check each participant id and verify the aggregated XMSS proof
+	// against the participants' pubkeys. Symmetric with the individual-
+	// attestation path's validator-id bounds + sig verification; runs before
+	// state mutation so a rejected aggregated attestation leaves no side
+	// effects.
+	if err := node.VerifyAggregatedGossipAttestation(sess.store, attData, participants, proofData); err != nil {
+		return err
+	}
+
 	proof := &types.AggregatedSignatureProof{Participants: participants, ProofData: proofData}
 	sess.store.NewPayloads.Push(dataRoot, attData, proof)
 
@@ -511,6 +536,19 @@ func (sess *TestDriverSession) applyAggregatedAttestation(step *specfixtures.For
 	justifiedRoot := sess.store.LatestJustified().Root
 	sess.store.SetHead(sess.fc.UpdateHead(justifiedRoot))
 	return nil
+}
+
+// verifyGossipAttestation is a thin wrapper around node.VerifyGossipAttestation
+// that parses the fixture's hex-encoded signature into bytes before delegating.
+// The node-level function is the single source of truth so the HTTP test
+// driver and the Go spec runner can't diverge on what counts as a valid
+// individual gossip attestation.
+func (sess *TestDriverSession) verifyGossipAttestation(validatorID uint64, attData *types.AttestationData, dataRoot [32]byte, signatureHex string) error {
+	sigBytes, err := specfixtures.ParseHexBytes(signatureHex)
+	if err != nil {
+		return fmt.Errorf("decode signature hex: %w", err)
+	}
+	return node.VerifyGossipAttestation(sess.store, validatorID, attData, dataRoot, sigBytes)
 }
 
 // loadSnapshot reads the session's current store + fc into the snapshot
