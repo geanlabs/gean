@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
@@ -36,6 +37,15 @@ var (
 	PeerConnectedHook    func(direction string)
 	PeerDisconnectedHook func(direction, reason string)
 	PeerCountHook        func(count int)
+
+	// PeerStatusHook fires once per newly-connected peer (gated by
+	// PeerStore.AddNew so reconnect events do not retrigger) with the peer's
+	// ID. Wired by node-layer code to initiate the lean P2P Status reqresp
+	// handshake the protocol expects on each new connection. Sending Status
+	// from the libp2p connection notifier (rather than only from the sync
+	// driver's periodic poll) is required so cold-start single-peer setups
+	// learn the peer's head promptly enough to drive backfill.
+	PeerStatusHook func(peerID peer.ID)
 )
 
 // StartGossipListeners starts goroutines that read from each subscribed topic

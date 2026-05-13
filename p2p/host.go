@@ -128,7 +128,13 @@ func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeC
 	h.Network().Notify(&network.NotifyBundle{
 		ConnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
-			p2pHost.peerStore.Add(peerID)
+			// AddNew atomically registers and reports whether this is the
+			// first connection to this peer. libp2p emits ConnectedF for
+			// every connection event (including additional connections to
+			// an already-connected peer or redial races), so we gate the
+			// one-shot on-connect work — the Status reqresp handshake —
+			// behind that flag.
+			isNew := p2pHost.peerStore.AddNew(peerID)
 			direction := directionLabel(conn.Stat().Direction)
 			count := p2pHost.peerStore.Count()
 			logger.Info(logger.Network, "peer connected peer_id=%s direction=%s peers=%d",
@@ -138,6 +144,13 @@ func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeC
 			}
 			if PeerCountHook != nil {
 				PeerCountHook(count)
+			}
+			if isNew && PeerStatusHook != nil {
+				// Async — ConnectedF runs on libp2p's network goroutine;
+				// the Status reqresp opens a new stream and waits for a
+				// response, which would block all subsequent libp2p
+				// network events if invoked inline.
+				go PeerStatusHook(peerID)
 			}
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {
