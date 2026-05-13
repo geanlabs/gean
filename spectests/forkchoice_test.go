@@ -677,8 +677,23 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 		case "tick":
+			// step.Time is wall-clock seconds since the UNIX epoch; step.Interval
+			// is a raw interval count. Both ream and ethlambda's tick handlers
+			// treat the fields this way. Convert seconds to intervals before
+			// storing so subsequent assertions on store.time match the
+			// simulator's checks.time field. Per-interval hooks (interval-3
+			// safe-target, interval-0/4 promote) are intentionally NOT fired
+			// here — gean's runtime fires them via Engine.onTick which owns
+			// ForkChoice; the spec runner mirrors that boundary to avoid
+			// mutating proto-array state across unrelated test steps.
 			if step.Time != nil {
-				s.SetTime(*step.Time)
+				genesisMs := s.Config().GenesisTime * 1000
+				timestampMs := *step.Time * 1000
+				if timestampMs < genesisMs {
+					s.SetTime(0)
+				} else {
+					s.SetTime((timestampMs - genesisMs) / types.MillisecondsPerInterval)
+				}
 			} else if step.Interval != nil {
 				s.SetTime(*step.Interval)
 			} else {

@@ -324,10 +324,31 @@ func (sess *TestDriverSession) ForkChoiceStepHandler() http.HandlerFunc {
 }
 
 func (sess *TestDriverSession) applyTick(step *specfixtures.ForkChoiceStep) error {
+	cfg := sess.store.Config()
+	if cfg == nil {
+		return fmt.Errorf("tick step before config set")
+	}
+	genesisMs := cfg.GenesisTime * 1000
+
 	switch {
 	case step.Time != nil:
-		sess.store.SetTime(*step.Time)
+		// step.Time is wall-clock seconds since the UNIX epoch — the same
+		// unit ream and ethlambda's tick handlers consume. Convert to an
+		// interval count via the standard formula
+		// (timestampMs - genesisMs) / MillisecondsPerInterval, which for
+		// the lean timing config (SECONDS_PER_SLOT=4, INTERVALS_PER_SLOT=5,
+		// MillisecondsPerInterval=800) collapses to seconds * 1.25.
+		// Without this conversion the snapshot reported store.time in
+		// seconds where the simulator's checks.time expected intervals,
+		// e.g. step.time=8 → snapshot.time=8 instead of 10.
+		timestampMs := *step.Time * 1000
+		if timestampMs < genesisMs {
+			sess.store.SetTime(0)
+		} else {
+			sess.store.SetTime((timestampMs - genesisMs) / types.MillisecondsPerInterval)
+		}
 	case step.Interval != nil:
+		// step.Interval is already an interval count — no conversion.
 		sess.store.SetTime(*step.Interval)
 	default:
 		return fmt.Errorf("tick step missing time and interval")
