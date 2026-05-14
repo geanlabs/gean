@@ -178,16 +178,22 @@ func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byt
 	for _, root := range roots {
 		block := blockByRootFn(root)
 		if block == nil {
-			continue // silently skip missing blocks (per spec)
+			// Spec allows silently skipping missing blocks. Log so we can
+			// distinguish "we don't have it" from "we have it but the write
+			// failed" when triaging known-block test failures from logs.
+			logger.Info(logger.Network, "blocks_by_root: block not found root=0x%x", root)
+			continue
 		}
 
 		blockData, err := block.MarshalSSZ()
 		if err != nil {
+			logger.Warn(logger.Network, "blocks_by_root: marshal failed root=0x%x: %v", root, err)
 			s.Write(EncodeResponse(RespServerError, []byte("marshal failed")))
 			continue
 		}
 
 		s.Write(EncodeResponse(RespSuccess, blockData))
+		logger.Info(logger.Network, "blocks_by_root: served block slot=%d root=0x%x", block.Block.Slot, root)
 	}
 }
 
@@ -259,6 +265,7 @@ func handleBlocksByRangeRequest(
 			continue
 		}
 		s.Write(EncodeResponse(RespSuccess, blockData))
+		logger.Info(logger.Network, "blocks_by_range: served slot=%d", block.Block.Slot)
 	}
 }
 
