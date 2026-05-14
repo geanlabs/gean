@@ -144,10 +144,28 @@ func main() {
 			state.Slot, state.LatestFinalized.Root, state.LatestJustified.Root, canonicalRoot, state.LatestBlockHeader.ParentRoot, stateRoot)
 		s.StorePendingBlock(canonicalRoot, signedBlock)
 	} else {
-		// Genesis.
+		// Genesis. Build the anchor SignedBlock from the canonicalized header
+		// fields and store it under canonicalRoot so BlocksByRoot can serve
+		// the genesis anchor — matching the checkpoint-sync path above. The
+		// signature is zero and the body is empty; this is the same shape
+		// every node will reconstruct for the genesis anchor, so root
+		// agreement is deterministic.
 		logger.Info(logger.Node, "initializing from genesis")
 		genesisState := genesisConfig.GenesisState()
-		_ = initStoreFromState(s, genesisState)
+		canonicalRoot := initStoreFromState(s, genesisState)
+		genesisSignedBlock := &types.SignedBlock{
+			Block: &types.Block{
+				Slot:          genesisState.LatestBlockHeader.Slot,
+				ProposerIndex: genesisState.LatestBlockHeader.ProposerIndex,
+				ParentRoot:    genesisState.LatestBlockHeader.ParentRoot,
+				StateRoot:     genesisState.LatestBlockHeader.StateRoot,
+				Body:          &types.BlockBody{},
+			},
+			Signature: &types.BlockSignatures{
+				ProposerSignature: [types.SignatureSize]byte{},
+			},
+		}
+		s.StorePendingBlock(canonicalRoot, genesisSignedBlock)
 	}
 
 	// Rehydrate store.time from wall clock before any consumer reads it.
