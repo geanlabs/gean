@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/binary"
 
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
@@ -148,9 +149,11 @@ func writeBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 	wb, _ := s.Backend.BeginWrite()
 
 	// Store body separately.
+	bodyBytes := 0
 	if signedBlock.Block != nil && signedBlock.Block.Body != nil {
 		bodyData, _ := signedBlock.Block.Body.MarshalSSZ()
-		if len(bodyData) > 0 {
+		bodyBytes = len(bodyData)
+		if bodyBytes > 0 {
 			wb.PutBatch(storage.TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}})
 		}
 	}
@@ -160,6 +163,12 @@ func writeBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 	wb.PutBatch(storage.TableBlockSignatures, []storage.KV{{Key: root[:], Value: fullData}})
 
 	wb.Commit()
+
+	// Log on successful commit so we can confirm from container logs that
+	// the block is queryable by root afterward — distinguishes write-side
+	// failures from read-side or wire-format issues during reqresp triage.
+	logger.Info(logger.Store, "wrote block data: root=0x%x body_bytes=%d signed_bytes=%d",
+		root, bodyBytes, len(fullData))
 }
 
 func (s *ConsensusStore) GetState(root [32]byte) *types.State {

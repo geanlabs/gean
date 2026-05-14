@@ -145,7 +145,15 @@ func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeC
 			if PeerCountHook != nil {
 				PeerCountHook(count)
 			}
-			if isNew && PeerStatusHook != nil {
+			if isNew && PeerStatusHook != nil && conn.Stat().Direction == network.DirOutbound {
+				// Only fire Status on connections we initiated. On inbound
+				// connections the dialer is responsible for sending Status
+				// first; firing our own Status opens a parallel stream that
+				// can race the inbound request — if the peer doesn't yet
+				// support Status (e.g. a single-protocol mock), the
+				// negotiation failure tears down the connection and any
+				// in-flight inbound response is lost.
+				//
 				// Async — ConnectedF runs on libp2p's network goroutine;
 				// the Status reqresp opens a new stream and waits for a
 				// response, which would block all subsequent libp2p

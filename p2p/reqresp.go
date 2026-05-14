@@ -117,14 +117,29 @@ func handleStatusRequest(s network.Stream, statusFn func() *StatusMessage) {
 		return
 	}
 
-	if len(reqBuf) > 0 {
-		// Decode peer's status (optional — we respond regardless).
-		if payload, err := DecodeReqRespPayload(reqBuf); err == nil {
-			peerStatus := &StatusMessage{}
-			peerStatus.UnmarshalSSZ(payload)
-			logger.Info(logger.Network, "status: peer at slot %d finalized=%d", peerStatus.HeadSlot, peerStatus.FinalizedSlot)
-		}
+	// Spec requires a well-formed Status payload (80 bytes after snappy
+	// decompression). Reject anything else with INVALID_REQUEST rather than
+	// echoing SUCCESS, so misbehaving peers see a clean error.
+	if len(reqBuf) == 0 {
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("empty status request")))
+		return
 	}
+
+	payload, err := DecodeReqRespPayload(reqBuf)
+	if err != nil {
+		logger.Warn(logger.Network, "status: decode request failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("decode failed")))
+		return
+	}
+
+	peerStatus := &StatusMessage{}
+	if err := peerStatus.UnmarshalSSZ(payload); err != nil {
+		logger.Warn(logger.Network, "status: ssz unmarshal failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("ssz unmarshal failed")))
+		return
+	}
+
+	logger.Info(logger.Network, "status: peer at slot %d finalized=%d", peerStatus.HeadSlot, peerStatus.FinalizedSlot)
 
 	// Send our status.
 	status := statusFn()
@@ -151,21 +166,34 @@ func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byt
 		return
 	}
 
+	// Per spec the root count must be in (0, MAX_REQUEST_BLOCKS]; anything else
+	// is INVALID_REQUEST. Mirrors the count check in handleBlocksByRangeRequest.
+	if len(roots) == 0 || len(roots) > int(types.MaxRequestBlocks) {
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("invalid root count")))
+		return
+	}
+
 	logger.Info(logger.Network, "blocks_by_root: peer requested %d roots", len(roots))
 
 	for _, root := range roots {
 		block := blockByRootFn(root)
 		if block == nil {
-			continue // silently skip missing blocks (per spec)
+			// Spec allows silently skipping missing blocks. Log so we can
+			// distinguish "we don't have it" from "we have it but the write
+			// failed" when triaging known-block test failures from logs.
+			logger.Info(logger.Network, "blocks_by_root: block not found root=0x%x", root)
+			continue
 		}
 
 		blockData, err := block.MarshalSSZ()
 		if err != nil {
+			logger.Warn(logger.Network, "blocks_by_root: marshal failed root=0x%x: %v", root, err)
 			s.Write(EncodeResponse(RespServerError, []byte("marshal failed")))
 			continue
 		}
 
 		s.Write(EncodeResponse(RespSuccess, blockData))
+		logger.Info(logger.Network, "blocks_by_root: served block slot=%d root=0x%x", block.Block.Slot, root)
 	}
 }
 
@@ -237,6 +265,7 @@ func handleBlocksByRangeRequest(
 			continue
 		}
 		s.Write(EncodeResponse(RespSuccess, blockData))
+		logger.Info(logger.Network, "blocks_by_range: served slot=%d", block.Block.Slot)
 	}
 }
 

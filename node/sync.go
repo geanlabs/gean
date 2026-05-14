@@ -116,6 +116,8 @@ func (sd *SyncDriver) pollPeer(ctx context.Context, peerID libp2ppeer.ID, ourSta
 		logger.Warn(logger.Sync, "sync: status request to peer %s failed: %v", peerID, err)
 		return
 	}
+	logger.Info(logger.Sync, "sync: status request to peer %s ok: head_slot=%d finalized_slot=%d",
+		peerID, peerStatus.HeadSlot, peerStatus.FinalizedSlot)
 	sd.checkAndBackfill(ctx, peerID, peerStatus)
 }
 
