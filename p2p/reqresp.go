@@ -166,6 +166,13 @@ func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byt
 		return
 	}
 
+	// Per spec the root count must be in (0, MAX_REQUEST_BLOCKS]; anything else
+	// is INVALID_REQUEST. Mirrors the count check in handleBlocksByRangeRequest.
+	if len(roots) == 0 || len(roots) > int(types.MaxRequestBlocks) {
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("invalid root count")))
+		return
+	}
+
 	logger.Info(logger.Network, "blocks_by_root: peer requested %d roots", len(roots))
 
 	for _, root := range roots {
