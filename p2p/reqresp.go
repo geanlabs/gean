@@ -117,14 +117,29 @@ func handleStatusRequest(s network.Stream, statusFn func() *StatusMessage) {
 		return
 	}
 
-	if len(reqBuf) > 0 {
-		// Decode peer's status (optional — we respond regardless).
-		if payload, err := DecodeReqRespPayload(reqBuf); err == nil {
-			peerStatus := &StatusMessage{}
-			peerStatus.UnmarshalSSZ(payload)
-			logger.Info(logger.Network, "status: peer at slot %d finalized=%d", peerStatus.HeadSlot, peerStatus.FinalizedSlot)
-		}
+	// Spec requires a well-formed Status payload (80 bytes after snappy
+	// decompression). Reject anything else with INVALID_REQUEST rather than
+	// echoing SUCCESS, so misbehaving peers see a clean error.
+	if len(reqBuf) == 0 {
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("empty status request")))
+		return
 	}
+
+	payload, err := DecodeReqRespPayload(reqBuf)
+	if err != nil {
+		logger.Warn(logger.Network, "status: decode request failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("decode failed")))
+		return
+	}
+
+	peerStatus := &StatusMessage{}
+	if err := peerStatus.UnmarshalSSZ(payload); err != nil {
+		logger.Warn(logger.Network, "status: ssz unmarshal failed: %v", err)
+		s.Write(EncodeResponse(RespInvalidRequest, []byte("ssz unmarshal failed")))
+		return
+	}
+
+	logger.Info(logger.Network, "status: peer at slot %d finalized=%d", peerStatus.HeadSlot, peerStatus.FinalizedSlot)
 
 	// Send our status.
 	status := statusFn()
