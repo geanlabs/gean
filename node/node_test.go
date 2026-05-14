@@ -358,6 +358,27 @@ func TestEngineCurrentInterval(t *testing.T) {
 	}
 }
 
+// TestComputeSyncStatus_FreshNodePastWallClock locks the contract the
+// maybePropose sync gate relies on: a fresh engine (head=0) with current
+// slot past the SyncLagSlots window must report SyncSyncing (not SyncSynced).
+// If this returned SyncSynced, the gate would allow self-production on
+// startup, reintroducing the rpc-compat 'forkchoice includes expected node
+// fields' failure.
+func TestComputeSyncStatus_FreshNodePastWallClock(t *testing.T) {
+	e := makeTestEngine()
+
+	// head=0, currentSlot=39: 0 + SyncLagSlots(2) = 2, 2 >= 39 is false → SyncSyncing.
+	if status := e.computeSyncStatus(39); status != SyncSyncing {
+		t.Errorf("head=0 currentSlot=39 should be SyncSyncing, got %s", status)
+	}
+
+	// head=0, currentSlot=2: 0 + 2 = 2, 2 >= 2 is true → SyncSynced.
+	// Documents the boundary: the gate opens at currentSlot ≤ head + SyncLagSlots.
+	if status := e.computeSyncStatus(2); status != SyncSynced {
+		t.Errorf("head=0 currentSlot=2 should be SyncSynced, got %s", status)
+	}
+}
+
 func TestPendingBlockCount(t *testing.T) {
 	e := makeTestEngine()
 
