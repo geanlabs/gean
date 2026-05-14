@@ -132,7 +132,9 @@ func (h *Host) ConnectBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr
 		if err := h.host.Connect(ctx, *peerInfo); err != nil {
 			logger.Warn(logger.Network, "bootnode connect failed %s: %v", addr, err)
 		} else {
-			h.peerStore.Add(peerInfo.ID)
+			// peerStore registration is owned by the ConnectedF notifier
+			// (host.go). Adding here races with AddNew and would suppress
+			// the on-connect PeerStatusHook on first connection.
 			logger.Info(logger.Network, "connected to bootnode %s", peerInfo.ID.ShortString())
 		}
 	}
@@ -155,7 +157,7 @@ func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multia
 					}
 					if h.host.Network().Connectedness(peerInfo.ID) != 1 { // not connected
 						if err := h.host.Connect(ctx, *peerInfo); err == nil {
-							h.peerStore.Add(peerInfo.ID)
+							// peerStore registration owned by ConnectedF; see ConnectBootnodes.
 							logger.Info(logger.Network, "reconnected to bootnode %s", peerInfo.ID.ShortString())
 						}
 					}

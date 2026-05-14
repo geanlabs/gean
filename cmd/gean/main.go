@@ -200,10 +200,6 @@ func main() {
 
 	logger.Info(logger.Network, "p2p: peer_id=%s listen_port=%d", p2pHost.PeerID(), *gossipPort)
 
-	// Connect to bootnodes.
-	p2pHost.ConnectBootnodes(ctx, bootnodes)
-	p2pHost.StartBootnodeRedial(ctx, bootnodes)
-
 	// Pre-initialize the XMSS prover so the ~45s setup cost happens before
 	// the chain starts, not during the first live aggregation.
 	if *isAggregator {
@@ -254,14 +250,18 @@ func main() {
 
 	// Start sync driver: periodic status-poll + BlocksByRange backfill when
 	// peers are far enough ahead. No-op while node is synced or has no peers.
-	// Wire OnPeerConnected as the libp2p PeerStatusHook BEFORE starting the
-	// driver so a fast initial dial that completes during start-up still
-	// fires the on-connect Status handshake. Sending Status only from the
-	// periodic poll is too slow for cold-start single-peer scenarios to
-	// learn the peer's head and drive backfill.
+	// Wire OnPeerConnected as the libp2p PeerStatusHook BEFORE dialing any
+	// bootnode so a fast successful initial dial cannot fire ConnectedF
+	// while the hook is still nil.
 	syncDriver := node.NewSyncDriver(ctx, n, p2pHost)
 	p2p.PeerStatusHook = syncDriver.OnPeerConnected
 	go syncDriver.Run()
+
+	// Connect to bootnodes only AFTER PeerStatusHook is wired above, so the
+	// first peer-connect event sees a non-nil hook and triggers the Status
+	// reqresp handshake.
+	p2pHost.ConnectBootnodes(ctx, bootnodes)
+	p2pHost.StartBootnodeRedial(ctx, bootnodes)
 
 	// --- Start HTTP servers ---
 
