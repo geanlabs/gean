@@ -162,7 +162,7 @@ func main() {
 				Body:          &types.BlockBody{},
 			},
 			Signature: &types.BlockSignatures{
-				ProposerSignature: [types.SignatureSize]byte{},
+				ProposerSignature: types.BlankXMSSSignature(),
 			},
 		}
 		s.StorePendingBlock(canonicalRoot, genesisSignedBlock)
