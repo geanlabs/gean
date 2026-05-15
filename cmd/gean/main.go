@@ -281,6 +281,24 @@ func main() {
 	p2pHost.ConnectBootnodes(ctx, bootnodes)
 	p2pHost.StartBootnodeRedial(ctx, bootnodes)
 
+	// Re-announce gossipsub subscriptions after the peer mesh settles. The
+	// initial hello packet pushed when each /meshsub stream opens can be
+	// lost to a stream-reset race with interop peers (see Host.Reannounce-
+	// Subscriptions for the full explanation). Cycling the local sub list
+	// through Cancel+Subscribe drives the empty→1 transition and sends a
+	// fresh SubOpts RPC on each peer's stable rpc queue, which is enough
+	// to make peers register us as subscribed and start forwarding blocks.
+	go func() {
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return
+		}
+		if err := p2pHost.ReannounceSubscriptions(); err != nil {
+			logger.Error(logger.Network, "re-announce subscriptions failed: %v", err)
+		}
+	}()
+
 	// --- Start HTTP servers ---
 
 	apiAddr := fmt.Sprintf("%s:%d", *httpAddr, *apiPort)
