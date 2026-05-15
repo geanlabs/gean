@@ -38,14 +38,15 @@ const (
 
 // Host wraps a libp2p host with gossipsub and topic handles.
 type Host struct {
-	host       host.Host
-	pubsub     *pubsub.PubSub
-	topics     map[string]*pubsub.Topic
-	subs       map[string]*pubsub.Subscription
-	ctx        context.Context
-	cancel     context.CancelFunc
-	peerStore  *PeerStore
-	listenPort int
+	host          host.Host
+	pubsub        *pubsub.PubSub
+	topics        map[string]*pubsub.Topic
+	subs          map[string]*pubsub.Subscription
+	ctx           context.Context
+	cancel        context.CancelFunc
+	peerStore     *PeerStore
+	listenPort    int
+	gossipHandler MessageHandler
 }
 
 // NewHost creates a libp2p host with QUIC transport and gossipsub.
@@ -240,6 +241,47 @@ func (h *Host) JoinTopic(topic string) error {
 	}
 	h.topics[topic] = t
 	h.subs[topic] = sub
+	return nil
+}
+
+// ReannounceSubscriptions cancels and re-subscribes to every joined topic.
+//
+// go-libp2p-pubsub only sends a subscription "hello packet" on the first
+// outbound stream to a peer. When interop peers (e.g. lantern) treat
+// /meshsub streams as bidirectional and write their own RPCs on gean's
+// outbound stream, gean's handlePeerDead path resets that first stream
+// before the hello has been observed by the peer. The library does open a
+// fresh outbound stream and re-pushes a hello, but in practice the peer's
+// gossipsub state is already initialized for this connection and the
+// re-announce never lands — leaving the peer with topics_count=0 for gean
+// and dropping every block publish it would otherwise forward.
+//
+// Cancel-then-resubscribe drives the empty→1 transition in mySubs through
+// the regular announce() path, which fans the SubOpts RPC out to every
+// currently connected peer via their stable rpc queues. Calling this once
+// the peer mesh has settled (a few seconds after bootnodes connect) is
+// enough to make every peer record gean as subscribed.
+func (h *Host) ReannounceSubscriptions() error {
+	if h.gossipHandler == nil {
+		return fmt.Errorf("reannounce: gossip listeners not started yet")
+	}
+	for topic, oldSub := range h.subs {
+		oldSub.Cancel()
+		t, ok := h.topics[topic]
+		if !ok {
+			return fmt.Errorf("reannounce: topic %s missing", topic)
+		}
+		newSub, err := t.Subscribe()
+		if err != nil {
+			return fmt.Errorf("reannounce: subscribe %s: %w", topic, err)
+		}
+		h.subs[topic] = newSub
+		// Cancel() above closed the old subscription's channel and unblocked
+		// the previous listenTopic goroutine. Start a fresh one for the new
+		// subscription so we keep draining incoming RPCs after the cycle.
+		go h.listenTopic(h.ctx, topic, newSub, h.gossipHandler)
+		logger.Info(logger.Network, "re-announced subscription topic=%s", topic)
+	}
 	return nil
 }
 
