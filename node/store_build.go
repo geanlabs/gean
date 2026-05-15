@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"time"
@@ -143,11 +144,23 @@ func buildBlock(
 						item.entry.Data.Head.Root, item.entry.Data.Slot)
 					continue
 				}
-				if item.entry.Data.Source.Root != currentJustified.Root ||
-					item.entry.Data.Source.Slot != currentJustified.Slot {
+				// Per leanSpec PR #716, the strict source==current_justified
+				// check is replaced by three filters: source slot must already
+				// be justified on this chain; source/target roots must match
+				// the canonical chain at those slots; target slot must not
+				// already be justified (genesis self-votes excepted for
+				// fork-choice bootstrapping).
+				finalizedSlot := headState.LatestFinalized.Slot
+				if !statetransition.IsSlotJustified(headState, finalizedSlot, item.entry.Data.Source.Slot) {
 					continue
 				}
-
+				if !attestationDataMatchesChain(headState, item.entry.Data) {
+					continue
+				}
+				isGenesisSelfVote := item.entry.Data.Source.Slot == 0 && item.entry.Data.Target.Slot == 0
+				if !isGenesisSelfVote && statetransition.IsSlotJustified(headState, finalizedSlot, item.entry.Data.Target.Slot) {
+					continue
+				}
 				processedAttData[item.dataRoot] = true
 				foundEntries = true
 
@@ -415,6 +428,35 @@ func (s *ConsensusStore) getBlockRoots() map[[32]byte]bool {
 		roots[root] = true
 	}
 	return roots
+}
+
+// attestationDataMatchesChain reports whether the attestation's source and
+// target roots equal the canonical block roots recorded for those slots in
+// the state's historical block hashes. Empty slots carry a zero entry and
+// are rejected; an attestation referencing one cannot be on the canonical
+// chain.
+//
+// Per leanSpec PR #716. Note: this uses state.HistoricalBlockHashes as-is
+// rather than the "extended" array that the spec constructs (parent_root
+// at parent.slot plus zeros for intermediate empty slots). Attestations
+// whose source or target reference the parent slot or later are skipped
+// here; the trial state transition still re-runs after each loop pass and
+// would surface any missed advances on subsequent iterations.
+func attestationDataMatchesChain(state *types.State, data *types.AttestationData) bool {
+	if data.Source.Root == types.ZeroRoot || data.Target.Root == types.ZeroRoot {
+		return false
+	}
+	histLen := uint64(len(state.HistoricalBlockHashes))
+	if data.Source.Slot >= histLen || data.Target.Slot >= histLen {
+		return false
+	}
+	if !bytes.Equal(data.Source.Root[:], state.HistoricalBlockHashes[data.Source.Slot]) {
+		return false
+	}
+	if !bytes.Equal(data.Target.Root[:], state.HistoricalBlockHashes[data.Target.Slot]) {
+		return false
+	}
+	return true
 }
 
 func compareRoots(a, b [32]byte) int {

@@ -9,7 +9,7 @@ require (
 	github.com/ferranbt/fastssz v1.0.0
 	github.com/golang/snappy v1.0.0
 	github.com/libp2p/go-libp2p v0.48.0
-	github.com/libp2p/go-libp2p-pubsub v0.15.0
+	github.com/libp2p/go-libp2p-pubsub v0.16.0
 	github.com/multiformats/go-multiaddr v0.16.0
 	github.com/prometheus/client_golang v1.22.0
 	golang.org/x/sync v0.19.0
