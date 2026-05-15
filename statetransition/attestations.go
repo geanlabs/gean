@@ -144,14 +144,19 @@ func tryFinalize(
 
 // --- justified_slots operations ---
 
-// isSlotJustified checks if a slot is justified.
-// Slots at or before finalized are implicitly justified.
-func isSlotJustified(state *types.State, finalizedSlot, slot uint64) bool {
+// IsSlotJustified reports whether the given slot has been justified, with
+// the convention that slots at or before finalized are implicitly justified.
+func IsSlotJustified(state *types.State, finalizedSlot, slot uint64) bool {
 	if slot <= finalizedSlot {
 		return true
 	}
 	relIndex := slot - finalizedSlot - 1
 	return types.BitlistGet(state.JustifiedSlots, relIndex)
+}
+
+// isSlotJustified is the unexported alias retained for internal callers.
+func isSlotJustified(state *types.State, finalizedSlot, slot uint64) bool {
+	return IsSlotJustified(state, finalizedSlot, slot)
 }
 
 // setSlotJustified marks a slot as justified.
