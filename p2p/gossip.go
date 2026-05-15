@@ -49,8 +49,13 @@ var (
 )
 
 // StartGossipListeners starts goroutines that read from each subscribed topic
-// and dispatch decoded messages to the handler.
+// and dispatch decoded messages to the handler. The handler is also retained
+// on the Host so that subscriptions replaced later (e.g. by Reannounce-
+// Subscriptions, which has to Cancel the existing Subscription to drive the
+// 0→1 mySubs transition that triggers a fresh announce RPC) can keep being
+// drained by a fresh listenTopic goroutine.
 func (h *Host) StartGossipListeners(handler MessageHandler) {
+	h.gossipHandler = handler
 	for topic, sub := range h.subs {
 		go h.listenTopic(h.ctx, topic, sub, handler)
 	}
