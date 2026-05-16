@@ -164,7 +164,7 @@ Fixtures are generated under `leanSpec/fixtures/`. The `leanSpec/` directory is 
 - **GossipSub v1.1** with anonymous message signing
 - **Req-resp** protocols: Status + BlocksByRoot + BlocksByRange with snappy framed encoding
 - **5-interval slot structure** (800ms each, 4s total): propose, attest, aggregate, safe-target, accept
-- **43 Prometheus metrics** matching the [leanMetrics](https://github.com/leanEthereum/leanMetrics) standard
+- **60 Prometheus metrics** matching the [leanMetrics](https://github.com/leanEthereum/leanMetrics) standard
 
 ## Acknowledgements
 
