@@ -41,10 +41,6 @@ const (
 	ErrJustifiedDivergenceNotClosed
 )
 
-func errMissingParentState(parentRoot [32]byte, slot uint64) error {
-	return &StoreError{ErrMissingParentState, fmt.Sprintf("parent state not found for slot %d, missing block %x", slot, parentRoot[:4])}
-}
-
 func errUnknownSourceBlock(root [32]byte) error {
 	return &StoreError{ErrUnknownSourceBlock, fmt.Sprintf("unknown source block: %x", root[:4])}
 }
@@ -83,10 +79,6 @@ func errAttestationTooFarInFuture(attSlot, storeTime uint64) error {
 
 func errNotProposer(vid, slot uint64) error {
 	return &StoreError{ErrNotProposer, fmt.Sprintf("validator %d not proposer for slot %d", vid, slot)}
-}
-
-func errMissingTargetState(root [32]byte) error {
-	return &StoreError{ErrMissingTargetState, fmt.Sprintf("missing target state: %x", root[:4])}
 }
 
 func errJustifiedDivergenceNotClosed(blockJustifiedSlot, storeJustifiedSlot uint64) error {
