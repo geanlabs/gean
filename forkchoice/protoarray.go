@@ -20,14 +20,14 @@ type ProtoArray struct {
 }
 
 // NewProtoArray creates a proto-array with an anchor block.
-func NewProtoArray(anchorSlot uint64, anchorRoot [32]byte) *ProtoArray {
+func NewProtoArray(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *ProtoArray {
 	pa := &ProtoArray{
 		indices: make(map[[32]byte]int),
 	}
 	pa.nodes = append(pa.nodes, ProtoNode{
 		Slot:           anchorSlot,
 		Root:           anchorRoot,
-		ParentRoot:     [32]byte{},
+		ParentRoot:     anchorParentRoot,
 		Parent:         -1,
 		Weight:         0,
 		BestChild:      -1,

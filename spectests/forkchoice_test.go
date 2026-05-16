@@ -447,7 +447,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	s.StorePendingBlock(anchorRoot, anchorSigned)
 
 	// 3. Initialize fork choice with anchor.
-	fc := forkchoice.New(anchorBlock.Slot, anchorRoot)
+	fc := forkchoice.New(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot)
 
 	// Label -> root map for resolving blockRootLabel references.
 	labelRoots := make(map[string][32]byte)

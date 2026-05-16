@@ -179,7 +179,7 @@ func main() {
 
 	headRoot := s.Head()
 	headHeader := s.GetBlockHeader(headRoot)
-	fc := forkchoice.New(headHeader.Slot, headRoot)
+	fc := forkchoice.New(headHeader.Slot, headRoot, headHeader.ParentRoot)
 
 	// --- Initialize P2P ---
 

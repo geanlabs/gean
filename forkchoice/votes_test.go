@@ -4,7 +4,7 @@ import "testing"
 
 func TestRemapIndicesAfterPrune(t *testing.T) {
 	// Setup: 5 nodes [A(0), B(1), C(2), D(3), E(4)]
-	fc := New(0, [32]byte{0xAA})
+	fc := New(0, [32]byte{0xAA}, [32]byte{})
 	fc.OnBlock(1, [32]byte{0xBB}, [32]byte{0xAA})
 	fc.OnBlock(2, [32]byte{0xCC}, [32]byte{0xBB})
 	fc.OnBlock(3, [32]byte{0xDD}, [32]byte{0xCC})
@@ -74,7 +74,7 @@ func TestRemapIndicesAfterPrune(t *testing.T) {
 }
 
 func TestRemapIndicesPrunedVotesInvalidated(t *testing.T) {
-	fc := New(0, [32]byte{0xAA})
+	fc := New(0, [32]byte{0xAA}, [32]byte{})
 	fc.OnBlock(1, [32]byte{0xBB}, [32]byte{0xAA})
 	fc.OnBlock(2, [32]byte{0xCC}, [32]byte{0xBB})
 

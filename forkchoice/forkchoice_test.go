@@ -121,7 +121,7 @@ func TestSpecLMDGhostTiebreakLexicographic(t *testing.T) {
 
 func TestProtoArrayLinearChain(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(2, rootC, rootB)
 
@@ -136,7 +136,7 @@ func TestProtoArrayLinearChain(t *testing.T) {
 
 func TestProtoArrayForkHeavier(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
 
@@ -155,7 +155,7 @@ func TestProtoArrayTiebreakLexicographic(t *testing.T) {
 	rootA := root(1)
 	rootB := root(2)
 	rootC := root(3) // larger -> wins
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
 
@@ -170,7 +170,7 @@ func TestProtoArrayTiebreakLexicographic(t *testing.T) {
 
 func TestProtoArrayNoAttestations(t *testing.T) {
 	rootA := root(1)
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	head := fc.UpdateHead(rootA)
 	if head != rootA {
 		t.Fatalf("expected rootA with no attestations, got %x", head[:4])
@@ -179,7 +179,7 @@ func TestProtoArrayNoAttestations(t *testing.T) {
 
 func TestProtoArrayVoteChange(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
 
@@ -200,7 +200,7 @@ func TestProtoArrayVoteChange(t *testing.T) {
 
 func TestProtoArrayPrune(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(2, rootC, rootB)
 
@@ -226,7 +226,7 @@ func TestProtoArrayDeepChain(t *testing.T) {
 	for i := range roots {
 		roots[i] = root(byte(i + 1))
 	}
-	fc := New(0, roots[0])
+	fc := New(0, roots[0], [32]byte{})
 	for i := 1; i < 10; i++ {
 		fc.OnBlock(uint64(i), roots[i], roots[i-1])
 	}
@@ -257,7 +257,7 @@ func TestDebugOracleLinearChain(t *testing.T) {
 	specHead, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 
 	// Proto-array
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(2, rootC, rootB)
 	fc.Votes.SetKnown(0, fc.NodeIndex(rootC), 2, makeAttData(rootC, 2))
@@ -284,7 +284,7 @@ func TestDebugOracleFork(t *testing.T) {
 	}
 	specHead, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
 	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
@@ -313,7 +313,7 @@ func TestDebugOracleTiebreak(t *testing.T) {
 	}
 	specHead, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 
-	fc := New(0, rootA)
+	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
 	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
@@ -329,7 +329,7 @@ func TestReorgDepth(t *testing.T) {
 	// Anchor (slot 0) -> A (slot 1) -> A2 (slot 2) -> A3 (slot 3)
 	//                  \-> B (slot 1) -> B2 (slot 2)
 	anchor, a, a2, a3, b, b2 := root(1), root(2), root(3), root(4), root(5), root(6)
-	fc := New(0, anchor)
+	fc := New(0, anchor, [32]byte{})
 	fc.OnBlock(1, a, anchor)
 	fc.OnBlock(2, a2, a)
 	fc.OnBlock(3, a3, a2)
@@ -358,5 +358,37 @@ func TestReorgDepth(t *testing.T) {
 					tc.oldHead[:1], tc.newHead[:1], got, tc.wantDepth)
 			}
 		})
+	}
+}
+
+func TestAnchorParentRootPreserved(t *testing.T) {
+	anchorRoot := root(7)
+	anchorParent := root(6)
+
+	fc := New(12, anchorRoot, anchorParent)
+
+	nodes := fc.Array.Nodes()
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 anchor node, got %d", len(nodes))
+	}
+	if nodes[0].ParentRoot != anchorParent {
+		t.Fatalf("anchor ParentRoot = %x, want %x", nodes[0].ParentRoot, anchorParent)
+	}
+	if nodes[0].Root != anchorRoot {
+		t.Fatalf("anchor Root = %x, want %x", nodes[0].Root, anchorRoot)
+	}
+	if nodes[0].Slot != 12 {
+		t.Fatalf("anchor Slot = %d, want 12", nodes[0].Slot)
+	}
+}
+
+func TestGenesisAnchorParentRootZero(t *testing.T) {
+	genesisRoot := root(1)
+
+	fc := New(0, genesisRoot, [32]byte{})
+
+	nodes := fc.Array.Nodes()
+	if nodes[0].ParentRoot != ([32]byte{}) {
+		t.Fatalf("genesis ParentRoot = %x, want zero", nodes[0].ParentRoot)
 	}
 }
