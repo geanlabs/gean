@@ -19,9 +19,9 @@ import "encoding/binary"
 // path starts at byte 36, hashes start at 36 + 1028 = 1064.
 // path's siblings list body starts at offset 4 within the path container.
 const (
-	signaturePathOffset           uint32 = 36
-	signatureHashesOffset         uint32 = 1064
-	signaturePathSiblingsOffset   uint32 = 4
+	signaturePathOffset         uint32 = 36
+	signatureHashesOffset       uint32 = 1064
+	signaturePathSiblingsOffset uint32 = 4
 )
 
 // BlankXMSSSignature returns an SSZ-structurally-valid placeholder XMSS
