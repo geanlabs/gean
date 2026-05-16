@@ -2,8 +2,14 @@ package p2p
 
 import "fmt"
 
-// Network name rs L192.
-const NetworkName = "devnet0"
+// ForkDigest is the fork identifier embedded in every gossipsub topic string.
+// Lowercase hex, no "0x" prefix (matches the beacon-chain convention adopted
+// by leanSpec PR #622). Every Lean client currently agrees on this dummy
+// placeholder; this will be derived from the fork version and genesis
+// validators root once the spec defines fork identification.
+//
+// TODO: derive dynamically once the spec defines fork identification.
+const ForkDigest = "12345678"
 
 // Topic kind constants rs.
 const (
@@ -12,10 +18,19 @@ const (
 	AggregationTopicKind = "aggregation"
 )
 
-// TopicString builds a gossipsub topic string.
-// Format: /leanconsensus/{network}/{kind}/ssz_snappy
+// BuildGossipTopic assembles a full gossipsub topic string for the given fork
+// digest and topic name. Single source of truth for the wire format:
+//
+//	/leanconsensus/{fork_digest}/{topic_name}/ssz_snappy
+func BuildGossipTopic(forkDigest, topicName string) string {
+	return fmt.Sprintf("/leanconsensus/%s/%s/ssz_snappy", forkDigest, topicName)
+}
+
+// TopicString builds a gossipsub topic string for the current runtime fork
+// digest. Retained for callers that always use the live fork digest; for
+// cross-fork parameterization (spec tests, etc.) use BuildGossipTopic.
 func TopicString(kind string) string {
-	return fmt.Sprintf("/leanconsensus/%s/%s/ssz_snappy", NetworkName, kind)
+	return BuildGossipTopic(ForkDigest, kind)
 }
 
 // BlockTopic returns the block gossipsub topic.
@@ -24,7 +39,7 @@ func BlockTopic() string {
 }
 
 // AttestationSubnetTopic returns the attestation topic for a given subnet.
-// Format: /leanconsensus/{network}/attestation_{subnet_id}/ssz_snappy
+// Format: /leanconsensus/{fork_digest}/attestation_{subnet_id}/ssz_snappy
 func AttestationSubnetTopic(subnetID uint64) string {
 	return TopicString(fmt.Sprintf("%s_%d", AttestationTopicKind, subnetID))
 }

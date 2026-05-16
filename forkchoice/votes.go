@@ -58,6 +58,43 @@ func (vs *VoteStore) getOrCreate(validatorID uint64) *VoteTracker {
 	return t
 }
 
+// RemapIndices adjusts all vote tracker indices after proto-array pruning.
+// Indices pointing to pruned nodes (< offset) are invalidated (-1 / nil).
+// Surviving indices are shifted by -offset to match the new array layout.
+func (vs *VoteStore) RemapIndices(offset int, newLen int) {
+	for _, tracker := range vs.Votes {
+		// Remap AppliedIndex.
+		if tracker.AppliedIndex >= 0 {
+			newIdx := tracker.AppliedIndex - offset
+			if newIdx < 0 || newIdx >= newLen {
+				tracker.AppliedIndex = -1
+			} else {
+				tracker.AppliedIndex = newIdx
+			}
+		}
+
+		// Remap LatestKnown.
+		if tracker.LatestKnown != nil {
+			newIdx := tracker.LatestKnown.Index - offset
+			if newIdx < 0 || newIdx >= newLen {
+				tracker.LatestKnown = nil
+			} else {
+				tracker.LatestKnown.Index = newIdx
+			}
+		}
+
+		// Remap LatestNew.
+		if tracker.LatestNew != nil {
+			newIdx := tracker.LatestNew.Index - offset
+			if newIdx < 0 || newIdx >= newLen {
+				tracker.LatestNew = nil
+			} else {
+				tracker.LatestNew.Index = newIdx
+			}
+		}
+	}
+}
+
 // ComputeDeltas computes weight deltas from vote changes.
 
 // For each validator:

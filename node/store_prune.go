@@ -36,8 +36,8 @@ func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinali
 	// 4. Prune live chain entries below finalized.
 	prunedChain := pruneLiveChain(s, newFinalizedSlot)
 
-	// 5. Prune stale attestation data (gossip sigs + payloads with target <= finalized).
-	prunedSigs := s.GossipSignatures.PruneBelow(newFinalizedSlot)
+	// 5. Prune stale attestation data (attestation sigs + payloads with target <= finalized).
+	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
 	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
 	prunedNew := s.NewPayloads.PruneBelow(newFinalizedSlot)
 

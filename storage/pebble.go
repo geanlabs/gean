@@ -52,15 +52,6 @@ func tableKey(table Table, key []byte) []byte {
 	return result
 }
 
-// tablePrefix returns the prefix for all keys in a table: "{table}\x00".
-func tablePrefix(table Table) []byte {
-	prefix := []byte(table)
-	result := make([]byte, len(prefix)+1)
-	copy(result, prefix)
-	result[len(prefix)] = 0x00
-	return result
-}
-
 // stripTablePrefix removes the table prefix from a key.
 func stripTablePrefix(table Table, fullKey []byte) []byte {
 	prefixLen := len([]byte(table)) + 1

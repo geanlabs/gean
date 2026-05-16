@@ -1,6 +1,9 @@
 package node
 
 import (
+	"encoding/binary"
+
+	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
@@ -8,8 +11,8 @@ import (
 
 const (
 	// Buffer capacities rs L87-91.
-	aggregatedPayloadCap = 512
-	newPayloadCap        = 64
+	aggregatedPayloadCap = 0 // unbounded, pruned on finalization only
+	newPayloadCap        = 0 // unbounded
 )
 
 // ConsensusStore holds all state required for fork choice and block processing.
@@ -18,21 +21,21 @@ const (
 // Engine calls ForkChoice with store data as parameters.
 // with store data as parameters.
 type ConsensusStore struct {
-	Backend          storage.Backend
-	NewPayloads      *PayloadBuffer
-	KnownPayloads    *PayloadBuffer
-	GossipSignatures GossipSignatureMap
-	PubKeyCache      *xmss.PubKeyCache // cached parsed pubkey handles for aggregation
+	Backend               storage.Backend
+	NewPayloads           *PayloadBuffer
+	KnownPayloads         *PayloadBuffer
+	AttestationSignatures AttestationSignatureMap
+	PubKeyCache           *xmss.PubKeyCache // cached parsed pubkey handles for aggregation
 }
 
 // NewConsensusStore creates a store backed by the given storage backend.
 func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 	return &ConsensusStore{
-		Backend:          backend,
-		NewPayloads:      NewPayloadBuffer(newPayloadCap),
-		KnownPayloads:    NewPayloadBuffer(aggregatedPayloadCap),
-		GossipSignatures: make(GossipSignatureMap),
-		PubKeyCache:      xmss.NewPubKeyCache(),
+		Backend:               backend,
+		NewPayloads:           NewPayloadBuffer(newPayloadCap),
+		KnownPayloads:         NewPayloadBuffer(aggregatedPayloadCap),
+		AttestationSignatures: NewAttestationSignatureMap(),
+		PubKeyCache:           xmss.NewPubKeyCache(),
 	}
 }
 
@@ -118,8 +121,8 @@ func (s *ConsensusStore) GetBlockHeader(root [32]byte) *types.BlockHeader {
 }
 
 // GetSignedBlock retrieves a full signed block from storage by root.
-// which stores the full SignedBlockWithAttestation SSZ.
-func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlockWithAttestation {
+// Retrieves full SignedBlock SSZ from BlockSignatures table.
+func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlock {
 	rv, err := s.Backend.BeginRead()
 	if err != nil {
 		return nil
@@ -130,34 +133,42 @@ func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlockWithAtt
 		return nil
 	}
 
-	full := &types.SignedBlockWithAttestation{}
+	full := &types.SignedBlock{}
 	if err := full.UnmarshalSSZ(sigBytes); err != nil {
 		return nil
 	}
-	if full.Block == nil || full.Block.Block == nil {
+	if full.Block == nil {
 		return nil
 	}
 	return full
 }
 
 // writeBlockData stores body and full signed block across split tables.
-// Body in BlockBodies, full SignedBlockWithAttestation in BlockSignatures.
-func writeBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedBlockWithAttestation) {
+// Body in BlockBodies, full SignedBlock SSZ in BlockSignatures.
+func writeBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedBlock) {
 	wb, _ := s.Backend.BeginWrite()
 
 	// Store body separately.
-	if signedBlock.Block != nil && signedBlock.Block.Block != nil && signedBlock.Block.Block.Body != nil {
-		bodyData, _ := signedBlock.Block.Block.Body.MarshalSSZ()
-		if len(bodyData) > 0 {
+	bodyBytes := 0
+	if signedBlock.Block != nil && signedBlock.Block.Body != nil {
+		bodyData, _ := signedBlock.Block.Body.MarshalSSZ()
+		bodyBytes = len(bodyData)
+		if bodyBytes > 0 {
 			wb.PutBatch(storage.TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}})
 		}
 	}
 
-	// Store full SignedBlockWithAttestation (includes proposer attestation + signatures).
+	// Store full SignedBlock (includes block + signatures).
 	fullData, _ := signedBlock.MarshalSSZ()
 	wb.PutBatch(storage.TableBlockSignatures, []storage.KV{{Key: root[:], Value: fullData}})
 
 	wb.Commit()
+
+	// Log on successful commit so we can confirm from container logs that
+	// the block is queryable by root afterward — distinguishes write-side
+	// failures from read-side or wire-format issues during reqresp triage.
+	logger.Info(logger.Store, "wrote block data: root=0x%x body_bytes=%d signed_bytes=%d",
+		root, bodyBytes, len(fullData))
 }
 
 func (s *ConsensusStore) GetState(root [32]byte) *types.State {
@@ -226,10 +237,43 @@ func (s *ConsensusStore) HeadSlot() uint64 {
 	return h.Slot
 }
 
+// MaxStoredBlockSlot returns the highest slot across every block header
+// currently in the store, regardless of canonicality. Only signature-verified
+// blocks enter the header table, so the value is an authenticated lower
+// bound on the network tip — useful for the validator duty-gate to detect
+// network stalls without trusting peer-reported head slots.
+//
+// Reads only the first 8 bytes (slot field) of each header value rather
+// than decoding the full SSZ struct; this keeps the cost linear in the
+// number of stored blocks with a small constant.
+func (s *ConsensusStore) MaxStoredBlockSlot() uint64 {
+	rv, err := s.Backend.BeginRead()
+	if err != nil {
+		return 0
+	}
+	it, err := rv.PrefixIterator(storage.TableBlockHeaders, nil)
+	if err != nil {
+		return 0
+	}
+	defer it.Close()
+	var max uint64
+	for it.Next() {
+		v := it.Value()
+		if len(v) < 8 {
+			continue
+		}
+		slot := binary.LittleEndian.Uint64(v[:8])
+		if slot > max {
+			max = slot
+		}
+	}
+	return max
+}
+
 // StorePendingBlock stores block in DB without LiveChain entry (invisible to fork choice).
-// Split across 3 tables: headers (for chain walk), bodies, signatures (includes proposer att).
-func (s *ConsensusStore) StorePendingBlock(root [32]byte, signedBlock *types.SignedBlockWithAttestation) {
-	block := signedBlock.Block.Block
+// Split across 3 tables: headers (for chain walk), bodies, signatures.
+func (s *ConsensusStore) StorePendingBlock(root [32]byte, signedBlock *types.SignedBlock) {
+	block := signedBlock.Block
 	header := &types.BlockHeader{
 		Slot:          block.Slot,
 		ProposerIndex: block.ProposerIndex,
@@ -252,6 +296,46 @@ func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]
 	wb.Commit()
 }
 
+// GetCanonicalBlocksInRange returns canonical-chain blocks whose slots fall in
+// [startSlot, startSlot+count). Walks backward from current head following parent
+// pointers; empty slots produce no entry. Result is in ascending-slot order.
+//
+// Used by the BlocksByRange req/resp server handler to assemble a response.
+func (s *ConsensusStore) GetCanonicalBlocksInRange(startSlot, count uint64) []*types.SignedBlock {
+	if count == 0 {
+		return nil
+	}
+	endSlot := startSlot + count // exclusive
+
+	var blocks []*types.SignedBlock
+	root := s.Head()
+	for {
+		header := s.GetBlockHeader(root)
+		if header == nil {
+			break
+		}
+		if header.Slot < startSlot {
+			break
+		}
+		if header.Slot < endSlot {
+			if block := s.GetSignedBlock(root); block != nil {
+				blocks = append(blocks, block)
+			}
+		}
+		if header.Slot == 0 {
+			break // genesis, no parent
+		}
+		root = header.ParentRoot
+	}
+
+	// Reverse to chronological order.
+	for i, j := 0, len(blocks)-1; i < j; i, j = i+1, j-1 {
+		blocks[i], blocks[j] = blocks[j], blocks[i]
+	}
+
+	return blocks
+}
+
 // PromoteNewToKnown moves all new payloads to known.
 func (s *ConsensusStore) PromoteNewToKnown() {
 	entries := s.NewPayloads.Drain()
@@ -264,19 +348,12 @@ func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.Atte
 	return s.KnownPayloads.ExtractLatestAttestations()
 }
 
-// ExtractLatestAllAttestations returns per-validator latest from known+new merged.
-// Used by updateSafeTarget. rs extract_latest_all_attestations (L104).
-func (s *ConsensusStore) ExtractLatestAllAttestations() map[uint64]*types.AttestationData {
-	known := s.KnownPayloads.ExtractLatestAttestations()
-	newAtts := s.NewPayloads.ExtractLatestAttestations()
-	// Merge: new overwrites known if newer.
-	for vid, data := range newAtts {
-		existing, ok := known[vid]
-		if !ok || existing.Slot < data.Slot {
-			known[vid] = data
-		}
-	}
-	return known
+// ExtractLatestNewAttestations returns per-validator latest from new pool only.
+// Used by updateSafeTarget. Per leanSpec PR #680, safe target is an availability
+// signal computed strictly from the new pool — votes already migrated into
+// known are historical and intentionally excluded.
+func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.AttestationData {
+	return s.NewPayloads.ExtractLatestAttestations()
 }
 
 // --- Internal metadata helpers ---

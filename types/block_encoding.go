@@ -350,120 +350,6 @@ func (b *Block) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }
 
-// MarshalSSZ ssz marshals the BlockWithAttestation object
-func (b *BlockWithAttestation) MarshalSSZ() ([]byte, error) {
-	return ssz.MarshalSSZ(b)
-}
-
-// MarshalSSZTo ssz marshals the BlockWithAttestation object to a target array
-func (b *BlockWithAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
-	dst = buf
-	offset := int(140)
-
-	// Offset (0) 'Block'
-	dst = ssz.WriteOffset(dst, offset)
-
-	// Field (1) 'ProposerAttestation'
-	if b.ProposerAttestation == nil {
-		b.ProposerAttestation = new(Attestation)
-	}
-	if dst, err = b.ProposerAttestation.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	// Field (0) 'Block'
-	if dst, err = b.Block.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	return
-}
-
-// UnmarshalSSZ ssz unmarshals the BlockWithAttestation object
-func (b *BlockWithAttestation) UnmarshalSSZ(buf []byte) error {
-	var err error
-	size := uint64(len(buf))
-	if size < 140 {
-		return ssz.ErrSize
-	}
-
-	tail := buf
-	var o0 uint64
-
-	// Offset (0) 'Block'
-	if o0 = ssz.ReadOffset(buf[0:4]); o0 > size {
-		return ssz.ErrOffset
-	}
-
-	if o0 != 140 {
-		return ssz.ErrInvalidVariableOffset
-	}
-
-	// Field (1) 'ProposerAttestation'
-	if b.ProposerAttestation == nil {
-		b.ProposerAttestation = new(Attestation)
-	}
-	if err = b.ProposerAttestation.UnmarshalSSZ(buf[4:140]); err != nil {
-		return err
-	}
-
-	// Field (0) 'Block'
-	{
-		buf = tail[o0:]
-		if b.Block == nil {
-			b.Block = new(Block)
-		}
-		if err = b.Block.UnmarshalSSZ(buf); err != nil {
-			return err
-		}
-	}
-	return err
-}
-
-// SizeSSZ returns the ssz encoded size in bytes for the BlockWithAttestation object
-func (b *BlockWithAttestation) SizeSSZ() (size int) {
-	size = 140
-
-	// Field (0) 'Block'
-	if b.Block == nil {
-		b.Block = new(Block)
-	}
-	size += b.Block.SizeSSZ()
-
-	return
-}
-
-// HashTreeRoot ssz hashes the BlockWithAttestation object
-func (b *BlockWithAttestation) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(b)
-}
-
-// HashTreeRootWith ssz hashes the BlockWithAttestation object with a hasher
-func (b *BlockWithAttestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
-	indx := hh.Index()
-
-	// Field (0) 'Block'
-	if err = b.Block.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	// Field (1) 'ProposerAttestation'
-	if b.ProposerAttestation == nil {
-		b.ProposerAttestation = new(Attestation)
-	}
-	if err = b.ProposerAttestation.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	hh.Merkleize(indx)
-	return
-}
-
-// GetTree ssz hashes the BlockWithAttestation object
-func (b *BlockWithAttestation) GetTree() (*ssz.Node, error) {
-	return ssz.ProofTree(b)
-}
-
 // MarshalSSZ ssz marshals the BlockSignatures object
 func (b *BlockSignatures) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
@@ -472,7 +358,7 @@ func (b *BlockSignatures) MarshalSSZ() ([]byte, error) {
 // MarshalSSZTo ssz marshals the BlockSignatures object to a target array
 func (b *BlockSignatures) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
-	offset := int(3116)
+	offset := int(2540)
 
 	// Offset (0) 'AttestationSignatures'
 	dst = ssz.WriteOffset(dst, offset)
@@ -505,7 +391,7 @@ func (b *BlockSignatures) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size < 3116 {
+	if size < 2540 {
 		return ssz.ErrSize
 	}
 
@@ -517,12 +403,12 @@ func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 		return ssz.ErrOffset
 	}
 
-	if o0 != 3116 {
+	if o0 != 2540 {
 		return ssz.ErrInvalidVariableOffset
 	}
 
 	// Field (1) 'ProposerSignature'
-	copy(b.ProposerSignature[:], buf[4:3116])
+	copy(b.ProposerSignature[:], buf[4:2540])
 
 	// Field (0) 'AttestationSignatures'
 	{
@@ -550,7 +436,7 @@ func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 
 // SizeSSZ returns the ssz encoded size in bytes for the BlockSignatures object
 func (b *BlockSignatures) SizeSSZ() (size int) {
-	size = 3116
+	size = 2540
 
 	// Field (0) 'AttestationSignatures'
 	for ii := 0; ii < len(b.AttestationSignatures); ii++ {
@@ -598,20 +484,20 @@ func (b *BlockSignatures) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }
 
-// MarshalSSZ ssz marshals the SignedBlockWithAttestation object
-func (s *SignedBlockWithAttestation) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the SignedBlock object
+func (s *SignedBlock) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(s)
 }
 
-// MarshalSSZTo ssz marshals the SignedBlockWithAttestation object to a target array
-func (s *SignedBlockWithAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the SignedBlock object to a target array
+func (s *SignedBlock) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(8)
 
 	// Offset (0) 'Block'
 	dst = ssz.WriteOffset(dst, offset)
 	if s.Block == nil {
-		s.Block = new(BlockWithAttestation)
+		s.Block = new(Block)
 	}
 	offset += s.Block.SizeSSZ()
 
@@ -631,8 +517,8 @@ func (s *SignedBlockWithAttestation) MarshalSSZTo(buf []byte) (dst []byte, err e
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the SignedBlockWithAttestation object
-func (s *SignedBlockWithAttestation) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the SignedBlock object
+func (s *SignedBlock) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size < 8 {
@@ -660,7 +546,7 @@ func (s *SignedBlockWithAttestation) UnmarshalSSZ(buf []byte) error {
 	{
 		buf = tail[o0:o1]
 		if s.Block == nil {
-			s.Block = new(BlockWithAttestation)
+			s.Block = new(Block)
 		}
 		if err = s.Block.UnmarshalSSZ(buf); err != nil {
 			return err
@@ -680,13 +566,13 @@ func (s *SignedBlockWithAttestation) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the SignedBlockWithAttestation object
-func (s *SignedBlockWithAttestation) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the SignedBlock object
+func (s *SignedBlock) SizeSSZ() (size int) {
 	size = 8
 
 	// Field (0) 'Block'
 	if s.Block == nil {
-		s.Block = new(BlockWithAttestation)
+		s.Block = new(Block)
 	}
 	size += s.Block.SizeSSZ()
 
@@ -699,13 +585,13 @@ func (s *SignedBlockWithAttestation) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the SignedBlockWithAttestation object
-func (s *SignedBlockWithAttestation) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the SignedBlock object
+func (s *SignedBlock) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(s)
 }
 
-// HashTreeRootWith ssz hashes the SignedBlockWithAttestation object with a hasher
-func (s *SignedBlockWithAttestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the SignedBlock object with a hasher
+func (s *SignedBlock) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Block'
@@ -722,7 +608,7 @@ func (s *SignedBlockWithAttestation) HashTreeRootWith(hh ssz.HashWalker) (err er
 	return
 }
 
-// GetTree ssz hashes the SignedBlockWithAttestation object
-func (s *SignedBlockWithAttestation) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the SignedBlock object
+func (s *SignedBlock) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(s)
 }

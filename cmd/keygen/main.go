@@ -50,9 +50,11 @@ type manifest struct {
 }
 
 type validatorInfo struct {
-	Index     int    `json:"index"`
-	PubkeyHex string `json:"pubkey_hex"`
-	SkFile    string `json:"sk_file"`
+	Index                int    `json:"index"`
+	AttestationPubkeyHex string `json:"attestation_pubkey_hex"`
+	ProposalPubkeyHex    string `json:"proposal_pubkey_hex"`
+	AttestationSkFile    string `json:"attestation_sk_file"`
+	ProposalSkFile       string `json:"proposal_sk_file"`
 }
 
 type nodeInfo struct {
@@ -115,56 +117,25 @@ func main() {
 func generateKeys(numValidators, numNodes int, outputDir, keysDir string, basePort int) manifest {
 	var m manifest
 
-	// Generate XMSS validator keys.
-	log.Printf("generating %d XMSS validator keys (this takes ~40s per key)...", numValidators)
+	// Generate dual XMSS validator keys (attestation + proposal per validator).
+	log.Printf("generating %d XMSS validator keypairs (2 keys each, ~40s per key)...", numValidators)
 	for i := 0; i < numValidators; i++ {
-		seed := fmt.Sprintf("gean-testnet-validator-%d-%d", i, time.Now().UnixNano())
 		log.Printf("  generating validator %d/%d...", i+1, numValidators)
 
-		cSeed := C.CString(seed)
-		kp := C.hashsig_keypair_generate(cSeed, C.size_t(0), C.size_t(1<<18))
-		C.free(unsafe.Pointer(cSeed))
-		if kp == nil {
-			log.Fatalf("key generation failed for validator %d", i)
-		}
+		attPubHex, attSkFile := generateAndSaveKey(i, "attestation", keysDir)
+		propPubHex, propSkFile := generateAndSaveKey(i, "proposal", keysDir)
 
-		// Serialize pubkey.
-		var pkBuf [256]byte
-		pkLen := C.hashsig_public_key_to_bytes(
-			C.hashsig_keypair_get_public_key(kp),
-			(*C.uint8_t)(unsafe.Pointer(&pkBuf[0])),
-			C.size_t(len(pkBuf)),
-		)
-		if pkLen == 0 || int(pkLen) != types.PubkeySize {
-			log.Fatalf("pubkey serialization failed for validator %d", i)
-		}
-
-		// Serialize private key.
-		skBuf := make([]byte, 10*1024*1024)
-		skLen := C.hashsig_private_key_to_bytes(
-			C.hashsig_keypair_get_private_key(kp),
-			(*C.uint8_t)(unsafe.Pointer(&skBuf[0])),
-			C.size_t(len(skBuf)),
-		)
-		if skLen == 0 {
-			log.Fatalf("private key serialization failed for validator %d", i)
-		}
-
-		C.hashsig_keypair_free(kp)
-
-		skFile := fmt.Sprintf("validator_%d_sk.ssz", i)
-		skPath := filepath.Join(keysDir, skFile)
-		os.WriteFile(skPath, skBuf[:skLen], 0600)
-
-		pubkeyHex := hex.EncodeToString(pkBuf[:pkLen])
 		m.Validators = append(m.Validators, validatorInfo{
-			Index:     i,
-			PubkeyHex: pubkeyHex,
-			SkFile:    skFile,
+			Index:                i,
+			AttestationPubkeyHex: attPubHex,
+			ProposalPubkeyHex:    propPubHex,
+			AttestationSkFile:    attSkFile,
+			ProposalSkFile:       propSkFile,
 		})
 
-		log.Printf("  validator %d: pubkey=%s...%s sk=%d bytes",
-			i, pubkeyHex[:8], pubkeyHex[len(pubkeyHex)-8:], skLen)
+		log.Printf("  validator %d: att=%s...%s prop=%s...%s",
+			i, attPubHex[:8], attPubHex[len(attPubHex)-8:],
+			propPubHex[:8], propPubHex[len(propPubHex)-8:])
 	}
 
 	// Generate node keys.
@@ -191,12 +162,54 @@ func generateKeys(numValidators, numNodes int, outputDir, keysDir string, basePo
 	return m
 }
 
-func writeConfigYAML(outputDir string, genesisTime uint64, validators []validatorInfo) {
-	yaml := fmt.Sprintf("GENESIS_TIME: %d\nGENESIS_VALIDATORS:\n", genesisTime)
-	for _, v := range validators {
-		yaml += fmt.Sprintf("    - \"%s\"\n", v.PubkeyHex)
+// generateAndSaveKey generates one XMSS keypair and saves the SK file.
+// Returns (pubkey_hex, sk_filename).
+func generateAndSaveKey(validatorIdx int, keyType, keysDir string) (string, string) {
+	seed := fmt.Sprintf("gean-testnet-validator-%d-%s-%d", validatorIdx, keyType, time.Now().UnixNano())
+
+	cSeed := C.CString(seed)
+	kp := C.hashsig_keypair_generate(cSeed, C.size_t(0), C.size_t(1<<18))
+	C.free(unsafe.Pointer(cSeed))
+	if kp == nil {
+		log.Fatalf("key generation failed for validator %d %s", validatorIdx, keyType)
 	}
-	os.WriteFile(filepath.Join(outputDir, "config.yaml"), []byte(yaml), 0644)
+
+	var pkBuf [256]byte
+	pkLen := C.hashsig_public_key_to_bytes(
+		C.hashsig_keypair_get_public_key(kp),
+		(*C.uint8_t)(unsafe.Pointer(&pkBuf[0])),
+		C.size_t(len(pkBuf)),
+	)
+	if pkLen == 0 || int(pkLen) != types.PubkeySize {
+		log.Fatalf("pubkey serialization failed for validator %d %s", validatorIdx, keyType)
+	}
+
+	skBuf := make([]byte, 10*1024*1024)
+	skLen := C.hashsig_private_key_to_bytes(
+		C.hashsig_keypair_get_private_key(kp),
+		(*C.uint8_t)(unsafe.Pointer(&skBuf[0])),
+		C.size_t(len(skBuf)),
+	)
+	if skLen == 0 {
+		log.Fatalf("private key serialization failed for validator %d %s", validatorIdx, keyType)
+	}
+
+	C.hashsig_keypair_free(kp)
+
+	skFile := fmt.Sprintf("validator_%d_%s_sk.ssz", validatorIdx, keyType)
+	skPath := filepath.Join(keysDir, skFile)
+	os.WriteFile(skPath, skBuf[:skLen], 0600)
+
+	return hex.EncodeToString(pkBuf[:pkLen]), skFile
+}
+
+func writeConfigYAML(outputDir string, genesisTime uint64, validators []validatorInfo) {
+	y := fmt.Sprintf("GENESIS_TIME: %d\nGENESIS_VALIDATORS:\n", genesisTime)
+	for _, v := range validators {
+		y += fmt.Sprintf("  - attestation_pubkey: \"%s\"\n    proposal_pubkey: \"%s\"\n",
+			v.AttestationPubkeyHex, v.ProposalPubkeyHex)
+	}
+	os.WriteFile(filepath.Join(outputDir, "config.yaml"), []byte(y), 0644)
 }
 
 func writeAnnotatedValidatorsYAML(outputDir string, validators []validatorInfo, numNodes int) {
@@ -205,15 +218,16 @@ func writeAnnotatedValidatorsYAML(outputDir string, validators []validatorInfo, 
 		nodeIdx := v.Index % numNodes
 		nodeValidators[nodeIdx] = append(nodeValidators[nodeIdx], v)
 	}
-	yaml := ""
+	y := ""
 	for i := 0; i < numNodes; i++ {
-		yaml += fmt.Sprintf("node%d:\n", i)
+		y += fmt.Sprintf("node%d:\n", i)
 		for _, v := range nodeValidators[i] {
-			yaml += fmt.Sprintf("  - index: %d\n    pubkey_hex: %s\n    privkey_file: %s\n",
-				v.Index, v.PubkeyHex, v.SkFile)
+			y += fmt.Sprintf("  - index: %d\n    attestation_pubkey_hex: %s\n    proposal_pubkey_hex: %s\n    attestation_sk_file: %s\n    proposal_sk_file: %s\n",
+				v.Index, v.AttestationPubkeyHex, v.ProposalPubkeyHex,
+				v.AttestationSkFile, v.ProposalSkFile)
 		}
 	}
-	os.WriteFile(filepath.Join(outputDir, "annotated_validators.yaml"), []byte(yaml), 0644)
+	os.WriteFile(filepath.Join(outputDir, "annotated_validators.yaml"), []byte(y), 0644)
 }
 
 func writeNodesYAML(outputDir string, nodes []nodeInfo, basePort int) {
@@ -244,7 +258,10 @@ func saveManifest(path string, m *manifest) {
 
 func keysExist(keysDir string, validators []validatorInfo) bool {
 	for _, v := range validators {
-		if _, err := os.Stat(filepath.Join(keysDir, v.SkFile)); err != nil {
+		if _, err := os.Stat(filepath.Join(keysDir, v.AttestationSkFile)); err != nil {
+			return false
+		}
+		if _, err := os.Stat(filepath.Join(keysDir, v.ProposalSkFile)); err != nil {
 			return false
 		}
 	}

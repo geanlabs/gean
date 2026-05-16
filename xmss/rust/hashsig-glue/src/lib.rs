@@ -1,18 +1,40 @@
 use leansig::{signature::SignatureScheme, MESSAGE_LENGTH};
+use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use sha2::{Digest, Sha256};
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 
-pub type HashSigScheme =
-    leansig::signature::generalized_xmss::instantiations_poseidon_top_level::lifetime_2_to_the_32::hashing_optimized::SIGTopLevelTargetSumLifetime32Dim64Base8;
-pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
-pub type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
-pub type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
+// Devnet-4 XMSS parameters: Dim46 Base8 Aborting (matches leanMultisig V=46).
+// Production config (default)
+#[cfg(not(feature = "test-config"))]
+mod config {
+    pub use leansig::signature::generalized_xmss::instantiations_aborting::lifetime_2_to_the_32::{
+        PubKeyAbortingTargetSumLifetime32Dim46Base8 as XmssPublicKey,
+        SchemeAbortingTargetSumLifetime32Dim46Base8 as XmssScheme,
+        SecretKeyAbortingTargetSumLifetime32Dim46Base8 as XmssSecretKey,
+        SigAbortingTargetSumLifetime32Dim46Base8 as XmssSignature,
+    };
+}
+
+// Test config
+#[cfg(feature = "test-config")]
+mod config {
+    pub use leansig::signature::generalized_xmss::instantiations_aborting::lifetime_2_to_the_8::{
+        PubKeyAbortingTargetSumLifetime8Dim46Base8 as XmssPublicKey,
+        SchemeAbortingTargetSumLifetime8Dim46Base8 as XmssScheme,
+        SecretKeyAbortingTargetSumLifetime8Dim46Base8 as XmssSecretKey,
+        SigAbortingTargetSumLifetime8Dim46Base8 as XmssSignature,
+    };
+}
+
+pub type HashSigScheme = config::XmssScheme;
+pub type HashSigPrivateKey = config::XmssSecretKey;
+pub type HashSigPublicKey = config::XmssPublicKey;
+pub type HashSigSignature = config::XmssSignature;
 
 #[repr(C)]
 pub struct PrivateKey {
@@ -98,7 +120,7 @@ pub unsafe extern "C" fn hashsig_keypair_generate(
     let seed = hasher.finalize().into();
 
     let (public_key, private_key) = PrivateKey::generate(
-        &mut <ChaCha20Rng as SeedableRng>::from_seed(seed),
+        &mut StdRng::from_seed(seed),
         activation_epoch,
         num_active_epochs,
     );

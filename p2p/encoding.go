@@ -13,6 +13,7 @@ import (
 const (
 	MaxPayloadSize           = 10 * 1024 * 1024                              // 10 MiB uncompressed
 	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024 // ~12 MiB
+	MaxErrorMessageSize      = 256                                           // ErrorMessage: List[byte, 256]
 )
 
 // --- Gossipsub encoding: raw snappy ---
@@ -73,22 +74,17 @@ func EncodeReqRespPayload(data []byte) []byte {
 }
 
 // DecodeReqRespPayload decodes a payload: varint(uncompressed_len) + snappy_framed(data).
-// Uses snappy FRAMED format (not block) for req-resp cross-client compatibility.
+// Uses snappy FRAMED format only, per Ethereum ssz_snappy req/resp spec.
 func DecodeReqRespPayload(buf []byte) ([]byte, error) {
 	declaredLen, rest, err := DecodeVarint(buf)
 	if err != nil {
 		return nil, fmt.Errorf("decode varint: %w", err)
 	}
 
-	// Try framed format first (cross-client), fall back to block format (self-to-self).
 	r := snappy.NewReader(bytes.NewReader(rest))
 	decoded, err := io.ReadAll(r)
 	if err != nil {
-		// Fallback: try block format (for self-to-self communication).
-		decoded, err = snappy.Decode(nil, rest)
-		if err != nil {
-			return nil, fmt.Errorf("snappy decode: %w", err)
-		}
+		return nil, fmt.Errorf("snappy framed decode: %w", err)
 	}
 
 	if declaredLen > 0 && uint32(len(decoded)) != declaredLen {
@@ -106,7 +102,12 @@ const (
 )
 
 // EncodeResponse encodes a response chunk: code + varint(len) + snappy(data).
+// Error response bodies are truncated to MaxErrorMessageSize before encoding
+// per the ErrorMessage: List[byte, 256] wire limit.
 func EncodeResponse(code byte, data []byte) []byte {
+	if code != RespSuccess && len(data) > MaxErrorMessageSize {
+		data = data[:MaxErrorMessageSize]
+	}
 	payload := EncodeReqRespPayload(data)
 	result := make([]byte, 1+len(payload))
 	result[0] = code
@@ -137,6 +138,10 @@ func DecodeResponse(r io.Reader) (byte, []byte, error) {
 	decoded, err := DecodeReqRespPayload(rest)
 	if err != nil {
 		return code, nil, fmt.Errorf("decode response payload: %w", err)
+	}
+
+	if code != RespSuccess && len(decoded) > MaxErrorMessageSize {
+		return code, nil, fmt.Errorf("error message %d bytes exceeds MaxErrorMessageSize %d", len(decoded), MaxErrorMessageSize)
 	}
 
 	return code, decoded, nil

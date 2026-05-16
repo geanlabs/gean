@@ -72,8 +72,9 @@ type TestDataList struct {
 }
 
 type TestValidator struct {
-	Pubkey string `json:"pubkey"`
-	Index  uint64 `json:"index"`
+	AttestationPubkey string `json:"attestationPubkey"`
+	ProposalPubkey    string `json:"proposalPubkey"`
+	Index             uint64 `json:"index"`
 }
 
 type TestValidatorList struct {
@@ -163,11 +164,11 @@ func (ts *TestState) ToState() *types.State {
 		},
 	}
 
-	// Validators
 	for _, v := range ts.Validators.Data {
 		state.Validators = append(state.Validators, &types.Validator{
-			Pubkey: parseHexPubkey(v.Pubkey),
-			Index:  v.Index,
+			AttestationPubkey: parseHexPubkey(v.AttestationPubkey),
+			ProposalPubkey:    parseHexPubkey(v.ProposalPubkey),
+			Index:             v.Index,
 		})
 	}
 

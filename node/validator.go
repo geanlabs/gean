@@ -21,7 +21,27 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
+	// Block production requires Synced. On SyncIdle/SyncSyncing we'd advance
+	// local fork-choice based only on our own block, divorced from the network.
+	if status := e.GetSyncStatus(); status != SyncSynced {
+		logger.Info(logger.Validator, "skipping block production slot=%d: sync status %s", slot, status)
+		return
+	}
+
+	// Sync-lag duty gate (leanSpec PR #708). Skip when the local view is
+	// too stale relative to a network that is otherwise making progress.
+	if e.DutyGate != nil && !e.DutyGate.Decide("block", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
+		IncBlocksSkippedLag()
+		return
+	}
+
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
+
+	// Spec get_proposal_head: promote pending attestations and update head
+	// immediately before building. Matches leanSpec get_proposal_head which
+	// calls accept_new_attestations (promote + updateHead) before reading head.
+	e.Store.PromoteNewToKnown()
+	e.updateHead(false)
 
 	// Build block with greedy attestation selection.
 	block, attSigProofs, err := ProduceBlockWithSignatures(e.Store, slot, validatorID)
@@ -30,34 +50,25 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
-	// Produce proposer's own attestation.
-	attData := ProduceAttestationData(e.Store, slot)
-	if attData == nil {
-		logger.Error(logger.Validator, "failed to produce attestation data for proposal")
+	// Sign the block root with the PROPOSAL key.
+	signStart := time.Now()
+	propKey := e.Keys.GetProposalKey(validatorID)
+	if propKey == nil {
+		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
 		return
 	}
-
-	proposerAtt := &types.Attestation{
-		ValidatorID: validatorID,
-		Data:        attData,
-	}
-
-	// Sign proposer's attestation (this becomes the ProposerSignature in the block).
-	signStart := time.Now()
-	attSig, err := e.Keys.SignAttestation(validatorID, attData)
+	blockRoot, _ := block.HashTreeRoot()
+	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
 	ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
-		logger.Error(logger.Validator, "sign proposer attestation failed: %v", err)
+		logger.Error(logger.Validator, "sign block failed: %v", err)
 		return
 	}
 
-	signedBlock := &types.SignedBlockWithAttestation{
-		Block: &types.BlockWithAttestation{
-			Block:               block,
-			ProposerAttestation: proposerAtt,
-		},
+	signedBlock := &types.SignedBlock{
+		Block: block,
 		Signature: &types.BlockSignatures{
-			ProposerSignature:     attSig, // attestation signature, NOT block signature
+			ProposerSignature:     blockSig,
 			AttestationSignatures: attSigProofs,
 		},
 	}
@@ -73,11 +84,6 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	e.FC.OnBlock(slot, bRoot, block.ParentRoot)
 	e.updateHead(false)
 
-	// Store proposer's attestation signature in gossip for aggregation with C handle.
-	dataRoot, _ := attData.HashTreeRoot()
-	sigHandle, parseErr := xmss.ParseSignature(attSig[:])
-	e.Store.GossipSignatures.InsertWithHandle(dataRoot, attData, validatorID, attSig, sigHandle, parseErr)
-
 	// Publish to network.
 	if e.P2P != nil {
 		if err := e.P2P.PublishBlock(context.Background(), signedBlock); err != nil {
@@ -89,17 +95,19 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		slot, bRoot, len(block.Body.Attestations))
 }
 
-// produceAttestations creates and publishes attestations for non-proposing validators.
+// produceAttestations creates and publishes attestations for all local validators.
 func (e *Engine) produceAttestations(slot uint64) {
 	if e.Keys == nil {
 		return
 	}
 
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
+	// Sync-lag duty gate (leanSpec PR #708). Skip the whole batch when the
+	// local view is too stale relative to a network that is otherwise
+	// making progress. Counter ticks once per skipped slot, not per validator.
+	if e.DutyGate != nil && !e.DutyGate.Decide("attestation", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
+		IncAttestationsSkippedLag()
 		return
 	}
-	numValidators := headState.NumValidators()
 
 	attData := ProduceAttestationData(e.Store, slot)
 	if attData == nil {
@@ -107,10 +115,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 	}
 
 	for _, vid := range e.Keys.ValidatorIDs() {
-		// Skip proposer — they already attested via block.
-		if types.IsProposer(slot, vid, numValidators) {
-			continue
-		}
+		prodStart := time.Now()
 
 		sStart := time.Now()
 		sig, err := e.Keys.SignAttestation(vid, attData)
@@ -128,6 +133,14 @@ func (e *Engine) produceAttestations(slot uint64) {
 
 		logger.Info(logger.Validator, "produced attestation slot=%d validator=%d", slot, vid)
 
+		// Self-deliver for aggregation if we are the aggregator.
+		// Skip signature verification — we just signed it ourselves.
+		if e.AggCtl.Get() {
+			dataRoot, _ := attData.HashTreeRoot()
+			sigHandle, parseErr := xmss.ParseSignature(sig[:])
+			e.Store.AttestationSignatures.InsertWithHandle(dataRoot, attData, vid, sig, sigHandle, parseErr)
+		}
+
 		// Publish to subnet.
 		if e.P2P != nil {
 			if err := e.P2P.PublishAttestation(context.Background(), signedAtt, e.CommitteeCount); err != nil {
@@ -136,5 +149,11 @@ func (e *Engine) produceAttestations(slot uint64) {
 				logger.Info(logger.Network, "published attestation to network slot=%d validator=%d", slot, vid)
 			}
 		}
+
+		// Sign failures hit `continue` above and are not sampled — the
+		// histogram only records iterations that actually produced an
+		// attestation. Publish failures still count as produced (the
+		// attestation exists; only delivery to gossip failed).
+		ObserveAttestationsProductionTime(time.Since(prodStart).Seconds())
 	}
 }

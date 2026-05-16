@@ -36,12 +36,10 @@ const (
 	ErrSignatureAggregationFailed
 	ErrMissingTargetState
 	ErrNotProposer
-	ErrProposerAttestationMismatch
+	ErrDuplicateAttestationData
+	ErrTooManyAttestationData
+	ErrJustifiedDivergenceNotClosed
 )
-
-func errMissingParentState(parentRoot [32]byte, slot uint64) error {
-	return &StoreError{ErrMissingParentState, fmt.Sprintf("parent state not found for slot %d, missing block %x", slot, parentRoot[:4])}
-}
 
 func errUnknownSourceBlock(root [32]byte) error {
 	return &StoreError{ErrUnknownSourceBlock, fmt.Sprintf("unknown source block: %x", root[:4])}
@@ -75,14 +73,18 @@ func errHeadSlotMismatch(cpSlot, blockSlot uint64) error {
 	return &StoreError{ErrHeadSlotMismatch, fmt.Sprintf("head checkpoint slot %d != block slot %d", cpSlot, blockSlot)}
 }
 
-func errAttestationTooFarInFuture(attSlot, currentSlot uint64) error {
-	return &StoreError{ErrAttestationTooFarInFuture, fmt.Sprintf("attestation slot %d too far in future (current %d)", attSlot, currentSlot)}
+func errAttestationTooFarInFuture(attSlot, storeTime uint64) error {
+	return &StoreError{ErrAttestationTooFarInFuture, fmt.Sprintf("attestation slot %d too far in future (store time %d intervals)", attSlot, storeTime)}
 }
 
 func errNotProposer(vid, slot uint64) error {
 	return &StoreError{ErrNotProposer, fmt.Sprintf("validator %d not proposer for slot %d", vid, slot)}
 }
 
-func errMissingTargetState(root [32]byte) error {
-	return &StoreError{ErrMissingTargetState, fmt.Sprintf("missing target state: %x", root[:4])}
+func errJustifiedDivergenceNotClosed(blockJustifiedSlot, storeJustifiedSlot uint64) error {
+	return &StoreError{
+		ErrJustifiedDivergenceNotClosed,
+		fmt.Sprintf("produced block justified slot %d is behind store justified slot %d; fixed-point attestation loop did not converge",
+			blockJustifiedSlot, storeJustifiedSlot),
+	}
 }

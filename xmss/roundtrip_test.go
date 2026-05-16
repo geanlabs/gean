@@ -32,7 +32,7 @@ func TestSignatureSSZRoundtripThenAggregate(t *testing.T) {
 	defer FreePublicKey(cpk)
 
 	// NOW: simulate SSZ round-trip by parsing from the serialized bytes.
-	// This is what happens when processProposerAttestation receives a block from P2P.
+	// This is what happens when a signature is received from P2P and re-parsed.
 	csig, err := ParseSignature(sigBytes[:])
 	if err != nil {
 		t.Fatalf("parse sig from SSZ bytes: %v", err)

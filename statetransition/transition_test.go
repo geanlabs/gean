@@ -12,7 +12,7 @@ func makeGenesisState(n int) *types.State {
 	for i := 0; i < n; i++ {
 		var pubkey [types.PubkeySize]byte
 		pubkey[0] = byte(i + 1)
-		validators[i] = &types.Validator{Pubkey: pubkey, Index: uint64(i)}
+		validators[i] = &types.Validator{AttestationPubkey: pubkey, ProposalPubkey: pubkey, Index: uint64(i)}
 	}
 	return &types.State{
 		Config:                   &types.ChainConfig{GenesisTime: 1000},

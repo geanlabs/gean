@@ -27,7 +27,7 @@ func verifyAggregatedProof(
 		if vid >= numValidators {
 			return fmt.Errorf("validator %d out of range (%d)", vid, numValidators)
 		}
-		pk, err := xmss.ParsePublicKey(state.Validators[vid].Pubkey)
+		pk, err := xmss.ParsePublicKey(state.Validators[vid].AttestationPubkey)
 		if err != nil {
 			// Free already parsed keys.
 			for j := 0; j < i; j++ {

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
@@ -22,7 +23,19 @@ const (
 	BootnodeRedialSecs = 12
 	// MaxBlocksPerRequest matches leanSpec MAX_BLOCKS_PER_REQUEST.
 	MaxBlocksPerRequest = 10
+	// BlocksByRangeSyncThreshold is the gap (in slots) above which sync should
+	// prefer BlocksByRange over per-block BlocksByRoot fetches. Below this
+	// gap, reactive gossip + missing-parent fetches handle the lag without
+	// extra network traffic. Matches zeam BLOCKS_BY_RANGE_SYNC_THRESHOLD
+	// (constants.zig:45) for cross-client consistency: ~64 slots is the
+	// scale at which "I've genuinely fallen behind" stops being noise.
+	BlocksByRangeSyncThreshold = 64
 )
+
+// SyncPollInterval is how often SyncDriver checks peers for backfill needs
+// when the node is in SyncSyncing state. Matches zeam's
+// SYNC_STATUS_REFRESH_INTERVAL_SLOTS (8 slots * 4s/slot = 32s).
+const SyncPollInterval = 32 * time.Second
 
 // PeerStore tracks connected peers.
 type PeerStore struct {
@@ -40,6 +53,20 @@ func (ps *PeerStore) Add(id peer.ID) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	ps.peers[id] = true
+}
+
+// AddNew atomically registers a peer and reports whether the peer was newly
+// added (true) or was already present (false). Used by the libp2p connection
+// notifier to gate on-connect work (e.g. firing the Status reqresp) so that
+// reconnect events for an already-known peer do not retrigger the work.
+func (ps *PeerStore) AddNew(id peer.ID) bool {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if ps.peers[id] {
+		return false
+	}
+	ps.peers[id] = true
+	return true
 }
 
 // Remove unregisters a peer.
@@ -85,6 +112,15 @@ func (ps *PeerStore) AllPeers() []peer.ID {
 	return ids
 }
 
+// directionLabel maps a libp2p connection direction to the spec's
+// "inbound"/"outbound" label values.
+func directionLabel(d network.Direction) string {
+	if d == network.DirOutbound {
+		return "outbound"
+	}
+	return "inbound"
+}
+
 // ConnectBootnodes connects to a list of bootnode multiaddrs.
 func (h *Host) ConnectBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr) {
 	for _, addr := range addrs {
@@ -96,7 +132,9 @@ func (h *Host) ConnectBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr
 		if err := h.host.Connect(ctx, *peerInfo); err != nil {
 			logger.Warn(logger.Network, "bootnode connect failed %s: %v", addr, err)
 		} else {
-			h.peerStore.Add(peerInfo.ID)
+			// peerStore registration is owned by the ConnectedF notifier
+			// (host.go). Adding here races with AddNew and would suppress
+			// the on-connect PeerStatusHook on first connection.
 			logger.Info(logger.Network, "connected to bootnode %s", peerInfo.ID.ShortString())
 		}
 	}
@@ -119,7 +157,7 @@ func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multia
 					}
 					if h.host.Network().Connectedness(peerInfo.ID) != 1 { // not connected
 						if err := h.host.Connect(ctx, *peerInfo); err == nil {
-							h.peerStore.Add(peerInfo.ID)
+							// peerStore registration owned by ConnectedF; see ConnectBootnodes.
 							logger.Info(logger.Network, "reconnected to bootnode %s", peerInfo.ID.ShortString())
 						}
 					}
@@ -132,12 +170,12 @@ func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multia
 // FetchBlocksByRootWithRetry fetches blocks with exponential backoff retry.
 // Backoff: 5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560 ms.
 // Random peer selection, exclude previously-failed peers per root.
-func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte) ([]*SignedBlockWithAttestationResult, error) {
-	var results []*SignedBlockWithAttestationResult
+func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte) ([]*SignedBlockResult, error) {
+	var results []*SignedBlockResult
 
 	for _, root := range roots {
 		block, err := h.fetchSingleBlockWithRetry(ctx, root)
-		results = append(results, &SignedBlockWithAttestationResult{
+		results = append(results, &SignedBlockResult{
 			Root:  root,
 			Block: block,
 			Err:   err,
@@ -154,7 +192,7 @@ func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte)
 // Returns the blocks the peer delivered (may be fewer than requested if the
 // peer doesn't have all of them) and the set of roots that were not delivered
 // after exhausting retries.
-func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlockWithAttestation, [][32]byte, error) {
+func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error) {
 	if len(roots) == 0 {
 		return nil, nil, nil
 	}
@@ -196,11 +234,65 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	return nil, roots, fmt.Errorf("batch block fetch failed after %d retries for %d roots", MaxFetchRetries, len(roots))
 }
 
+// FetchBlocksByRangeWithRetry fetches a contiguous slot range from peers.
+// Caps count at MaxRequestBlocks. Retries up to MaxFetchRetries times,
+// rotating peers and excluding previously-failed ones. RESOURCE_UNAVAILABLE
+// from a peer (start_slot below their history horizon) excludes that peer
+// and rolls onto the next.
+//
+// Returns canonical-chain blocks in ascending-slot order with slot
+// monotonicity and parent-root continuity already validated by the
+// outbound client. May be fewer than count if the peer's chain is
+// shorter — empty slots produce no entry.
+func (h *Host) FetchBlocksByRangeWithRetry(
+	ctx context.Context,
+	startSlot, count uint64,
+) ([]*types.SignedBlock, error) {
+	if count == 0 {
+		return nil, fmt.Errorf("blocks_by_range: count must be > 0")
+	}
+	if count > types.MaxRequestBlocks {
+		return nil, fmt.Errorf("blocks_by_range: count %d > MaxRequestBlocks %d", count, types.MaxRequestBlocks)
+	}
+
+	excluded := make(map[peer.ID]bool)
+	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
+
+	for attempt := 0; attempt < MaxFetchRetries; attempt++ {
+		peerID := h.peerStore.RandomPeer(excluded)
+		if peerID == "" {
+			return nil, fmt.Errorf("no peers available for blocks_by_range fetch")
+		}
+
+		blocks, err := h.FetchBlocksByRange(ctx, peerID, startSlot, count)
+		if err == nil && len(blocks) > 0 {
+			return blocks, nil
+		}
+
+		excluded[peerID] = true
+		reason := "peer returned no blocks"
+		if err != nil {
+			reason = err.Error()
+		}
+		logger.Warn(logger.Network, "blocks_by_range fetch attempt %d/%d failed start_slot=%d count=%d peer=%s reason=%s",
+			attempt+1, MaxFetchRetries, startSlot, count, peerID, reason)
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+			backoff *= BackoffMultiplier
+		}
+	}
+
+	return nil, fmt.Errorf("blocks_by_range fetch failed after %d retries (start_slot=%d, count=%d)", MaxFetchRetries, startSlot, count)
+}
+
 // computeMissingRoots returns the roots that the peer did not deliver.
-func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlockWithAttestation) [][32]byte {
+func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlock) [][32]byte {
 	deliveredRoots := make(map[[32]byte]bool, len(delivered))
 	for _, b := range delivered {
-		root, err := b.Block.Block.HashTreeRoot()
+		root, err := b.Block.HashTreeRoot()
 		if err != nil {
 			continue
 		}
@@ -215,14 +307,14 @@ func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlockWit
 	return missing
 }
 
-// SignedBlockWithAttestationResult holds the result of fetching a single block.
-type SignedBlockWithAttestationResult struct {
+// SignedBlockResult holds the result of fetching a single block.
+type SignedBlockResult struct {
 	Root  [32]byte
-	Block []*types.SignedBlockWithAttestation
+	Block []*types.SignedBlock
 	Err   error
 }
 
-func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]*types.SignedBlockWithAttestation, error) {
+func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]*types.SignedBlock, error) {
 	excluded := make(map[peer.ID]bool)
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 

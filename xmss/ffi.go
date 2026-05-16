@@ -21,9 +21,6 @@ package xmss
 // typedef struct PrivateKey PrivateKey;
 // typedef struct Signature Signature;
 //
-// // Opaque type from multisig-glue
-// typedef struct Devnet2XmssAggregateSignature Devnet2XmssAggregateSignature;
-//
 // // --- hashsig-glue FFI (rs) ---
 //
 // KeyPair* hashsig_keypair_from_ssz(
@@ -59,27 +56,40 @@ package xmss
 // void xmss_setup_prover();
 // void xmss_setup_verifier();
 //
-// const Devnet2XmssAggregateSignature* xmss_aggregate(
-//     const PublicKey* const* public_keys, size_t num_keys,
-//     const Signature* const* signatures, size_t num_sigs,
-//     const uint8_t* message_hash_ptr, uint32_t epoch);
+// // Recursive aggregation: raw XMSS sigs + children proofs.
+// typedef struct AggregatedXMSS AggregatedXMSS;
+//
+// const AggregatedXMSS* xmss_aggregate(
+//     const PublicKey* const* raw_pub_keys,
+//     const Signature* const* raw_signatures,
+//     size_t num_raw,
+//     size_t num_children,
+//     const PublicKey* const* child_all_pub_keys,
+//     const size_t* child_num_keys,
+//     const uint8_t* const* child_proof_ptrs,
+//     const size_t* child_proof_lens,
+//     const uint8_t* message_hash_ptr,
+//     uint32_t slot,
+//     size_t log_inv_rate);
 //
 // bool xmss_verify_aggregated(
 //     const PublicKey* const* public_keys, size_t num_keys,
 //     const uint8_t* message_hash_ptr,
-//     const Devnet2XmssAggregateSignature* agg_sig, uint32_t epoch);
+//     const uint8_t* agg_sig_bytes, size_t agg_sig_len,
+//     uint32_t epoch);
 //
-// void xmss_free_aggregate_signature(Devnet2XmssAggregateSignature* agg_sig);
+// void xmss_free_aggregate_signature(AggregatedXMSS* agg_sig);
 // size_t xmss_aggregate_signature_to_bytes(
-//     const Devnet2XmssAggregateSignature* agg_sig,
+//     const AggregatedXMSS* agg_sig,
 //     uint8_t* buffer, size_t buffer_len);
-// Devnet2XmssAggregateSignature* xmss_aggregate_signature_from_bytes(
+// AggregatedXMSS* xmss_aggregate_signature_from_bytes(
 //     const uint8_t* bytes, size_t bytes_len);
 import "C"
 
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -156,46 +166,125 @@ func VerifySignatureSSZ(pubkey [types.PubkeySize]byte, slot uint32, message [32]
 	}
 }
 
-// AggregateSignatures aggregates multiple XMSS signatures into a single ZK proof.
-// Takes arrays of opaque PublicKey/Signature pointers from resolved gossip signatures.
-// Returns SSZ-encoded proof bytes (max 1 MiB).
+// ChildProof represents a pre-aggregated proof with its participants' public keys.
+// Used as input to recursive aggregation.
+type ChildProof struct {
+	Pubkeys   []CPubKey // Parsed public keys of participants
+	ProofData []byte    // SSZ-encoded proof bytes
+}
+
+// LogInvRate controls proof compression depth.
+const LogInvRate = 2 // Production value per spec PROD_CONFIG
+
+// AggregateSignatures aggregates raw XMSS signatures into a single ZK proof.
+// Backward-compatible wrapper: no children, just raw sigs.
 func AggregateSignatures(
 	pubkeys []CPubKey,
 	sigs []CSig,
 	message [32]byte,
 	slot uint32,
 ) ([]byte, error) {
-	if len(pubkeys) == 0 {
+	return AggregateWithChildren(pubkeys, sigs, nil, message, slot)
+}
+
+// AggregateWithChildren aggregates raw XMSS signatures + children proofs into
+// a single recursive ZK proof. Matches spec AggregatedSignatureProof.aggregate().
+// Spec: lean_spec/subspecs/containers/attestation.py AggregatedSignatureProof.aggregate
+func AggregateWithChildren(
+	pubkeys []CPubKey,
+	sigs []CSig,
+	children []ChildProof,
+	message [32]byte,
+	slot uint32,
+) ([]byte, error) {
+	numRaw := len(pubkeys)
+	numChildren := len(children)
+
+	if numRaw == 0 && numChildren == 0 {
 		return nil, ErrEmptyInput
 	}
-	if len(pubkeys) != len(sigs) {
-		return nil, fmt.Errorf("%w: %d pubkeys, %d sigs", ErrCountMismatch, len(pubkeys), len(sigs))
+	if numRaw > 0 && len(sigs) != numRaw {
+		return nil, fmt.Errorf("%w: %d pubkeys, %d sigs", ErrCountMismatch, numRaw, len(sigs))
+	}
+	if numRaw == 0 && numChildren < 2 {
+		return nil, fmt.Errorf("at least 2 children required when no raw sigs provided")
 	}
 
 	EnsureProverReady()
 
-	// Convert []CPubKey ([]unsafe.Pointer) to []*C.PublicKey for FFI.
-	cPubkeys := make([]*C.PublicKey, len(pubkeys))
-	for i, pk := range pubkeys {
-		cPubkeys[i] = (*C.PublicKey)(pk)
+	// Pin Go memory passed to C. Go 1.21+ cgo checks reject passing slices
+	// containing Go pointers unless the backing memory is pinned.
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+
+	// Convert raw pubkeys/sigs to C arrays.
+	var rawPkPtr **C.PublicKey
+	var rawSigPtr **C.Signature
+	if numRaw > 0 {
+		cPubkeys := make([]*C.PublicKey, numRaw)
+		for i, pk := range pubkeys {
+			cPubkeys[i] = (*C.PublicKey)(pk)
+		}
+		cSigs := make([]*C.Signature, numRaw)
+		for i, s := range sigs {
+			cSigs[i] = (*C.Signature)(s)
+		}
+		pinner.Pin(&cPubkeys[0])
+		pinner.Pin(&cSigs[0])
+		rawPkPtr = (**C.PublicKey)(unsafe.Pointer(&cPubkeys[0]))
+		rawSigPtr = (**C.Signature)(unsafe.Pointer(&cSigs[0]))
 	}
-	cSigs := make([]*C.Signature, len(sigs))
-	for i, s := range sigs {
-		cSigs[i] = (*C.Signature)(s)
+
+	// Build children arrays for FFI.
+	var childAllPkPtr **C.PublicKey
+	var childNumKeysPtr *C.size_t
+	var childProofPtrsPtr **C.uint8_t
+	var childProofLensPtr *C.size_t
+
+	if numChildren > 0 {
+		// Flatten all child pubkeys into one array.
+		var allChildPks []*C.PublicKey
+		childNumKeys := make([]C.size_t, numChildren)
+		childProofPtrs := make([]*C.uint8_t, numChildren)
+		childProofLens := make([]C.size_t, numChildren)
+
+		for i, child := range children {
+			childNumKeys[i] = C.size_t(len(child.Pubkeys))
+			for _, pk := range child.Pubkeys {
+				allChildPks = append(allChildPks, (*C.PublicKey)(pk))
+			}
+			pinner.Pin(&child.ProofData[0])
+			childProofPtrs[i] = (*C.uint8_t)(unsafe.Pointer(&child.ProofData[0]))
+			childProofLens[i] = C.size_t(len(child.ProofData))
+		}
+
+		if len(allChildPks) > 0 {
+			pinner.Pin(&allChildPks[0])
+			childAllPkPtr = (**C.PublicKey)(unsafe.Pointer(&allChildPks[0]))
+		}
+		pinner.Pin(&childProofPtrs[0])
+		childNumKeysPtr = (*C.size_t)(unsafe.Pointer(&childNumKeys[0]))
+		childProofPtrsPtr = (**C.uint8_t)(unsafe.Pointer(&childProofPtrs[0]))
+		childProofLensPtr = (*C.size_t)(unsafe.Pointer(&childProofLens[0]))
 	}
 
 	aggSig := C.xmss_aggregate(
-		(**C.PublicKey)(unsafe.Pointer(&cPubkeys[0])),
-		C.size_t(len(cPubkeys)),
-		(**C.Signature)(unsafe.Pointer(&cSigs[0])),
-		C.size_t(len(cSigs)),
+		rawPkPtr,
+		rawSigPtr,
+		C.size_t(numRaw),
+		C.size_t(numChildren),
+		childAllPkPtr,
+		childNumKeysPtr,
+		childProofPtrsPtr,
+		childProofLensPtr,
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
 		C.uint32_t(slot),
+		C.size_t(LogInvRate),
 	)
 	if aggSig == nil {
 		return nil, ErrAggregationFailed
 	}
-	defer C.xmss_free_aggregate_signature((*C.Devnet2XmssAggregateSignature)(unsafe.Pointer(aggSig)))
+	defer C.xmss_free_aggregate_signature((*C.AggregatedXMSS)(unsafe.Pointer(aggSig)))
 
 	// Serialize to SSZ bytes using pooled buffer.
 	bufPtr := getProofBuf()
@@ -214,7 +303,6 @@ func AggregateSignatures(
 		return nil, ErrProofTooBig
 	}
 
-	// Copy used bytes to a right-sized slice, return pooled buffer.
 	result := make([]byte, int(n))
 	copy(result, buf[:n])
 	putProofBuf(bufPtr)
@@ -235,26 +323,21 @@ func VerifyAggregatedSignature(
 
 	EnsureVerifierReady()
 
-	// Deserialize proof from SSZ bytes.
-	aggSig := C.xmss_aggregate_signature_from_bytes(
-		(*C.uint8_t)(unsafe.Pointer(&proofData[0])),
-		C.size_t(len(proofData)),
-	)
-	if aggSig == nil {
-		return ErrDeserializeFailed
-	}
-	defer C.xmss_free_aggregate_signature(aggSig)
-
 	cPubkeys := make([]*C.PublicKey, len(pubkeys))
 	for i, pk := range pubkeys {
 		cPubkeys[i] = (*C.PublicKey)(pk)
 	}
 
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+	pinner.Pin(&cPubkeys[0])
+
 	valid := C.xmss_verify_aggregated(
 		(**C.PublicKey)(unsafe.Pointer(&cPubkeys[0])),
 		C.size_t(len(cPubkeys)),
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
-		(*C.Devnet2XmssAggregateSignature)(unsafe.Pointer(aggSig)),
+		(*C.uint8_t)(unsafe.Pointer(&proofData[0])),
+		C.size_t(len(proofData)),
 		C.uint32_t(slot),
 	)
 	if !valid {
