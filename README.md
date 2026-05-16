@@ -16,11 +16,11 @@ A consensus client should be something a developer can read, understand, and ver
 
 ## Current status
 
-gean targets **Lean Consensus devnet-3** (single attestation committee).
+gean targets **Lean Consensus devnet-4**.
 
 | Network | Status | Spec pin |
 |---------|--------|----------|
-| devnet-3 | Active | `leanSpec@be85318` |
+| devnet-4 | Active | `leanSpec@00556d8` |
 
 ## Prerequisites
 
@@ -91,39 +91,6 @@ gean is part of the [lean-quickstart](https://github.com/blockblaz/lean-quicksta
 make run-devnet
 ```
 
-### Multi-client testing skills
-
-For repeatable testing against zeam, ream, lantern, and ethlambda, gean ships
-three Claude Code skills under [`.claude/skills/`](.claude/skills/README.md).
-The most useful entry points are exposed as `make` targets:
-
-```sh
-# Build current branch + run a 5-client devnet test (most common)
-make devnet-test
-
-# Same as above plus a sync recovery test (pause peers, then resume)
-make devnet-test-sync
-
-# Inspect what's running right now
-make devnet-status
-
-# Stop the devnet and restore configs
-make devnet-cleanup
-
-# Run a one-off devnet for 120s and dump every client's logs to the repo root
-make devnet-run
-
-# Analyze .log files in the current directory (gean + peer clients)
-make devnet-analyze
-```
-
-`make devnet-test` automatically watches for two regressions: oversized blocks
-(`MessageTooLarge` / `exceeds max`) and excessive attestations per block
-(> 30). If either fires, the test exits with `✗ FAILED`.
-
-See [`.claude/skills/README.md`](.claude/skills/README.md) for the full
-overview of each skill (`devnet-log-review`, `devnet-runner`, `test-pr-devnet`).
-
 ## API
 
 gean exposes a lightweight HTTP API on two separate ports:
@@ -150,21 +117,12 @@ gean exposes a lightweight HTTP API on two separate ports:
 make test
 
 # FFI/crypto tests (requires make ffi)
-make ffi-test
+make test-ffi
 
 # leanSpec fixture tests (requires fixtures)
 make leanSpec/fixtures
 make test-spec
 ```
-
-### Spec Test Coverage
-
-| Suite | Fixtures | Description |
-|-------|----------|-------------|
-| State Transition | 14 | Block processing, genesis validation |
-| Fork Choice | 27 | Head selection, reorgs, tiebreakers, aggregation, finalization |
-| Signature Verification | 8 | Proposer signatures, attestation aggregation, invalid cases |
-| **Total** | **49** | **All passing** |
 
 ### leanSpec Fixtures
 
@@ -192,6 +150,7 @@ Fixtures are generated under `leanSpec/fixtures/`. The `leanSpec/` directory is 
 --node-id                     Node identifier, e.g. gean_0 (required)
 --checkpoint-sync-url         URL for checkpoint sync (optional)
 --is-aggregator               Enable attestation aggregation
+--aggregate-subnet-ids        Comma-separated subnet IDs (requires --is-aggregator)
 --attestation-committee-count Number of attestation subnets (default: 1)
 --data-dir                    Pebble database directory (default: ./data)
 ```
@@ -203,7 +162,7 @@ Fixtures are generated under `leanSpec/fixtures/`. The `leanSpec/` directory is 
 - **XMSS post-quantum signatures** via Rust FFI (leansig/leanMultisig)
 - **Pebble** (CockroachDB's Go-native LSM) for persistent storage
 - **GossipSub v1.1** with anonymous message signing
-- **Req-resp** protocols: Status + BlocksByRoot with snappy framed encoding
+- **Req-resp** protocols: Status + BlocksByRoot + BlocksByRange with snappy framed encoding
 - **5-interval slot structure** (800ms each, 4s total): propose, attest, aggregate, safe-target, accept
 - **43 Prometheus metrics** matching the [leanMetrics](https://github.com/leanEthereum/leanMetrics) standard
 
