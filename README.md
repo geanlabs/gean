@@ -1,177 +1,109 @@
-# gean
+# Gean: Lean Ethereum consensus client
 
-A Go consensus client for [Lean Ethereum](https://github.com/leanEthereum/leanSpec), built around the idea that protocol simplicity is a security property.
+An open-source Lean Ethereum consensus client, written in Go and maintained by Gean Labs.
 
-## Philosophy
+[Documentation](https://github.com/geanlabs/gean)
 
-A consensus client should be something a developer can read, understand, and verify without needing to trust a small class of experts. If you can't inspect it end-to-end, it's not fully yours.
+![Gean banner](docs/assets/gean-banner.png)
 
-## Design approach
+## Overview
 
-- **Readable over clever.** Code is written so that someone unfamiliar with the codebase can follow it. Naming is explicit. Control flow is linear where possible.
-- **Minimal dependencies.** Fewer imports means fewer things that can break, fewer things to audit, and fewer things to understand.
-- **No premature abstraction.** Interfaces and generics are introduced when the duplication is real, not when it's hypothetical. Concrete types until proven otherwise.
-- **Flat and direct.** Avoid deep package hierarchies and layers of indirection. A function should do what its name says, and you should be able to find it quickly.
-- **Concurrency only where necessary.** Go makes concurrency easy to write and hard to reason about. We use it at the boundaries (networking, event loops) and keep the core logic sequential and deterministic.
+Gean is:
 
-## Current status
+- A consensus client for **[Lean Ethereum](https://github.com/leanEthereum)** — the successor to today's Beacon Chain, designed for fast finality, quantum-resistant security, and a simpler core protocol.
+- Currently running on the **Lean Consensus devnet-4** alongside other independent client implementations built by separate teams.
+- Fully open-source under the MIT license. Anyone can read, audit, or build on the code.
+- Built for **clarity and auditability**, with a deliberately small codebase that researchers, security reviewers, and contributors can read end-to-end.
+- **Quantum-resistant by design** — uses [XMSS](https://en.wikipedia.org/wiki/Hash-based_cryptography), a post-quantum signature scheme, in place of the BLS signatures used in today's Ethereum.
+- Built and maintained by [Gean Labs](https://github.com/geanlabs) as part of the multi-client Lean Ethereum effort to bring the next chapter of Ethereum consensus to production.
 
-gean targets **Lean Consensus devnet-4**.
+## Getting started
 
-| Network | Status | Spec pin |
-|---------|--------|----------|
-| devnet-4 | Active | `leanSpec@70fc774` |
+### Prerequisites
 
-## Prerequisites
+- [Go](https://go.dev/doc/install) 1.25+
+- [Rust](https://www.rust-lang.org/tools/install) 1.90.0, for building the XMSS FFI
+- [uv](https://docs.astral.sh/uv/), for generating leanSpec fixtures
+- [Docker](https://www.docker.com/get-started), for devnet workflows
 
-- **Go** 1.25+
-- **Rust** 1.90.0 (for the XMSS FFI libraries under `xmss/rust/`)
-- **uv** ([astral.sh/uv](https://docs.astral.sh/uv/)) — needed to generate leanSpec test fixtures
-- **Docker** (for multi-client devnet)
+### Building and testing
 
-## Build
+Gean uses `make` as a thin wrapper around Go, Rust FFI, Docker, and fixture-generation commands. Common targets:
 
 ```sh
-# Build Rust FFI libraries + Go binary
+# Build the Rust FFI libraries and the gean and keygen binaries
 make build
 
-# Build Docker image
+# Run Go unit tests (excludes spec and FFI tests)
+make test
+
+# Build the FFI and run XMSS tests
+make test-ffi
+
+# Generate leanSpec fixtures and run spec-conformance tests
+make leanSpec/fixtures
+make test-spec
+
+# Format Go and Rust sources
+make fmt
+
+# Run go vet, cargo fmt --check, and clippy
+make lint
+
+# Build the Docker image
 make docker-build
 ```
 
-## Local Testnet (Self-Interop)
+Run `make help` or browse the [`Makefile`](Makefile) for the full set of targets.
 
-Run a 3-node local testnet with 5 validators:
+### Running in a devnet
 
-```sh
-# First-time setup: generate XMSS keys + config
-make run-setup
-
-# Terminal 1: node0 (aggregator)
-make run
-
-# Terminal 2: node1
-make run-node1
-
-# Terminal 3: node2
-make run-node2
-```
-
-### Ports
-
-| Node  | P2P (QUIC/UDP) | API  | Metrics |
-|-------|----------------|------|---------|
-| node0 | 9000           | 5052 | 8080    |
-| node1 | 9001           | 5053 | 8081    |
-| node2 | 9002           | 5054 | 8082    |
-
-### Checkpoint Sync
-
-Restart a node using checkpoint sync from another running node:
+To run Gean in a local multi-client devnet through [`lean-quickstart`](https://github.com/blockblaz/lean-quickstart):
 
 ```sh
-rm -rf data/node1
-bin/gean \
-  --custom-network-config-dir testnet \
-  --node-key testnet/node1.key \
-  --node-id node1 \
-  --data-dir data/node1 \
-  --gossipsub-port 9001 \
-  --api-port 5053 \
-  --metrics-port 8081 \
-  --checkpoint-sync-url http://127.0.0.1:5052/lean/v0/states/finalized
-```
-
-## Multi-Client Devnet
-
-gean is part of the [lean-quickstart](https://github.com/blockblaz/lean-quickstart) multi-client devnet tooling.
-
-```sh
-# Build Docker image and start devnet
+# Clones lean-quickstart, builds the docker image, and starts a local devnet
 make run-devnet
 ```
 
-## API
-
-gean exposes a lightweight HTTP API on two separate ports:
-
-**API server** (default `:5052`):
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /lean/v0/health` | Health check |
-| `GET /lean/v0/states/finalized` | Latest finalized state (SSZ) |
-| `GET /lean/v0/checkpoints/justified` | Justified checkpoint (JSON) |
-| `GET /lean/v0/fork_choice` | Fork choice tree (JSON) |
-
-**Metrics server** (default `:5054`):
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /metrics` | Prometheus metrics |
-
-## Tests
+For a small Gean-only local network, generate keys and start three nodes in separate terminals:
 
 ```sh
-# Unit tests (no FFI required)
-make test
-
-# FFI/crypto tests (requires make ffi)
-make test-ffi
-
-# leanSpec fixture tests (requires fixtures)
-make leanSpec/fixtures
-make test-spec
+make run-setup
+make run        # node 0 (aggregator)
+make run-node1  # node 1
+make run-node2  # node 2
 ```
 
-### leanSpec Fixtures
+> **Important:** When running nodes manually, at least one node must be started as an aggregator so attestations are aggregated and included in blocks. Without an aggregator the network will produce blocks but never finalize.
 
-Consensus conformance tests use fixtures generated from the pinned leanSpec commit:
+## Current status
 
-```sh
-# Generate/update fixtures
-make leanSpec/fixtures
+Gean currently tracks **Lean Consensus devnet-4**, pinned to `leanSpec@70fc774`.
 
-# Verify pin
-git -C leanSpec rev-parse HEAD
-```
+### Devnet support
 
-Fixtures are generated under `leanSpec/fixtures/`. The `leanSpec/` directory is local and gitignored.
+- **devnet-4** — currently tracked. The pin is set by `LEAN_SPEC_COMMIT_HASH` in the [Makefile](Makefile); changes to the commit propagate through `make leanSpec/fixtures` and `make test-spec`.
 
-## CLI Flags
+Support for older devnet versions is discontinued when the next devnet version is adopted.
 
-```
---custom-network-config-dir   Config directory (required)
---gossipsub-port              P2P listen port, QUIC/UDP (default: 9000)
---http-address                Bind address for API + metrics (default: 127.0.0.1)
---api-port                    API server port (default: 5052)
---metrics-port                Metrics server port (default: 5054)
---node-key                    Path to hex-encoded secp256k1 private key (required)
---node-id                     Node identifier, e.g. gean_0 (required)
---checkpoint-sync-url         URL for checkpoint sync (optional)
---is-aggregator               Enable attestation aggregation
---aggregate-subnet-ids        Comma-separated subnet IDs (requires --is-aggregator)
---attestation-committee-count Number of attestation subnets (default: 1)
---data-dir                    Pebble database directory (default: ./data)
-```
+## Philosophy
 
-## Architecture
+Gean treats reviewability as a consensus-safety property. A client that can be read end-to-end by a single contributor is a client where consensus-critical behavior has fewer places to hide and fewer layers to mislead an auditor. The same property is what makes multi-client interoperability checks credible: when Gean and another Lean client disagree on a fork choice or a state root, the divergence should be locatable in a small number of files.
 
-- **Single-writer node** goroutine with select on tick + gossip channels
-- **3SF-mini fork choice** with LMD GHOST head selection (proto-array)
-- **XMSS post-quantum signatures** via Rust FFI (leansig/leanMultisig)
-- **Pebble** (CockroachDB's Go-native LSM) for persistent storage
-- **GossipSub v1.1** with anonymous message signing
-- **Req-resp** protocols: Status + BlocksByRoot + BlocksByRange with snappy framed encoding
-- **5-interval slot structure** (800ms each, 4s total): propose, attest, aggregate, safe-target, accept
-- **60 Prometheus metrics** matching the [leanMetrics](https://github.com/leanEthereum/leanMetrics) standard
+The Lean Ethereum specification is early and fast-moving. Gean optimizes for iteration speed against `leanSpec` rather than for long-term backward compatibility — interfaces, types, and even package shapes are expected to evolve as the spec does. Annotating non-obvious behavior with the `leanSpec PR #NNN` that justifies it is how that velocity stays compatible with auditability: a future reviewer can reconstruct intent without re-reading every spec discussion that led to a given branch.
 
-## Acknowledgements
+## Branches
 
-- [Lean Ethereum](https://github.com/leanEthereum)
+Gean uses `main` for active development. Devnet-specific branches may be cut for stable testing against a particular `leanSpec` version; the active devnet pin lives in the [Makefile](Makefile).
+
+## References and acknowledgements
+
+Gean is part of the multi-client Lean Ethereum ecosystem and learns from the work of other client teams:
+
 - [ethlambda](https://github.com/lambdaclass/ethlambda)
 - [zeam](https://github.com/blockblaz/zeam)
 
+
 ## License
 
-MIT
+Gean is open-source software released under the MIT license.
