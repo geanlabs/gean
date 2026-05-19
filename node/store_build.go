@@ -151,10 +151,13 @@ func buildBlock(
 				// already be justified (genesis self-votes excepted for
 				// fork-choice bootstrapping).
 				finalizedSlot := headState.LatestFinalized.Slot
-				if !statetransition.IsSlotJustified(headState, finalizedSlot, item.entry.Data.Source.Slot) {
+				// Chain-match runs first (leanSpec PR #718): the bounded slot
+				// queries below assume source/target slots are within the
+				// chain view, which chain-match enforces.
+				if !attestationDataMatchesChain(headState, item.entry.Data) {
 					continue
 				}
-				if !attestationDataMatchesChain(headState, item.entry.Data) {
+				if !statetransition.IsSlotJustified(headState, finalizedSlot, item.entry.Data.Source.Slot) {
 					continue
 				}
 				isGenesisSelfVote := item.entry.Data.Source.Slot == 0 && item.entry.Data.Target.Slot == 0
