@@ -20,7 +20,7 @@ gean targets **Lean Consensus devnet-4**.
 
 | Network | Status | Spec pin |
 |---------|--------|----------|
-| devnet-4 | Active | `leanSpec@70fc774` |
+| devnet-4 | Active | `leanSpec@1589f87` |
 
 ## Prerequisites
 
