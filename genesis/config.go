@@ -19,7 +19,14 @@ type GenesisValidatorEntry struct {
 
 // GenesisConfig is parsed from config.yaml.
 type GenesisConfig struct {
-	GenesisTime       uint64                  `yaml:"GENESIS_TIME"`
+	GenesisTime uint64 `yaml:"GENESIS_TIME"`
+	// NumValidators mirrors the spec's optional NUM_VALIDATORS field
+	// (Uint64 | None). When present, it must equal len(GenesisValidators);
+	// LoadGenesisConfig rejects the config otherwise. Absent in standard
+	// lean-quickstart configs, so cross-client configs that include it
+	// fail loudly rather than silently disagreeing on validator count.
+	// Spec: lean_spec/subspecs/genesis/config.py num_validators
+	NumValidators     *uint64                 `yaml:"NUM_VALIDATORS,omitempty"`
 	GenesisValidators []GenesisValidatorEntry `yaml:"GENESIS_VALIDATORS"`
 }
 
@@ -90,6 +97,10 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 	}
 	if len(config.GenesisValidators) == 0 {
 		return nil, fmt.Errorf("GENESIS_VALIDATORS is empty")
+	}
+	if config.NumValidators != nil && *config.NumValidators != uint64(len(config.GenesisValidators)) {
+		return nil, fmt.Errorf("NUM_VALIDATORS=%d disagrees with len(GENESIS_VALIDATORS)=%d",
+			*config.NumValidators, len(config.GenesisValidators))
 	}
 	return &config, nil
 }
