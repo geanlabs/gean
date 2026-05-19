@@ -316,6 +316,13 @@ func (sess *TestDriverSession) ForkChoiceStepHandler() http.HandlerFunc {
 			stepErr = fmt.Errorf("unknown stepType %q", step.StepType)
 		}
 
+		// Refresh safeTarget before snapshot. Production fires this at
+		// interval-3 ticks (node/tick.go:187); the test driver replays
+		// fixture steps out-of-band, so without an explicit refresh the
+		// snapshot would carry whatever value was last persisted at
+		// anchor init and never advance. Mirrors the spec runner's
+		// simulateUpdateSafeTarget (spectests/forkchoice_test.go).
+		sess.refreshSafeTarget()
 		snap := sess.loadSnapshot()
 		accepted := stepErr == nil
 		var errPtr *string
@@ -549,6 +556,23 @@ func (sess *TestDriverSession) verifyGossipAttestation(validatorID uint64, attDa
 		return fmt.Errorf("decode signature hex: %w", err)
 	}
 	return node.VerifyGossipAttestation(sess.store, validatorID, attData, dataRoot, sigBytes)
+}
+
+// refreshSafeTarget mirrors Engine.updateSafeTarget (node/tick.go) so the
+// snapshot returned to the hive simulator reflects the chain state after
+// the just-processed step rather than the anchor value. The step handlers
+// above already populate fc.Votes.LatestNew via SetNew when attestations
+// arrive, so this only needs to recompute and persist the result; no
+// vote-feed pre-step is required. Tracks issue #278.
+func (sess *TestDriverSession) refreshSafeTarget() {
+	headState := sess.store.GetState(sess.store.Head())
+	if headState == nil {
+		return
+	}
+	justifiedRoot := sess.store.LatestJustified().Root
+	numValidators := uint64(len(headState.Validators))
+	safeTarget := sess.fc.UpdateSafeTarget(justifiedRoot, numValidators)
+	sess.store.SetSafeTarget(safeTarget)
 }
 
 // loadSnapshot reads the session's current store + fc into the snapshot
