@@ -9,20 +9,18 @@ func IsZeroRoot(root [RootSize]byte) bool {
 	return root == ZeroRoot
 }
 
+// ProposerIndex returns the proposer index for a slot.
+// Caller must ensure numValidators > 0.
+func ProposerIndex(slot, numValidators uint64) uint64 {
+	return slot % numValidators
+}
+
 // IsProposer returns true if validatorIndex is the proposer for the given slot.
 func IsProposer(slot, validatorIndex, numValidators uint64) bool {
 	if numValidators == 0 {
 		return false
 	}
-	return slot%numValidators == validatorIndex
-}
-
-// ProposerIndex returns the proposer for a slot, or -1 if no validators.
-func ProposerIndex(slot, numValidators uint64) int64 {
-	if numValidators == 0 {
-		return -1
-	}
-	return int64(slot % numValidators)
+	return ProposerIndex(slot, numValidators) == validatorIndex
 }
 
 // ShortRoot returns the first 4 bytes of a root as hex for logging.
