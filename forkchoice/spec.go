@@ -1,6 +1,10 @@
 package forkchoice
 
-import "github.com/geanlabs/gean/types"
+import (
+	"fmt"
+
+	"github.com/geanlabs/gean/types"
+)
 
 // Spec-compliant LMD GHOST implementation for testing.
 // Used as debug oracle to validate proto-array produces identical results.
@@ -31,14 +35,17 @@ func SpecComputeBlockWeights(
 }
 
 // SpecComputeLMDGhostHead computes the LMD GHOST head.
+// Returns an error when startRoot is not in blocks, matching leanSpec PR #727
+// which replaced a silent fallback with a hard assertion so malformed stores
+// fail loudly rather than masking the bug downstream.
 func SpecComputeLMDGhostHead(
 	startRoot [32]byte,
 	blocks map[[32]byte]BlockInfo,
 	attestations map[uint64]*types.AttestationData,
 	minScore uint64,
-) ([32]byte, map[[32]byte]uint64) {
+) ([32]byte, map[[32]byte]uint64, error) {
 	if len(blocks) == 0 {
-		return startRoot, nil
+		return startRoot, nil, nil
 	}
 
 	// If start root is zero, use the block with the lowest slot.
@@ -54,7 +61,7 @@ func SpecComputeLMDGhostHead(
 
 	startInfo, ok := blocks[startRoot]
 	if !ok {
-		return startRoot, nil
+		return [32]byte{}, nil, fmt.Errorf("start_root %x not in store.blocks", startRoot)
 	}
 	startSlot := startInfo.Slot
 
@@ -100,7 +107,7 @@ func SpecComputeLMDGhostHead(
 		head = best
 	}
 
-	return head, weights
+	return head, weights, nil
 }
 
 // BlockInfo is the minimal block data for spec fork choice.

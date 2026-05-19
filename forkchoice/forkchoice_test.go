@@ -70,7 +70,7 @@ func TestSpecLMDGhostLinearChain(t *testing.T) {
 		0: makeAttData(rootC, 2),
 	}
 
-	head, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
+	head, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 	if head != rootC {
 		t.Fatalf("expected rootC, got %x", head[:4])
 	}
@@ -90,7 +90,7 @@ func TestSpecLMDGhostForkHeavier(t *testing.T) {
 		2: makeAttData(rootC, 1),
 	}
 
-	head, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
+	head, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 	if head != rootB {
 		t.Fatalf("expected rootB (heavier), got %x", head[:4])
 	}
@@ -111,7 +111,7 @@ func TestSpecLMDGhostTiebreakLexicographic(t *testing.T) {
 		1: makeAttData(rootC, 1),
 	}
 
-	head, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
+	head, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 	if head != rootC {
 		t.Fatalf("expected rootC (lexicographic tiebreak), got %x", head[:4])
 	}
@@ -254,7 +254,7 @@ func TestDebugOracleLinearChain(t *testing.T) {
 		0: makeAttData(rootC, 2),
 		1: makeAttData(rootB, 1),
 	}
-	specHead, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
+	specHead, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 
 	// Proto-array
 	fc := New(0, rootA)
@@ -282,7 +282,7 @@ func TestDebugOracleFork(t *testing.T) {
 		1: makeAttData(rootB, 1),
 		2: makeAttData(rootC, 1),
 	}
-	specHead, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
+	specHead, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 
 	fc := New(0, rootA)
 	fc.OnBlock(1, rootB, rootA)
@@ -311,7 +311,7 @@ func TestDebugOracleTiebreak(t *testing.T) {
 		0: makeAttData(rootB, 1),
 		1: makeAttData(rootC, 1),
 	}
-	specHead, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
+	specHead, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
 
 	fc := New(0, rootA)
 	fc.OnBlock(1, rootB, rootA)
