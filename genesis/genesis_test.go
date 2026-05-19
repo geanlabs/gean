@@ -89,3 +89,35 @@ func TestLoadGenesisConfigMissing(t *testing.T) {
 		t.Fatal("should error on missing file")
 	}
 }
+
+// TestLoadGenesisConfigNumValidatorsConsistent verifies that an optional
+// NUM_VALIDATORS field equal to len(GENESIS_VALIDATORS) is accepted and
+// surfaces on the parsed struct.
+func TestLoadGenesisConfigNumValidatorsConsistent(t *testing.T) {
+	tmpFile := t.TempDir() + "/config.yaml"
+	os.WriteFile(tmpFile, []byte("NUM_VALIDATORS: 3\n"+testConfigYAML), 0644)
+
+	config, err := LoadGenesisConfig(tmpFile)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if config.NumValidators == nil {
+		t.Fatal("NumValidators should be parsed when NUM_VALIDATORS is set")
+	}
+	if *config.NumValidators != 3 {
+		t.Fatalf("NumValidators: expected 3, got %d", *config.NumValidators)
+	}
+}
+
+// TestLoadGenesisConfigNumValidatorsMismatch verifies that a mismatched
+// NUM_VALIDATORS rejects the config rather than silently dropping it.
+// Matches the spec's assertion behavior — see leanSpec subspecs/genesis/config.py.
+func TestLoadGenesisConfigNumValidatorsMismatch(t *testing.T) {
+	tmpFile := t.TempDir() + "/config.yaml"
+	os.WriteFile(tmpFile, []byte("NUM_VALIDATORS: 5\n"+testConfigYAML), 0644)
+
+	_, err := LoadGenesisConfig(tmpFile)
+	if err == nil {
+		t.Fatal("expected error when NUM_VALIDATORS disagrees with len(GENESIS_VALIDATORS)")
+	}
+}
