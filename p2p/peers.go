@@ -24,12 +24,15 @@ const (
 	// MaxBlocksPerRequest matches leanSpec MAX_BLOCKS_PER_REQUEST.
 	MaxBlocksPerRequest = 10
 	// BlocksByRangeSyncThreshold is the gap (in slots) above which sync should
-	// prefer BlocksByRange over per-block BlocksByRoot fetches. Below this
-	// gap, reactive gossip + missing-parent fetches handle the lag without
-	// extra network traffic. Matches zeam BLOCKS_BY_RANGE_SYNC_THRESHOLD
-	// (constants.zig:45) for cross-client consistency: ~64 slots is the
-	// scale at which "I've genuinely fallen behind" stops being noise.
-	BlocksByRangeSyncThreshold = 64
+	// prefer BlocksByRange over reactive gossip + missing-parent fetches.
+	// Matches SyncLagSlots: if we are far enough behind to be classified
+	// "syncing" rather than "synced", we are also far enough behind to
+	// justify an explicit range fetch. Originally 64 to match zeam, but
+	// hive's `sync: head behind finalized recovery` test pauses the client,
+	// finalizes 5–30 slots ahead, and unpauses — gossip cannot replay the
+	// missed window, so anything > SyncLagSlots needs an explicit fetch
+	// within the 180s test window.
+	BlocksByRangeSyncThreshold = 2
 )
 
 // SyncPollInterval is how often SyncDriver checks peers for backfill needs

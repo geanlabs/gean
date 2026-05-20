@@ -67,12 +67,24 @@ func (sd *SyncDriver) Run() {
 	logger.Info(logger.Sync, "sync driver started: poll_interval=%s threshold=%d slots",
 		p2p.SyncPollInterval, p2p.BlocksByRangeSyncThreshold)
 
+	lastStatus := sd.engine.GetSyncStatus()
+
 	for {
 		select {
 		case <-sd.ctx.Done():
 			return
 		case <-ticker.C:
-			switch sd.engine.GetSyncStatus() {
+			current := sd.engine.GetSyncStatus()
+			// Synced → Syncing transitions (e.g. pause-unpause recovery,
+			// or a peer suddenly far ahead) get an immediate poll instead
+			// of waiting for the next tick. The regular SyncSyncing branch
+			// below already polls on every tick, but the transition path
+			// shaves up to SyncPollInterval off the recovery latency.
+			if lastStatus == SyncSynced && current == SyncSyncing {
+				sd.refreshSyncFromPeers(sd.ctx)
+			}
+			lastStatus = current
+			switch current {
 			case SyncSyncing:
 				sd.refreshSyncFromPeers(sd.ctx)
 			case SyncIdle, SyncSynced:
