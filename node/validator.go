@@ -21,15 +21,14 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
-	// Block production requires Synced. On SyncIdle/SyncSyncing we'd advance
-	// local fork-choice based only on our own block, divorced from the network.
-	if status := e.GetSyncStatus(); status != SyncSynced {
-		logger.Info(logger.Validator, "skipping block production slot=%d: sync status %s", slot, status)
-		return
-	}
-
-	// Sync-lag duty gate (leanSpec PR #708). Skip when the local view is
-	// too stale relative to a network that is otherwise making progress.
+	// Sync-lag duty gate (leanSpec PR #708) is the sole sync-state check.
+	// It closes when local lag > SyncLagThreshold against a producing
+	// network, and reopens automatically when the network itself stalls
+	// (maxStoredBlockSlot far behind wall-clock). This handles all three
+	// cases — synced, syncing-behind-a-live-network, isolated-stalling —
+	// in one place. Hive's single-client tests rely on the stall path:
+	// no helper mesh means maxStoredSlot stays at the anchor, the gate
+	// reopens, and the local validator produces.
 	if e.DutyGate != nil && !e.DutyGate.Decide("block", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
 		IncBlocksSkippedLag()
 		return
