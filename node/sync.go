@@ -75,11 +75,8 @@ func (sd *SyncDriver) Run() {
 			return
 		case <-ticker.C:
 			current := sd.engine.GetSyncStatus()
-			// Synced → Syncing transitions (e.g. pause-unpause recovery,
-			// or a peer suddenly far ahead) get an immediate poll instead
-			// of waiting for the next tick. The regular SyncSyncing branch
-			// below already polls on every tick, but the transition path
-			// shaves up to SyncPollInterval off the recovery latency.
+			// Synced → Syncing transitions (pause-unpause recovery, peer surge ahead)
+			// get an immediate poll instead of waiting for the next ticker fire.
 			if lastStatus == SyncSynced && current == SyncSyncing {
 				sd.refreshSyncFromPeers(sd.ctx)
 			}
