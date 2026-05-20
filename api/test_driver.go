@@ -557,7 +557,7 @@ func (sess *TestDriverSession) verifyGossipAttestation(validatorID uint64, attDa
 // the just-processed step rather than the anchor value. The step handlers
 // above already populate fc.Votes.LatestNew via SetNew when attestations
 // arrive, so this only needs to recompute and persist the result; no
-// vote-feed pre-step is required. Tracks issue #278.
+// vote-feed pre-step is required.
 func (sess *TestDriverSession) refreshSafeTarget() {
 	headState := sess.store.GetState(sess.store.Head())
 	if headState == nil {
