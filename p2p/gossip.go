@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -65,8 +66,11 @@ func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscr
 	for {
 		msg, err := sub.Next(ctx)
 		if err != nil {
-			if ctx.Err() != nil {
-				return // context cancelled, clean shutdown
+			// Clean exits: host shutdown cancels ctx; ReannounceSubscriptions
+			// / Close cancel the subscription directly, which surfaces as
+			// pubsub.ErrSubscriptionCancelled while ctx is still live.
+			if ctx.Err() != nil || errors.Is(err, pubsub.ErrSubscriptionCancelled) {
+				return
 			}
 			logger.Error(logger.Gossip, "recv error on %s: %v", topic, err)
 			return

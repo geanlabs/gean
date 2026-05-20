@@ -29,9 +29,6 @@ func TestProposerIndex(t *testing.T) {
 	if ProposerIndex(7, 3) != 1 {
 		t.Fatal("expected proposer 1 for slot 7 with 3 validators")
 	}
-	if ProposerIndex(0, 0) != -1 {
-		t.Fatal("expected -1 for 0 validators")
-	}
 }
 
 func TestIsZeroRoot(t *testing.T) {

@@ -31,7 +31,7 @@ func ProcessBlockHeader(state *types.State, block *types.Block) error {
 	}
 
 	// Proposer must be correct: slot % num_validators.
-	expectedProposer := block.Slot % numValidators
+	expectedProposer := types.ProposerIndex(block.Slot, numValidators)
 	if block.ProposerIndex != expectedProposer {
 		return &InvalidProposerError{Expected: expectedProposer, Found: block.ProposerIndex}
 	}

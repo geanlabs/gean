@@ -67,12 +67,21 @@ func (sd *SyncDriver) Run() {
 	logger.Info(logger.Sync, "sync driver started: poll_interval=%s threshold=%d slots",
 		p2p.SyncPollInterval, p2p.BlocksByRangeSyncThreshold)
 
+	lastStatus := sd.engine.GetSyncStatus()
+
 	for {
 		select {
 		case <-sd.ctx.Done():
 			return
 		case <-ticker.C:
-			switch sd.engine.GetSyncStatus() {
+			current := sd.engine.GetSyncStatus()
+			// Synced → Syncing transitions (pause-unpause recovery, peer surge ahead)
+			// get an immediate poll instead of waiting for the next ticker fire.
+			if lastStatus == SyncSynced && current == SyncSyncing {
+				sd.refreshSyncFromPeers(sd.ctx)
+			}
+			lastStatus = current
+			switch current {
 			case SyncSyncing:
 				sd.refreshSyncFromPeers(sd.ctx)
 			case SyncIdle, SyncSynced:
