@@ -26,9 +26,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	// network, and reopens automatically when the network itself stalls
 	// (maxStoredBlockSlot far behind wall-clock). This handles all three
 	// cases — synced, syncing-behind-a-live-network, isolated-stalling —
-	// in one place. Hive's single-client tests rely on the stall path:
-	// no helper mesh means maxStoredSlot stays at the anchor, the gate
-	// reopens, and the local validator produces.
+	// in one place.
 	if e.DutyGate != nil && !e.DutyGate.Decide("block", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
 		IncBlocksSkippedLag()
 		return
