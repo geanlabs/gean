@@ -316,13 +316,7 @@ func (sess *TestDriverSession) ForkChoiceStepHandler() http.HandlerFunc {
 			stepErr = fmt.Errorf("unknown stepType %q", step.StepType)
 		}
 
-		// Refresh safeTarget before snapshot. Production fires this at
-		// interval-3 ticks (node/tick.go:187); the test driver replays
-		// fixture steps out-of-band, so without an explicit refresh the
-		// snapshot would carry whatever value was last persisted at
-		// anchor init and never advance. Mirrors the spec runner's
-		// simulateUpdateSafeTarget (spectests/forkchoice_test.go).
-		sess.refreshSafeTarget()
+		sess.refreshSafeTarget() // see function doc; mirrors node/tick.go:187
 		snap := sess.loadSnapshot()
 		accepted := stepErr == nil
 		var errPtr *string
