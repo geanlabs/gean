@@ -26,12 +26,7 @@ const (
 	// BlocksByRangeSyncThreshold is the gap (in slots) above which sync should
 	// prefer BlocksByRange over reactive gossip + missing-parent fetches.
 	// Matches SyncLagSlots: if we are far enough behind to be classified
-	// "syncing" rather than "synced", we are also far enough behind to
-	// justify an explicit range fetch. Originally 64 to match zeam, but
-	// hive's `sync: head behind finalized recovery` test pauses the client,
-	// finalizes 5–30 slots ahead, and unpauses — gossip cannot replay the
-	// missed window, so anything > SyncLagSlots needs an explicit fetch
-	// within the 180s test window.
+	// "syncing", we are far enough behind to justify an explicit range fetch.
 	BlocksByRangeSyncThreshold = 2
 )
 
