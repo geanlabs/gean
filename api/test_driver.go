@@ -252,7 +252,7 @@ func (sess *TestDriverSession) ForkChoiceInitHandler() http.HandlerFunc {
 		store.SetLatestFinalized(anchorCp)
 		store.StorePendingBlock(anchorRoot, &types.SignedBlock{Block: anchorBlock})
 
-		fc := forkchoice.New(anchorBlock.Slot, anchorRoot)
+		fc := forkchoice.New(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot)
 
 		sess.mu.Lock()
 		sess.store = store

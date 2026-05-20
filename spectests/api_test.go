@@ -131,7 +131,7 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 	s.InsertBlockHeader(blockRoot, header)
 	s.InsertState(blockRoot, state)
 
-	fc := forkchoice.New(0, blockRoot)
+	fc := forkchoice.New(0, blockRoot, [32]byte{})
 
 	// Per-fixture aggregator controller, seeded from initialIsAggregator
 	// (leanSpec PR #636). Nil means the fixture doesn't exercise the admin
