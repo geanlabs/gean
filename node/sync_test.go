@@ -117,8 +117,9 @@ func TestSyncDriver_CheckAndBackfill_GapBelowThreshold(t *testing.T) {
 	mock := &mockSyncP2P{}
 	sd := NewSyncDriver(context.Background(), e, mock)
 
-	// Gap of 10 < BlocksByRangeSyncThreshold (64). Should NOT trigger range fetch.
-	peerStatus := &p2p.StatusMessage{HeadSlot: 10}
+	// Gap == BlocksByRangeSyncThreshold (boundary case, `<=` returns true)
+	// — should NOT trigger range fetch.
+	peerStatus := &p2p.StatusMessage{HeadSlot: p2p.BlocksByRangeSyncThreshold}
 	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
 
 	if got := mock.rangeCalls.Load(); got != 0 {

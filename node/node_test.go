@@ -42,7 +42,7 @@ func makeTestEngine() *Engine {
 	}
 	s.InsertState(genesisRoot, genesisState)
 
-	fc := forkchoice.New(0, genesisRoot)
+	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
 	return New(s, fc, nil, nil, NewAggregatorController(false), 1)
 }

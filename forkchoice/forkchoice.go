@@ -7,9 +7,9 @@ type ForkChoice struct {
 }
 
 // New creates a ForkChoice initialized with an anchor block.
-func New(anchorSlot uint64, anchorRoot [32]byte) *ForkChoice {
+func New(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *ForkChoice {
 	return &ForkChoice{
-		Array: NewProtoArray(anchorSlot, anchorRoot),
+		Array: NewProtoArray(anchorSlot, anchorRoot, anchorParentRoot),
 		Votes: NewVoteStore(),
 	}
 }
