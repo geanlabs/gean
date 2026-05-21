@@ -130,13 +130,11 @@ func (sd *SyncDriver) pollPeer(ctx context.Context, peerID libp2ppeer.ID, ourSta
 	sd.checkAndBackfill(ctx, peerID, peerStatus)
 }
 
-// checkAndBackfill triggers BlocksByRange fetches from peerID if their head is
-// ahead of ours by more than BlocksByRangeSyncThreshold slots. Loops within the
-// per-peer reservation until either the peer's advertised head slot has been
-// requested or the peer stops returning blocks — necessary for recovery from a
-// long pause where waiting one SyncPollInterval (32s) between fetches blows
-// the 180s catch-up budget the hive harness enforces. On range-fetch failure,
-// falls back to a head-by-root fetch (via any peer) so the reactive
+// checkAndBackfill triggers BlocksByRange fetches from peerID if their head
+// is ahead of ours by more than BlocksByRangeSyncThreshold slots. Loops
+// within the per-peer reservation until either the peer's advertised head
+// slot has been requested or the peer stops returning blocks. On range-fetch
+// failure, falls back to a head-by-root fetch (via any peer) so the reactive
 // missing-parent flow has something to chase.
 func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage) {
 	ourHead := sd.engine.Store.HeadSlot()
