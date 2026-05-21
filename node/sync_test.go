@@ -43,9 +43,9 @@ type mockSyncP2P struct {
 	statusResp *p2p.StatusMessage
 	statusErr  error
 
-	rangeBlocks []*types.SignedBlock
-	rangeErr    error
-	rangeCalls  atomic.Int32
+	rangeBatches [][]*types.SignedBlock // popped one per call; empty/nil returns (nil, rangeErr)
+	rangeErr     error
+	rangeCalls   atomic.Int32
 
 	rootBlocks []*types.SignedBlock
 	rootErr    error
@@ -71,7 +71,14 @@ func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.
 	if m.rangeBlock != nil {
 		<-m.rangeBlock
 	}
-	return m.rangeBlocks, m.rangeErr
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.rangeBatches) == 0 {
+		return nil, m.rangeErr
+	}
+	batch := m.rangeBatches[0]
+	m.rangeBatches = m.rangeBatches[1:]
+	return batch, m.rangeErr
 }
 
 func (m *mockSyncP2P) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error) {
@@ -129,10 +136,14 @@ func TestSyncDriver_CheckAndBackfill_GapBelowThreshold(t *testing.T) {
 
 func TestSyncDriver_CheckAndBackfill_FetchesWhenAhead(t *testing.T) {
 	e := makeTestEngine()
+	// Peer returns blocks for the first request, then nothing — the loop
+	// inside checkAndBackfill should drain once and stop on the empty reply.
 	mock := &mockSyncP2P{
-		rangeBlocks: []*types.SignedBlock{
-			{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}},
-			{Block: &types.Block{Slot: 2, Body: &types.BlockBody{}}},
+		rangeBatches: [][]*types.SignedBlock{
+			{
+				{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}},
+				{Block: &types.Block{Slot: 2, Body: &types.BlockBody{}}},
+			},
 		},
 	}
 	sd := NewSyncDriver(context.Background(), e, mock)
@@ -141,13 +152,47 @@ func TestSyncDriver_CheckAndBackfill_FetchesWhenAhead(t *testing.T) {
 	peerStatus := &p2p.StatusMessage{HeadSlot: 100}
 	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
 
-	if got := mock.rangeCalls.Load(); got != 1 {
-		t.Errorf("expected 1 range call, got %d", got)
+	// One filled batch + one probe that gets the empty reply.
+	if got := mock.rangeCalls.Load(); got != 2 {
+		t.Errorf("expected 2 range calls (drain + empty probe), got %d", got)
 	}
 
 	got := drainBlockCh(t, e, 2, 100*time.Millisecond)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 blocks fed to engine, got %d", len(got))
+	}
+}
+
+func TestSyncDriver_CheckAndBackfill_LoopsUntilCaughtUp(t *testing.T) {
+	e := makeTestEngine()
+	// Peer drip-feeds two batches that together close the gap, then returns
+	// empty. Drives the in-reservation loop instead of waiting one
+	// SyncPollInterval (32s) between batches.
+	mock := &mockSyncP2P{
+		rangeBatches: [][]*types.SignedBlock{
+			{
+				{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}},
+				{Block: &types.Block{Slot: 2, Body: &types.BlockBody{}}},
+			},
+			{
+				{Block: &types.Block{Slot: 3, Body: &types.BlockBody{}}},
+				{Block: &types.Block{Slot: 4, Body: &types.BlockBody{}}},
+			},
+		},
+	}
+	sd := NewSyncDriver(context.Background(), e, mock)
+
+	peerStatus := &p2p.StatusMessage{HeadSlot: 100}
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
+
+	// Two filled batches + one probe that returns empty.
+	if got := mock.rangeCalls.Load(); got != 3 {
+		t.Errorf("expected 3 range calls (2 batches + empty probe), got %d", got)
+	}
+
+	got := drainBlockCh(t, e, 4, 100*time.Millisecond)
+	if len(got) != 4 {
+		t.Fatalf("expected 4 blocks fed to engine, got %d", len(got))
 	}
 }
 
@@ -183,8 +228,8 @@ func TestSyncDriver_CheckAndBackfill_PerPeerDedup(t *testing.T) {
 	e := makeTestEngine()
 	rangeBlock := make(chan struct{})
 	mock := &mockSyncP2P{
-		rangeBlocks: []*types.SignedBlock{
-			{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}},
+		rangeBatches: [][]*types.SignedBlock{
+			{{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}}},
 		},
 		rangeBlock: rangeBlock,
 	}

@@ -178,23 +178,58 @@ func TestProtoArrayNoAttestations(t *testing.T) {
 }
 
 func TestProtoArrayVoteChange(t *testing.T) {
-	rootA, rootB, rootC := root(1), root(2), root(3)
+	rootA, rootB, rootC, rootD := root(1), root(2), root(3), root(4)
 	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
+	fc.OnBlock(2, rootD, rootC)
 
-	// Initially vote for rootB
+	// Initially vote for rootB at slot 1.
 	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
 	head := fc.UpdateHead(rootA)
 	if head != rootB {
 		t.Fatalf("expected rootB initially, got %x", head[:4])
 	}
 
-	// Change vote to rootC
+	// Vote-change at a later slot is a normal target update — should move
+	// the head. (Same-slot re-vote with a different target is equivocation
+	// and is dropped; see TestProtoArrayEquivocation.)
+	fc.Votes.SetKnown(0, fc.NodeIndex(rootD), 2, makeAttData(rootD, 2))
+	head = fc.UpdateHead(rootA)
+	if head != rootD {
+		t.Fatalf("expected rootD after vote change, got %x", head[:4])
+	}
+}
+
+func TestProtoArrayEquivocation(t *testing.T) {
+	// Same-slot, different-target re-vote from one validator must be ignored
+	// (first-wins). Mirrors the spec fork-choice equivocation rule covered
+	// by the hive fixture test_same_slot_equivocating_attesters_count_once.
+	rootA, rootB, rootC := root(1), root(2), root(3)
+	fc := New(0, rootA, [32]byte{})
+	fc.OnBlock(1, rootB, rootA)
+	fc.OnBlock(1, rootC, rootA)
+
+	// First vote: validator 0 → rootB at slot 1.
+	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	head := fc.UpdateHead(rootA)
+	if head != rootB {
+		t.Fatalf("expected rootB after first vote, got %x", head[:4])
+	}
+
+	// Equivocating second vote: validator 0 → rootC at the same slot.
+	// Must be dropped; head stays on rootB.
 	fc.Votes.SetKnown(0, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
 	head = fc.UpdateHead(rootA)
-	if head != rootC {
-		t.Fatalf("expected rootC after vote change, got %x", head[:4])
+	if head != rootB {
+		t.Fatalf("expected rootB to persist after equivocating vote, got %x", head[:4])
+	}
+
+	// Same equivocation rule on the SetNew (gossip) path.
+	fc.Votes.SetNew(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.Votes.SetNew(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
+	if fc.Votes.Votes[1].LatestNew == nil || fc.Votes.Votes[1].LatestNew.Index != fc.NodeIndex(rootB) {
+		t.Fatalf("validator 1 LatestNew should pin to rootB, got %+v", fc.Votes.Votes[1].LatestNew)
 	}
 }
 

@@ -130,8 +130,10 @@ func (sd *SyncDriver) pollPeer(ctx context.Context, peerID libp2ppeer.ID, ourSta
 	sd.checkAndBackfill(ctx, peerID, peerStatus)
 }
 
-// checkAndBackfill triggers a BlocksByRange fetch from peerID if their head is
-// ahead of ours by more than BlocksByRangeSyncThreshold slots. On range-fetch
+// checkAndBackfill triggers BlocksByRange fetches from peerID if their head
+// is ahead of ours by more than BlocksByRangeSyncThreshold slots. Loops
+// within the per-peer reservation until either the peer's advertised head
+// slot has been requested or the peer stops returning blocks. On range-fetch
 // failure, falls back to a head-by-root fetch (via any peer) so the reactive
 // missing-parent flow has something to chase.
 func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage) {
@@ -139,8 +141,7 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 	if peerStatus.HeadSlot <= ourHead {
 		return
 	}
-	gap := peerStatus.HeadSlot - ourHead
-	if gap <= p2p.BlocksByRangeSyncThreshold {
+	if peerStatus.HeadSlot-ourHead <= p2p.BlocksByRangeSyncThreshold {
 		// Below threshold: gossip + reactive missing-parent BlocksByRoot
 		// handles small gaps efficiently. Range-fetch would be wasteful.
 		return
@@ -151,35 +152,57 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 	}
 	defer sd.release(peerID)
 
-	count := gap
-	if count > types.MaxRequestBlocks {
-		count = types.MaxRequestBlocks
-	}
 	startSlot := ourHead + 1
-
-	logger.Info(logger.Sync, "sync: peer %s ahead by %d slots, fetching range start_slot=%d count=%d",
-		peerID, gap, startSlot, count)
-
-	blocks, err := sd.p2p.FetchBlocksByRange(ctx, peerID, startSlot, count)
-	if err != nil {
-		logger.Warn(logger.Sync, "sync: blocks_by_range failed peer=%s err=%v; falling back to head-by-root",
-			peerID, err)
-		// Fallback: at least fetch the peer's head block by root via any
-		// peer. The reactive missing-parent flow can chase from there.
-		rootBlocks, _, ferr := sd.p2p.FetchBlocksByRootBatchWithRetry(ctx, [][32]byte{peerStatus.HeadRoot})
-		if ferr != nil {
-			logger.Warn(logger.Sync, "sync: head-by-root fallback also failed: %v", ferr)
+	for startSlot <= peerStatus.HeadSlot {
+		if err := ctx.Err(); err != nil {
 			return
 		}
-		for _, b := range rootBlocks {
-			sd.engine.OnBlock(b)
+		count := peerStatus.HeadSlot - startSlot + 1
+		if count > types.MaxRequestBlocks {
+			count = types.MaxRequestBlocks
 		}
-		return
-	}
 
-	logger.Info(logger.Sync, "sync: received %d blocks from peer %s, feeding to engine", len(blocks), peerID)
-	for _, block := range blocks {
-		sd.engine.OnBlock(block)
+		logger.Info(logger.Sync, "sync: fetching range from peer %s start_slot=%d count=%d peer_head=%d",
+			peerID, startSlot, count, peerStatus.HeadSlot)
+
+		blocks, err := sd.p2p.FetchBlocksByRange(ctx, peerID, startSlot, count)
+		if err != nil {
+			logger.Warn(logger.Sync, "sync: blocks_by_range failed peer=%s err=%v; falling back to head-by-root",
+				peerID, err)
+			rootBlocks, _, ferr := sd.p2p.FetchBlocksByRootBatchWithRetry(ctx, [][32]byte{peerStatus.HeadRoot})
+			if ferr != nil {
+				logger.Warn(logger.Sync, "sync: head-by-root fallback also failed: %v", ferr)
+				return
+			}
+			for _, b := range rootBlocks {
+				sd.engine.OnBlock(b)
+			}
+			return
+		}
+
+		if len(blocks) == 0 {
+			// Peer ran out of blocks below its advertised head — either it
+			// pruned the requested range or empty slots fill it. Either way,
+			// looping further against this peer is pointless; the next poll
+			// cycle picks up where we left off (or tries another peer).
+			logger.Info(logger.Sync, "sync: peer %s returned empty range at start_slot=%d, stopping", peerID, startSlot)
+			return
+		}
+
+		logger.Info(logger.Sync, "sync: received %d blocks from peer %s, feeding to engine", len(blocks), peerID)
+		for _, block := range blocks {
+			sd.engine.OnBlock(block)
+		}
+
+		// Advance past the highest slot the peer actually returned so the
+		// next iteration requests strictly forward, regardless of empty-slot
+		// gaps in the response.
+		lastSlot := blocks[len(blocks)-1].Block.Slot
+		if lastSlot < startSlot {
+			// Defensive: peer returned blocks below the requested start.
+			return
+		}
+		startSlot = lastSlot + 1
 	}
 }
 
