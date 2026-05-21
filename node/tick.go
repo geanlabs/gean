@@ -12,7 +12,8 @@ import (
 // onTick processes an 800ms tick event.
 func (e *Engine) onTick() {
 	now := time.Now()
-	if !e.lastTick.IsZero() {
+	firstTick := e.lastTick.IsZero()
+	if !firstTick {
 		ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
 	}
 	e.lastTick = now
@@ -31,10 +32,13 @@ func (e *Engine) onTick() {
 	// values (store_tick relies on the bool being stable for the tick).
 	isAgg := e.AggCtl.Get()
 
-	// Check if we're the proposer for this slot.
+	// Check if we're the proposer for this slot. Suppress on the eager
+	// pre-ticker tick in Run(): that call warms head/sync/metrics, but a
+	// brand-new node must not advance its forkchoice tree (insert a slot-N
+	// block, move head off genesis) before any RPC poll or peer observation.
 	hasProposal := false
 	var proposerValidatorID uint64
-	if currentInterval == 0 && currentSlot > 0 {
+	if currentInterval == 0 && currentSlot > 0 && !firstTick {
 		proposerValidatorID, hasProposal = e.getOurProposer(currentSlot)
 	}
 
