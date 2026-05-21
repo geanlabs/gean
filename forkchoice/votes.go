@@ -27,10 +27,8 @@ func NewVoteStore() *VoteStore {
 	return &VoteStore{Votes: make(map[uint64]*VoteTracker)}
 }
 
-// SetKnown records a known (on-chain) attestation for a validator.
-// Equivocation: if either pool already holds a vote at this slot for a
-// different target, the new write is dropped — equivocating attesters
-// count exactly once and the first observed target wins.
+// SetKnown records a known (on-chain) attestation. Same-slot writes
+// pointing to a different target are dropped (see sameSlotConflict).
 func (vs *VoteStore) SetKnown(validatorID uint64, nodeIndex int, slot uint64, data *types.AttestationData) {
 	tracker := vs.getOrCreate(validatorID)
 	if sameSlotConflict(tracker.LatestKnown, slot, nodeIndex) ||
@@ -40,8 +38,8 @@ func (vs *VoteStore) SetKnown(validatorID uint64, nodeIndex int, slot uint64, da
 	tracker.LatestKnown = &VoteTarget{Index: nodeIndex, Slot: slot, Data: data}
 }
 
-// SetNew records a new (gossip-received) attestation for a validator.
-// Same equivocation rule as SetKnown.
+// SetNew records a new (gossip-received) attestation. Same equivocation
+// guard as SetKnown.
 func (vs *VoteStore) SetNew(validatorID uint64, nodeIndex int, slot uint64, data *types.AttestationData) {
 	tracker := vs.getOrCreate(validatorID)
 	if sameSlotConflict(tracker.LatestKnown, slot, nodeIndex) ||
