@@ -14,7 +14,7 @@ use std::slice;
 mod config {
     pub use leansig::signature::generalized_xmss::instantiations_aborting::lifetime_2_to_the_32::{
         PubKeyAbortingTargetSumLifetime32Dim46Base8 as XmssPublicKey,
-        SchemeAbortingTargetSumLifetime32Dim46Base8 as XmssScheme,
+        SIGAbortingTargetSumLifetime32Dim46Base8 as XmssScheme,
         SecretKeyAbortingTargetSumLifetime32Dim46Base8 as XmssSecretKey,
         SigAbortingTargetSumLifetime32Dim46Base8 as XmssSignature,
     };
@@ -25,7 +25,7 @@ mod config {
 mod config {
     pub use leansig::signature::generalized_xmss::instantiations_aborting::lifetime_2_to_the_8::{
         PubKeyAbortingTargetSumLifetime8Dim46Base8 as XmssPublicKey,
-        SchemeAbortingTargetSumLifetime8Dim46Base8 as XmssScheme,
+        SIGAbortingTargetSumLifetime8Dim46Base8 as XmssScheme,
         SecretKeyAbortingTargetSumLifetime8Dim46Base8 as XmssSecretKey,
         SigAbortingTargetSumLifetime8Dim46Base8 as XmssSignature,
     };
