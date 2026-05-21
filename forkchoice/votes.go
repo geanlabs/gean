@@ -27,16 +27,32 @@ func NewVoteStore() *VoteStore {
 	return &VoteStore{Votes: make(map[uint64]*VoteTracker)}
 }
 
-// SetKnown records a known (on-chain) attestation for a validator.
+// SetKnown records a known (on-chain) attestation. Same-slot writes
+// pointing to a different target are dropped (see sameSlotConflict).
 func (vs *VoteStore) SetKnown(validatorID uint64, nodeIndex int, slot uint64, data *types.AttestationData) {
 	tracker := vs.getOrCreate(validatorID)
+	if sameSlotConflict(tracker.LatestKnown, slot, nodeIndex) ||
+		sameSlotConflict(tracker.LatestNew, slot, nodeIndex) {
+		return
+	}
 	tracker.LatestKnown = &VoteTarget{Index: nodeIndex, Slot: slot, Data: data}
 }
 
-// SetNew records a new (gossip-received) attestation for a validator.
+// SetNew records a new (gossip-received) attestation. Same equivocation
+// guard as SetKnown.
 func (vs *VoteStore) SetNew(validatorID uint64, nodeIndex int, slot uint64, data *types.AttestationData) {
 	tracker := vs.getOrCreate(validatorID)
+	if sameSlotConflict(tracker.LatestKnown, slot, nodeIndex) ||
+		sameSlotConflict(tracker.LatestNew, slot, nodeIndex) {
+		return
+	}
 	tracker.LatestNew = &VoteTarget{Index: nodeIndex, Slot: slot, Data: data}
+}
+
+// sameSlotConflict reports whether an existing vote at the same slot points
+// to a different proto-array node — i.e. the incoming write would equivocate.
+func sameSlotConflict(existing *VoteTarget, slot uint64, nodeIndex int) bool {
+	return existing != nil && existing.Slot == slot && existing.Index != nodeIndex
 }
 
 // PromoteNewToKnown moves all new votes to known.

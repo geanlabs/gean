@@ -96,9 +96,16 @@ func (pb *PayloadBuffer) TotalProofs() int {
 }
 
 // ExtractLatestAttestations returns per-validator latest attestations from participation bits.
+// Iterates by insertion order (pb.order) so same-slot ties resolve to the
+// first-inserted entry, mirroring the spec's insertion-ordered dict and
+// making equivocation handling deterministic (Go map iteration order is not).
 func (pb *PayloadBuffer) ExtractLatestAttestations() map[uint64]*types.AttestationData {
 	result := make(map[uint64]*types.AttestationData)
-	for _, entry := range pb.data {
+	for _, dataRoot := range pb.order {
+		entry, ok := pb.data[dataRoot]
+		if !ok {
+			continue
+		}
 		for _, proof := range entry.Proofs {
 			participantLen := types.BitlistLen(proof.Participants)
 			for vid := uint64(0); vid < participantLen; vid++ {
