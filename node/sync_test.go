@@ -43,8 +43,7 @@ type mockSyncP2P struct {
 	statusResp *p2p.StatusMessage
 	statusErr  error
 
-	rangeBlocks  []*types.SignedBlock     // legacy: returned on every call
-	rangeBatches [][]*types.SignedBlock   // preferred: popped one per call, empty when drained
+	rangeBatches [][]*types.SignedBlock // popped one per call; empty/nil returns (nil, rangeErr)
 	rangeErr     error
 	rangeCalls   atomic.Int32
 
@@ -72,17 +71,14 @@ func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.
 	if m.rangeBlock != nil {
 		<-m.rangeBlock
 	}
-	if m.rangeBatches != nil {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		if len(m.rangeBatches) == 0 {
-			return nil, m.rangeErr
-		}
-		batch := m.rangeBatches[0]
-		m.rangeBatches = m.rangeBatches[1:]
-		return batch, m.rangeErr
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.rangeBatches) == 0 {
+		return nil, m.rangeErr
 	}
-	return m.rangeBlocks, m.rangeErr
+	batch := m.rangeBatches[0]
+	m.rangeBatches = m.rangeBatches[1:]
+	return batch, m.rangeErr
 }
 
 func (m *mockSyncP2P) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error) {
@@ -232,8 +228,8 @@ func TestSyncDriver_CheckAndBackfill_PerPeerDedup(t *testing.T) {
 	e := makeTestEngine()
 	rangeBlock := make(chan struct{})
 	mock := &mockSyncP2P{
-		rangeBlocks: []*types.SignedBlock{
-			{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}},
+		rangeBatches: [][]*types.SignedBlock{
+			{{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}}},
 		},
 		rangeBlock: rangeBlock,
 	}
