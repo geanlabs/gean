@@ -8,23 +8,6 @@ package main
 // Usage:
 //   go run ./cmd/keygen --validators 5 --nodes 3 --output testnet
 
-// #cgo linux LDFLAGS: -L${SRCDIR}/../../xmss/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread
-// #cgo darwin LDFLAGS: -L${SRCDIR}/../../xmss/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
-// #include <stdint.h>
-// #include <stdlib.h>
-// typedef struct KeyPair KeyPair;
-// typedef struct PublicKey PublicKey;
-// typedef struct PrivateKey PrivateKey;
-//
-// KeyPair* hashsig_keypair_generate(const char* seed_phrase,
-//     size_t activation_epoch, size_t num_active_epochs);
-// void hashsig_keypair_free(KeyPair* keypair);
-// const PublicKey* hashsig_keypair_get_public_key(const KeyPair* keypair);
-// const PrivateKey* hashsig_keypair_get_private_key(const KeyPair* keypair);
-// size_t hashsig_public_key_to_bytes(const PublicKey* public_key, uint8_t* buffer, size_t buffer_len);
-// size_t hashsig_private_key_to_bytes(const PrivateKey* private_key, uint8_t* buffer, size_t buffer_len);
-import "C"
-
 import (
 	"crypto/rand"
 	"encoding/hex"
@@ -35,12 +18,11 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-	"unsafe"
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 // manifest stores generated key info so we can skip regeneration.
@@ -167,40 +149,27 @@ func generateKeys(numValidators, numNodes int, outputDir, keysDir string, basePo
 func generateAndSaveKey(validatorIdx int, keyType, keysDir string) (string, string) {
 	seed := fmt.Sprintf("gean-testnet-validator-%d-%s-%d", validatorIdx, keyType, time.Now().UnixNano())
 
-	cSeed := C.CString(seed)
-	kp := C.hashsig_keypair_generate(cSeed, C.size_t(0), C.size_t(1<<18))
-	C.free(unsafe.Pointer(cSeed))
-	if kp == nil {
-		log.Fatalf("key generation failed for validator %d %s", validatorIdx, keyType)
+	kp, err := xmss.GenerateKeyPair(seed, 0, 1<<18)
+	if err != nil {
+		log.Fatalf("key generation failed for validator %d %s: %v", validatorIdx, keyType, err)
+	}
+	defer kp.Close()
+
+	pkBytes, err := kp.PublicKeyBytes()
+	if err != nil {
+		log.Fatalf("pubkey serialization failed for validator %d %s: %v", validatorIdx, keyType, err)
 	}
 
-	var pkBuf [256]byte
-	pkLen := C.hashsig_public_key_to_bytes(
-		C.hashsig_keypair_get_public_key(kp),
-		(*C.uint8_t)(unsafe.Pointer(&pkBuf[0])),
-		C.size_t(len(pkBuf)),
-	)
-	if pkLen == 0 || int(pkLen) != types.PubkeySize {
-		log.Fatalf("pubkey serialization failed for validator %d %s", validatorIdx, keyType)
+	skBytes, err := kp.PrivateKeyBytes()
+	if err != nil {
+		log.Fatalf("private key serialization failed for validator %d %s: %v", validatorIdx, keyType, err)
 	}
-
-	skBuf := make([]byte, 10*1024*1024)
-	skLen := C.hashsig_private_key_to_bytes(
-		C.hashsig_keypair_get_private_key(kp),
-		(*C.uint8_t)(unsafe.Pointer(&skBuf[0])),
-		C.size_t(len(skBuf)),
-	)
-	if skLen == 0 {
-		log.Fatalf("private key serialization failed for validator %d %s", validatorIdx, keyType)
-	}
-
-	C.hashsig_keypair_free(kp)
 
 	skFile := fmt.Sprintf("validator_%d_%s_sk.ssz", validatorIdx, keyType)
 	skPath := filepath.Join(keysDir, skFile)
-	os.WriteFile(skPath, skBuf[:skLen], 0600)
+	os.WriteFile(skPath, skBytes, 0600)
 
-	return hex.EncodeToString(pkBuf[:pkLen]), skFile
+	return hex.EncodeToString(pkBytes[:]), skFile
 }
 
 func writeConfigYAML(outputDir string, genesisTime uint64, validators []validatorInfo) {
