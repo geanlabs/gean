@@ -127,29 +127,39 @@ var (
 
 // --- Histograms ---
 
+// Bucket sets mirror leanSpec's named constants in
+// lean_spec/subspecs/metrics/registry.py:36-45. Defined here once so the
+// histograms that share these shapes don't each carry a duplicated literal
+// that can drift out of spec alignment silently. Histograms whose latency
+// shape doesn't fit any of the four spec constants use their own hand-rolled
+// bucket array inline and note that fact in a comment.
+var (
+	forkChoiceBlockBuckets       = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1, 1.25, 1.5, 2, 4}
+	attestationValidationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1}
+	stateTransitionBuckets       = []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4}
+	reorgDepthBuckets            = []float64{1, 2, 3, 5, 7, 10, 20, 30, 50, 100}
+)
+
 var (
 	metricBlockProcessingTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_fork_choice_block_processing_time_seconds",
 		Help:    "Time to process a block",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1, 1.25, 1.5, 2, 4},
+		Buckets: forkChoiceBlockBuckets,
 	})
 	metricAttestationValidationTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_attestation_validation_time_seconds",
 		Help:    "Time to validate attestation data",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+		Buckets: attestationValidationBuckets,
 	})
 	metricCommitteeAggregationTime = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name: "lean_committee_signatures_aggregation_time_seconds",
-		Help: "Time to aggregate committee signatures",
-		// Mirrors leanSpec's STATE_TRANSITION_BUCKETS (lean_spec/subspecs/
-		// metrics/registry.py:42) — the closest spec-named bucket constant
-		// for state-transition-shaped latency.
-		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
+		Name:    "lean_committee_signatures_aggregation_time_seconds",
+		Help:    "Time to aggregate committee signatures",
+		Buckets: stateTransitionBuckets,
 	})
 	metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_attestation_signing_time_seconds",
 		Help:    "Time to sign an attestation",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+		Buckets: attestationValidationBuckets,
 	})
 	metricAttestationsProductionTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_attestations_production_time_seconds",
@@ -159,7 +169,7 @@ var (
 	metricPqSigVerificationTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_attestation_verification_time_seconds",
 		Help:    "Time to verify an individual attestation signature",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+		Buckets: attestationValidationBuckets,
 	})
 	metricPqSigAggBuildingTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_aggregated_signatures_building_time_seconds",
@@ -179,27 +189,27 @@ var (
 	metricForkChoiceReorgDepth = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_fork_choice_reorg_depth",
 		Help:    "Depth of fork choice reorgs",
-		Buckets: []float64{1, 2, 3, 5, 7, 10, 20, 30, 50, 100},
+		Buckets: reorgDepthBuckets,
 	})
 	metricSTFTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_state_transition_time_seconds",
 		Help:    "Time to process full state transition",
-		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
+		Buckets: stateTransitionBuckets,
 	})
 	metricSTFSlotsTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_state_transition_slots_processing_time_seconds",
 		Help:    "Time to process slots",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+		Buckets: attestationValidationBuckets,
 	})
 	metricSTFBlockTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_state_transition_block_processing_time_seconds",
 		Help:    "Time to process block in state transition",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+		Buckets: attestationValidationBuckets,
 	})
 	metricSTFAttestationsTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_state_transition_attestations_processing_time_seconds",
 		Help:    "Time to process attestations",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+		Buckets: attestationValidationBuckets,
 	})
 	metricBlockBuildingTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_block_building_time_seconds",
