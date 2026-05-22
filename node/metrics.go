@@ -141,11 +141,9 @@ var (
 	metricCommitteeAggregationTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name: "lean_committee_signatures_aggregation_time_seconds",
 		Help: "Time to aggregate committee signatures",
-		// Values mirror leanSpec's STATE_TRANSITION_BUCKETS
-		// (leanSpec/src/lean_spec/subspecs/metrics/registry.py:42) —
-		// same shape as state-transition latency, the closest spec-named
-		// histogram. Measured aggregation lands in 300 ms-4 s; the prior
-		// 5 ms-1 s set bottomed out at 0 samples and clipped the tail.
+		// Mirrors leanSpec's STATE_TRANSITION_BUCKETS (lean_spec/subspecs/
+		// metrics/registry.py:42) — the closest spec-named bucket constant
+		// for state-transition-shaped latency.
 		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
 	})
 	metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
