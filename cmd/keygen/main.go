@@ -8,8 +8,8 @@ package main
 // Usage:
 //   go run ./cmd/keygen --validators 5 --nodes 3 --output testnet
 
-// #cgo linux LDFLAGS: -L${SRCDIR}/../../xmss/rust/target/release -lhashsig_glue -lmultisig_glue -lm -ldl -lpthread
-// #cgo darwin LDFLAGS: -L${SRCDIR}/../../xmss/rust/target/release -lhashsig_glue -lmultisig_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
+// #cgo linux LDFLAGS: -L${SRCDIR}/../../xmss/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread
+// #cgo darwin LDFLAGS: -L${SRCDIR}/../../xmss/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
 // #include <stdint.h>
 // #include <stdlib.h>
 // typedef struct KeyPair KeyPair;
