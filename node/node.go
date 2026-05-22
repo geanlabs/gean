@@ -12,6 +12,11 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
+// gitCommit is injected at link time via -ldflags "-X .../node.gitCommit=$(GIT_COMMIT)"
+// from Makefile / Dockerfile, surfaced through the lean_node_info Prometheus gauge.
+// Defaults to "unknown" so builds outside a git checkout still produce a value.
+var gitCommit = "unknown"
+
 // Engine is the consensus coordination loop.
 // It owns Store, ForkChoice, and KeyManager as siblings,
 // rs L78-95).
@@ -122,7 +127,7 @@ func (e *Engine) Run(ctx context.Context) {
 	// Initialize static metrics.
 	// lean_is_aggregator is kept in sync via AggregatorController.Set on
 	// every transition; NewAggregatorController already seeded it at boot.
-	SetNodeInfo("gean", "dev")
+	SetNodeInfo("gean", gitCommit)
 	SetNodeStartTime(float64(time.Now().Unix()))
 	SetAttestationCommitteeCount(e.CommitteeCount)
 	if e.Keys != nil {
