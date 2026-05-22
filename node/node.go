@@ -14,7 +14,6 @@ import (
 
 // gitCommit is injected at link time via -ldflags "-X .../node.gitCommit=$(GIT_COMMIT)"
 // from Makefile / Dockerfile, surfaced through the lean_node_info Prometheus gauge.
-// Defaults to "unknown" so builds outside a git checkout still produce a value.
 var gitCommit = "unknown"
 
 // Engine is the consensus coordination loop.
