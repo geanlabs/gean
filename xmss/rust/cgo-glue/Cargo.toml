@@ -1,5 +1,5 @@
 [package]
-name = "gean-glue"
+name = "cgo-glue"
 version = "0.1.0"
 edition = "2021"
 
@@ -22,5 +22,5 @@ hashsig-glue  = { path = "../hashsig-glue" }
 multisig-glue = { path = "../multisig-glue" }
 
 [lib]
-name = "gean_glue"
+name = "cgo_glue"
 crate-type = ["staticlib"]

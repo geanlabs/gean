@@ -429,6 +429,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "cgo-glue"
+version = "0.1.0"
+dependencies = [
+ "hashsig-glue",
+ "multisig-glue",
+]
+
+[[package]]
 name = "chacha20"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -884,14 +892,6 @@ name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
-
-[[package]]
-name = "gean-glue"
-version = "0.1.0"
-dependencies = [
- "hashsig-glue",
- "multisig-glue",
-]
 
 [[package]]
 name = "generic-array"

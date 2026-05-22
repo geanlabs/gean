@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-  "gean-glue",
+  "cgo-glue",
   "hashsig-glue",
   "multisig-glue",
 ]
-default-members = ["gean-glue"]
+default-members = ["cgo-glue"]
 
 [profile.release]
 lto = false

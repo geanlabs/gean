@@ -17,6 +17,6 @@ test-config = []
 
 [lib]
 # Built as an rlib so its `#[no_mangle] pub extern "C"` symbols can be
-# funnelled through the `gean-glue` staticlib shim. See gean-glue/Cargo.toml.
+# funnelled through the `cgo-glue` staticlib shim. See cgo-glue/Cargo.toml.
 crate-type = ["rlib"]
 name = "hashsig_glue"
