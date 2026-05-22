@@ -1,0 +1,26 @@
+[package]
+name = "gean-glue"
+version = "0.1.0"
+edition = "2021"
+
+# Unified FFI shim that re-exports the `#[no_mangle] pub extern "C"` symbols
+# from `hashsig-glue` and `multisig-glue`. The shim is the only crate in the
+# workspace that produces a `staticlib`; the underlying glue crates are
+# plain `rlib`s, pulled in as dependencies below.
+#
+# Why: each `staticlib` Rust produces bundles its own copy of Rust's std,
+# alloc, allocator-shim, and EH-personality symbols. With `lto = "thin"` +
+# `codegen-units = 1` (see `[profile.multisig-release]` in the workspace
+# `Cargo.toml`), the linker stops coalescing these and the cgo final link
+# fails with "duplicate symbol" errors. Funnelling every glue rlib through
+# a single staticlib emits the shim once.
+#
+# Same pattern as blockblaz/zeam#773.
+
+[dependencies]
+hashsig-glue  = { path = "../hashsig-glue" }
+multisig-glue = { path = "../multisig-glue" }
+
+[lib]
+name = "gean_glue"
+crate-type = ["staticlib"]

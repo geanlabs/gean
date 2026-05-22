@@ -5,11 +5,13 @@ package xmss
 // Build the FFI libraries first:
 //   make ffi
 //
-// Static libraries are compiled to crypto/rust/target/release/.
+// The unified gean-glue staticlib is compiled to xmss/rust/target/multisig-release/.
+// It bundles the hashsig-glue and multisig-glue rlib exports through a single
+// archive so std/alloc symbols dedup once at the cgo link step.
 
 // #cgo CFLAGS: -I.
-// #cgo linux LDFLAGS: -L${SRCDIR}/rust/target/release -lhashsig_glue -lmultisig_glue -lm -ldl -lpthread
-// #cgo darwin LDFLAGS: -L${SRCDIR}/rust/target/release -lhashsig_glue -lmultisig_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
+// #cgo linux LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lgean_glue -lm -ldl -lpthread
+// #cgo darwin LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lgean_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
 //
 // #include <stdint.h>
 // #include <stdlib.h>

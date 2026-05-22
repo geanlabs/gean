@@ -24,9 +24,9 @@ COPY xmss/rust/ xmss/rust/
 ARG TARGETARCH
 RUN cd xmss/rust && \
     if [ "$TARGETARCH" = "amd64" ]; then \
-      CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked; \
+      CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked; \
     else \
-      cargo build --release --locked; \
+      cargo build --profile multisig-release --locked; \
     fi
 
 # Stage leanMultisig Python sources at the exact checkout path the binary expects.

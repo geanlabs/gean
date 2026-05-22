@@ -9,5 +9,7 @@ leansig_wrapper = { git = "https://github.com/leanEthereum/leanMultisig.git", re
 backend = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "5eba3b1" }
 
 [lib]
-crate-type = ["staticlib"]
+# Built as an rlib so its `#[no_mangle] pub extern "C"` symbols can be
+# funnelled through the `gean-glue` staticlib shim. See gean-glue/Cargo.toml.
+crate-type = ["rlib"]
 name = "multisig_glue"
