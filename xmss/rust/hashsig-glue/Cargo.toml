@@ -16,5 +16,7 @@ serde_json = "1.0"
 test-config = []
 
 [lib]
-crate-type = ["staticlib"]
+# Built as an rlib so its `#[no_mangle] pub extern "C"` symbols can be
+# funnelled through the `cgo-glue` staticlib shim. See cgo-glue/Cargo.toml.
+crate-type = ["rlib"]
 name = "hashsig_glue"

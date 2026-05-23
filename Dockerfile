@@ -24,9 +24,9 @@ COPY xmss/rust/ xmss/rust/
 ARG TARGETARCH
 RUN cd xmss/rust && \
     if [ "$TARGETARCH" = "amd64" ]; then \
-      CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked; \
+      CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked; \
     else \
-      cargo build --release --locked; \
+      cargo build --profile multisig-release --locked; \
     fi
 
 # Stage leanMultisig Python sources at the exact checkout path the binary expects.
@@ -49,7 +49,7 @@ COPY . .
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 RUN mkdir -p bin && \
-    go build -o bin/gean ./cmd/gean && \
+    go build -ldflags "-X github.com/geanlabs/gean/node.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean && \
     go build -o bin/keygen ./cmd/keygen
 
 # Runtime stage

@@ -14,14 +14,14 @@ help: ## Show help for each Makefile recipe
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 	@cd xmss/rust && \
 		if [ "$$(uname -m)" = "x86_64" ]; then \
-			CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --release --locked; \
+			CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked; \
 		else \
-			cargo build --release --locked; \
+			cargo build --profile multisig-release --locked; \
 		fi
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
-	@go build -o bin/gean ./cmd/gean
+	@go build -ldflags "-X github.com/geanlabs/gean/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
 test: ## Run unit tests (excludes crypto FFI and spec tests)

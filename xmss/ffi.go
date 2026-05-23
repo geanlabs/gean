@@ -5,11 +5,13 @@ package xmss
 // Build the FFI libraries first:
 //   make ffi
 //
-// Static libraries are compiled to crypto/rust/target/release/.
+// The unified cgo-glue staticlib is compiled to xmss/rust/target/multisig-release/.
+// It bundles the hashsig-glue and multisig-glue rlib exports through a single
+// archive so std/alloc symbols dedup once at the cgo link step.
 
 // #cgo CFLAGS: -I.
-// #cgo linux LDFLAGS: -L${SRCDIR}/rust/target/release -lhashsig_glue -lmultisig_glue -lm -ldl -lpthread
-// #cgo darwin LDFLAGS: -L${SRCDIR}/rust/target/release -lhashsig_glue -lmultisig_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
+// #cgo linux LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread
+// #cgo darwin LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
 //
 // #include <stdint.h>
 // #include <stdlib.h>
@@ -98,10 +100,11 @@ import (
 
 // Size constants.
 const (
-	MessageLength   = 32
-	MaxProofSize    = 1 << 20 // 1 MiB (ByteListMiB)
-	SignatureBuffer = 4000    // buffer for SSZ signature serialization
-	PubkeyBuffer    = 256     // buffer for SSZ pubkey serialization
+	MessageLength    = 32
+	MaxProofSize     = 1 << 20  // 1 MiB (ByteListMiB)
+	SignatureBuffer  = 4000     // buffer for SSZ signature serialization
+	PubkeyBuffer     = 256      // buffer for SSZ pubkey serialization
+	PrivateKeyBuffer = 10 << 20 // 10 MiB upper bound for SSZ private key serialization
 )
 
 // Errors.
@@ -426,4 +429,21 @@ func (kp *ValidatorKeyPair) PublicKeyBytes() ([types.PubkeySize]byte, error) {
 	}
 	copy(result[:], buf[:n])
 	return result, nil
+}
+
+// PrivateKeyBytes returns the SSZ-encoded private key bytes from a
+// ValidatorKeyPair. Private keys are variable-length; the buffer is sized
+// to PrivateKeyBuffer as a wide upper bound and the returned slice is
+// truncated to the actual length the FFI reports.
+func (kp *ValidatorKeyPair) PrivateKeyBytes() ([]byte, error) {
+	buf := make([]byte, PrivateKeyBuffer)
+	n := C.hashsig_private_key_to_bytes(
+		kp.PrivateKeyPtr(),
+		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
+		C.size_t(len(buf)),
+	)
+	if n == 0 {
+		return nil, fmt.Errorf("private key serialization failed")
+	}
+	return buf[:n], nil
 }
