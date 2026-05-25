@@ -35,8 +35,8 @@ func (e *Engine) runAggregationWorker(ctx context.Context) {
 			return
 		case dispatch := <-e.AggregationDispatchCh:
 			workerStart := time.Now()
-			aggs, mut := aggregateFromSnapshot(dispatch.snapshot, e.Store.PubKeyCache)
-			applyAggregationMutations(e.Store, mut)
+			aggs, payloads, deletes := aggregateFromSnapshot(dispatch.snapshot, e.Store.PubKeyCache)
+			applyAggregationMutations(e.Store, payloads, deletes)
 			for _, agg := range aggs {
 				if e.P2P != nil {
 					e.P2P.PublishAggregatedAttestation(context.Background(), agg)
@@ -61,14 +61,6 @@ type AggregationSnapshot struct {
 	newEntries   map[[32]byte]*PayloadEntry
 	knownEntries map[[32]byte]*PayloadEntry
 	targetStates map[[32]byte]*types.State // pre-resolved by attData.Target.Root
-}
-
-// AggregationMutations is the batched store change the prove phase wants to
-// apply when it returns. applyAggregationMutations performs the two writes
-// (KnownPayloads.PushBatch + AttestationSignatures.Delete) as a single unit.
-type AggregationMutations struct {
-	PayloadEntries []PayloadKV
-	KeysToDelete   []AttestationDeleteKey
 }
 
 // snapshotAggregationInputs reads all store state aggregation needs into a
@@ -133,9 +125,10 @@ func snapshotAggregationInputs(s *ConsensusStore) *AggregationSnapshot {
 // aggregateFromSnapshot runs the per-data-root prep + FFI + post phases.
 // Pure function of (snapshot, pubkey cache) — performs no store reads — so
 // it can later run on a worker goroutine without holding a store reference.
-func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) ([]*types.SignedAggregatedAttestation, *AggregationMutations) {
+func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) ([]*types.SignedAggregatedAttestation, []PayloadKV, []AttestationDeleteKey) {
 	var newAggregates []*types.SignedAggregatedAttestation
-	mut := &AggregationMutations{}
+	var payloadEntries []PayloadKV
+	var keysToDelete []AttestationDeleteKey
 
 	dataRoots := make(map[[32]byte]bool)
 	for dr := range snap.attSigs {
@@ -268,7 +261,7 @@ func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) (
 				Proof: proof,
 			})
 
-			mut.PayloadEntries = append(mut.PayloadEntries, PayloadKV{
+			payloadEntries = append(payloadEntries, PayloadKV{
 				DataRoot: dataRoot,
 				Data:     attData,
 				Proof:    proof,
@@ -276,7 +269,7 @@ func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) (
 
 			if gossipEntry != nil {
 				for _, sig := range gossipEntry.Signatures {
-					mut.KeysToDelete = append(mut.KeysToDelete, AttestationDeleteKey{
+					keysToDelete = append(keysToDelete, AttestationDeleteKey{
 						ValidatorID: sig.ValidatorID,
 						DataRoot:    dataRoot,
 					})
@@ -285,13 +278,13 @@ func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) (
 		}()
 	}
 
-	return newAggregates, mut
+	return newAggregates, payloadEntries, keysToDelete
 }
 
 // applyAggregationMutations applies the prove phase's batched store changes.
-func applyAggregationMutations(s *ConsensusStore, m *AggregationMutations) {
-	s.KnownPayloads.PushBatch(m.PayloadEntries)
-	s.AttestationSignatures.Delete(m.KeysToDelete)
+func applyAggregationMutations(s *ConsensusStore, payloads []PayloadKV, deletes []AttestationDeleteKey) {
+	s.KnownPayloads.PushBatch(payloads)
+	s.AttestationSignatures.Delete(deletes)
 }
 
 // selectChildProofs greedily selects existing proofs from a payload entry,
