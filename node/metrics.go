@@ -166,6 +166,25 @@ var (
 		Help:    "Time to build an aggregated signature proof",
 		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
 	})
+	// Per-phase aggregation timing — splits AggregateCommitteeSignatures pass time
+	// into prep / FFI / post / commit so we can attribute the gap between the
+	// (already-instrumented) FFI duration and the full pass duration. FFI is
+	// covered by metricPqSigAggBuildingTime above.
+	metricAggregationPrepTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_aggregation_prep_time_seconds",
+		Help:    "Per-aggregate prep time: select children + collect raw sigs + parse + pubkey-cache lookups",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+	})
+	metricAggregationPostTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_aggregation_post_time_seconds",
+		Help:    "Per-aggregate post time: build participants bitlist + proof struct + accumulator append",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+	})
+	metricAggregationCommitTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_aggregation_commit_time_seconds",
+		Help:    "Per-pass commit time: batched KnownPayloads push + AttestationSignatures delete at end of aggregation pass",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+	})
 	metricPqSigAggVerificationTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_aggregated_signatures_verification_time_seconds",
 		Help:    "Time to verify an aggregated signature proof",
@@ -331,6 +350,9 @@ func ObserveAttestationsProductionTime(seconds float64) {
 }
 func ObservePqSigVerificationTime(seconds float64) { metricPqSigVerificationTime.Observe(seconds) }
 func ObservePqSigAggBuildingTime(seconds float64)  { metricPqSigAggBuildingTime.Observe(seconds) }
+func ObserveAggregationPrepTime(seconds float64)   { metricAggregationPrepTime.Observe(seconds) }
+func ObserveAggregationPostTime(seconds float64)   { metricAggregationPostTime.Observe(seconds) }
+func ObserveAggregationCommitTime(seconds float64) { metricAggregationCommitTime.Observe(seconds) }
 func ObservePqSigAggVerificationTime(seconds float64) {
 	metricPqSigAggVerificationTime.Observe(seconds)
 }

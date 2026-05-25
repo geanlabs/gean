@@ -48,6 +48,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 	}
 
 	for dataRoot := range dataRoots {
+		prepStart := time.Now()
 		gossipEntry := attSigs[dataRoot]
 		newEntry := s.NewPayloads.data[dataRoot]
 		knownEntry := s.KnownPayloads.data[dataRoot]
@@ -128,6 +129,8 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 		dataRootHash, _ := attData.HashTreeRoot()
 		slot := uint32(attData.Slot)
 
+		ObserveAggregationPrepTime(time.Since(prepStart).Seconds())
+
 		aggStart := time.Now()
 		proofBytes, err := xmss.AggregateWithChildren(rawPubkeys, rawSigs, childProofs, dataRootHash, slot)
 		aggDuration := time.Since(aggStart)
@@ -156,6 +159,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 			AggregateMetricsFunc(aggDuration.Seconds(), len(allIDs))
 		}
 
+		postStart := time.Now()
 		newAggregates = append(newAggregates, &types.SignedAggregatedAttestation{
 			Data:  attData,
 			Proof: proof,
@@ -175,10 +179,13 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 				})
 			}
 		}
+		ObserveAggregationPostTime(time.Since(postStart).Seconds())
 	}
 
+	commitStart := time.Now()
 	s.KnownPayloads.PushBatch(payloadEntries)
 	s.AttestationSignatures.Delete(keysToDelete)
+	ObserveAggregationCommitTime(time.Since(commitStart).Seconds())
 
 	return newAggregates
 }
