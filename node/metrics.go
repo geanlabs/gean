@@ -84,6 +84,9 @@ var (
 	metricAttestationsBufferEvicted = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_attestations_buffer_evicted_total", Help: "Pending attestations dropped due to per-root FIFO overflow",
 	})
+	metricAggregationDispatchDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_aggregation_dispatch_dropped_total", Help: "Interval-2 aggregation dispatches dropped because the worker was still busy with the previous slot",
+	})
 	metricForkChoiceReorgs = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_fork_choice_reorgs_total", Help: "Total fork choice reorgs",
 	})
@@ -138,15 +141,7 @@ var (
 		Help:    "Time to validate attestation data",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
 	})
-	metricCommitteeAggregationTime = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name: "lean_committee_signatures_aggregation_time_seconds",
-		Help: "Time to aggregate committee signatures",
-		// Mirrors leanSpec's STATE_TRANSITION_BUCKETS (lean_spec/subspecs/
-		// metrics/registry.py:42) — the closest spec-named bucket constant
-		// for state-transition-shaped latency.
-		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
-	})
-	metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
+metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_attestation_signing_time_seconds",
 		Help:    "Time to sign an attestation",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
@@ -165,6 +160,19 @@ var (
 		Name:    "lean_pq_sig_aggregated_signatures_building_time_seconds",
 		Help:    "Time to build an aggregated signature proof",
 		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
+	})
+	// Per-aggregate prep time inside the worker; FFI is already covered by
+	// metricPqSigAggBuildingTime above and the full worker pass by
+	// metricAggregationWorkerTotalTime below.
+	metricAggregationPrepTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_aggregation_prep_time_seconds",
+		Help:    "Per-aggregate prep time: select children + collect raw sigs + parse + pubkey-cache lookups",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+	})
+	metricAggregationWorkerTotalTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_aggregation_worker_total_time_seconds",
+		Help:    "End-to-end aggregation worker pass: prove + apply mutations + P2P publish, off-tick",
+		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
 	})
 	metricPqSigAggVerificationTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_aggregated_signatures_verification_time_seconds",
@@ -322,15 +330,15 @@ func ObserveBlockProcessingTime(seconds float64) { metricBlockProcessingTime.Obs
 func ObserveAttestationValidationTime(seconds float64) {
 	metricAttestationValidationTime.Observe(seconds)
 }
-func ObserveCommitteeAggregationTime(seconds float64) {
-	metricCommitteeAggregationTime.Observe(seconds)
-}
 func ObservePqSigSigningTime(seconds float64) { metricPqSigSigningTime.Observe(seconds) }
 func ObserveAttestationsProductionTime(seconds float64) {
 	metricAttestationsProductionTime.Observe(seconds)
 }
 func ObservePqSigVerificationTime(seconds float64) { metricPqSigVerificationTime.Observe(seconds) }
 func ObservePqSigAggBuildingTime(seconds float64)  { metricPqSigAggBuildingTime.Observe(seconds) }
+func ObserveAggregationPrepTime(seconds float64)        { metricAggregationPrepTime.Observe(seconds) }
+func ObserveAggregationWorkerTotalTime(seconds float64) { metricAggregationWorkerTotalTime.Observe(seconds) }
+func IncAggregationDispatchDropped()                    { metricAggregationDispatchDropped.Inc() }
 func ObservePqSigAggVerificationTime(seconds float64) {
 	metricPqSigAggVerificationTime.Observe(seconds)
 }

@@ -54,6 +54,13 @@ type Engine struct {
 	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
 	FetchRootCh   chan [32]byte // roots to fetch — coalesced into batches by the fetch batcher
 
+	// AggregationDispatchCh hands one slot's interval-2 aggregation work to the
+	// worker goroutine. Buffered to capacity 1: a backlog of more than one slot
+	// means the worker is too slow, and dropping the new dispatch is preferable
+	// to delaying the next tick. Drops are spec-permissible (aggregation is
+	// best-effort per slot) and surface via lean_aggregation_dispatch_dropped_total.
+	AggregationDispatchCh chan AggregationDispatch
+
 	// lastTick holds the wall time of the previous onTick invocation. Zero
 	// means no prior tick — the very first tick records no observation
 	// (would otherwise pollute the histogram with a process-startup delta).
@@ -81,11 +88,12 @@ func New(
 		PendingBlockParents: make(map[[32]byte][32]byte),
 		PendingBlockDepths:  make(map[[32]byte]int),
 		PendingAttestations: NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
-		BlockCh:             make(chan *types.SignedBlock, 64),
-		AttestationCh:       make(chan *types.SignedAttestation, 256),
-		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
-		FailedRootCh:        make(chan [32]byte, 64),
-		FetchRootCh:         make(chan [32]byte, 256),
+		BlockCh:               make(chan *types.SignedBlock, 64),
+		AttestationCh:         make(chan *types.SignedAttestation, 256),
+		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),
+		FailedRootCh:          make(chan [32]byte, 64),
+		FetchRootCh:           make(chan [32]byte, 256),
+		AggregationDispatchCh: make(chan AggregationDispatch, 1),
 	}
 }
 
@@ -143,6 +151,12 @@ func (e *Engine) Run(ctx context.Context) {
 	// Start the fetch batcher: coalesces individual fetch requests into
 	// batches of up to MaxBlocksPerRequest roots per peer request.
 	go e.runFetchBatcher(ctx)
+
+	// Start the aggregation worker: drains AggregationDispatchCh so
+	// interval-2 aggregation runs off the tick loop. Mirrors ethlambda's
+	// tokio::spawn_blocking pattern (aggregation.rs:395-462) and zeam's
+	// worker thread model — the consensus tick never blocks on the FFI.
+	go e.runAggregationWorker(ctx)
 
 	logger.Info(logger.Node, "started")
 

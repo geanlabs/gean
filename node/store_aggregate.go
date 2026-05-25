@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -9,178 +10,281 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-// AggregateCommitteeSignatures implements the three-phase Select/Fill/Aggregate
-// algorithm from leanSpec store.py aggregate().
+// AggregationDispatch carries one slot's aggregation work from the tick
+// thread to the worker goroutine. The snapshot is taken synchronously on
+// the tick thread (cheap, milliseconds); the prove and publish steps run
+// on the worker.
+type AggregationDispatch struct {
+	snapshot *AggregationSnapshot
+	slot     uint64
+}
+
+// runAggregationWorker drains AggregationDispatchCh and runs the prove +
+// publish + apply phases off the tick loop. Mirrors ethlambda's
+// tokio::spawn_blocking pattern (aggregation.rs:395-462) and zeam's worker
+// threads — the consensus tick never blocks on the FFI.
 //
-// For each AttestationData with new payloads or raw gossip signatures:
-//  1. Select — greedily pick existing child proofs (new before known)
-//  2. Fill — collect raw gossip signatures for uncovered validators
-//  3. Aggregate — produce recursive proof with children + raw sigs
-//
-// Spec: lean_spec/subspecs/forkchoice/store.py aggregate
-func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
+// One worker; AggregationDispatchCh is buffered to 1. If a new dispatch
+// arrives while the worker is mid-prove the tick-thread send drops it via
+// the select default branch and increments lean_aggregation_dispatch_dropped_total.
+// Drops are spec-permissible (aggregation is best-effort per slot).
+func (e *Engine) runAggregationWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case dispatch := <-e.AggregationDispatchCh:
+			workerStart := time.Now()
+			aggs, payloads, deletes := aggregateFromSnapshot(dispatch.snapshot, e.Store.PubKeyCache)
+			applyAggregationMutations(e.Store, payloads, deletes)
+			for _, agg := range aggs {
+				if e.P2P != nil {
+					e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+				}
+			}
+			ObserveAggregationWorkerTotalTime(time.Since(workerStart).Seconds())
+			logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v",
+				dispatch.slot, len(aggs), time.Since(workerStart))
+		}
+	}
+}
+
+// AggregationSnapshot captures all store reads aggregation needs in one pass,
+// taken synchronously by snapshotAggregationInputs so the prove phase
+// (aggregateFromSnapshot) can run as a pure function of (snapshot, pubkey
+// cache) without holding a *ConsensusStore reference. Mirrors the structural
+// split ethlambda uses (snapshot_aggregation_inputs → aggregate_job worker
+// → publish) and is the prerequisite for off-tick async dispatch.
+type AggregationSnapshot struct {
+	headState    *types.State
+	attSigs      map[[32]byte]*AttestationDataEntry
+	newEntries   map[[32]byte]*PayloadEntry
+	knownEntries map[[32]byte]*PayloadEntry
+	targetStates map[[32]byte]*types.State // pre-resolved by attData.Target.Root
+}
+
+// snapshotAggregationInputs reads all store state aggregation needs into a
+// consistent snapshot. Returns nil when there is nothing to aggregate.
+func snapshotAggregationInputs(s *ConsensusStore) *AggregationSnapshot {
 	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
 		return nil
 	}
-
-	passStart := time.Now()
-	defer func() { ObserveCommitteeAggregationTime(time.Since(passStart).Seconds()) }()
-
 	headState := s.GetState(s.Head())
 	if headState == nil {
 		return nil
 	}
 
-	var newAggregates []*types.SignedAggregatedAttestation
-	var keysToDelete []AttestationDeleteKey
-	var payloadEntries []PayloadKV
+	snap := &AggregationSnapshot{
+		headState:    headState,
+		attSigs:      s.AttestationSignatures.Snapshot(),
+		newEntries:   make(map[[32]byte]*PayloadEntry),
+		knownEntries: make(map[[32]byte]*PayloadEntry),
+		targetStates: make(map[[32]byte]*types.State),
+	}
 
-	// Snapshot attestation signatures to avoid holding the mutex during ZK proving.
-	attSigs := s.AttestationSignatures.Snapshot()
-
-	// Collect all data roots that have either gossip sigs or new payloads.
+	// Collect data roots that have either gossip sigs or new payloads and
+	// copy the matching new/known payload entry refs into the snapshot.
 	dataRoots := make(map[[32]byte]bool)
-	for dr := range attSigs {
+	for dr := range snap.attSigs {
 		dataRoots[dr] = true
 	}
-	for dr := range s.NewPayloads.data {
+	for dr, entry := range s.NewPayloads.data {
 		dataRoots[dr] = true
+		snap.newEntries[dr] = entry
+	}
+	for dr := range dataRoots {
+		if entry := s.KnownPayloads.data[dr]; entry != nil {
+			snap.knownEntries[dr] = entry
+		}
 	}
 
-	for dataRoot := range dataRoots {
-		gossipEntry := attSigs[dataRoot]
-		newEntry := s.NewPayloads.data[dataRoot]
-		knownEntry := s.KnownPayloads.data[dataRoot]
-
-		// Need attestation data from any available source.
+	// Pre-resolve target states for each data root's attData so the prove
+	// phase doesn't have to call back into the store.
+	for dr := range dataRoots {
 		var attData *types.AttestationData
-		if gossipEntry != nil {
-			attData = gossipEntry.Data
-		} else if newEntry != nil {
-			attData = newEntry.Data
-		} else if knownEntry != nil {
-			attData = knownEntry.Data
+		if e := snap.attSigs[dr]; e != nil {
+			attData = e.Data
+		} else if e := snap.newEntries[dr]; e != nil {
+			attData = e.Data
+		} else if e := snap.knownEntries[dr]; e != nil {
+			attData = e.Data
 		}
 		if attData == nil {
 			continue
 		}
-
-		targetState := s.GetState(attData.Target.Root)
-		if targetState == nil {
-			continue
-		}
-
-		// Phase 1: Select — greedy pick existing child proofs.
-		var childProofs []xmss.ChildProof
-		covered := make(map[uint64]bool)
-
-		selectChildProofs(newEntry, targetState, &childProofs, covered, s)
-		selectChildProofs(knownEntry, targetState, &childProofs, covered, s)
-
-		// Phase 2: Fill — collect raw gossip signatures for uncovered validators.
-		var rawPubkeys []xmss.CPubKey
-		var rawSigs []xmss.CSig
-		var rawIDs []uint64
-
-		if gossipEntry != nil && len(gossipEntry.Signatures) > 0 {
-			sortedSigs := make([]AttestationSignatureEntry, len(gossipEntry.Signatures))
-			copy(sortedSigs, gossipEntry.Signatures)
-			sort.Slice(sortedSigs, func(i, j int) bool {
-				return sortedSigs[i].ValidatorID < sortedSigs[j].ValidatorID
-			})
-
-			for _, sigEntry := range sortedSigs {
-				if covered[sigEntry.ValidatorID] {
-					continue
-				}
-				if sigEntry.ValidatorID >= uint64(len(targetState.Validators)) {
-					continue
-				}
-
-				sigHandle := sigEntry.SigHandle
-				if sigHandle == nil {
-					parsed, err := xmss.ParseSignature(sigEntry.Signature[:])
-					if err != nil {
-						continue
-					}
-					defer xmss.FreeSignature(parsed)
-					sigHandle = parsed
-				}
-
-				pk, err := s.PubKeyCache.Get(targetState.Validators[sigEntry.ValidatorID].AttestationPubkey)
-				if err != nil {
-					continue
-				}
-
-				rawPubkeys = append(rawPubkeys, pk)
-				rawSigs = append(rawSigs, sigHandle)
-				rawIDs = append(rawIDs, sigEntry.ValidatorID)
-			}
-		}
-
-		// Prover requires at least 2 total inputs.
-		totalInputs := len(rawIDs) + len(childProofs)
-		if totalInputs < 2 {
-			continue
-		}
-
-		// Phase 3: Aggregate — produce recursive proof.
-		dataRootHash, _ := attData.HashTreeRoot()
-		slot := uint32(attData.Slot)
-
-		aggStart := time.Now()
-		proofBytes, err := xmss.AggregateWithChildren(rawPubkeys, rawSigs, childProofs, dataRootHash, slot)
-		aggDuration := time.Since(aggStart)
-		if err != nil {
-			logger.Error(logger.Signature, "aggregate: failed slot=%d raw=%d children=%d duration=%v: %v",
-				slot, len(rawIDs), len(childProofs), aggDuration, err)
-			continue
-		}
-
-		allIDs := make([]uint64, 0, len(rawIDs))
-		allIDs = append(allIDs, rawIDs...)
-		for vid := range covered {
-			allIDs = append(allIDs, vid)
-		}
-
-		participants := AggregationBitsFromIndices(allIDs)
-		proof := &types.AggregatedSignatureProof{
-			Participants: participants,
-			ProofData:    proofBytes,
-		}
-
-		logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
-			slot, len(rawIDs), len(childProofs), len(allIDs), len(proofBytes), aggDuration)
-
-		if AggregateMetricsFunc != nil {
-			AggregateMetricsFunc(aggDuration.Seconds(), len(allIDs))
-		}
-
-		newAggregates = append(newAggregates, &types.SignedAggregatedAttestation{
-			Data:  attData,
-			Proof: proof,
-		})
-
-		payloadEntries = append(payloadEntries, PayloadKV{
-			DataRoot: dataRoot,
-			Data:     attData,
-			Proof:    proof,
-		})
-
-		if gossipEntry != nil {
-			for _, sig := range gossipEntry.Signatures {
-				keysToDelete = append(keysToDelete, AttestationDeleteKey{
-					ValidatorID: sig.ValidatorID,
-					DataRoot:    dataRoot,
-				})
+		if _, ok := snap.targetStates[attData.Target.Root]; !ok {
+			if state := s.GetState(attData.Target.Root); state != nil {
+				snap.targetStates[attData.Target.Root] = state
 			}
 		}
 	}
 
-	s.KnownPayloads.PushBatch(payloadEntries)
-	s.AttestationSignatures.Delete(keysToDelete)
+	return snap
+}
 
-	return newAggregates
+// aggregateFromSnapshot runs the per-data-root prep + FFI + post phases.
+// Pure function of (snapshot, pubkey cache) — performs no store reads — so
+// it can later run on a worker goroutine without holding a store reference.
+func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) ([]*types.SignedAggregatedAttestation, []PayloadKV, []AttestationDeleteKey) {
+	var newAggregates []*types.SignedAggregatedAttestation
+	var payloadEntries []PayloadKV
+	var keysToDelete []AttestationDeleteKey
+
+	dataRoots := make(map[[32]byte]bool)
+	for dr := range snap.attSigs {
+		dataRoots[dr] = true
+	}
+	for dr := range snap.newEntries {
+		dataRoots[dr] = true
+	}
+
+	for dataRoot := range dataRoots {
+		// Anonymous func per iteration so pooled scratch slices (and the
+		// defer xmss.FreeSignature inside the sig loop) release per data
+		// root rather than accumulating until aggregateFromSnapshot returns.
+		func() {
+			childProofsBuf := getChildProofsBuf()
+			defer putChildProofsBuf(childProofsBuf)
+			rawPubkeysBuf := getRawPubkeysBuf()
+			defer putRawPubkeysBuf(rawPubkeysBuf)
+			rawSigsBuf := getRawSigsBuf()
+			defer putRawSigsBuf(rawSigsBuf)
+			rawIDsBuf := getRawIDsBuf()
+			defer putRawIDsBuf(rawIDsBuf)
+
+			prepStart := time.Now()
+			gossipEntry := snap.attSigs[dataRoot]
+			newEntry := snap.newEntries[dataRoot]
+			knownEntry := snap.knownEntries[dataRoot]
+
+			// Need attestation data from any available source.
+			var attData *types.AttestationData
+			if gossipEntry != nil {
+				attData = gossipEntry.Data
+			} else if newEntry != nil {
+				attData = newEntry.Data
+			} else if knownEntry != nil {
+				attData = knownEntry.Data
+			}
+			if attData == nil {
+				return
+			}
+
+			targetState := snap.targetStates[attData.Target.Root]
+			if targetState == nil {
+				return
+			}
+
+			// Phase 1: Select — greedy pick existing child proofs.
+			covered := make(map[uint64]bool)
+			selectChildProofs(newEntry, targetState, childProofsBuf, covered, cache)
+			selectChildProofs(knownEntry, targetState, childProofsBuf, covered, cache)
+
+			// Phase 2: Fill — collect raw gossip signatures for uncovered validators.
+			if gossipEntry != nil && len(gossipEntry.Signatures) > 0 {
+				sortedSigs := make([]AttestationSignatureEntry, len(gossipEntry.Signatures))
+				copy(sortedSigs, gossipEntry.Signatures)
+				sort.Slice(sortedSigs, func(i, j int) bool {
+					return sortedSigs[i].ValidatorID < sortedSigs[j].ValidatorID
+				})
+
+				for _, sigEntry := range sortedSigs {
+					if covered[sigEntry.ValidatorID] {
+						continue
+					}
+					if sigEntry.ValidatorID >= uint64(len(targetState.Validators)) {
+						continue
+					}
+
+					sigHandle := sigEntry.SigHandle
+					if sigHandle == nil {
+						parsed, err := xmss.ParseSignature(sigEntry.Signature[:])
+						if err != nil {
+							continue
+						}
+						defer xmss.FreeSignature(parsed)
+						sigHandle = parsed
+					}
+
+					pk, err := cache.Get(targetState.Validators[sigEntry.ValidatorID].AttestationPubkey)
+					if err != nil {
+						continue
+					}
+
+					*rawPubkeysBuf = append(*rawPubkeysBuf, pk)
+					*rawSigsBuf = append(*rawSigsBuf, sigHandle)
+					*rawIDsBuf = append(*rawIDsBuf, sigEntry.ValidatorID)
+				}
+			}
+
+			// Prover requires at least 2 total inputs.
+			if len(*rawIDsBuf)+len(*childProofsBuf) < 2 {
+				return
+			}
+
+			// Phase 3: Aggregate — produce recursive proof.
+			dataRootHash, _ := attData.HashTreeRoot()
+			slot := uint32(attData.Slot)
+
+			ObserveAggregationPrepTime(time.Since(prepStart).Seconds())
+
+			aggStart := time.Now()
+			proofBytes, err := xmss.AggregateWithChildren(*rawPubkeysBuf, *rawSigsBuf, *childProofsBuf, dataRootHash, slot)
+			aggDuration := time.Since(aggStart)
+			if err != nil {
+				logger.Error(logger.Signature, "aggregate: failed slot=%d raw=%d children=%d duration=%v: %v",
+					slot, len(*rawIDsBuf), len(*childProofsBuf), aggDuration, err)
+				return
+			}
+
+			allIDs := make([]uint64, 0, len(*rawIDsBuf)+len(covered))
+			allIDs = append(allIDs, (*rawIDsBuf)...)
+			for vid := range covered {
+				allIDs = append(allIDs, vid)
+			}
+
+			participants := AggregationBitsFromIndices(allIDs)
+			proof := &types.AggregatedSignatureProof{
+				Participants: participants,
+				ProofData:    proofBytes,
+			}
+
+			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
+				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
+
+			if AggregateMetricsFunc != nil {
+				AggregateMetricsFunc(aggDuration.Seconds(), len(allIDs))
+			}
+
+			newAggregates = append(newAggregates, &types.SignedAggregatedAttestation{
+				Data:  attData,
+				Proof: proof,
+			})
+
+			payloadEntries = append(payloadEntries, PayloadKV{
+				DataRoot: dataRoot,
+				Data:     attData,
+				Proof:    proof,
+			})
+
+			if gossipEntry != nil {
+				for _, sig := range gossipEntry.Signatures {
+					keysToDelete = append(keysToDelete, AttestationDeleteKey{
+						ValidatorID: sig.ValidatorID,
+						DataRoot:    dataRoot,
+					})
+				}
+			}
+		}()
+	}
+
+	return newAggregates, payloadEntries, keysToDelete
+}
+
+// applyAggregationMutations applies the prove phase's batched store changes.
+func applyAggregationMutations(s *ConsensusStore, payloads []PayloadKV, deletes []AttestationDeleteKey) {
+	s.KnownPayloads.PushBatch(payloads)
+	s.AttestationSignatures.Delete(deletes)
 }
 
 // selectChildProofs greedily selects existing proofs from a payload entry,
@@ -190,7 +294,7 @@ func selectChildProofs(
 	state *types.State,
 	children *[]xmss.ChildProof,
 	covered map[uint64]bool,
-	s *ConsensusStore,
+	cache *xmss.PubKeyCache,
 ) {
 	if entry == nil || len(entry.Proofs) == 0 {
 		return
@@ -212,7 +316,7 @@ func selectChildProofs(
 		for vid := uint64(0); vid < bitsLen; vid++ {
 			if types.BitlistGet(proof.Participants, vid) {
 				if vid < uint64(len(state.Validators)) {
-					pk, err := s.PubKeyCache.Get(state.Validators[vid].AttestationPubkey)
+					pk, err := cache.Get(state.Validators[vid].AttestationPubkey)
 					if err == nil {
 						pubkeys = append(pubkeys, pk)
 					}

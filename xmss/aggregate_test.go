@@ -46,7 +46,7 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 		t.Fatalf("verify sig2: valid=%v err=%v", valid, err)
 	}
 
-	// Now parse pubkeys and signatures to opaque handles (same path as AggregateCommitteeSignatures).
+	// Now parse pubkeys and signatures to opaque handles (same path as node.aggregateFromSnapshot).
 	cpk1, err := ParsePublicKey(pk1Bytes)
 	if err != nil {
 		t.Fatalf("parse pk1: %v", err)
