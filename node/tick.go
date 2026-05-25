@@ -44,13 +44,8 @@ func (e *Engine) onTick() {
 	// Aggregation is handled async below to avoid blocking the tick loop.
 	_ = OnTick(e.Store, timestampMs, hasProposal, isAgg)
 
-	// Interval 2: snapshot the aggregation inputs synchronously on the tick
-	// thread, then hand them to the worker goroutine. The worker runs the
-	// FFI off-tick so the tick loop can proceed to interval 3 / interval 4 /
-	// the next slot without waiting on a 400-1400 ms prove. If the worker is
-	// still busy with the previous slot's aggregation the dispatch is
-	// dropped (spec-permissible: aggregation is best-effort per slot;
-	// surfaced via lean_aggregation_dispatch_dropped_total).
+	// Interval 2: snapshot synchronously, dispatch to the worker goroutine.
+	// See runAggregationWorker for the off-tick rationale + drop semantics.
 	if currentInterval == 2 && isAgg {
 		snap := snapshotAggregationInputs(e.Store)
 		if snap != nil {
