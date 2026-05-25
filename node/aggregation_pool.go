@@ -8,12 +8,7 @@ import (
 
 // Per-aggregate scratch slices reused across calls via sync.Pool. Cuts the
 // young-gen GC pressure from re-allocating these four slices per data root
-// (~5-20 per pass × every interval-2 tick). Initial capacities are first-fit
-// guesses; pool reuse grows them to the working set and preserves the
-// capacity across passes.
-//
-// Same pattern as xmss/proof_pool.go: pool stores *[]T, get/put wrappers
-// reset length on return so callers always see an empty slice.
+// (~5-20 per pass × every interval-2 tick). Same pattern as xmss/proof_pool.go.
 
 var (
 	childProofsPool = sync.Pool{New: func() any { s := make([]xmss.ChildProof, 0, 8); return &s }}
