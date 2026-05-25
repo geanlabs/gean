@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -8,6 +9,45 @@ import (
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
 )
+
+// AggregationDispatch carries one slot's aggregation work from the tick
+// thread to the worker goroutine. The snapshot is taken synchronously on
+// the tick thread (cheap, milliseconds); the prove and publish steps run
+// on the worker.
+type AggregationDispatch struct {
+	snapshot *AggregationSnapshot
+	slot     uint64
+}
+
+// runAggregationWorker drains AggregationDispatchCh and runs the prove +
+// publish + apply phases off the tick loop. Mirrors ethlambda's
+// tokio::spawn_blocking pattern (aggregation.rs:395-462) and zeam's worker
+// threads — the consensus tick never blocks on the FFI.
+//
+// One worker; AggregationDispatchCh is buffered to 1. If a new dispatch
+// arrives while the worker is mid-prove the tick-thread send drops it via
+// the select default branch and increments lean_aggregation_dispatch_dropped_total.
+// Drops are spec-permissible (aggregation is best-effort per slot).
+func (e *Engine) runAggregationWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case dispatch := <-e.AggregationDispatchCh:
+			workerStart := time.Now()
+			aggs, mut := aggregateFromSnapshot(dispatch.snapshot, e.Store.PubKeyCache)
+			applyAggregationMutations(e.Store, mut)
+			for _, agg := range aggs {
+				if e.P2P != nil {
+					e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+				}
+			}
+			ObserveAggregationWorkerTotalTime(time.Since(workerStart).Seconds())
+			logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v",
+				dispatch.slot, len(aggs), time.Since(workerStart))
+		}
+	}
+}
 
 // AggregationSnapshot captures all store reads aggregation needs in one pass,
 // taken synchronously by snapshotAggregationInputs so the prove phase

@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -45,15 +44,20 @@ func (e *Engine) onTick() {
 	// Aggregation is handled async below to avoid blocking the tick loop.
 	_ = OnTick(e.Store, timestampMs, hasProposal, isAgg)
 
-	// Interval 2: synchronous aggregation. Blocks the tick loop for 1-4s
-	// but keeps source consistency — headState doesn't change during proving.
-	// Async aggregation breaks source alignment because head drifts during
-	// the background prover run. Acceptable until prover is <800ms.
+	// Interval 2: snapshot the aggregation inputs synchronously on the tick
+	// thread, then hand them to the worker goroutine. The worker runs the
+	// FFI off-tick so the tick loop can proceed to interval 3 / interval 4 /
+	// the next slot without waiting on a 400-1400 ms prove. If the worker is
+	// still busy with the previous slot's aggregation the dispatch is
+	// dropped (spec-permissible: aggregation is best-effort per slot;
+	// surfaced via lean_aggregation_dispatch_dropped_total).
 	if currentInterval == 2 && isAgg {
-		aggs := AggregateCommitteeSignatures(e.Store)
-		for _, agg := range aggs {
-			if e.P2P != nil {
-				e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+		snap := snapshotAggregationInputs(e.Store)
+		if snap != nil {
+			select {
+			case e.AggregationDispatchCh <- AggregationDispatch{snapshot: snap, slot: currentSlot}:
+			default:
+				IncAggregationDispatchDropped()
 			}
 		}
 	}
