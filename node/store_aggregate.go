@@ -71,27 +71,6 @@ type AggregationMutations struct {
 	KeysToDelete   []AttestationDeleteKey
 }
 
-// AggregateCommitteeSignatures implements the three-phase Select/Fill/Aggregate
-// algorithm from leanSpec store.py aggregate().
-//
-// Structurally split into snapshot → prove → apply so the prove phase has no
-// store dependency. The split is synchronous for now; off-tick async dispatch
-// is a follow-up that reuses the same boundaries.
-//
-// Spec: lean_spec/subspecs/forkchoice/store.py aggregate
-func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
-	passStart := time.Now()
-	defer func() { ObserveCommitteeAggregationTime(time.Since(passStart).Seconds()) }()
-
-	snap := snapshotAggregationInputs(s)
-	if snap == nil {
-		return nil
-	}
-	aggs, mut := aggregateFromSnapshot(snap, s.PubKeyCache)
-	applyAggregationMutations(s, mut)
-	return aggs
-}
-
 // snapshotAggregationInputs reads all store state aggregation needs into a
 // consistent snapshot. Returns nil when there is nothing to aggregate.
 func snapshotAggregationInputs(s *ConsensusStore) *AggregationSnapshot {

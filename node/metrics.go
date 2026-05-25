@@ -141,15 +141,7 @@ var (
 		Help:    "Time to validate attestation data",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
 	})
-	metricCommitteeAggregationTime = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name: "lean_committee_signatures_aggregation_time_seconds",
-		Help: "Time to aggregate committee signatures",
-		// Mirrors leanSpec's STATE_TRANSITION_BUCKETS (lean_spec/subspecs/
-		// metrics/registry.py:42) — the closest spec-named bucket constant
-		// for state-transition-shaped latency.
-		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
-	})
-	metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
+metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_attestation_signing_time_seconds",
 		Help:    "Time to sign an attestation",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
@@ -348,9 +340,6 @@ func IncPqSigAttestationSigsInvalid()        { metricPqSigAttestationSigsInvalid
 func ObserveBlockProcessingTime(seconds float64) { metricBlockProcessingTime.Observe(seconds) }
 func ObserveAttestationValidationTime(seconds float64) {
 	metricAttestationValidationTime.Observe(seconds)
-}
-func ObserveCommitteeAggregationTime(seconds float64) {
-	metricCommitteeAggregationTime.Observe(seconds)
 }
 func ObservePqSigSigningTime(seconds float64) { metricPqSigSigningTime.Observe(seconds) }
 func ObserveAttestationsProductionTime(seconds float64) {
