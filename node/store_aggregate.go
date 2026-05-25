@@ -263,7 +263,6 @@ func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) (
 				AggregateMetricsFunc(aggDuration.Seconds(), len(allIDs))
 			}
 
-			postStart := time.Now()
 			newAggregates = append(newAggregates, &types.SignedAggregatedAttestation{
 				Data:  attData,
 				Proof: proof,
@@ -283,7 +282,6 @@ func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) (
 					})
 				}
 			}
-			ObserveAggregationPostTime(time.Since(postStart).Seconds())
 		}()
 	}
 
@@ -292,10 +290,8 @@ func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) (
 
 // applyAggregationMutations applies the prove phase's batched store changes.
 func applyAggregationMutations(s *ConsensusStore, m *AggregationMutations) {
-	commitStart := time.Now()
 	s.KnownPayloads.PushBatch(m.PayloadEntries)
 	s.AttestationSignatures.Delete(m.KeysToDelete)
-	ObserveAggregationCommitTime(time.Since(commitStart).Seconds())
 }
 
 // selectChildProofs greedily selects existing proofs from a payload entry,
