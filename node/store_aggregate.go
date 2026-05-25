@@ -9,49 +9,128 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
+// AggregationSnapshot captures all store reads aggregation needs in one pass,
+// taken synchronously by snapshotAggregationInputs so the prove phase
+// (aggregateFromSnapshot) can run as a pure function of (snapshot, pubkey
+// cache) without holding a *ConsensusStore reference. Mirrors the structural
+// split ethlambda uses (snapshot_aggregation_inputs → aggregate_job worker
+// → publish) and is the prerequisite for off-tick async dispatch.
+type AggregationSnapshot struct {
+	headState    *types.State
+	attSigs      map[[32]byte]*AttestationDataEntry
+	newEntries   map[[32]byte]*PayloadEntry
+	knownEntries map[[32]byte]*PayloadEntry
+	targetStates map[[32]byte]*types.State // pre-resolved by attData.Target.Root
+}
+
+// AggregationMutations is the batched store change the prove phase wants to
+// apply when it returns. applyAggregationMutations performs the two writes
+// (KnownPayloads.PushBatch + AttestationSignatures.Delete) as a single unit.
+type AggregationMutations struct {
+	PayloadEntries []PayloadKV
+	KeysToDelete   []AttestationDeleteKey
+}
+
 // AggregateCommitteeSignatures implements the three-phase Select/Fill/Aggregate
 // algorithm from leanSpec store.py aggregate().
 //
-// For each AttestationData with new payloads or raw gossip signatures:
-//  1. Select — greedily pick existing child proofs (new before known)
-//  2. Fill — collect raw gossip signatures for uncovered validators
-//  3. Aggregate — produce recursive proof with children + raw sigs
+// Structurally split into snapshot → prove → apply so the prove phase has no
+// store dependency. The split is synchronous for now; off-tick async dispatch
+// is a follow-up that reuses the same boundaries.
 //
 // Spec: lean_spec/subspecs/forkchoice/store.py aggregate
 func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAttestation {
-	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
-		return nil
-	}
-
 	passStart := time.Now()
 	defer func() { ObserveCommitteeAggregationTime(time.Since(passStart).Seconds()) }()
 
+	snap := snapshotAggregationInputs(s)
+	if snap == nil {
+		return nil
+	}
+	aggs, mut := aggregateFromSnapshot(snap, s.PubKeyCache)
+	applyAggregationMutations(s, mut)
+	return aggs
+}
+
+// snapshotAggregationInputs reads all store state aggregation needs into a
+// consistent snapshot. Returns nil when there is nothing to aggregate.
+func snapshotAggregationInputs(s *ConsensusStore) *AggregationSnapshot {
+	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
+		return nil
+	}
 	headState := s.GetState(s.Head())
 	if headState == nil {
 		return nil
 	}
 
-	var newAggregates []*types.SignedAggregatedAttestation
-	var keysToDelete []AttestationDeleteKey
-	var payloadEntries []PayloadKV
+	snap := &AggregationSnapshot{
+		headState:    headState,
+		attSigs:      s.AttestationSignatures.Snapshot(),
+		newEntries:   make(map[[32]byte]*PayloadEntry),
+		knownEntries: make(map[[32]byte]*PayloadEntry),
+		targetStates: make(map[[32]byte]*types.State),
+	}
 
-	// Snapshot attestation signatures to avoid holding the mutex during ZK proving.
-	attSigs := s.AttestationSignatures.Snapshot()
-
-	// Collect all data roots that have either gossip sigs or new payloads.
+	// Collect data roots that have either gossip sigs or new payloads and
+	// copy the matching new/known payload entry refs into the snapshot.
 	dataRoots := make(map[[32]byte]bool)
-	for dr := range attSigs {
+	for dr := range snap.attSigs {
 		dataRoots[dr] = true
 	}
-	for dr := range s.NewPayloads.data {
+	for dr, entry := range s.NewPayloads.data {
+		dataRoots[dr] = true
+		snap.newEntries[dr] = entry
+	}
+	for dr := range dataRoots {
+		if entry := s.KnownPayloads.data[dr]; entry != nil {
+			snap.knownEntries[dr] = entry
+		}
+	}
+
+	// Pre-resolve target states for each data root's attData so the prove
+	// phase doesn't have to call back into the store.
+	for dr := range dataRoots {
+		var attData *types.AttestationData
+		if e := snap.attSigs[dr]; e != nil {
+			attData = e.Data
+		} else if e := snap.newEntries[dr]; e != nil {
+			attData = e.Data
+		} else if e := snap.knownEntries[dr]; e != nil {
+			attData = e.Data
+		}
+		if attData == nil {
+			continue
+		}
+		if _, ok := snap.targetStates[attData.Target.Root]; !ok {
+			if state := s.GetState(attData.Target.Root); state != nil {
+				snap.targetStates[attData.Target.Root] = state
+			}
+		}
+	}
+
+	return snap
+}
+
+// aggregateFromSnapshot runs the per-data-root prep + FFI + post phases.
+// Pure function of (snapshot, pubkey cache) — performs no store reads — so
+// it can later run on a worker goroutine without holding a store reference.
+func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) ([]*types.SignedAggregatedAttestation, *AggregationMutations) {
+	var newAggregates []*types.SignedAggregatedAttestation
+	mut := &AggregationMutations{}
+
+	dataRoots := make(map[[32]byte]bool)
+	for dr := range snap.attSigs {
+		dataRoots[dr] = true
+	}
+	for dr := range snap.newEntries {
 		dataRoots[dr] = true
 	}
 
 	for dataRoot := range dataRoots {
 		prepStart := time.Now()
-		gossipEntry := attSigs[dataRoot]
-		newEntry := s.NewPayloads.data[dataRoot]
-		knownEntry := s.KnownPayloads.data[dataRoot]
+		gossipEntry := snap.attSigs[dataRoot]
+		newEntry := snap.newEntries[dataRoot]
+		knownEntry := snap.knownEntries[dataRoot]
 
 		// Need attestation data from any available source.
 		var attData *types.AttestationData
@@ -66,7 +145,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 			continue
 		}
 
-		targetState := s.GetState(attData.Target.Root)
+		targetState := snap.targetStates[attData.Target.Root]
 		if targetState == nil {
 			continue
 		}
@@ -75,8 +154,8 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 		var childProofs []xmss.ChildProof
 		covered := make(map[uint64]bool)
 
-		selectChildProofs(newEntry, targetState, &childProofs, covered, s)
-		selectChildProofs(knownEntry, targetState, &childProofs, covered, s)
+		selectChildProofs(newEntry, targetState, &childProofs, covered, cache)
+		selectChildProofs(knownEntry, targetState, &childProofs, covered, cache)
 
 		// Phase 2: Fill — collect raw gossip signatures for uncovered validators.
 		var rawPubkeys []xmss.CPubKey
@@ -108,7 +187,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 					sigHandle = parsed
 				}
 
-				pk, err := s.PubKeyCache.Get(targetState.Validators[sigEntry.ValidatorID].AttestationPubkey)
+				pk, err := cache.Get(targetState.Validators[sigEntry.ValidatorID].AttestationPubkey)
 				if err != nil {
 					continue
 				}
@@ -165,7 +244,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 			Proof: proof,
 		})
 
-		payloadEntries = append(payloadEntries, PayloadKV{
+		mut.PayloadEntries = append(mut.PayloadEntries, PayloadKV{
 			DataRoot: dataRoot,
 			Data:     attData,
 			Proof:    proof,
@@ -173,7 +252,7 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 
 		if gossipEntry != nil {
 			for _, sig := range gossipEntry.Signatures {
-				keysToDelete = append(keysToDelete, AttestationDeleteKey{
+				mut.KeysToDelete = append(mut.KeysToDelete, AttestationDeleteKey{
 					ValidatorID: sig.ValidatorID,
 					DataRoot:    dataRoot,
 				})
@@ -182,12 +261,15 @@ func AggregateCommitteeSignatures(s *ConsensusStore) []*types.SignedAggregatedAt
 		ObserveAggregationPostTime(time.Since(postStart).Seconds())
 	}
 
-	commitStart := time.Now()
-	s.KnownPayloads.PushBatch(payloadEntries)
-	s.AttestationSignatures.Delete(keysToDelete)
-	ObserveAggregationCommitTime(time.Since(commitStart).Seconds())
+	return newAggregates, mut
+}
 
-	return newAggregates
+// applyAggregationMutations applies the prove phase's batched store changes.
+func applyAggregationMutations(s *ConsensusStore, m *AggregationMutations) {
+	commitStart := time.Now()
+	s.KnownPayloads.PushBatch(m.PayloadEntries)
+	s.AttestationSignatures.Delete(m.KeysToDelete)
+	ObserveAggregationCommitTime(time.Since(commitStart).Seconds())
 }
 
 // selectChildProofs greedily selects existing proofs from a payload entry,
@@ -197,7 +279,7 @@ func selectChildProofs(
 	state *types.State,
 	children *[]xmss.ChildProof,
 	covered map[uint64]bool,
-	s *ConsensusStore,
+	cache *xmss.PubKeyCache,
 ) {
 	if entry == nil || len(entry.Proofs) == 0 {
 		return
@@ -219,7 +301,7 @@ func selectChildProofs(
 		for vid := uint64(0); vid < bitsLen; vid++ {
 			if types.BitlistGet(proof.Participants, vid) {
 				if vid < uint64(len(state.Validators)) {
-					pk, err := s.PubKeyCache.Get(state.Validators[vid].AttestationPubkey)
+					pk, err := cache.Get(state.Validators[vid].AttestationPubkey)
 					if err == nil {
 						pubkeys = append(pubkeys, pk)
 					}
