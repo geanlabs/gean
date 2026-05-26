@@ -40,7 +40,6 @@ func main() {
 
 	flag.Parse()
 
-	// Validate required flags.
 	if *configDir == "" || *nodeKey == "" || *nodeID == "" {
 		fmt.Fprintln(os.Stderr, "required flags: --custom-network-config-dir, --node-key, --node-id")
 		flag.Usage()
@@ -69,7 +68,6 @@ func main() {
 	}
 	logger.Info(logger.Node, "genesis: time=%d validators=%d", genesisConfig.GenesisTime, len(genesisConfig.GenesisValidators))
 
-	// Load bootnodes.
 	bootnodes, err := p2p.LoadBootnodes(bootnodePath)
 	if err != nil {
 		logger.Error(logger.Node, "load bootnodes: %v", err)
@@ -77,7 +75,6 @@ func main() {
 	}
 	logger.Info(logger.Node, "bootnodes: %d loaded", len(bootnodes))
 
-	// Load validator keys.
 	keyManager, err := xmss.LoadValidatorKeys(validatorsPath, keysDir, *nodeID)
 	if err != nil {
 		logger.Error(logger.Node, "load validator keys: %v", err)
@@ -107,7 +104,6 @@ func main() {
 	existingState := s.GetState(existingHead)
 
 	if existingHeader != nil && existingState != nil && existingHeader.Slot > 0 {
-		// DB has valid state — restore from it.
 		logger.Info(logger.Node, "restoring from database: slot=%d head=%x justified=%d finalized=%d",
 			existingHeader.Slot, existingHead,
 			s.LatestJustified().Slot, s.LatestFinalized().Slot)
@@ -175,7 +171,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Parse explicit aggregate subnet IDs.
 	var aggregateSubnetIDs []uint64
 	if *aggregateSubnetIDsStr != "" {
 		for _, s := range strings.Split(*aggregateSubnetIDsStr, ",") {
@@ -192,7 +187,6 @@ func main() {
 		}
 	}
 
-	// Collect validator IDs for subnet subscription.
 	var validatorIDs []uint64
 	if keyManager != nil {
 		validatorIDs = keyManager.ValidatorIDs()
@@ -225,7 +219,6 @@ func main() {
 
 	n := node.New(s, fc, p2pHost, keyManager, aggCtl, *committeeCount)
 
-	// Register P2P stream handlers.
 	p2pHost.RegisterReqRespHandlers(
 		func() *p2p.StatusMessage {
 			finalized := s.LatestFinalized()
@@ -250,7 +243,6 @@ func main() {
 	// Wire gossip handlers — P2P pushes to engine channels.
 	p2pHost.StartGossipListeners(n)
 
-	// Start engine goroutine.
 	go n.Run(ctx)
 
 	// Start sync driver: periodic status-poll + BlocksByRange backfill when
