@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 )
 
-// Message ID domains rs L619-638.
+// Message ID domains rs
 var (
 	domainValidSnappy   = [4]byte{0x01, 0x00, 0x00, 0x00}
 	domainInvalidSnappy = [4]byte{0x00, 0x00, 0x00, 0x00}

@@ -2,7 +2,7 @@ package storage
 
 import "encoding/binary"
 
-// Metadata keys rs L62-72.
+// Metadata keys
 var (
 	KeyTime            = []byte("time")
 	KeyConfig          = []byte("config")
@@ -12,7 +12,7 @@ var (
 	KeyLatestFinalized = []byte("latest_finalized")
 )
 
-// Retention constants rs L75-78.
+// Retention constants
 const (
 	BlocksToKeep = 21_600 // ~1 day at 4s slots
 	StatesToKeep = 3_000  // ~3.3 hours at 4s slots

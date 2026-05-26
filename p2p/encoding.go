@@ -9,7 +9,7 @@ import (
 	"github.com/golang/snappy"
 )
 
-// Max payload sizes rs L6-9.
+// Max payload sizes
 const (
 	MaxPayloadSize           = 10 * 1024 * 1024                              // 10 MiB uncompressed
 	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024 // ~12 MiB

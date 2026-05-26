@@ -13,8 +13,7 @@ import (
 )
 
 // Engine is the consensus coordination loop.
-// It owns Store, ForkChoice, and KeyManager as siblings,
-// rs L78-95).
+// It owns Store, ForkChoice, and KeyManager as siblings
 // Pending block limits to prevent stuck-forever scenarios.
 const (
 	MaxBlockFetchDepth = 512  // Max ancestor chain depth before discarding
