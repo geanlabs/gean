@@ -342,20 +342,15 @@ func main() {
 }
 
 // initStoreFromState initializes the consensus store from an anchor state
-// and returns the canonical anchor block root.
+// and returns the canonical anchor block root (computed after header.StateRoot
+// canonicalization — use this value, not a pre-call root, as the
+// StorePendingBlock key).
 //
 // The anchor state becomes the new latest justified AND latest finalized
 // checkpoint — both pointing at the served block at header.Slot. This
 // matches the standard checkpoint sync convention: the bootstrapping node
 // trusts the served state as the new finalization anchor and starts forward
 // sync from there.
-//
-// The returned root is the canonical anchor block root — computed AFTER the
-// header.StateRoot canonicalization step. Callers that need to associate
-// out-of-band data with the anchor block (e.g. StorePendingBlock for the
-// checkpoint-sync SignedBlock) must use this return value, not a root
-// computed before the function ran; the pre-canonicalization root would not
-// match what the store records as latest_finalized.Root.
 //
 // Note: state.LatestJustified and state.LatestFinalized inside the served
 // state point to EARLIER slots (the finalization status from when the block
