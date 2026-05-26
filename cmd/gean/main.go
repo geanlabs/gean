@@ -330,7 +330,6 @@ func main() {
 // was processed). We deliberately do NOT use those — the served block IS
 // the new anchor, regardless of what its internal pointers say.
 func initStoreFromState(s *node.ConsensusStore, state *types.State) [32]byte {
-	// Compute anchor block root from header.
 	stateRoot, _ := state.HashTreeRoot()
 	header := state.LatestBlockHeader
 
@@ -343,7 +342,6 @@ func initStoreFromState(s *node.ConsensusStore, state *types.State) [32]byte {
 	// Anchor checkpoint: both justified and finalized point at the served block.
 	anchor := &types.Checkpoint{Root: blockRoot, Slot: header.Slot}
 
-	// Store metadata.
 	s.SetConfig(state.Config)
 	s.SetHead(blockRoot)
 	s.SetSafeTarget(blockRoot)
@@ -352,7 +350,6 @@ func initStoreFromState(s *node.ConsensusStore, state *types.State) [32]byte {
 	// Store time is rehydrated from wall clock by recoverStoreTime after
 	// every init path; no need to seed it here.
 
-	// Store block header and state.
 	s.InsertBlockHeader(blockRoot, header)
 	s.InsertState(blockRoot, state)
 	s.InsertLiveChainEntry(state.Slot, blockRoot, header.ParentRoot)
