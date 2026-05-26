@@ -25,7 +25,6 @@ import (
 )
 
 func main() {
-	// CLI flags rs L46-79.
 	configDir := flag.String("custom-network-config-dir", "", "Config directory (required)")
 	gossipPort := flag.Int("gossipsub-port", 9000, "P2P listen port (QUIC/UDP)")
 	httpAddr := flag.String("http-address", "127.0.0.1", "Bind address for API + metrics")
