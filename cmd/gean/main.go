@@ -274,9 +274,6 @@ func main() {
 	p2p.PeerStatusHook = syncDriver.OnPeerConnected
 	go syncDriver.Run()
 
-	// Connect to bootnodes only AFTER PeerStatusHook is wired above, so the
-	// first peer-connect event sees a non-nil hook and triggers the Status
-	// reqresp handshake.
 	p2pHost.ConnectBootnodes(ctx, bootnodes)
 	p2pHost.StartBootnodeRedial(ctx, bootnodes)
 
