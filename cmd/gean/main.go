@@ -57,8 +57,6 @@ func main() {
 
 	logger.Info(logger.Node, "gean consensus client starting")
 
-	// --- Load configuration ---
-
 	configPath := filepath.Join(*configDir, "config.yaml")
 	bootnodePath := filepath.Join(*configDir, "nodes.yaml")
 	validatorsPath := filepath.Join(*configDir, "annotated_validators.yaml")
@@ -88,8 +86,6 @@ func main() {
 	defer keyManager.Close()
 	logger.Info(logger.Node, "validators: %d keys loaded for %s", len(keyManager.ValidatorIDs()), *nodeID)
 
-	// --- Initialize storage ---
-
 	absDataDir, _ := filepath.Abs(*dataDir)
 	os.MkdirAll(absDataDir, 0755)
 	logger.Info(logger.Node, "storage: %s", absDataDir)
@@ -102,8 +98,6 @@ func main() {
 	defer backend.Close()
 
 	s := node.NewConsensusStore(backend)
-
-	// --- Initialize state (DB restore, checkpoint sync, or genesis) ---
 
 	genesisValidators := genesisConfig.Validators()
 
@@ -174,13 +168,9 @@ func main() {
 	// fires, opening an 800ms hole at every boot.
 	recoverStoreTime(s, genesisConfig.GenesisTime)
 
-	// --- Initialize fork choice ---
-
 	headRoot := s.Head()
 	headHeader := s.GetBlockHeader(headRoot)
 	fc := forkchoice.New(headHeader.Slot, headRoot)
-
-	// --- Initialize P2P ---
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -225,8 +215,6 @@ func main() {
 		logger.Info(logger.Node, "XMSS prover ready")
 	}
 	xmss.EnsureVerifierReady()
-
-	// --- Initialize engine ---
 
 	// Runtime-toggleable aggregator role. Seeded from --is-aggregator; the
 	// admin API endpoint flips this without restart. Boot-time subscription
@@ -295,8 +283,6 @@ func main() {
 		}
 	}()
 
-	// --- Start HTTP servers ---
-
 	apiAddr := fmt.Sprintf("%s:%d", *httpAddr, *apiPort)
 	metricsAddr := fmt.Sprintf("%s:%d", *httpAddr, *metricsPort)
 
@@ -325,8 +311,6 @@ func main() {
 	}()
 
 	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", apiAddr, metricsAddr, *isAggregator)
-
-	// --- Wait for shutdown ---
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
