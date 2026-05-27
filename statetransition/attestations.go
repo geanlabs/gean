@@ -61,11 +61,8 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 		// Check supermajority: 3 * votes >= 2 * validators.
 		voteCount := countTrue(votes)
 		if 3*voteCount >= 2*validatorCount {
-			// Justify the target. Only advance latest_justified forward;
-			// multiple supermajority attestations in one block can resolve
-			// in non-monotonic target-slot order, and processing a smaller
-			// target after a larger one must not drag the checkpoint
-			// backward (leanSpec PR #781).
+			// Only advance latest_justified forward — a block's supermajority
+			// targets are not slot-ordered in body order (leanSpec PR #781).
 			if target.Slot > state.LatestJustified.Slot {
 				state.LatestJustified = target
 			}
