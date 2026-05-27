@@ -46,11 +46,13 @@ func TestLatestJustifiedDoesNotRegressWithinBlock(t *testing.T) {
 
 	// Aggregation bits: 4-bit bitlist with validators 0/1/2 voted.
 	// Layout: data bits [1,1,1,0] + delimiter at position 4 → 0b00010111 = 0x17.
-	bits := func() []byte { return []byte{0x17} }
+	// ProcessAttestations only reads AggregationBits, so the three calls below
+	// can share one backing slice.
+	bits := []byte{0x17}
 
 	mkAtt := func(targetSlot uint64, targetRoot [types.RootSize]byte) *types.AggregatedAttestation {
 		return &types.AggregatedAttestation{
-			AggregationBits: bits(),
+			AggregationBits: bits,
 			Data: &types.AttestationData{
 				Slot:   targetSlot,
 				Head:   &types.Checkpoint{Slot: targetSlot, Root: targetRoot},
