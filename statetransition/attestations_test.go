@@ -6,22 +6,14 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// TestLatestJustifiedDoesNotRegressWithinBlock is the Go port of ethlambda's
-// `latest_justified_does_not_regress_within_block` regression test
-// (ethlambda/crates/blockchain/state_transition/src/lib.rs:600-661) and the
-// regression scenario covered by leanSpec PR #781
-// (test_same_block_multi_target_attestations_advance_to_highest_slot).
+// TestLatestJustifiedDoesNotRegressWithinBlock ports ethlambda's
+// latest_justified_does_not_regress_within_block regression and covers
+// leanSpec PR #781.
 //
 // A single block carries three supermajority attestations targeting slots
 // 4, 9, 6 in body order — all justifiable from finalized genesis (Δ=4 ≤ 5,
 // Δ=9 = 3², Δ=6 = 2·3). With 4 validators, three votes is supermajority,
 // so each attestation crosses the threshold.
-//
-// Before the fix, the unconditional `state.LatestJustified = target` at
-// statetransition/attestations.go:65 let the slot-6 attestation processed
-// last drag LatestJustified from slot 9 back to slot 6. After the fix
-// (guard on target.Slot > state.LatestJustified.Slot), LatestJustified
-// stays at the highest justified slot regardless of body order.
 //
 // The per-slot justified_slots bitfield still records all three targets;
 // only the LatestJustified pointer is gated.
