@@ -38,8 +38,6 @@ func TestLatestJustifiedDoesNotRegressWithinBlock(t *testing.T) {
 	copy(hashes[9], r9[:])
 
 	state := makeGenesisState(numValidators)
-	state.Slot = 10
-	state.LatestBlockHeader.Slot = 9
 	state.LatestJustified = &types.Checkpoint{Slot: 3, Root: r3}
 	state.LatestFinalized = &types.Checkpoint{}
 	state.HistoricalBlockHashes = hashes
