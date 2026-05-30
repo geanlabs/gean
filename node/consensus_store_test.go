@@ -2,6 +2,7 @@ package node
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
@@ -227,6 +228,36 @@ func TestAttestationSignatureInsertAndDelete(t *testing.T) {
 	}
 }
 
+func TestAttestationSignatureSnapshotDetachesEntries(t *testing.T) {
+	gsm := NewAttestationSignatureMap()
+	var dr [32]byte
+	dr[0] = 1
+	data := &types.AttestationData{Slot: 5}
+	var sig [types.SignatureSize]byte
+	sig[0] = 9
+	var handleMarker byte
+
+	gsm.InsertWithHandle(dr, data, 7, sig, unsafe.Pointer(&handleMarker), nil)
+	snap := gsm.Snapshot()
+
+	data.Slot = 99
+	gsm.Insert(dr, data, 8, sig)
+
+	entry := snap[dr]
+	if entry == nil {
+		t.Fatal("expected snapshot entry")
+	}
+	if entry.Data == data || entry.Data.Slot != 5 {
+		t.Fatalf("snapshot should own attestation data copy, got %#v", entry.Data)
+	}
+	if len(entry.Signatures) != 1 {
+		t.Fatalf("snapshot should not share signatures slice, got %d", len(entry.Signatures))
+	}
+	if entry.Signatures[0].SigHandle != nil {
+		t.Fatal("snapshot must not share live C signature handles")
+	}
+}
+
 func TestAttestationSignaturePruneBelow(t *testing.T) {
 	gsm := NewAttestationSignatureMap()
 	var sig [types.SignatureSize]byte
@@ -242,6 +273,75 @@ func TestAttestationSignaturePruneBelow(t *testing.T) {
 	}
 	if gsm.Len() != 2 {
 		t.Fatalf("expected 2 remaining, got %d", gsm.Len())
+	}
+}
+
+func TestAggregationSnapshotDetachesPayloadEntries(t *testing.T) {
+	s := makeTestStore()
+	headRoot := [32]byte{0x01}
+	targetRoot := [32]byte{0x02}
+	s.SetHead(headRoot)
+	state := &types.State{
+		Config:                   &types.ChainConfig{GenesisTime: 1000},
+		Slot:                     10,
+		LatestBlockHeader:        &types.BlockHeader{},
+		LatestJustified:          &types.Checkpoint{},
+		LatestFinalized:          &types.Checkpoint{},
+		JustifiedSlots:           types.NewBitlistSSZ(0),
+		JustificationsValidators: types.NewBitlistSSZ(0),
+	}
+	s.InsertState(headRoot, state)
+	s.InsertState(targetRoot, state)
+
+	data := &types.AttestationData{
+		Slot:   5,
+		Head:   &types.Checkpoint{Root: headRoot, Slot: 5},
+		Target: &types.Checkpoint{Root: targetRoot, Slot: 4},
+		Source: &types.Checkpoint{Root: headRoot, Slot: 3},
+	}
+	dataRoot, _ := data.HashTreeRoot()
+	newProof := &types.AggregatedSignatureProof{
+		Participants: []byte{0x01},
+		ProofData:    []byte{0x02},
+	}
+	knownProof := &types.AggregatedSignatureProof{
+		Participants: []byte{0x03},
+		ProofData:    []byte{0x04},
+	}
+	s.NewPayloads.Push(dataRoot, data, newProof)
+	s.KnownPayloads.Push(dataRoot, data, knownProof)
+
+	snap := snapshotAggregationInputs(s)
+	if snap == nil {
+		t.Fatal("expected aggregation snapshot")
+	}
+
+	data.Slot = 99
+	newProof.Participants[0] = 0xff
+	newProof.ProofData[0] = 0xfe
+	knownProof.Participants[0] = 0xfd
+	s.NewPayloads.Push(dataRoot, data, &types.AggregatedSignatureProof{Participants: []byte{0x05}})
+
+	newEntry := snap.newEntries[dataRoot]
+	if newEntry == nil {
+		t.Fatal("expected new payload snapshot entry")
+	}
+	if newEntry.Data == data || newEntry.Data.Slot != 5 {
+		t.Fatalf("snapshot should own payload data copy, got %#v", newEntry.Data)
+	}
+	if len(newEntry.Proofs) != 1 {
+		t.Fatalf("snapshot should not share proof slice, got %d proofs", len(newEntry.Proofs))
+	}
+	if newEntry.Proofs[0].Participants[0] != 0x01 || newEntry.Proofs[0].ProofData[0] != 0x02 {
+		t.Fatal("snapshot should own proof byte slices")
+	}
+
+	knownEntry := snap.knownEntries[dataRoot]
+	if knownEntry == nil {
+		t.Fatal("expected known payload snapshot entry")
+	}
+	if knownEntry.Proofs[0].Participants[0] != 0x03 {
+		t.Fatal("snapshot should own known payload proof bytes")
 	}
 }
 
