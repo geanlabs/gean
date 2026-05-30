@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
@@ -144,7 +145,7 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types
 	// Parent exists — process the block.
 	blockStart := time.Now()
 	err := OnBlock(e.Store, signedBlock, e.Keys.ValidatorIDs())
-	ObserveBlockProcessingTime(time.Since(blockStart).Seconds())
+	metrics.ObserveBlockProcessingTime(time.Since(blockStart).Seconds())
 	if err != nil {
 		logger.Error(logger.Chain, "block processing failed slot=%d block_root=0x%x: %v", block.Slot, blockRoot, err)
 		return
@@ -386,7 +387,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	success := false
 	defer func() {
 		if success {
-			ObserveAttestationValidationTime(time.Since(start).Seconds())
+			metrics.ObserveAttestationValidationTime(time.Since(start).Seconds())
 		}
 	}()
 
@@ -411,7 +412,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 				}
 			}
 			if dropped > 0 {
-				IncAttestationsBufferEvicted(dropped)
+				metrics.IncAttestationsBufferEvicted(dropped)
 			}
 		}
 		return
@@ -431,17 +432,17 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	dataRoot, _ := att.Data.HashTreeRoot()
 	slot := uint32(att.Data.Slot)
 
-	IncPqSigAttestationSigsTotal()
+	metrics.IncPqSigAttestationSigsTotal()
 	verifyStart := time.Now()
 	valid, err := verifyAttestation(pubkey, slot, dataRoot, att.Signature)
-	ObservePqSigVerificationTime(time.Since(verifyStart).Seconds())
+	metrics.ObservePqSigVerificationTime(time.Since(verifyStart).Seconds())
 	if err != nil || !valid {
-		IncPqSigAttestationSigsInvalid()
-		IncAttestationsInvalid()
+		metrics.IncPqSigAttestationSigsInvalid()
+		metrics.IncAttestationsInvalid()
 		return
 	}
-	IncPqSigAttestationSigsValid()
-	IncAttestationsValid(1)
+	metrics.IncPqSigAttestationSigsValid()
+	metrics.IncAttestationsValid(1)
 
 	// Parse signature to opaque C handle for aggregation.
 	sigHandle, parseErr := xmss.ParseSignature(att.Signature[:])

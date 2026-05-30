@@ -1,11 +1,12 @@
-package node
+// Package metrics defines gean's Prometheus metrics and the typed
+// Set/Inc/Observe helpers the node uses to update them. All metric names use
+// the lean_ prefix and follow the leanMetrics standard.
+package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
-
-// All metrics use lean_ prefix rs.
 
 // --- Gauges ---
 
@@ -141,7 +142,7 @@ var (
 		Help:    "Time to validate attestation data",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
 	})
-metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
+	metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_attestation_signing_time_seconds",
 		Help:    "Time to sign an attestation",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
@@ -336,9 +337,11 @@ func ObserveAttestationsProductionTime(seconds float64) {
 }
 func ObservePqSigVerificationTime(seconds float64) { metricPqSigVerificationTime.Observe(seconds) }
 func ObservePqSigAggBuildingTime(seconds float64)  { metricPqSigAggBuildingTime.Observe(seconds) }
-func ObserveAggregationPrepTime(seconds float64)        { metricAggregationPrepTime.Observe(seconds) }
-func ObserveAggregationWorkerTotalTime(seconds float64) { metricAggregationWorkerTotalTime.Observe(seconds) }
-func IncAggregationDispatchDropped()                    { metricAggregationDispatchDropped.Inc() }
+func ObserveAggregationPrepTime(seconds float64)   { metricAggregationPrepTime.Observe(seconds) }
+func ObserveAggregationWorkerTotalTime(seconds float64) {
+	metricAggregationWorkerTotalTime.Observe(seconds)
+}
+func IncAggregationDispatchDropped() { metricAggregationDispatchDropped.Inc() }
 func ObservePqSigAggVerificationTime(seconds float64) {
 	metricPqSigAggVerificationTime.Observe(seconds)
 }
