@@ -9,7 +9,7 @@ import (
 	"github.com/golang/snappy"
 )
 
-// Max payload sizes rs L6-9.
+// Maximum wire payload sizes.
 const (
 	MaxPayloadSize           = 10 * 1024 * 1024                              // 10 MiB uncompressed
 	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024 // ~12 MiB
@@ -93,7 +93,7 @@ func DecodeReqRespPayload(buf []byte) ([]byte, error) {
 	return decoded, nil
 }
 
-// Response codes rs.
+// Response codes for req/resp chunks.
 const (
 	RespSuccess             byte = 0x00
 	RespInvalidRequest      byte = 0x01

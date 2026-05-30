@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 )
 
-// Message ID domains rs L619-638.
+// Gossipsub message ID domains for valid and invalid snappy payloads.
 var (
 	domainValidSnappy   = [4]byte{0x01, 0x00, 0x00, 0x00}
 	domainInvalidSnappy = [4]byte{0x00, 0x00, 0x00, 0x00}

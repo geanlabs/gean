@@ -16,9 +16,6 @@ import (
 // from Makefile / Dockerfile, surfaced through the lean_node_info Prometheus gauge.
 var gitCommit = "unknown"
 
-// Engine is the consensus coordination loop.
-// It owns Store, ForkChoice, and KeyManager as siblings,
-// rs L78-95).
 // Pending block limits to prevent stuck-forever scenarios.
 const (
 	MaxBlockFetchDepth = 512  // Max ancestor chain depth before discarding
@@ -34,6 +31,8 @@ const (
 	PendingAttestationsTotalCap   = 512
 )
 
+// Engine is the consensus coordination loop.
+// It owns Store, ForkChoice, and KeyManager as siblings.
 type Engine struct {
 	Store               *ConsensusStore
 	FC                  *forkchoice.ForkChoice
@@ -77,17 +76,17 @@ func New(
 	committeeCount uint64,
 ) *Engine {
 	return &Engine{
-		Store:               s,
-		FC:                  fc,
-		P2P:                 p2pHost,
-		Keys:                keys,
-		AggCtl:              aggCtl,
-		DutyGate:            NewDutyGate(),
-		CommitteeCount:      committeeCount,
-		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
-		PendingBlockParents: make(map[[32]byte][32]byte),
-		PendingBlockDepths:  make(map[[32]byte]int),
-		PendingAttestations: NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		Store:                 s,
+		FC:                    fc,
+		P2P:                   p2pHost,
+		Keys:                  keys,
+		AggCtl:                aggCtl,
+		DutyGate:              NewDutyGate(),
+		CommitteeCount:        committeeCount,
+		PendingBlocks:         make(map[[32]byte]map[[32]byte]bool),
+		PendingBlockParents:   make(map[[32]byte][32]byte),
+		PendingBlockDepths:    make(map[[32]byte]int),
+		PendingAttestations:   NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		BlockCh:               make(chan *types.SignedBlock, 64),
 		AttestationCh:         make(chan *types.SignedAttestation, 256),
 		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),

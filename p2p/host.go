@@ -21,7 +21,7 @@ import (
 	"github.com/geanlabs/gean/logger"
 )
 
-// GossipSub parameters rs L96-119.
+// GossipSub mesh and cache parameters.
 const (
 	GossipMeshN             = 8
 	GossipMeshNLow          = 6

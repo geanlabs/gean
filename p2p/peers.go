@@ -15,7 +15,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Retry parameters rs L56-59.
+// Peer retry and sync request parameters.
 const (
 	MaxFetchRetries    = 10
 	InitialBackoffMs   = 5

@@ -10,7 +10,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Timeouts rs L9-13.
+// HTTP timeouts for checkpoint sync requests.
 const (
 	CheckpointConnectTimeout = 15 * time.Second
 	CheckpointReadTimeout    = 15 * time.Second

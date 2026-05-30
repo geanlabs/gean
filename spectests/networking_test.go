@@ -13,8 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/rlp"
-
+	leanrlp "github.com/geanlabs/gean/internal/rlp"
 	"github.com/geanlabs/gean/p2p"
 )
 
@@ -286,43 +285,38 @@ func testDiscv5Message(t *testing.T, fx netFixture) string {
 		return "skip"
 	}
 
-	var fields []interface{}
+	var fields [][]byte
 	reqIDHex, _ := fx.Input["requestId"].(string)
 	reqID, _ := decodeHex(reqIDHex)
 	// Strip leading zeros per discv5 minimal encoding.
 	for len(reqID) > 1 && reqID[0] == 0 {
 		reqID = reqID[1:]
 	}
-	fields = append(fields, reqID)
+	fields = append(fields, leanrlp.EncodeBytes(reqID))
 
 	switch msgType {
 	case "ping":
 		enrSeq := uint64(fx.Input["enrSeq"].(float64))
-		fields = append(fields, enrSeq)
+		fields = append(fields, leanrlp.EncodeUint64(enrSeq))
 	case "pong":
 		enrSeq := uint64(fx.Input["enrSeq"].(float64))
 		ipHex, _ := fx.Input["recipientIp"].(string)
 		ip, _ := decodeHex(ipHex)
 		port := uint16(fx.Input["recipientPort"].(float64))
-		fields = append(fields, enrSeq, ip, port)
+		fields = append(fields, leanrlp.EncodeUint64(enrSeq), leanrlp.EncodeBytes(ip), leanrlp.EncodeUint16(port))
 	case "findnode":
 		dists, _ := fx.Input["distances"].([]interface{})
-		var ds []uint64
+		encodedDistances := make([][]byte, 0, len(dists))
 		for _, d := range dists {
-			ds = append(ds, uint64(d.(float64)))
+			encodedDistances = append(encodedDistances, leanrlp.EncodeUint64(uint64(d.(float64))))
 		}
-		fields = append(fields, ds)
+		fields = append(fields, leanrlp.EncodeList(encodedDistances...))
 	default:
 		t.Skipf("discv5 message type %q encoding not yet implemented", msgType)
 		return "skip"
 	}
 
-	encoded, err := rlp.EncodeToBytes(fields)
-	if err != nil {
-		t.Errorf("rlp encode: %v", err)
-		return "fail"
-	}
-
+	encoded := leanrlp.EncodeList(fields...)
 	got := append([]byte{typeByte}, encoded...)
 	if fmt.Sprintf("%x", got) != fmt.Sprintf("%x", want) {
 		t.Errorf("type=%s: got %x, want %x", msgType, got, want)

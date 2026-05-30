@@ -122,7 +122,7 @@ func buildBlock(
 			if sorted[i].entry.Data.Target.Slot != sorted[j].entry.Data.Target.Slot {
 				return sorted[i].entry.Data.Target.Slot < sorted[j].entry.Data.Target.Slot
 			}
-			return compareRoots(sorted[i].dataRoot, sorted[j].dataRoot) < 0
+			return bytes.Compare(sorted[i].dataRoot[:], sorted[j].dataRoot[:]) < 0
 		})
 
 		processedAttData := make(map[[32]byte]bool)
@@ -460,16 +460,4 @@ func attestationDataMatchesChain(state *types.State, data *types.AttestationData
 		return false
 	}
 	return true
-}
-
-func compareRoots(a, b [32]byte) int {
-	for i := 0; i < 32; i++ {
-		if a[i] != b[i] {
-			if a[i] < b[i] {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
 }

@@ -46,14 +46,8 @@ fmt: ## Format all Go code
 	cd xmss/rust && cargo fmt
 
 sszgen: ## Regenerate SSZ encoding files from struct tags
-	@rm -f types/*_encoding.go
-	sszgen --path pkg/types --objs ChainConfig --output types/config_encoding.go
-	sszgen --path pkg/types --objs Checkpoint --output types/checkpoint_encoding.go
-	sszgen --path pkg/types --objs Validator --output types/validator_encoding.go
-	sszgen --path pkg/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SignedAggregatedAttestation --exclude-objs Checkpoint --output types/attestation_encoding.go
-	sszgen --path pkg/types --objs BlockHeader,BlockBody,Block,AggregatedSignatureProof,BlockSignatures,SignedBlock --exclude-objs Checkpoint,AttestationData,Attestation,AggregatedAttestation,AggregatedSignatureProof --output types/block_encoding.go
-	sszgen --path pkg/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output types/state_encoding.go
-	sszgen --path types --objs BlocksByRangeRequest --output types/blocks_by_range_encoding.go
+	@rm -f types/*_encoding.go types/encoding_gen.go
+	sszgen --path types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SignedAggregatedAttestation,BlockHeader,BlockBody,Block,AggregatedSignatureProof,BlockSignatures,SignedBlock,BlocksByRangeRequest,Checkpoint,ChainConfig,State,Validator --output types/encoding_gen.go
 
 clean: ## Remove build artifacts and generated files
 	rm -rf bin data
@@ -132,4 +126,3 @@ run-devnet: docker-build lean-quickstart ## Run local multi-client devnet
 	@echo "Starting local devnet with gean client (\"$(DOCKER_TAG)\" tag)."
 	@cd lean-quickstart \
 		&& NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > ../devnet.log 2>&1
-

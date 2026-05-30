@@ -7,10 +7,11 @@ import (
 	"strings"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+
+	leanrlp "github.com/geanlabs/gean/internal/rlp"
 )
 
 // ENRFields is the spec-compliant decoded view of an ENR per EIP-778.
@@ -28,10 +29,38 @@ type ENRFields struct {
 	Multiaddr string
 }
 
+type decodedENR struct {
+	seq       uint64
+	peerID    peer.ID
+	ip4       net.IP
+	ip6       net.IP
+	udpPort   uint16
+	quicPort  uint16
+	udp6Port  uint16
+	quic6Port uint16
+}
+
+func (d *decodedENR) transportMultiaddr() string {
+	return buildTransportMultiaddr(d.ip4, d.ip6, d.udpPort, d.quicPort, d.udp6Port, d.quic6Port)
+}
+
 // DecodeENR decodes an ENR to structured fields per EIP-778.
 // Unlike ParseENR, this tolerates ENRs without an ip field (returns empty
 // Multiaddr) and emits a transport-only multiaddr without /p2p/<peerID>.
 func DecodeENR(enrStr string) (*ENRFields, error) {
+	decoded, err := decodeENR(enrStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ENRFields{
+		Seq:       decoded.seq,
+		PeerID:    decoded.peerID,
+		Multiaddr: decoded.transportMultiaddr(),
+	}, nil
+}
+
+func decodeENR(enrStr string) (*decodedENR, error) {
 	enrStr = strings.TrimSpace(enrStr)
 	if !strings.HasPrefix(enrStr, "enr:") {
 		return nil, fmt.Errorf("not an ENR: %q", enrStr)
@@ -42,63 +71,54 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 		return nil, fmt.Errorf("decode ENR base64: %w", err)
 	}
 
-	var items []rlp.RawValue
-	if err := rlp.DecodeBytes(data, &items); err != nil {
+	items, err := leanrlp.SplitList(data)
+	if err != nil {
 		return nil, fmt.Errorf("decode ENR RLP: %w", err)
 	}
 	if len(items) < 4 {
 		return nil, fmt.Errorf("ENR has too few items: %d", len(items))
 	}
 
-	var seq uint64
-	if err := rlp.DecodeBytes(items[1], &seq); err != nil {
+	seq, err := leanrlp.Uint64(items[1])
+	if err != nil {
 		return nil, fmt.Errorf("decode ENR seq: %w", err)
 	}
 
-	var ip4, ip6 net.IP
-	var udpPort, quicPort uint16
-	var udp6Port, quic6Port uint16
+	decoded := &decodedENR{seq: seq}
 	var pubkeyBytes []byte
 
 	for i := 2; i+1 < len(items); i += 2 {
-		var key string
-		if err := rlp.DecodeBytes(items[i], &key); err != nil {
+		key, err := leanrlp.String(items[i])
+		if err != nil {
 			continue
 		}
 		switch key {
 		case "ip":
-			var ipBytes []byte
-			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 4 {
-				ip4 = net.IP(ipBytes)
+			if ipBytes, err := leanrlp.Bytes(items[i+1]); err == nil && len(ipBytes) == 4 {
+				decoded.ip4 = net.IP(ipBytes)
 			}
 		case "ip6":
-			var ipBytes []byte
-			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 16 {
-				ip6 = net.IP(ipBytes)
+			if ipBytes, err := leanrlp.Bytes(items[i+1]); err == nil && len(ipBytes) == 16 {
+				decoded.ip6 = net.IP(ipBytes)
 			}
 		case "udp":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				udpPort = port
+			if port, err := leanrlp.Uint16(items[i+1]); err == nil {
+				decoded.udpPort = port
 			}
 		case "udp6":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				udp6Port = port
+			if port, err := leanrlp.Uint16(items[i+1]); err == nil {
+				decoded.udp6Port = port
 			}
 		case "quic":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				quicPort = port
+			if port, err := leanrlp.Uint16(items[i+1]); err == nil {
+				decoded.quicPort = port
 			}
 		case "quic6":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				quic6Port = port
+			if port, err := leanrlp.Uint16(items[i+1]); err == nil {
+				decoded.quic6Port = port
 			}
 		case "secp256k1":
-			var raw []byte
-			if err := rlp.DecodeBytes(items[i+1], &raw); err == nil {
+			if raw, err := leanrlp.Bytes(items[i+1]); err == nil {
 				pubkeyBytes = raw
 			}
 		}
@@ -120,12 +140,9 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 	if err != nil {
 		return nil, fmt.Errorf("derive peer ID: %w", err)
 	}
+	decoded.peerID = peerID
 
-	// Build transport-only multiaddr when possible. No /p2p/<peerID> suffix.
-	// Prefer IPv4 when both are present (standard devp2p convention); fall back to IPv6.
-	maStr := buildTransportMultiaddr(ip4, ip6, udpPort, quicPort, udp6Port, quic6Port)
-
-	return &ENRFields{Seq: seq, PeerID: peerID, Multiaddr: maStr}, nil
+	return decoded, nil
 }
 
 // ParseENR decodes an ENR string and returns a dial-ready multiaddr.
@@ -133,108 +150,21 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 // Prefers IPv4 when both ip and ip6 are present; falls back to IPv6.
 // Emits /ip4/<addr>/udp/<port>/quic-v1/p2p/<peer_id> or /ip6/... depending on the address family.
 func ParseENR(enrStr string) (multiaddr.Multiaddr, error) {
-	enrStr = strings.TrimSpace(enrStr)
-	if !strings.HasPrefix(enrStr, "enr:") {
-		return nil, fmt.Errorf("not an ENR: %q", enrStr)
-	}
-
-	b64 := enrStr[4:]
-	data, err := base64.RawURLEncoding.DecodeString(b64)
+	decoded, err := decodeENR(enrStr)
 	if err != nil {
-		return nil, fmt.Errorf("decode ENR base64: %w", err)
+		return nil, err
 	}
-
-	// Decode RLP list: [signature, seq, k1, v1, k2, v2, ...]
-	var items []rlp.RawValue
-	if err := rlp.DecodeBytes(data, &items); err != nil {
-		return nil, fmt.Errorf("decode ENR RLP: %w", err)
-	}
-
-	if len(items) < 4 {
-		return nil, fmt.Errorf("ENR has too few items: %d", len(items))
-	}
-
-	// Parse key-value pairs (skip signature at index 0, seq at index 1).
-	var ip4, ip6 net.IP
-	var udpPort, quicPort uint16
-	var udp6Port, quic6Port uint16
-	var pubkeyBytes []byte
-
-	for i := 2; i+1 < len(items); i += 2 {
-		var key string
-		if err := rlp.DecodeBytes(items[i], &key); err != nil {
-			continue
-		}
-
-		switch key {
-		case "ip":
-			var ipBytes []byte
-			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 4 {
-				ip4 = net.IP(ipBytes)
-			}
-		case "ip6":
-			var ipBytes []byte
-			if err := rlp.DecodeBytes(items[i+1], &ipBytes); err == nil && len(ipBytes) == 16 {
-				ip6 = net.IP(ipBytes)
-			}
-		case "udp":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				udpPort = port
-			}
-		case "udp6":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				udp6Port = port
-			}
-		case "quic":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				quicPort = port
-			}
-		case "quic6":
-			var port uint16
-			if err := rlp.DecodeBytes(items[i+1], &port); err == nil {
-				quic6Port = port
-			}
-		case "secp256k1":
-			var raw []byte
-			if err := rlp.DecodeBytes(items[i+1], &raw); err == nil {
-				pubkeyBytes = raw
-			}
-		}
-	}
-
-	if ip4 == nil && ip6 == nil {
+	if decoded.ip4 == nil && decoded.ip6 == nil {
 		return nil, fmt.Errorf("ENR missing ip/ip6 field")
-	}
-	if len(pubkeyBytes) == 0 {
-		return nil, fmt.Errorf("ENR missing secp256k1 key")
-	}
-
-	// Derive libp2p peer ID from secp256k1 compressed pubkey.
-	secpKey, err := secp256k1.ParsePubKey(pubkeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("parse secp256k1 key: %w", err)
-	}
-
-	libp2pKey, err := crypto.UnmarshalSecp256k1PublicKey(secpKey.SerializeCompressed())
-	if err != nil {
-		return nil, fmt.Errorf("convert to libp2p key: %w", err)
-	}
-
-	peerID, err := peer.IDFromPublicKey(libp2pKey)
-	if err != nil {
-		return nil, fmt.Errorf("derive peer ID: %w", err)
 	}
 
 	// Build transport multiaddr, then append /p2p/<peerID> for dialing.
 	// Prefer IPv4 when both are present; fall back to IPv6.
-	transport := buildTransportMultiaddr(ip4, ip6, udpPort, quicPort, udp6Port, quic6Port)
+	transport := decoded.transportMultiaddr()
 	if transport == "" {
 		return nil, fmt.Errorf("ENR missing udp/quic port")
 	}
-	ma, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", transport, peerID))
+	ma, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", transport, decoded.peerID))
 	if err != nil {
 		return nil, fmt.Errorf("build multiaddr: %w", err)
 	}

@@ -10,16 +10,14 @@ import (
 )
 
 const (
-	// Buffer capacities rs L87-91.
 	aggregatedPayloadCap = 0 // unbounded, pruned on finalization only
 	newPayloadCap        = 0 // unbounded
 )
 
 // ConsensusStore holds all state required for fork choice and block processing.
 //
-// Note: ForkChoice does NOT live here — it lives in Engine (Phase 7),
-// Engine calls ForkChoice with store data as parameters.
-// with store data as parameters.
+// ForkChoice lives in Engine. Engine passes store data into fork-choice updates
+// rather than storing fork-choice state here.
 type ConsensusStore struct {
 	Backend               storage.Backend
 	NewPayloads           *PayloadBuffer

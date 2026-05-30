@@ -146,12 +146,6 @@ func (pa *ProtoArray) FindHead(justifiedRoot [32]byte) [32]byte {
 	return pa.nodes[bestDesc].Root
 }
 
-// FindHeadWithThreshold is like FindHead but with a minimum weight cutoff.
-// Used for safe target computation (2/3 threshold).
-func (pa *ProtoArray) FindHeadWithThreshold(justifiedRoot [32]byte, minScore int64) [32]byte {
-	return pa.FindHead(justifiedRoot) // cutoff applied during ApplyScoreChanges
-}
-
 // Prune removes all nodes below the finalized root.
 func (pa *ProtoArray) Prune(finalizedRoot [32]byte) {
 	finalizedIdx, ok := pa.indices[finalizedRoot]
