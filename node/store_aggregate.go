@@ -19,10 +19,20 @@ type AggregationDispatch struct {
 	slot     uint64
 }
 
-// runAggregationWorker drains AggregationDispatchCh and runs the prove +
-// publish + apply phases off the tick loop. Mirrors ethlambda's
-// tokio::spawn_blocking pattern (aggregation.rs:395-462) and zeam's worker
-// threads — the consensus tick never blocks on the FFI.
+// AggregationResult carries completed aggregation work back to the event loop.
+// Store mutations and publish side effects are applied by the single-writer
+// goroutine, not by the worker.
+type AggregationResult struct {
+	slot     uint64
+	aggs     []*types.SignedAggregatedAttestation
+	payloads []PayloadKV
+	deletes  []AttestationDeleteKey
+	duration time.Duration
+}
+
+// runAggregationWorker drains AggregationDispatchCh and runs the prove phase
+// off the tick loop. Completed mutations are returned to the event loop so the
+// consensus store remains single-writer.
 //
 // One worker; AggregationDispatchCh is buffered to 1. If a new dispatch
 // arrives while the worker is mid-prove the tick-thread send drops it via
@@ -36,17 +46,32 @@ func (e *Engine) runAggregationWorker(ctx context.Context) {
 		case dispatch := <-e.AggregationDispatchCh:
 			workerStart := time.Now()
 			aggs, payloads, deletes := aggregateFromSnapshot(dispatch.snapshot, e.Store.PubKeyCache)
-			applyAggregationMutations(e.Store, payloads, deletes)
-			for _, agg := range aggs {
-				if e.P2P != nil {
-					e.P2P.PublishAggregatedAttestation(context.Background(), agg)
-				}
+			result := AggregationResult{
+				slot:     dispatch.slot,
+				aggs:     aggs,
+				payloads: payloads,
+				deletes:  deletes,
+				duration: time.Since(workerStart),
 			}
-			ObserveAggregationWorkerTotalTime(time.Since(workerStart).Seconds())
-			logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v",
-				dispatch.slot, len(aggs), time.Since(workerStart))
+			select {
+			case e.AggregationResultCh <- result:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
+}
+
+func (e *Engine) onAggregationResult(result AggregationResult) {
+	applyAggregationMutations(e.Store, result.payloads, result.deletes)
+	for _, agg := range result.aggs {
+		if e.P2P != nil {
+			e.P2P.PublishAggregatedAttestation(context.Background(), agg)
+		}
+	}
+	ObserveAggregationWorkerTotalTime(result.duration.Seconds())
+	logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v",
+		result.slot, len(result.aggs), result.duration)
 }
 
 // AggregationSnapshot captures all store reads aggregation needs in one pass,
@@ -90,11 +115,11 @@ func snapshotAggregationInputs(s *ConsensusStore) *AggregationSnapshot {
 	}
 	for dr, entry := range s.NewPayloads.data {
 		dataRoots[dr] = true
-		snap.newEntries[dr] = entry
+		snap.newEntries[dr] = clonePayloadEntry(entry)
 	}
 	for dr := range dataRoots {
 		if entry := s.KnownPayloads.data[dr]; entry != nil {
-			snap.knownEntries[dr] = entry
+			snap.knownEntries[dr] = clonePayloadEntry(entry)
 		}
 	}
 

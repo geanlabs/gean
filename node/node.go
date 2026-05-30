@@ -60,6 +60,7 @@ type Engine struct {
 	// to delaying the next tick. Drops are spec-permissible (aggregation is
 	// best-effort per slot) and surface via lean_aggregation_dispatch_dropped_total.
 	AggregationDispatchCh chan AggregationDispatch
+	AggregationResultCh   chan AggregationResult
 
 	// lastTick holds the wall time of the previous onTick invocation. Zero
 	// means no prior tick — the very first tick records no observation
@@ -77,23 +78,24 @@ func New(
 	committeeCount uint64,
 ) *Engine {
 	return &Engine{
-		Store:               s,
-		FC:                  fc,
-		P2P:                 p2pHost,
-		Keys:                keys,
-		AggCtl:              aggCtl,
-		DutyGate:            NewDutyGate(),
-		CommitteeCount:      committeeCount,
-		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
-		PendingBlockParents: make(map[[32]byte][32]byte),
-		PendingBlockDepths:  make(map[[32]byte]int),
-		PendingAttestations: NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		Store:                 s,
+		FC:                    fc,
+		P2P:                   p2pHost,
+		Keys:                  keys,
+		AggCtl:                aggCtl,
+		DutyGate:              NewDutyGate(),
+		CommitteeCount:        committeeCount,
+		PendingBlocks:         make(map[[32]byte]map[[32]byte]bool),
+		PendingBlockParents:   make(map[[32]byte][32]byte),
+		PendingBlockDepths:    make(map[[32]byte]int),
+		PendingAttestations:   NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		BlockCh:               make(chan *types.SignedBlock, 64),
 		AttestationCh:         make(chan *types.SignedAttestation, 256),
 		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),
 		FailedRootCh:          make(chan [32]byte, 64),
 		FetchRootCh:           make(chan [32]byte, 256),
 		AggregationDispatchCh: make(chan AggregationDispatch, 1),
+		AggregationResultCh:   make(chan AggregationResult, 1),
 	}
 }
 
@@ -190,6 +192,9 @@ func (e *Engine) Run(ctx context.Context) {
 
 		case agg := <-e.AggregationCh:
 			e.onGossipAggregatedAttestation(agg)
+
+		case result := <-e.AggregationResultCh:
+			e.onAggregationResult(result)
 
 		case root := <-e.FailedRootCh:
 			e.onFailedRoot(root)
