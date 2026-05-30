@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
 )
@@ -28,7 +29,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	// cases — synced, syncing-behind-a-live-network, isolated-stalling —
 	// in one place.
 	if e.DutyGate != nil && !e.DutyGate.Decide("block", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
-		IncBlocksSkippedLag()
+		metrics.IncBlocksSkippedLag()
 		return
 	}
 
@@ -56,7 +57,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	}
 	blockRoot, _ := block.HashTreeRoot()
 	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
-	ObservePqSigSigningTime(time.Since(signStart).Seconds())
+	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
 		logger.Error(logger.Validator, "sign block failed: %v", err)
 		return
@@ -102,7 +103,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 	// local view is too stale relative to a network that is otherwise
 	// making progress. Counter ticks once per skipped slot, not per validator.
 	if e.DutyGate != nil && !e.DutyGate.Decide("attestation", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
-		IncAttestationsSkippedLag()
+		metrics.IncAttestationsSkippedLag()
 		return
 	}
 
@@ -116,7 +117,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 
 		sStart := time.Now()
 		sig, err := e.Keys.SignAttestation(vid, attData)
-		ObservePqSigSigningTime(time.Since(sStart).Seconds())
+		metrics.ObservePqSigSigningTime(time.Since(sStart).Seconds())
 		if err != nil {
 			logger.Error(logger.Validator, "sign attestation failed validator=%d: %v", vid, err)
 			continue
@@ -151,6 +152,6 @@ func (e *Engine) produceAttestations(slot uint64) {
 		// histogram only records iterations that actually produced an
 		// attestation. Publish failures still count as produced (the
 		// attestation exists; only delivery to gossip failed).
-		ObserveAttestationsProductionTime(time.Since(prodStart).Seconds())
+		metrics.ObserveAttestationsProductionTime(time.Since(prodStart).Seconds())
 	}
 }

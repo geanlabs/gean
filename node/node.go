@@ -7,6 +7,7 @@ import (
 
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
@@ -107,43 +108,43 @@ func (e *Engine) Run(ctx context.Context) {
 		xmss.FreeSignature(ptr)
 	}
 	AggregateMetricsFunc = func(durationSeconds float64, numAttestations int) {
-		ObservePqSigAggBuildingTime(durationSeconds)
-		IncPqSigAggregatedTotal()
-		IncPqSigAttestationsInAggregated(numAttestations)
+		metrics.ObservePqSigAggBuildingTime(durationSeconds)
+		metrics.IncPqSigAggregatedTotal()
+		metrics.IncPqSigAttestationsInAggregated(numAttestations)
 	}
 
 	// Wire gossip-size hooks into the p2p layer.
-	p2p.GossipBlockSizeHook = ObserveGossipBlockSize
-	p2p.GossipAttestationSizeHook = ObserveGossipAttestationSize
-	p2p.GossipAggregationSizeHook = ObserveGossipAggregationSize
+	p2p.GossipBlockSizeHook = metrics.ObserveGossipBlockSize
+	p2p.GossipAttestationSizeHook = metrics.ObserveGossipAttestationSize
+	p2p.GossipAggregationSizeHook = metrics.ObserveGossipAggregationSize
 
 	// Wire peer event hooks. Client label is "unknown" until libp2p
 	// identify-based client detection is added (follow-up); spec result
 	// label is "success" for the accepted-connection path.
 	p2p.PeerConnectedHook = func(direction string) {
-		IncPeerConnection(direction, "success")
+		metrics.IncPeerConnection(direction, "success")
 	}
 	p2p.PeerDisconnectedHook = func(direction, reason string) {
-		IncPeerDisconnection(direction, reason)
+		metrics.IncPeerDisconnection(direction, reason)
 	}
 	p2p.PeerCountHook = func(count int) {
-		SetConnectedPeers("unknown", count)
+		metrics.SetConnectedPeers("unknown", count)
 	}
 
 	// Initial sync status is "idle" until peers connect.
-	SetSyncStatus("idle")
+	metrics.SetSyncStatus("idle")
 
 	// Initialize static metrics.
 	// lean_is_aggregator is kept in sync via AggregatorController.Set on
 	// every transition; NewAggregatorController already seeded it at boot.
-	SetNodeInfo("gean", gitCommit)
-	SetNodeStartTime(float64(time.Now().Unix()))
-	SetAttestationCommitteeCount(e.CommitteeCount)
+	metrics.SetNodeInfo("gean", gitCommit)
+	metrics.SetNodeStartTime(float64(time.Now().Unix()))
+	metrics.SetAttestationCommitteeCount(e.CommitteeCount)
 	if e.Keys != nil {
 		vids := e.Keys.ValidatorIDs()
-		SetValidatorsCount(len(vids))
+		metrics.SetValidatorsCount(len(vids))
 		if len(vids) > 0 && e.CommitteeCount > 0 {
-			SetAttestationCommitteeSubnet(vids[0] % e.CommitteeCount)
+			metrics.SetAttestationCommitteeSubnet(vids[0] % e.CommitteeCount)
 		}
 	}
 

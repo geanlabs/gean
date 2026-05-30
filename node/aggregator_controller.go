@@ -1,6 +1,10 @@
 package node
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+
+	"github.com/geanlabs/gean/metrics"
+)
 
 // AggregatorController holds the runtime aggregator-role flag exposed by the
 // admin API (leanSpec PR #636). Reads are lock-free via atomic.Bool; Set
@@ -22,7 +26,7 @@ type AggregatorController struct {
 func NewAggregatorController(initial bool) *AggregatorController {
 	c := &AggregatorController{}
 	c.flag.Store(initial)
-	SetIsAggregator(initial)
+	metrics.SetIsAggregator(initial)
 	return c
 }
 
@@ -36,7 +40,7 @@ func (c *AggregatorController) Get() bool {
 func (c *AggregatorController) Set(v bool) bool {
 	prev := c.flag.Swap(v)
 	if prev != v {
-		SetIsAggregator(v)
+		metrics.SetIsAggregator(v)
 	}
 	return prev
 }
