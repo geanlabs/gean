@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/storage"
 	"github.com/geanlabs/gean/types"
@@ -25,14 +26,14 @@ func ProduceBlockWithSignatures(
 	headRoot := s.Head()
 	headState := s.GetState(headRoot)
 	if headState == nil {
-		IncBlockBuildingFailures()
+		metrics.IncBlockBuildingFailures()
 		return nil, nil, &StoreError{ErrMissingParentState,
 			fmt.Sprintf("head state missing for slot %d", slot)}
 	}
 
 	numValidators := headState.NumValidators()
 	if !types.IsProposer(slot, validatorIndex, numValidators) {
-		IncBlockBuildingFailures()
+		metrics.IncBlockBuildingFailures()
 		return nil, nil, errNotProposer(validatorIndex, slot)
 	}
 
@@ -48,14 +49,14 @@ func ProduceBlockWithSignatures(
 
 	block, sigs, err := buildBlock(headState, slot, validatorIndex, headRoot, knownBlockRoots, knownEntries, storeJustified, s.PubKeyCache)
 
-	ObserveBlockBuildingTime(time.Since(buildStart).Seconds())
+	metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds())
 	if err != nil {
-		IncBlockBuildingFailures()
+		metrics.IncBlockBuildingFailures()
 		return nil, nil, err
 	}
-	IncBlockBuildingSuccess()
+	metrics.IncBlockBuildingSuccess()
 	if block != nil && block.Body != nil {
-		ObserveBlockAggregatedPayloads(len(block.Body.Attestations))
+		metrics.ObserveBlockAggregatedPayloads(len(block.Body.Attestations))
 	}
 	return block, sigs, nil
 }
@@ -85,7 +86,7 @@ func buildBlock(
 
 	if len(payloads) > 0 {
 		aggStart := time.Now()
-		defer func() { ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds()) }()
+		defer func() { metrics.ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds()) }()
 		// Filter attestations by the head state's justified checkpoint.
 		// The post-block invariant at the end of this function still gates on
 		// storeJustified — if process_attestations advances state.LatestJustified

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
 )
@@ -69,7 +70,7 @@ func (e *Engine) onAggregationResult(result AggregationResult) {
 			e.P2P.PublishAggregatedAttestation(context.Background(), agg)
 		}
 	}
-	ObserveAggregationWorkerTotalTime(result.duration.Seconds())
+	metrics.ObserveAggregationWorkerTotalTime(result.duration.Seconds())
 	logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v",
 		result.slot, len(result.aggs), result.duration)
 }
@@ -251,7 +252,7 @@ func aggregateFromSnapshot(snap *AggregationSnapshot, cache *xmss.PubKeyCache) (
 			dataRootHash, _ := attData.HashTreeRoot()
 			slot := uint32(attData.Slot)
 
-			ObserveAggregationPrepTime(time.Since(prepStart).Seconds())
+			metrics.ObserveAggregationPrepTime(time.Since(prepStart).Seconds())
 
 			aggStart := time.Now()
 			proofBytes, err := xmss.AggregateWithChildren(*rawPubkeysBuf, *rawSigsBuf, *childProofsBuf, dataRootHash, slot)

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -13,7 +14,7 @@ func (e *Engine) onTick() {
 	now := time.Now()
 	firstTick := e.lastTick.IsZero()
 	if !firstTick {
-		ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
+		metrics.ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
 	}
 	e.lastTick = now
 
@@ -22,7 +23,7 @@ func (e *Engine) onTick() {
 	currentSlot := e.currentSlot(timestampMs)
 	currentInterval := e.currentInterval(timestampMs)
 
-	SetCurrentSlot(currentSlot)
+	metrics.SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)
 	e.refreshGossipMeshPeers()
 
@@ -52,7 +53,7 @@ func (e *Engine) onTick() {
 			select {
 			case e.AggregationDispatchCh <- AggregationDispatch{snapshot: snap, slot: currentSlot}:
 			default:
-				IncAggregationDispatchDropped()
+				metrics.IncAggregationDispatchDropped()
 			}
 		}
 	}
@@ -138,18 +139,18 @@ func (e *Engine) updateHead(logTree bool) {
 			// or normal chain extension (new head is child of old head).
 			isReorg := newHeader.ParentRoot != oldHead
 
-			SetHeadSlot(newHeader.Slot)
-			SetLatestJustifiedSlot(justified.Slot)
-			SetLatestFinalizedSlot(finalized.Slot)
-			SetGossipSignatures(e.Store.AttestationSignatures.Len())
-			SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
-			SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
-			SetPendingAttestationsTotal(e.PendingAttestations.Total())
+			metrics.SetHeadSlot(newHeader.Slot)
+			metrics.SetLatestJustifiedSlot(justified.Slot)
+			metrics.SetLatestFinalizedSlot(finalized.Slot)
+			metrics.SetGossipSignatures(e.Store.AttestationSignatures.Len())
+			metrics.SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
+			metrics.SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
+			metrics.SetPendingAttestationsTotal(e.PendingAttestations.Total())
 
 			if isReorg {
-				IncForkChoiceReorgs()
+				metrics.IncForkChoiceReorgs()
 				depth := e.FC.ReorgDepth(oldHead, newHead)
-				ObserveForkChoiceReorgDepth(float64(depth))
+				metrics.ObserveForkChoiceReorgDepth(float64(depth))
 				logger.Warn(logger.Forkchoice, "REORG depth=%d slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
 					depth, newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
 					justified.Slot, justified.Root,
@@ -191,7 +192,7 @@ func (e *Engine) updateSafeTarget() {
 
 	safeHeader := e.Store.GetBlockHeader(safeTarget)
 	if safeHeader != nil {
-		SetSafeTargetSlot(safeHeader.Slot)
+		metrics.SetSafeTargetSlot(safeHeader.Slot)
 	}
 }
 
@@ -291,7 +292,7 @@ func (e *Engine) refreshGossipMeshPeers() {
 	if e.P2P == nil {
 		return
 	}
-	SetGossipMeshPeers(e.P2P.MeshPeerCount())
+	metrics.SetGossipMeshPeers(e.P2P.MeshPeerCount())
 }
 
 // SyncLagSlots is the threshold beyond which the node is considered "syncing"
@@ -306,7 +307,7 @@ const SyncLagSlots = 2
 //   - SyncIdle:    no peers connected (so we cannot make progress)
 func (e *Engine) updateSyncStatus(currentSlot uint64) {
 	status := e.computeSyncStatus(currentSlot)
-	SetSyncStatus(status.String())
+	metrics.SetSyncStatus(status.String())
 }
 
 // computeSyncStatus returns the typed status without mutating any state.

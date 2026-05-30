@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/types"
 	"github.com/geanlabs/gean/xmss"
@@ -64,7 +65,7 @@ func onBlockCore(
 	if verify {
 		verifyStart := time.Now()
 		err := verifyBlockSignatures(s, signedBlock, parentState)
-		ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
+		metrics.ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
 		if err != nil {
 			return err
 		}
@@ -97,7 +98,7 @@ func onBlockCore(
 	if err := statetransition.StateTransition(postState, block); err != nil {
 		return &StoreError{ErrStateTransitionFailed, fmt.Sprintf("state transition: %v", err)}
 	}
-	ObserveSTFTime(time.Since(stfStart).Seconds())
+	metrics.ObserveSTFTime(time.Since(stfStart).Seconds())
 
 	// Cache state root in latest block header.
 	postState.LatestBlockHeader.StateRoot = block.StateRoot
@@ -123,7 +124,7 @@ func onBlockCore(
 	}
 	if newFinalized != nil {
 		s.SetLatestFinalized(newFinalized)
-		IncFinalization("success")
+		metrics.IncFinalization("success")
 	}
 
 	// Store block header, state, and live chain entry.
@@ -155,7 +156,7 @@ func onBlockCore(
 		slot, blockRoot, block.ParentRoot, block.ProposerIndex, attCount,
 		s.LatestJustified().Slot, s.LatestFinalized().Slot,
 		elapsed.Round(time.Millisecond))
-	ObserveBlockProcessingTime(elapsed.Seconds())
+	metrics.ObserveBlockProcessingTime(elapsed.Seconds())
 
 	return nil
 }
