@@ -118,14 +118,15 @@ func (m *AttestationSignatureMap) Len() int {
 	return len(m.data)
 }
 
-// Snapshot returns a copy of the internal map for iteration.
-// Used by the aggregator to read without holding the lock during slow ZK proving.
+// Snapshot returns a detached copy of the internal map for iteration.
+// C signature handles stay owned by the live map; snapshot readers parse their
+// own temporary handles from Signature bytes when needed.
 func (m *AttestationSignatureMap) Snapshot() map[[32]byte]*AttestationDataEntry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	snap := make(map[[32]byte]*AttestationDataEntry, len(m.data))
 	for k, v := range m.data {
-		snap[k] = v
+		snap[k] = cloneAttestationDataEntry(v)
 	}
 	return snap
 }
