@@ -12,8 +12,8 @@ import (
 
 // AggregationDispatch carries one slot's aggregation work from the tick
 // thread to the worker goroutine. The snapshot is taken synchronously on
-// the tick thread (cheap, milliseconds); the prove and publish steps run
-// on the worker.
+// the tick thread (cheap, milliseconds); the prove step runs on the worker,
+// and results are applied and published by the event loop.
 type AggregationDispatch struct {
 	snapshot *AggregationSnapshot
 	slot     uint64
