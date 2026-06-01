@@ -12,8 +12,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Slot-clock fixtures cover the five derivations in
-// leanSpec subspecs/chain/clock.py:
+// Slot-clock fixtures cover these five derivations:
 //   - current_slot, current_interval, total_intervals: f(genesis_time, now_ms)
 //   - from_slot:                                       f(slot)
 //   - from_unix_time:                                  f(unix_seconds, genesis_time)

@@ -13,10 +13,9 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Sync fixtures cover the spec's verify_checkpoint_state operation
-// (leanSpec subspecs/sync/checkpoint_sync.py:106). Each .json carries one
-// SSZ-encoded State plus a boolean indicating whether the structural
-// rules accept it.
+// Sync fixtures cover the spec's verify_checkpoint_state operation. Each
+// .json carries one SSZ-encoded State plus a boolean indicating whether the
+// structural rules accept it.
 const syncFixturesRoot = "../leanSpec/fixtures/consensus/sync/lstar/sync"
 
 type syncFixtureOuter map[string]syncFixture
@@ -42,9 +41,9 @@ type syncOutput struct {
 	AnchorSlot     uint64 `json:"anchorSlot"`
 }
 
-// verifyCheckpointStructural mirrors the spec's verify_checkpoint_state
-// (leanSpec subspecs/sync/checkpoint_sync.py:106): a state passes if it has
-// at least one validator, the count stays inside VALIDATOR_REGISTRY_LIMIT,
+// verifyCheckpointStructural mirrors the spec's verify_checkpoint_state:
+// a state passes if it has at least one validator, the count stays inside
+// VALIDATOR_REGISTRY_LIMIT,
 // and its SSZ tree root can be computed (covers structural decode sanity).
 //
 // Production gean uses checkpoint.VerifyCheckpointState, which additionally

@@ -14,7 +14,7 @@ import (
 //
 // p2p.StatusMessage is hand-rolled SSZ in the networking layer (no
 // HashTreeRoot — req/resp messages aren't merkleized on the consensus hot
-// path). For the leanSpec networking SSZ fixtures we compose the hash here:
+// path). For the networking SSZ fixtures we compose the hash here:
 // Status is a Container { finalized: Checkpoint, head: Checkpoint }, and
 // types.Checkpoint already exposes HashTreeRootWith via sszgen.
 type sszStatusAdapter struct {

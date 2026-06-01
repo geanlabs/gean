@@ -9,8 +9,8 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// XMSS container constants pulled from leanSpec subspecs/xmss/constants.py
-// (prod TARGET_CONFIG). Gean stores XMSS payloads as opaque byte arrays
+// XMSS container constants for the prod TARGET_CONFIG. Gean stores XMSS
+// payloads as opaque byte arrays
 // ([PubkeySize]byte, [SignatureSize]byte) because all real work lives in
 // the Rust FFI; these adapters reconstruct the spec-defined inner structure
 // solely to drive hash_tree_root for the spec SSZ conformance test.

@@ -35,9 +35,9 @@ func SpecComputeBlockWeights(
 }
 
 // SpecComputeLMDGhostHead computes the LMD GHOST head.
-// Returns an error when startRoot is not in blocks, matching leanSpec PR #727
-// which replaced a silent fallback with a hard assertion so malformed stores
-// fail loudly rather than masking the bug downstream.
+// Returns an error when startRoot is not in blocks: a hard assertion rather
+// than a silent fallback, so malformed stores fail loudly rather than masking
+// the bug downstream.
 func SpecComputeLMDGhostHead(
 	startRoot [32]byte,
 	blocks map[[32]byte]BlockInfo,

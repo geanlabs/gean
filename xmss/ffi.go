@@ -192,7 +192,6 @@ func AggregateSignatures(
 
 // AggregateWithChildren aggregates raw XMSS signatures + children proofs into
 // a single recursive ZK proof. Matches spec AggregatedSignatureProof.aggregate().
-// Spec: lean_spec/subspecs/containers/attestation.py AggregatedSignatureProof.aggregate
 func AggregateWithChildren(
 	pubkeys []CPubKey,
 	sigs []CSig,

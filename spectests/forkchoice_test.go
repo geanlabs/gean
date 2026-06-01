@@ -147,7 +147,7 @@ type fcChecks struct {
 	LexicographicHeadAmong   []string             `json:"lexicographicHeadAmong,omitempty"`
 }
 
-// fcAttestationCheck mirrors leanSpec's per-validator attestation-state
+// fcAttestationCheck mirrors the spec's per-validator attestation-state
 // expectations: each entry pins one validator's latest attestation slots
 // in a specific store location ("known", "new", etc).
 type fcAttestationCheck struct {
@@ -404,8 +404,8 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	}
 
 	// Verify the anchor pair is self-consistent: the anchor block's state_root
-	// must match hash_tree_root(anchor_state). Per leanSpec PR #678 — without
-	// this check, a malformed fixture (or attacker-served (state, block) pair
+	// must match hash_tree_root(anchor_state). Without this check, a malformed
+	// fixture (or attacker-served (state, block) pair
 	// in production) would be accepted after the runner silently rewrote
 	// state.LatestBlockHeader.StateRoot to match. Direct compare; the spec
 	// expects the input state to arrive with LatestBlockHeader.StateRoot
@@ -432,8 +432,8 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	s.InsertLiveChainEntry(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot)
 	s.SetHead(anchorRoot)
 	// Seed checkpoints from the anchor block itself, not from
-	// anchorState.LatestJustified/LatestFinalized. Per leanSpec PR #677, the
-	// store treats the anchor as the new genesis: justified/finalized point
+	// anchorState.LatestJustified/LatestFinalized. The store treats the anchor
+	// as the new genesis: justified/finalized point
 	// at the anchor block, and any pre-anchor history embedded in the state's
 	// checkpoints is intentionally ignored.
 	s.SetLatestJustified(&types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot})
@@ -690,8 +690,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 		case "tick":
 			// step.Time is wall-clock seconds since the UNIX epoch; step.Interval
-			// is a raw interval count. Both ream and ethlambda's tick handlers
-			// treat the fields this way. Convert seconds to intervals before
+			// is a raw interval count. Convert seconds to intervals before
 			// storing so subsequent assertions on store.time match the
 			// simulator's checks.time field. Per-interval hooks (interval-3
 			// safe-target, interval-0/4 promote) are intentionally NOT fired

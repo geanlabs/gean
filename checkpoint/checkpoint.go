@@ -10,13 +10,13 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Timeouts rs L9-13.
+// Timeouts.
 const (
 	CheckpointConnectTimeout = 15 * time.Second
 	CheckpointReadTimeout    = 15 * time.Second
 )
 
-// Endpoint paths defined by leanSpec.
+// Endpoint paths.
 const (
 	StatesFinalizedPath = "/lean/v0/states/finalized"
 	BlocksFinalizedPath = "/lean/v0/blocks/finalized"
@@ -50,8 +50,8 @@ func FetchCheckpointState(
 // VerifyCheckpointState rules as FetchCheckpointState, and returns both.
 //
 // The stateURL is expected to end in StatesFinalizedPath; the block URL is
-// derived by replacing that suffix with BlocksFinalizedPath. Per leanSpec
-// PR #713 the pair is bound by block.state_root == hash_tree_root(state) —
+// derived by replacing that suffix with BlocksFinalizedPath. The pair is
+// bound by block.state_root == hash_tree_root(state) —
 // a synthetic block fabricated from state.latest_block_header (zero
 // signature, empty body) will fail this check whenever the real anchor body
 // carried attestations, which is the typical post-genesis case.

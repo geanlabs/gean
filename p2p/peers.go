@@ -15,13 +15,13 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Retry parameters rs L56-59.
+// Retry parameters.
 const (
 	MaxFetchRetries    = 10
 	InitialBackoffMs   = 5
 	BackoffMultiplier  = 2
 	BootnodeRedialSecs = 12
-	// MaxBlocksPerRequest matches leanSpec MAX_BLOCKS_PER_REQUEST.
+	// MaxBlocksPerRequest caps blocks per request.
 	MaxBlocksPerRequest = 10
 	// BlocksByRangeSyncThreshold is the gap (in slots) above which sync should
 	// prefer BlocksByRange over reactive gossip + missing-parent fetches.
@@ -31,8 +31,7 @@ const (
 )
 
 // SyncPollInterval is how often SyncDriver checks peers for backfill needs
-// when the node is in SyncSyncing state. Matches zeam's
-// SYNC_STATUS_REFRESH_INTERVAL_SLOTS (8 slots * 4s/slot = 32s).
+// when the node is in SyncSyncing state (8 slots * 4s/slot = 32s).
 const SyncPollInterval = 32 * time.Second
 
 // PeerStore tracks connected peers.

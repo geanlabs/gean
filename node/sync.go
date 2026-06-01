@@ -28,8 +28,6 @@ type SyncDriverP2P interface {
 //     ahead (gap > BlocksByRangeSyncThreshold), trigger BlocksByRange.
 //   - SyncSynced   → no polling traffic in steady state.
 //   - SyncIdle     → no peers, nothing to do.
-//
-// Mirrors zeam's pattern at pkgs/node/src/node.zig:1629-1634 + 1008.
 type SyncDriver struct {
 	engine *Engine
 	p2p    SyncDriverP2P

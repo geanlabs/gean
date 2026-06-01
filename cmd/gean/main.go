@@ -25,7 +25,7 @@ import (
 )
 
 func main() {
-	// CLI flags rs L46-79.
+	// CLI flags.
 	configDir := flag.String("custom-network-config-dir", "", "Config directory (required)")
 	gossipPort := flag.Int("gossipsub-port", 9000, "P2P listen port (QUIC/UDP)")
 	httpAddr := flag.String("http-address", "127.0.0.1", "Bind address for API + metrics")
@@ -119,7 +119,7 @@ func main() {
 			existingHeader.Slot, existingHead,
 			s.LatestJustified().Slot, s.LatestFinalized().Slot)
 	} else if *checkpointURL != "" {
-		// Checkpoint sync. Per leanSpec PR #713, fetch both the finalized
+		// Checkpoint sync. Fetch both the finalized
 		// state and the matching SignedBlock and verify the pair via
 		// block.state_root == hash_tree_root(state) before trusting the
 		// anchor. Storing the SignedBlock lets gean serve /blocks/finalized
@@ -232,7 +232,7 @@ func main() {
 	// Runtime-toggleable aggregator role. Seeded from --is-aggregator; the
 	// admin API endpoint flips this without restart. Boot-time subscription
 	// decisions (p2p.NewHost above, XMSS prover pre-init below) still use
-	// the CLI flag per leanSpec PR #636 — only publishing behavior follows
+	// the CLI flag — only publishing behavior follows
 	// the controller at runtime.
 	aggCtl := node.NewAggregatorController(*isAggregator)
 

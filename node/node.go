@@ -17,8 +17,8 @@ import (
 var gitCommit = "unknown"
 
 // Engine is the consensus coordination loop.
-// It owns Store, ForkChoice, and KeyManager as siblings,
-// rs L78-95).
+// It owns Store, ForkChoice, and KeyManager as siblings.
+
 // Pending block limits to prevent stuck-forever scenarios.
 const (
 	MaxBlockFetchDepth = 512  // Max ancestor chain depth before discarding
@@ -77,17 +77,17 @@ func New(
 	committeeCount uint64,
 ) *Engine {
 	return &Engine{
-		Store:               s,
-		FC:                  fc,
-		P2P:                 p2pHost,
-		Keys:                keys,
-		AggCtl:              aggCtl,
-		DutyGate:            NewDutyGate(),
-		CommitteeCount:      committeeCount,
-		PendingBlocks:       make(map[[32]byte]map[[32]byte]bool),
-		PendingBlockParents: make(map[[32]byte][32]byte),
-		PendingBlockDepths:  make(map[[32]byte]int),
-		PendingAttestations: NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		Store:                 s,
+		FC:                    fc,
+		P2P:                   p2pHost,
+		Keys:                  keys,
+		AggCtl:                aggCtl,
+		DutyGate:              NewDutyGate(),
+		CommitteeCount:        committeeCount,
+		PendingBlocks:         make(map[[32]byte]map[[32]byte]bool),
+		PendingBlockParents:   make(map[[32]byte][32]byte),
+		PendingBlockDepths:    make(map[[32]byte]int),
+		PendingAttestations:   NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		BlockCh:               make(chan *types.SignedBlock, 64),
 		AttestationCh:         make(chan *types.SignedAttestation, 256),
 		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),
@@ -153,16 +153,15 @@ func (e *Engine) Run(ctx context.Context) {
 	go e.runFetchBatcher(ctx)
 
 	// Start the aggregation worker: drains AggregationDispatchCh so
-	// interval-2 aggregation runs off the tick loop. Mirrors ethlambda's
-	// tokio::spawn_blocking pattern (aggregation.rs:395-462) and zeam's
-	// worker thread model — the consensus tick never blocks on the FFI.
+	// interval-2 aggregation runs off the tick loop and the consensus tick
+	// never blocks on the slow XMSS FFI.
 	go e.runAggregationWorker(ctx)
 
 	logger.Info(logger.Node, "started")
 
 	// Process gossip attestations concurrently — each gets its own goroutine
-	// for XMSS verification (~500ms each). This matches zeam's inline model
-	// where attestations are verified as they arrive, not queued.
+	// for XMSS verification (~500ms each), so attestations are verified as
+	// they arrive rather than queued.
 	// AttestationSignatureMap is mutex-protected for safe concurrent writes.
 	go func() {
 		for att := range e.AttestationCh {

@@ -21,7 +21,7 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
-	// Sync-lag duty gate (leanSpec PR #708) is the sole sync-state check.
+	// Sync-lag duty gate is the sole sync-state check.
 	// It closes when local lag > SyncLagThreshold against a producing
 	// network, and reopens automatically when the network itself stalls
 	// (maxStoredBlockSlot far behind wall-clock). This handles all three
@@ -34,9 +34,8 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
-	// Spec get_proposal_head: promote pending attestations and update head
-	// immediately before building. Matches leanSpec get_proposal_head which
-	// calls accept_new_attestations (promote + updateHead) before reading head.
+	// Promote pending attestations and update head immediately before
+	// building, so the build reads the freshest head.
 	e.Store.PromoteNewToKnown()
 	e.updateHead(false)
 
@@ -98,7 +97,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 		return
 	}
 
-	// Sync-lag duty gate (leanSpec PR #708). Skip the whole batch when the
+	// Sync-lag duty gate. Skip the whole batch when the
 	// local view is too stale relative to a network that is otherwise
 	// making progress. Counter ticks once per skipped slot, not per validator.
 	if e.DutyGate != nil && !e.DutyGate.Decide("attestation", slot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {

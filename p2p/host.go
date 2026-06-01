@@ -21,7 +21,7 @@ import (
 	"github.com/geanlabs/gean/logger"
 )
 
-// GossipSub parameters rs L96-119.
+// GossipSub parameters.
 const (
 	GossipMeshN             = 8
 	GossipMeshNLow          = 6
@@ -54,7 +54,6 @@ type Host struct {
 // - All nodes subscribe to their validators' subnets (for mesh/publishing)
 // - Aggregators additionally subscribe to explicit aggregateSubnetIDs
 // - Aggregator fallback: subnet 0 if no subnets derived
-// Spec: lean_spec/subspecs/node/node.py (lines 126-132)
 func NewHost(ctx context.Context, nodeKeyPath string, listenPort int, committeeCount uint64, validatorIDs []uint64, isAggregator bool, aggregateSubnetIDs []uint64) (*Host, error) {
 	ctx, cancel := context.WithCancel(ctx)
 

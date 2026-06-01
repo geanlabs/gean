@@ -9,7 +9,6 @@ import (
 
 // AggregatorStatusHandler serves GET /lean/v0/admin/aggregator.
 // Returns the current aggregator role as {"is_aggregator": bool}.
-// Spec: leanSpec PR #636.
 func AggregatorStatusHandler(ctl *node.AggregatorController) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -21,9 +20,8 @@ func AggregatorStatusHandler(ctl *node.AggregatorController) http.HandlerFunc {
 
 // AggregatorToggleHandler serves POST /lean/v0/admin/aggregator.
 // Body: {"enabled": bool}. Response: {"is_aggregator": new, "previous": old}.
-// Spec: leanSpec PR #636.
 //
-// 400 conditions (match the spec PR):
+// 400 conditions:
 //   - empty body
 //   - malformed JSON
 //   - missing "enabled" field

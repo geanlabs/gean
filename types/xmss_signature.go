@@ -8,7 +8,7 @@ import "encoding/binary"
 // SSZ offsets — not zero. Filling the buffer with all zeros produces an SSZ-
 // invalid encoding that fails inner-container decoding.
 //
-// Container layout (matches leanSpec subspecs/xmss/containers.py Signature):
+// Container layout of the XMSS Signature:
 //
 //	field        type                          size
 //	path         HashTreeOpening (variable)    offset at byte 0
@@ -31,8 +31,7 @@ const (
 //
 //	Signature{path = HashTreeOpening{siblings = [0; 32]}, rho = 0, hashes = [0; 46]}
 //
-// Wire format matches ream's blank() and ethlambda's blank_xmss_signature(),
-// so the placeholder is byte-identical across clients on BlocksByRoot.
+// The wire format is byte-identical across clients on BlocksByRoot.
 func BlankXMSSSignature() [SignatureSize]byte {
 	var sig [SignatureSize]byte
 	binary.LittleEndian.PutUint32(sig[0:4], signaturePathOffset)

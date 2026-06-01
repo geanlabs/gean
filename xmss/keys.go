@@ -2,7 +2,6 @@ package xmss
 
 // Key management for XMSS validators.
 // Devnet-4: dual keys — separate attestation and proposal keypairs per validator.
-// Spec: lean_spec/subspecs/containers/validator.py
 
 // #include <stdint.h>
 // #include <stdlib.h>
@@ -176,7 +175,7 @@ func (km *KeyManager) Close() {
 //   - gean keygen: one entry per validator with attestation/proposal specific fields
 type annotatedValidator struct {
 	Index uint64 `yaml:"index"`
-	// lean-quickstart format (shared by zeam, ethlambda, etc.)
+	// lean-quickstart format
 	PubkeyHex   string `yaml:"pubkey_hex"`
 	PrivkeyFile string `yaml:"privkey_file"`
 	// gean keygen format (dual keys in single entry)

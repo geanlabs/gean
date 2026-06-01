@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	// Buffer capacities rs L87-91.
+	// Buffer capacities.
 	aggregatedPayloadCap = 0 // unbounded, pruned on finalization only
 	newPayloadCap        = 0 // unbounded
 )
@@ -349,9 +349,9 @@ func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.Atte
 }
 
 // ExtractLatestNewAttestations returns per-validator latest from new pool only.
-// Used by updateSafeTarget. Per leanSpec PR #680, safe target is an availability
-// signal computed strictly from the new pool — votes already migrated into
-// known are historical and intentionally excluded.
+// Used by updateSafeTarget. Safe target is an availability signal computed
+// strictly from the new pool — votes already migrated into known are
+// historical and intentionally excluded.
 func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.AttestationData {
 	return s.NewPayloads.ExtractLatestAttestations()
 }

@@ -71,7 +71,6 @@ func onBlockCore(
 	}
 
 	// Enforce unique AttestationData per block + MAX_ATTESTATIONS_DATA cap.
-	// Spec: store.py on_block lines 549-556
 	if block.Body != nil {
 		seen := make(map[[32]byte]bool)
 		for _, att := range block.Body.Attestations {

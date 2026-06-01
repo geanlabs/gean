@@ -5,7 +5,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// All metrics use lean_ prefix rs.
+// All metrics use the lean_ prefix.
 
 // --- Gauges ---
 
@@ -35,11 +35,10 @@ var (
 		Name: "lean_attestation_committee_count", Help: "Number of attestation committees/subnets",
 	})
 	// lean_gossip_signatures is the leanMetrics-standard name (data-source
-	// flavored). It tracks the same pool that leanSpec renamed from
-	// gossip_signatures → attestation_signatures on the spec side; the
-	// metric and field names move in opposite directions on purpose — the
-	// metric is named for where the data comes from (gossip), the field for
-	// what it contains (attestation signatures).
+	// flavored). It tracks the same pool that the spec calls
+	// attestation_signatures; the metric and field names diverge on purpose —
+	// the metric is named for where the data comes from (gossip), the field
+	// for what it contains (attestation signatures).
 	metricGossipSignatures = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_gossip_signatures", Help: "Number of gossip signatures in fork-choice store",
 	})
@@ -141,7 +140,7 @@ var (
 		Help:    "Time to validate attestation data",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
 	})
-metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
+	metricPqSigSigningTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_pq_sig_attestation_signing_time_seconds",
 		Help:    "Time to sign an attestation",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
@@ -263,7 +262,7 @@ var metricNodeSyncStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "lean_node_sync_status", Help: "Node sync status (one of idle/syncing/synced is set to 1)",
 }, []string{"status"})
 
-// --- Duty-gate skip counters (leanSpec PR #708) ---
+// --- Duty-gate skip counters ---
 //
 // Increment once per slot the duty gate denied production. The node-local
 // prefix matches gean's convention for per-node state (lean_node_*) rather
@@ -273,11 +272,11 @@ var metricNodeSyncStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
 var (
 	metricBlocksSkippedLag = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_node_blocks_skipped_lag_total",
-		Help: "Block proposals skipped because the local view was too stale (leanSpec PR #708 duty gate).",
+		Help: "Block proposals skipped because the local view was too stale (sync-lag duty gate).",
 	})
 	metricAttestationsSkippedLag = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_node_attestations_skipped_lag_total",
-		Help: "Attestation batches skipped because the local view was too stale (leanSpec PR #708 duty gate).",
+		Help: "Attestation batches skipped because the local view was too stale (sync-lag duty gate).",
 	})
 )
 
@@ -336,9 +335,11 @@ func ObserveAttestationsProductionTime(seconds float64) {
 }
 func ObservePqSigVerificationTime(seconds float64) { metricPqSigVerificationTime.Observe(seconds) }
 func ObservePqSigAggBuildingTime(seconds float64)  { metricPqSigAggBuildingTime.Observe(seconds) }
-func ObserveAggregationPrepTime(seconds float64)        { metricAggregationPrepTime.Observe(seconds) }
-func ObserveAggregationWorkerTotalTime(seconds float64) { metricAggregationWorkerTotalTime.Observe(seconds) }
-func IncAggregationDispatchDropped()                    { metricAggregationDispatchDropped.Inc() }
+func ObserveAggregationPrepTime(seconds float64)   { metricAggregationPrepTime.Observe(seconds) }
+func ObserveAggregationWorkerTotalTime(seconds float64) {
+	metricAggregationWorkerTotalTime.Observe(seconds)
+}
+func IncAggregationDispatchDropped() { metricAggregationDispatchDropped.Inc() }
 func ObservePqSigAggVerificationTime(seconds float64) {
 	metricPqSigAggVerificationTime.Observe(seconds)
 }

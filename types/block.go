@@ -38,8 +38,6 @@ type BlockSignatures struct {
 
 // SignedBlock is the complete signed block as gossiped on the network.
 // Devnet-4: proposer signs hash_tree_root(block) with proposal key.
-// BlockWithAttestation removed per leanSpec PR #449.
-// Spec: lean_spec/subspecs/containers/block/block.py
 type SignedBlock struct {
 	Block     *Block           `json:"block"`
 	Signature *BlockSignatures `json:"signature"`

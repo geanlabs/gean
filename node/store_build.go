@@ -15,7 +15,6 @@ import (
 
 // ProduceBlockWithSignatures builds a block using per-AttestationData fixed-point selection.
 // Returns the block and per-attestation signature proofs.
-// Spec: lean_spec/subspecs/containers/state/state.py build_block
 func ProduceBlockWithSignatures(
 	s *ConsensusStore,
 	slot, validatorIndex uint64,
@@ -36,9 +35,8 @@ func ProduceBlockWithSignatures(
 		return nil, nil, errNotProposer(validatorIndex, slot)
 	}
 
-	// Flush any pending NewPayloads → KnownPayloads before building.
-	// Matches leanSpec get_proposal_head which calls accept_new_attestations
-	// right before reading latest_known_aggregated_payloads.
+	// Flush any pending NewPayloads → KnownPayloads before building, so the
+	// build reads latest_known_aggregated_payloads after the promotion.
 	s.PromoteNewToKnown()
 
 	storeJustified := s.LatestJustified()
@@ -144,16 +142,15 @@ func buildBlock(
 						item.entry.Data.Head.Root, item.entry.Data.Slot)
 					continue
 				}
-				// Per leanSpec PR #716, the strict source==current_justified
-				// check is replaced by three filters: source slot must already
-				// be justified on this chain; source/target roots must match
-				// the canonical chain at those slots; target slot must not
-				// already be justified (genesis self-votes excepted for
-				// fork-choice bootstrapping).
+				// The strict source==current_justified check is replaced by
+				// three filters: source slot must already be justified on this
+				// chain; source/target roots must match the canonical chain at
+				// those slots; target slot must not already be justified
+				// (genesis self-votes excepted for fork-choice bootstrapping).
 				finalizedSlot := headState.LatestFinalized.Slot
-				// Chain-match runs first (leanSpec PR #718): the bounded slot
-				// queries below assume source/target slots are within the
-				// chain view, which chain-match enforces.
+				// Chain-match runs first: the bounded slot queries below assume
+				// source/target slots are within the chain view, which
+				// chain-match enforces.
 				if !attestationDataMatchesChain(headState, item.entry.Data) {
 					continue
 				}
@@ -239,8 +236,6 @@ func buildBlock(
 // coverage for a single AttestationData. If multiple proofs are selected, they
 // are merged via recursive aggregation (AggregateWithChildren) into a single
 // compound proof — producing one attestation per AttestationData in the block.
-//
-// Spec: select_greedily + AggregatedSignatureProof.aggregate(children=...)
 func selectGreedyProofs(
 	entry *PayloadEntry,
 	state *types.State,
@@ -439,8 +434,8 @@ func (s *ConsensusStore) getBlockRoots() map[[32]byte]bool {
 // are rejected; an attestation referencing one cannot be on the canonical
 // chain.
 //
-// Per leanSpec PR #716. Note: this uses state.HistoricalBlockHashes as-is
-// rather than the "extended" array that the spec constructs (parent_root
+// Note: this uses state.HistoricalBlockHashes as-is rather than the
+// "extended" array that the spec constructs (parent_root
 // at parent.slot plus zeros for intermediate empty slots). Attestations
 // whose source or target reference the parent slot or later are skipped
 // here; the trial state transition still re-runs after each loop pass and

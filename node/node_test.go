@@ -121,8 +121,8 @@ func planAggregatedVoteForBlock(targetRoot [32]byte, targetSlot, numValidators, 
 	return dataRoot, data, &types.AggregatedSignatureProof{Participants: bits}
 }
 
-// TestUpdateSafeTarget_IgnoresKnownPool reproduces the leanSpec PR #680
-// scenario: votes living only in the known pool must not advance safe target.
+// TestUpdateSafeTarget_IgnoresKnownPool reproduces the scenario where votes
+// living only in the known pool must not advance safe target.
 // The same votes via the new pool must advance it.
 func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 	const numValidators = 6 // threshold = ceil(2*6/3) = 4

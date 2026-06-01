@@ -6,9 +6,8 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// TestLatestJustifiedDoesNotRegressWithinBlock ports ethlambda's
-// latest_justified_does_not_regress_within_block regression and covers
-// leanSpec PR #781.
+// TestLatestJustifiedDoesNotRegressWithinBlock is a regression test for
+// latest_justified not regressing within a single block.
 //
 // A single block carries three supermajority attestations targeting slots
 // 4, 9, 6 in body order — all justifiable from finalized genesis (Δ=4 ≤ 5,

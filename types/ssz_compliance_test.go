@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// These tests verify hash_tree_root correctness against leanSpec's test vectors.
-// Reference: leanSpec/tests/lean_spec/subspecs/ssz/test_hash.py
+// These tests verify hash_tree_root correctness against known test vectors.
 
 // chunk pads hex payload to 32 bytes (right-padded with zeros).
 func chunk(hexPayload string) [32]byte {
@@ -30,7 +29,6 @@ func rootHex(root [32]byte) string {
 }
 
 // Test uint64 hash_tree_root: little-endian padded to 32 bytes.
-// Verified: leanSpec test_hash.py test_hash_tree_root_basic_uint
 func TestHashTreeRootUint64Compliance(t *testing.T) {
 	// ChainConfig has a single uint64 field, so its root = merkleize([padded_uint64])
 	// For a 1-field container, merkleize of 1 chunk = the chunk itself.
@@ -58,7 +56,6 @@ func TestHashTreeRootUint64Compliance(t *testing.T) {
 
 // Test Checkpoint hash_tree_root: container with 2 fields (root, slot).
 // Merkle tree: h(field0_chunk, field1_chunk)
-// Verified: leanSpec Small container pattern from test_hash.py
 func TestCheckpointHashTreeRootCompliance(t *testing.T) {
 	cp := &Checkpoint{
 		Root: [32]byte{0xab},

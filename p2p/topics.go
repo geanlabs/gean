@@ -3,15 +3,15 @@ package p2p
 import "fmt"
 
 // ForkDigest is the fork identifier embedded in every gossipsub topic string.
-// Lowercase hex, no "0x" prefix (matches the beacon-chain convention adopted
-// by leanSpec PR #622). Every Lean client currently agrees on this dummy
-// placeholder; this will be derived from the fork version and genesis
+// Lowercase hex, no "0x" prefix (matches the beacon-chain convention). Every
+// Lean client currently agrees on this dummy placeholder; this will be
+// derived from the fork version and genesis
 // validators root once the spec defines fork identification.
 //
 // TODO: derive dynamically once the spec defines fork identification.
 const ForkDigest = "12345678"
 
-// Topic kind constants rs.
+// Topic kind constants.
 const (
 	BlockTopicKind       = "block"
 	AttestationTopicKind = "attestation"

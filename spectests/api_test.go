@@ -27,7 +27,7 @@ import (
 // Spec fixture directory for api endpoint tests.
 const apiFixturesRoot = "../leanSpec/fixtures/consensus/api_endpoint/lstar/api/test_api_endpoints"
 
-// leanSpec ships its deterministic test keys here. The fixture's leanEnv
+// The spec ships its deterministic test keys here. The fixture's leanEnv
 // ("prod"/"test") selects the subdirectory; each N.json has hex-encoded
 // attestation_public and proposal_public that feed into genesis state.
 const apiKeysRoot = "../leanSpec/packages/testing/src/consensus_testing/test_keys"
@@ -38,7 +38,7 @@ type apiFixture struct {
 	Network             string                 `json:"network"`
 	LeanEnv             string                 `json:"leanEnv"`
 	Endpoint            string                 `json:"endpoint"`
-	Method              string                 `json:"method"` // leanSpec PR #636; defaults "GET" when absent
+	Method              string                 `json:"method"` // defaults "GET" when absent
 	GenesisParams       apiGenesisParams       `json:"genesisParams"`
 	RequestBody         json.RawMessage        `json:"requestBody"`         // POST bodies (admin endpoints)
 	InitialIsAggregator *bool                  `json:"initialIsAggregator"` // seeds AggregatorController before replay
@@ -102,7 +102,7 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 
 	// Build genesis state via the real genesis package so the harness tracks
 	// any future field additions instead of drifting from a hand-rolled literal.
-	// Pubkeys come from leanSpec's shipped test keys so our hashed state matches
+	// Pubkeys come from the spec's shipped test keys so our hashed state matches
 	// the fixture byte-for-byte.
 	validators, err := loadSpecValidators(fx.LeanEnv, fx.GenesisParams.NumValidators)
 	if err != nil {
@@ -133,8 +133,8 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 
 	fc := forkchoice.New(0, blockRoot, [32]byte{})
 
-	// Per-fixture aggregator controller, seeded from initialIsAggregator
-	// (leanSpec PR #636). Nil means the fixture doesn't exercise the admin
+	// Per-fixture aggregator controller, seeded from initialIsAggregator.
+	// Nil means the fixture doesn't exercise the admin
 	// endpoints; defaulting to false keeps the controller present for every
 	// replay so lookupAPIHandler never hits a nil pointer.
 	initialAgg := false
@@ -226,9 +226,9 @@ func lookupAPIHandler(method, endpoint string, s *node.ConsensusStore, fc *forkc
 	}
 }
 
-// loadSpecValidators reads N deterministic test keys from leanSpec's on-disk
+// loadSpecValidators reads N deterministic test keys from the spec's on-disk
 // keystore and returns them as gean-format genesis validator entries. Matches
-// the pubkeys leanSpec's fixture generator embeds via XmssKeyManager.shared().
+// the pubkeys the spec's fixture generator embeds via XmssKeyManager.shared().
 func loadSpecValidators(leanEnv string, n uint64) ([]genesis.GenesisValidatorEntry, error) {
 	if leanEnv == "" {
 		leanEnv = "prod"

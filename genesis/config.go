@@ -11,7 +11,6 @@ import (
 )
 
 // GenesisValidatorEntry pairs attestation and proposal pubkeys per validator.
-// Spec: lean_spec/subspecs/genesis/config.py GenesisValidatorEntry
 type GenesisValidatorEntry struct {
 	AttestationPubkey string `yaml:"attestation_pubkey"`
 	ProposalPubkey    string `yaml:"proposal_pubkey"`
@@ -25,7 +24,6 @@ type GenesisConfig struct {
 	// LoadGenesisConfig rejects the config otherwise. Absent in standard
 	// lean-quickstart configs, so cross-client configs that include it
 	// fail loudly rather than silently disagreeing on validator count.
-	// Spec: lean_spec/subspecs/genesis/config.py num_validators
 	NumValidators     *uint64                 `yaml:"NUM_VALIDATORS,omitempty"`
 	GenesisValidators []GenesisValidatorEntry `yaml:"GENESIS_VALIDATORS"`
 }

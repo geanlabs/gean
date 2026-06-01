@@ -18,7 +18,7 @@ import (
 	"github.com/geanlabs/gean/p2p"
 )
 
-// Spec fixture directory root rs `leanSpec/fixtures/consensus/networking_codec`.
+// Spec fixture directory root.
 const netCodecFixturesRoot = "../leanSpec/fixtures/consensus/networking_codec/lstar/networking"
 
 // netFixtureOuter is the top-level JSON shape: one fixture file contains one
@@ -157,7 +157,7 @@ func testGossipTopic(t *testing.T, fx netFixture) string {
 
 	// The fixture parameterizes on forkDigest; exercise gean's builder with the
 	// fixture value rather than the runtime constant so every digest in the
-	// suite is covered (leanSpec PR #622: bare hex, no 0x prefix).
+	// suite is covered (bare hex, no 0x prefix).
 	var topicName string
 	switch kind {
 	case "block":

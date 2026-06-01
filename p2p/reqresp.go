@@ -208,8 +208,6 @@ func handleBlocksByRootRequest(s network.Stream, blockByRootFn func(root [32]byt
 //  4. Look up canonical-chain blocks via blocksInRangeFn (empty slots are
 //     skipped, no chunk emitted for them) and stream one SUCCESS chunk per
 //     block in ascending-slot order.
-//
-// Spec: leanSpec/src/lean_spec/subspecs/networking/reqresp/handler.py.
 func handleBlocksByRangeRequest(
 	s network.Stream,
 	currentSlotFn func() uint64,
@@ -235,9 +233,9 @@ func handleBlocksByRangeRequest(
 		return
 	}
 
-	// Per leanSpec networking/reqresp/handler.py:285-287, count must be in
-	// (0, MAX_REQUEST_BLOCKS]; anything else is INVALID_REQUEST. We reject
-	// rather than silently cap so misbehaving peers see a clean error.
+	// count must be in (0, MAX_REQUEST_BLOCKS]; anything else is
+	// INVALID_REQUEST. We reject rather than silently cap so misbehaving
+	// peers see a clean error.
 	if req.Count == 0 || req.Count > types.MaxRequestBlocks {
 		s.Write(EncodeResponse(RespInvalidRequest, []byte("invalid count")))
 		return
@@ -350,7 +348,6 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 
 // EncodeBlocksByRootRequest encodes roots as SSZ container: BlocksByRootRequest { roots: List[Root, 1024] }.
 // SSZ container with one variable-length field: 4-byte offset + concatenated roots.
-// Matches leanSpec networking/reqresp/message.py BlocksByRootRequest.
 func EncodeBlocksByRootRequest(roots [][32]byte) []byte {
 	rootsData := make([]byte, len(roots)*32)
 	for i, root := range roots {
@@ -366,8 +363,6 @@ func EncodeBlocksByRootRequest(roots [][32]byte) []byte {
 // FetchBlocksByRange requests canonical-chain blocks from a peer covering
 // [startSlot, startSlot+count). Returns blocks in ascending-slot order with
 // slot monotonicity and parent-root continuity validated across empty slots.
-//
-// Spec: leanSpec/src/lean_spec/subspecs/networking/client/reqresp_client.py.
 func (h *Host) FetchBlocksByRange(
 	ctx context.Context,
 	peerID peer.ID,

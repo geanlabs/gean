@@ -175,7 +175,7 @@ func TestPromoteNewToKnown(t *testing.T) {
 }
 
 // TestExtractLatestNewAttestations verifies the new-pool-only accessor used by
-// updateSafeTarget. Per leanSpec PR #680, safe target must ignore the known pool.
+// updateSafeTarget. Safe target must ignore the known pool.
 func TestExtractLatestNewAttestations(t *testing.T) {
 	s := makeTestStore()
 

@@ -1,6 +1,6 @@
 package types
 
-// Pure slot-clock derivations matching leanSpec subspecs/chain/clock.py.
+// Pure slot-clock derivations.
 // Engine methods (node/tick.go) carry the runtime state; these stateless
 // equivalents are used by spec conformance tests and by anyone needing the
 // derivation without an Engine handle.

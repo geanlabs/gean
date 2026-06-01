@@ -54,9 +54,9 @@ func TestBuildTransportMultiaddr(t *testing.T) {
 }
 
 // TestParseENR_PrefersIPv4 confirms that an ENR with both ip and ip6 yields an
-// IPv4 multiaddr (matches leanSpec's test_enr_with_extensions fixture behavior).
+// IPv4 multiaddr.
 func TestParseENR_PrefersIPv4(t *testing.T) {
-	// ENR containing both ip4 and ip6 fields (from leanSpec test fixture).
+	// ENR containing both ip4 and ip6 fields.
 	enr := "enr:-PK4QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFh2F0dG5ldHOIgQAAAAAAAICEZXRoMpASNFZ4q83vAGQAAAAAAAAAgmlkgnY0gmlwhAoAAAGDaXA2kCABDbgAAAAAAAAAAAAAAAGNaXNfYWdncmVnYXRvcgGEcXVpY4IjKYVxdWljNoIjKolzZWNwMjU2azGhA8pjTK4NSay0Adikxrb-jFW3DRFb9AB2nMFADzJYzTE4iHN5bmNuZXRzCoN1ZHCCdl-EdWRwNoJ2YA"
 	ma, err := ParseENR(enr)
 	if err != nil {

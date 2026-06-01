@@ -22,7 +22,7 @@ import (
 const TestDriverEnvVar = "HIVE_LEAN_TEST_DRIVER"
 
 // IsTestDriverEnabled returns true if the env var is set to "1", "true",
-// "TRUE", "yes", or "YES" — matching ream's accepted values.
+// "TRUE", "yes", or "YES".
 func IsTestDriverEnabled(value string) bool {
 	switch value {
 	case "1", "true", "TRUE", "yes", "YES":
@@ -58,8 +58,8 @@ func RegisterTestDriverRoutes(mux *http.ServeMux, sess *TestDriverSession) {
 	mux.HandleFunc("POST /lean/v0/test_driver/verify_signatures/run", TestDriverVerifySignaturesHandler())
 }
 
-// stateTransitionResponse mirrors ream's StateTransitionResponse shape so
-// the simulator can deserialize it via serde with rename_all = "camelCase".
+// stateTransitionResponse is the StateTransitionResponse shape the
+// simulator deserializes via serde with rename_all = "camelCase".
 type stateTransitionResponse struct {
 	Succeeded bool                 `json:"succeeded"`
 	Error     *string              `json:"error"`
@@ -100,7 +100,7 @@ type verifySignaturesResponse struct {
 }
 
 // TestDriverStateTransitionHandler answers POST
-// /lean/v0/test_driver/state_transition/run. Per ream's convention, logical
+// /lean/v0/test_driver/state_transition/run. Logical
 // failures (state-transition rejecting a block) return HTTP 200 with the
 // reason in the JSON `error` field; only request-parse or marshaling errors
 // surface as non-200 so the simulator can distinguish wire-level failures
@@ -121,7 +121,6 @@ func TestDriverStateTransitionHandler() http.HandlerFunc {
 
 		// Empty-blocks + expectException: force a process_slots call against
 		// state.slot so the spec's filler-side rejection materializes for us.
-		// Mirrors ream's run_state_transition path for the zero-blocks branch.
 		if len(fixture.Blocks) == 0 {
 			if fixture.ExpectException != "" {
 				if err := statetransition.ProcessSlots(state, state.Slot); err != nil {
@@ -175,7 +174,7 @@ func writeStateTransitionFailure(w http.ResponseWriter, msg string) {
 
 // ForkChoiceInitHandler answers POST /lean/v0/test_driver/fork_choice/init.
 // Replaces the session's store + fc with fresh instances seeded from the
-// anchor (state, block) pair. Returns 204 No Content per ream's convention.
+// anchor (state, block) pair. Returns 204 No Content.
 //
 // Logical anchor failures (state-root mismatch between anchor block and
 // anchor state hash_tree_root, malformed bytes, etc.) return HTTP 200 with
@@ -210,7 +209,7 @@ func (sess *TestDriverSession) ForkChoiceInitHandler() http.HandlerFunc {
 		}
 
 		// Anchor pair consistency check: block.state_root must equal
-		// hash_tree_root(state). Per leanSpec PR #678 — a mismatched pair
+		// hash_tree_root(state). A mismatched pair
 		// indicates either a fixture bug or an attacker-served anchor and
 		// must be rejected before fork choice trusts either side.
 		computedStateRoot, err := anchorState.HashTreeRoot()
@@ -244,7 +243,7 @@ func (sess *TestDriverSession) ForkChoiceInitHandler() http.HandlerFunc {
 		store.InsertState(anchorRoot, anchorState)
 		store.InsertLiveChainEntry(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot)
 		store.SetHead(anchorRoot)
-		// Per leanSpec PR #677, store-side justified/finalized seed from the
+		// Store-side justified/finalized seed from the
 		// anchor block itself, not from anchorState.LatestJustified/Finalized.
 		// Pre-anchor history embedded in the state's checkpoints is ignored.
 		anchorCp := &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot}
@@ -268,7 +267,7 @@ func writeInitFailure(w http.ResponseWriter, msg string) {
 	// Init failures use the step response shape with an empty snapshot so
 	// the simulator can call /init and immediately read .error if it wants
 	// the structured detail. HTTP 400 is what the hive lean simulator keys
-	// off — see spec_assets.rs:297-310, which treats any non-2xx status as
+	// off — the hive lean simulator treats any non-2xx status as
 	// "init rejected" and only treats 204 NO_CONTENT as "init accepted".
 	// Returning 200 here would make hive fall through to the 204 assertion
 	// and fail the test even though the init was correctly rejected.
@@ -338,7 +337,7 @@ func (sess *TestDriverSession) applyTick(step *specfixtures.ForkChoiceStep) erro
 	switch {
 	case step.Time != nil:
 		// step.Time is wall-clock seconds since the UNIX epoch — the same
-		// unit ream and ethlambda's tick handlers consume. Convert to an
+		// unit the tick handlers consume. Convert to an
 		// interval count via the standard formula
 		// (timestampMs - genesisMs) / MillisecondsPerInterval, which for
 		// the lean timing config (SECONDS_PER_SLOT=4, INTERVALS_PER_SLOT=5,
@@ -444,8 +443,7 @@ func (sess *TestDriverSession) applyAttestation(step *specfixtures.ForkChoiceSte
 	// target state's validator registry. Rejection happens here, before any
 	// state mutation, so a bad attestation cannot leave behind a vote-tracker
 	// entry, an applied delta, or a NewPayloads push that subsequent steps
-	// would observe. Mirrors ethlambda's on_gossip_attestation flow at
-	// crates/blockchain/src/store.rs:285-306.
+	// would observe. Mirrors the on_gossip_attestation flow.
 	if err := sess.verifyGossipAttestation(step.Attestation.ValidatorID, attData, dataRoot, step.Attestation.Signature); err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 // Package specfixtures contains the JSON-tagged fixture types that the hive
 // lean simulator sends to a client's test-driver endpoints. The types mirror
-// the Python leanSpec consensus fixture format and are also the format the
+// the Python lean spec consensus fixture format and are also the format the
 // internal go-side spec test runners under spectests/ already consume; they
 // are factored out here so production code (the test-driver HTTP handlers)
 // can decode requests without a test-only build tag.
@@ -22,7 +22,7 @@ type StateTransitionFixture struct {
 }
 
 // TestState carries a serialized lean consensus state in the form the
-// simulator and leanSpec fixtures both use (camelCase JSON, validators in a
+// simulator and lean spec fixtures both use (camelCase JSON, validators in a
 // {data: [...]} wrapper).
 type TestState struct {
 	Config                   TestConfig        `json:"config"`

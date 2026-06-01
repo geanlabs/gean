@@ -62,7 +62,7 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 		voteCount := countTrue(votes)
 		if 3*voteCount >= 2*validatorCount {
 			// Only advance latest_justified forward — a block's supermajority
-			// targets are not slot-ordered in body order (leanSpec PR #781).
+			// targets are not slot-ordered in body order.
 			if target.Slot > state.LatestJustified.Slot {
 				state.LatestJustified = target
 			}

@@ -20,9 +20,8 @@ type AggregationDispatch struct {
 }
 
 // runAggregationWorker drains AggregationDispatchCh and runs the prove +
-// publish + apply phases off the tick loop. Mirrors ethlambda's
-// tokio::spawn_blocking pattern (aggregation.rs:395-462) and zeam's worker
-// threads — the consensus tick never blocks on the FFI.
+// publish + apply phases off the tick loop, so the consensus tick never
+// blocks on the slow XMSS FFI.
 //
 // One worker; AggregationDispatchCh is buffered to 1. If a new dispatch
 // arrives while the worker is mid-prove the tick-thread send drops it via
@@ -52,9 +51,8 @@ func (e *Engine) runAggregationWorker(ctx context.Context) {
 // AggregationSnapshot captures all store reads aggregation needs in one pass,
 // taken synchronously by snapshotAggregationInputs so the prove phase
 // (aggregateFromSnapshot) can run as a pure function of (snapshot, pubkey
-// cache) without holding a *ConsensusStore reference. Mirrors the structural
-// split ethlambda uses (snapshot_aggregation_inputs → aggregate_job worker
-// → publish) and is the prerequisite for off-tick async dispatch.
+// cache) without holding a *ConsensusStore reference. This snapshot →
+// worker → publish split is the prerequisite for off-tick async dispatch.
 type AggregationSnapshot struct {
 	headState    *types.State
 	attSigs      map[[32]byte]*AttestationDataEntry

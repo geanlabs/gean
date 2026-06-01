@@ -47,10 +47,10 @@ func ValidateAttestationData(s *ConsensusStore, data *types.AttestationData) err
 
 	// 9. Time: attestation's start interval must not exceed store time by
 	// more than GossipDisparityIntervals (clock-skew tolerance, ~800ms).
-	// Per leanSpec PR #682, the bound is in intervals, not slots — a whole-slot
-	// margin would let an adversary pre-publish next-slot aggregates ahead of
-	// any honest validator. The first conjunct guards against uint64 overflow
-	// for malicious slot values near MaxUint64.
+	// The bound is in intervals, not slots — a whole-slot margin would let an
+	// adversary pre-publish next-slot aggregates ahead of any honest
+	// validator. The first conjunct guards against uint64 overflow for
+	// malicious slot values near MaxUint64.
 	if data.Slot > math.MaxUint64/types.IntervalsPerSlot ||
 		data.Slot*types.IntervalsPerSlot > s.Time()+types.GossipDisparityIntervals {
 		return errAttestationTooFarInFuture(data.Slot, s.Time())
@@ -70,9 +70,8 @@ func ValidateAttestationData(s *ConsensusStore, data *types.AttestationData) err
 // store or fork-choice updates so a rejected attestation leaves no
 // observable side effects.
 //
-// Mirrors ethlambda's on_gossip_attestation flow at
-// crates/blockchain/src/store.rs:285-306: validate data → resolve target
-// state → bounds-check vid → load pubkey → verify signature.
+// Flow: validate data → resolve target state → bounds-check vid → load
+// pubkey → verify signature.
 func VerifyGossipAttestation(s *ConsensusStore, validatorID uint64, attData *types.AttestationData, dataRoot [32]byte, signature []byte) error {
 	targetState := s.GetState(attData.Target.Root)
 	if targetState == nil {
@@ -111,8 +110,6 @@ func VerifyGossipAttestation(s *ConsensusStore, validatorID uint64, attData *typ
 //
 // Pure check — no state mutation. Callers must invoke this before any
 // store or fork-choice updates.
-//
-// Mirrors ethlambda's on_gossip_aggregated_attestation validation path.
 func VerifyAggregatedGossipAttestation(s *ConsensusStore, attData *types.AttestationData, participants []byte, proofData []byte) error {
 	targetState := s.GetState(attData.Target.Root)
 	if targetState == nil {

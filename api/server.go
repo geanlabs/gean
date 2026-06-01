@@ -96,7 +96,7 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // FinalizedBlockHandler returns the SignedBlock at the latest finalized root
-// as SSZ bytes. Per leanSpec PR #713, checkpoint-sync clients pair this with
+// as SSZ bytes. Checkpoint-sync clients pair this with
 // /lean/v0/states/finalized and verify state_root == hash_tree_root(state) to
 // detect synthetic-block fabrication: peers that respond to BlocksByRoot for
 // the anchor root will reject a synthetic body whose hash_tree_root does not
@@ -161,7 +161,7 @@ func JustifiedCheckpointHandler(s *node.ConsensusStore) http.HandlerFunc {
 	}
 }
 
-// handleForkChoice returns fork choice info as JSON, matching leanSpec's
+// handleForkChoice returns fork choice info as JSON, matching the
 // api_endpoint fixture schema: {nodes[], head, justified, finalized, safe_target, validator_count}.
 func ForkChoiceHandler(s *node.ConsensusStore, fc *forkchoice.ForkChoice) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

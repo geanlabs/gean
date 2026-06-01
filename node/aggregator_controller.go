@@ -3,7 +3,7 @@ package node
 import "sync/atomic"
 
 // AggregatorController holds the runtime aggregator-role flag exposed by the
-// admin API (leanSpec PR #636). Reads are lock-free via atomic.Bool; Set
+// admin API. Reads are lock-free via atomic.Bool; Set
 // atomically swaps the value and returns the previous state so the HTTP
 // handler can report {"previous": ...}. The Prometheus lean_is_aggregator
 // gauge is synced on every transition so observability stays accurate across

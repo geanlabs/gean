@@ -59,8 +59,6 @@ func (e *Engine) onTick() {
 
 	// Interval 0/4: update head after attestation promotion.
 	// Must run BEFORE proposal so the builder uses the freshest head.
-	// Spec: get_proposal_head calls accept_new_attestations (promote + updateHead)
-	// before reading self.head for block building.
 	if currentInterval == 0 || currentInterval == 4 {
 		e.updateHead(false)
 	}
@@ -165,9 +163,9 @@ func (e *Engine) updateHead(logTree bool) {
 }
 
 // updateSafeTarget runs LMD GHOST with 2/3 threshold using only the new pool.
-// Per leanSpec PR #680, safe target is an availability signal: it must reflect
-// only freshly received votes from the current slot, not historical knowledge
-// migrated into the known pool.
+// Safe target is an availability signal: it must reflect only freshly received
+// votes from the current slot, not historical knowledge migrated into the
+// known pool.
 func (e *Engine) updateSafeTarget() {
 	attestations := e.Store.ExtractLatestNewAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root

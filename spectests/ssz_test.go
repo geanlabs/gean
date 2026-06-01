@@ -46,17 +46,17 @@ type sszCodec interface {
 }
 
 // hashSkipTypes are container types whose hash_tree_root is known to diverge
-// between leanSpec (Pydantic Container-merkleize of inner Signature fields)
-// and the broader client ecosystem (gean, lean-Rust treat Signature as a
-// fixed-bytes blob; ethlambda and zeam don't compute these roots at all).
+// between the spec (Pydantic Container-merkleize of inner Signature fields)
+// and the broader client ecosystem (which treats Signature as a fixed-bytes
+// blob, or doesn't compute these roots at all).
 //
 // No client computes hash_tree_root on SignedBlock / BlockSignatures /
 // SignedAttestation on the consensus hot path — block roots come from
 // hash_tree_root(Block), with the signature outside the root — so the
 // divergence isn't a live interop problem. We still exercise encode/decode
 // round-trip for these types; only the hash check is skipped. Resolution
-// should land upstream in leanSpec (either override hash_tree_root on
-// Signature to match the ecosystem, or drop the dead-path fixtures).
+// should land upstream (either override hash_tree_root on Signature to match
+// the ecosystem, or drop the dead-path fixtures).
 var hashSkipTypes = map[string]bool{
 	"BlockSignatures":   true,
 	"SignedAttestation": true,
@@ -99,8 +99,8 @@ var sszFactories = map[string]func() sszCodec{
 }
 
 // sszDecodeFailureFactories provides decode-only entry points for fixtures
-// from leanSpec PR #649 that carry expectException + rawBytes and assert the
-// decoder rejects malformed input. Empty for now: the rejection fixtures
+// that carry expectException + rawBytes and assert the decoder rejects
+// malformed input. Empty for now: the rejection fixtures
 // currently target spec-internal parameterized type wrappers (DecodeBitlist8,
 // DecodeBitvector16) plus basic types (Bytes4, Uint32) that gean never
 // exposes as standalone decoders. The harness skips with a clear reason

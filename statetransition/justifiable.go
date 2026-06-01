@@ -4,8 +4,7 @@ import "math"
 
 // SlotIsJustifiableAfter returns true if slot can be justified given the finalized slot.
 // 3SF-mini rules: distance must be <= 5, a perfect square, or a pronic number.
-// The finalized slot itself (delta = 0) is justifiable per spec
-// (leanSpec types/slot.py:54 asserts self >= finalized_slot, then delta = 0 satisfies delta <= 5).
+// The finalized slot itself (delta = 0) is justifiable, since delta = 0 satisfies delta <= 5.
 func SlotIsJustifiableAfter(slot, finalizedSlot uint64) bool {
 	if slot < finalizedSlot {
 		return false

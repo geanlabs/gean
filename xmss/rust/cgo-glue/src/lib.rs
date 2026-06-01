@@ -7,8 +7,7 @@
 //! in those crates, which rustc preserves in the final archive as long
 //! as the rlib is part of the link set.
 //!
-//! See blockblaz/zeam#773 for the motivation and the Cargo.toml above
-//! for the duplicate-symbol failure mode this avoids.
+//! The Cargo.toml above documents the duplicate-symbol failure mode this avoids.
 
 extern crate hashsig_glue;
 extern crate multisig_glue;

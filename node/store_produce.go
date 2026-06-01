@@ -7,7 +7,6 @@ import (
 )
 
 // ProduceAttestationData creates attestation data for the given slot.
-// Spec: lean_spec/subspecs/forkchoice/store.py produce_attestation_data
 func ProduceAttestationData(s *ConsensusStore, slot uint64) *types.AttestationData {
 	headRoot := s.Head()
 	headState := s.GetState(headRoot)

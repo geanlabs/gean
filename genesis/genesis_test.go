@@ -111,7 +111,6 @@ func TestLoadGenesisConfigNumValidatorsConsistent(t *testing.T) {
 
 // TestLoadGenesisConfigNumValidatorsMismatch verifies that a mismatched
 // NUM_VALIDATORS rejects the config rather than silently dropping it.
-// Matches the spec's assertion behavior — see leanSpec subspecs/genesis/config.py.
 func TestLoadGenesisConfigNumValidatorsMismatch(t *testing.T) {
 	tmpFile := t.TempDir() + "/config.yaml"
 	os.WriteFile(tmpFile, []byte("NUM_VALIDATORS: 5\n"+testConfigYAML), 0644)

@@ -32,7 +32,7 @@ func TestAggregatorStatusHandler(t *testing.T) {
 }
 
 // TestAggregatorToggleHandler covers POST happy paths: activate, deactivate,
-// and idempotent flips. Response shape matches leanSpec PR #636.
+// and idempotent flips.
 func TestAggregatorToggleHandler(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -6,7 +6,7 @@ import (
 	"github.com/geanlabs/gean/logger"
 )
 
-// Validator duty-gate thresholds mirroring leanSpec subspecs/validator/constants.py.
+// Validator duty-gate thresholds.
 // Informative, not normative: they shape when this node signs without
 // changing what consensus accepts. Clients may diverge without breaking
 // interop.

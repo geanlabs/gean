@@ -29,9 +29,8 @@ type AttestationDataEntry struct {
 }
 
 // AttestationSignatureMap is a thread-safe map of data_root -> signatures.
-// Gossip attestations are verified and inserted concurrently from goroutines
-// (matching zeam's inline processing model), while the aggregator reads
-// from the main event loop at interval 2.
+// Gossip attestations are verified and inserted concurrently from goroutines,
+// while the aggregator reads from the main event loop at interval 2.
 type AttestationSignatureMap struct {
 	mu   sync.Mutex
 	data map[[32]byte]*AttestationDataEntry

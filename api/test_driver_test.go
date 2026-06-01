@@ -14,8 +14,7 @@ import (
 )
 
 // TestIsTestDriverEnabled pins the set of truthy values gean accepts for
-// HIVE_LEAN_TEST_DRIVER. ream uses the same set; mirroring it keeps the
-// cohort consistent.
+// HIVE_LEAN_TEST_DRIVER.
 func TestIsTestDriverEnabled(t *testing.T) {
 	on := []string{"1", "true", "TRUE", "yes", "YES"}
 	for _, v := range on {
@@ -152,8 +151,8 @@ func TestStateTransitionHandler_MalformedBody(t *testing.T) {
 
 // TestForkChoiceInit_RejectsMismatchedAnchor confirms the anchor pair
 // consistency check fires when block.state_root doesn't match
-// hash_tree_root(state). Returns HTTP 400 — the lean hive simulator at
-// spec_assets.rs:297-310 treats any non-2xx status as "init rejected" and
+// hash_tree_root(state). Returns HTTP 400 — the lean hive simulator
+// treats any non-2xx status as "init rejected" and
 // only 204 NO_CONTENT as "init accepted". The structured body (accepted=
 // false, error="...") remains the same shape as step responses so callers
 // can read .error uniformly.
