@@ -195,9 +195,6 @@ func (e *Engine) Run(ctx context.Context) {
 		}
 	}
 }
-
-// --- MessageHandler interface for P2P ---
-
 func (e *Engine) OnBlock(block *types.SignedBlock) {
 	select {
 	case e.BlockCh <- block:

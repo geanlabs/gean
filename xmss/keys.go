@@ -166,8 +166,6 @@ func (km *KeyManager) Close() {
 	}
 }
 
-// --- Key loading from YAML + files ---
-
 // annotatedValidator represents a validator entry from annotated_validators.yaml.
 // Supports both formats:
 //   - lean-quickstart: two entries per validator with pubkey_hex + privkey_file

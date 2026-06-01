@@ -17,9 +17,7 @@ const (
 
 // ConsensusStore holds all state required for fork choice and block processing.
 //
-// Note: ForkChoice does NOT live here — it lives in Engine (Phase 7),
-// Engine calls ForkChoice with store data as parameters.
-// with store data as parameters.
+// ForkChoice lives on Engine; store data is passed into fork-choice operations explicitly.
 type ConsensusStore struct {
 	Backend               storage.Backend
 	NewPayloads           *PayloadBuffer
@@ -38,9 +36,6 @@ func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 		PubKeyCache:           xmss.NewPubKeyCache(),
 	}
 }
-
-// --- Metadata accessors ---
-
 func (s *ConsensusStore) Time() uint64 {
 	return s.getMetadataUint64(storage.KeyTime)
 }
@@ -101,9 +96,6 @@ func (s *ConsensusStore) SetConfig(cfg *types.ChainConfig) {
 	data, _ := cfg.MarshalSSZ()
 	s.putMetadata(storage.KeyConfig, data)
 }
-
-// --- Block accessors ---
-
 func (s *ConsensusStore) GetBlockHeader(root [32]byte) *types.BlockHeader {
 	rv, err := s.Backend.BeginRead()
 	if err != nil {
@@ -343,7 +335,7 @@ func (s *ConsensusStore) PromoteNewToKnown() {
 }
 
 // ExtractLatestKnownAttestations returns per-validator latest from known pool only.
-// Used by updateHead. rs extract_latest_known_attestations (L43).
+// Used by updateHead.
 func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.AttestationData {
 	return s.KnownPayloads.ExtractLatestAttestations()
 }
@@ -355,9 +347,6 @@ func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.Atte
 func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.AttestationData {
 	return s.NewPayloads.ExtractLatestAttestations()
 }
-
-// --- Internal metadata helpers ---
-
 func (s *ConsensusStore) getMetadataUint64(key []byte) uint64 {
 	rv, err := s.Backend.BeginRead()
 	if err != nil {

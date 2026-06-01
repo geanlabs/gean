@@ -17,7 +17,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// Protocol IDs rs.
+// Protocol IDs.
 const (
 	StatusProtocol        = "/leanconsensus/req/status/1/ssz_snappy"
 	BlocksByRootProtocol  = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"

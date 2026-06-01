@@ -23,7 +23,7 @@ package xmss
 // typedef struct PrivateKey PrivateKey;
 // typedef struct Signature Signature;
 //
-// // --- hashsig-glue FFI (rs) ---
+// // --- hashsig-glue FFI ---
 //
 // KeyPair* hashsig_keypair_from_ssz(
 //     const uint8_t* private_key_ptr, size_t private_key_len,
@@ -53,7 +53,7 @@ package xmss
 // KeyPair* hashsig_keypair_generate(const char* seed_phrase,
 //     size_t activation_epoch, size_t num_active_epochs);
 //
-// // --- multisig-glue FFI (rs) ---
+// // --- multisig-glue FFI ---
 //
 // void xmss_setup_prover();
 // void xmss_setup_verifier();

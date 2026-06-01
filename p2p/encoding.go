@@ -16,8 +16,6 @@ const (
 	MaxErrorMessageSize      = 256                                           // ErrorMessage: List[byte, 256]
 )
 
-// --- Gossipsub encoding: raw snappy ---
-
 // SnappyRawEncode compresses data using raw snappy (no framing).
 func SnappyRawEncode(data []byte) []byte {
 	return snappy.Encode(nil, data)
@@ -34,8 +32,6 @@ func SnappyRawDecode(data []byte) ([]byte, error) {
 	}
 	return snappy.Decode(nil, data)
 }
-
-// --- Req/Resp encoding: snappy framed + varint ---
 
 // EncodeVarint encodes a uint32 as LEB128 varint.
 func EncodeVarint(value uint32) []byte {
@@ -93,7 +89,7 @@ func DecodeReqRespPayload(buf []byte) ([]byte, error) {
 	return decoded, nil
 }
 
-// Response codes rs.
+// Response codes.
 const (
 	RespSuccess             byte = 0x00
 	RespInvalidRequest      byte = 0x01

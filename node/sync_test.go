@@ -14,8 +14,6 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// --- SyncStatus enum ---
-
 func TestSyncStatus_String(t *testing.T) {
 	cases := []struct {
 		s    SyncStatus
@@ -32,8 +30,6 @@ func TestSyncStatus_String(t *testing.T) {
 		}
 	}
 }
-
-// --- mockSyncP2P implements SyncDriverP2P for testing checkAndBackfill ---
 
 type mockSyncP2P struct {
 	mu sync.Mutex
@@ -85,9 +81,6 @@ func (m *mockSyncP2P) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots
 	m.rootCalls.Add(1)
 	return m.rootBlocks, nil, m.rootErr
 }
-
-// --- helper: drain BlockCh into a slice for assertions ---
-
 func drainBlockCh(t *testing.T, e *Engine, expected int, timeout time.Duration) []*types.SignedBlock {
 	t.Helper()
 	var out []*types.SignedBlock
@@ -102,9 +95,6 @@ func drainBlockCh(t *testing.T, e *Engine, expected int, timeout time.Duration) 
 	}
 	return out
 }
-
-// --- checkAndBackfill tests ---
-
 func TestSyncDriver_CheckAndBackfill_PeerNotAhead(t *testing.T) {
 	e := makeTestEngine()
 	mock := &mockSyncP2P{}
@@ -262,9 +252,6 @@ func TestSyncDriver_CheckAndBackfill_PerPeerDedup(t *testing.T) {
 	<-done1
 	_ = drainBlockCh(t, e, 1, 100*time.Millisecond)
 }
-
-// --- Run loop sync-status gating ---
-
 func TestSyncDriver_GetSyncStatus_NoPeers(t *testing.T) {
 	// makeTestEngine constructs Engine with P2P=nil, so the no-peers check
 	// is skipped. To exercise SyncIdle, we'd need a real Host with zero

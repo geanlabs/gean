@@ -105,9 +105,6 @@ impl Signature {
         <HashSigScheme as SignatureScheme>::verify(&public_key.inner, epoch, message, &self.inner)
     }
 }
-
-// --- FFI Functions ---
-
 #[no_mangle]
 pub unsafe extern "C" fn hashsig_keypair_generate(
     seed_phrase: *const c_char,

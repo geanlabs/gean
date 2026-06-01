@@ -52,8 +52,6 @@ func (b *InMemoryBackend) CountEntries(table Table) int {
 	return len(b.tables[table])
 }
 
-// --- ReadView ---
-
 type inMemoryReadView struct {
 	backend *InMemoryBackend
 }
@@ -100,8 +98,6 @@ func (v *inMemoryReadView) PrefixIterator(table Table, prefix []byte) (Iterator,
 	return &sliceIterator{entries: entries, pos: -1}, nil
 }
 
-// --- WriteBatch ---
-
 type inMemoryWriteBatch struct {
 	backend *InMemoryBackend
 	ops     []batchOp
@@ -147,8 +143,6 @@ func (b *inMemoryWriteBatch) Commit() error {
 	b.ops = nil
 	return nil
 }
-
-// --- sliceIterator ---
 
 type sliceIterator struct {
 	entries []KV

@@ -20,9 +20,6 @@ func makeAttData(headRoot [32]byte, slot uint64) *types.AttestationData {
 		Source: &types.Checkpoint{},
 	}
 }
-
-// --- Spec implementation tests (rs tests) ---
-
 func TestSpecComputeBlockWeights(t *testing.T) {
 	// Chain: root_a (slot 0) -> root_b (slot 1) -> root_c (slot 2)
 	rootA, rootB, rootC := root(1), root(2), root(3)
@@ -116,9 +113,6 @@ func TestSpecLMDGhostTiebreakLexicographic(t *testing.T) {
 		t.Fatalf("expected rootC (lexicographic tiebreak), got %x", head[:4])
 	}
 }
-
-// --- Proto-array tests ---
-
 func TestProtoArrayLinearChain(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
 	fc := New(0, rootA, [32]byte{})
@@ -273,9 +267,6 @@ func TestProtoArrayDeepChain(t *testing.T) {
 		t.Fatalf("expected root[9], got %x", head[:4])
 	}
 }
-
-// --- Debug oracle: verify proto-array matches spec ---
-
 func TestDebugOracleLinearChain(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
 

@@ -18,8 +18,6 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// --- Fixture types for fork choice tests ---
-
 type fcFixture map[string]fcTest
 
 type fcTest struct {
@@ -158,8 +156,6 @@ type fcAttestationCheck struct {
 	TargetSlot      *uint64 `json:"targetSlot,omitempty"`
 	Location        string  `json:"location"`
 }
-
-// --- Parsing helpers ---
 
 func fcParseHexRoot(s string) [32]byte {
 	s = strings.TrimPrefix(s, "0x")
@@ -320,9 +316,6 @@ func (fb *fcBlock) toBlock() *types.Block {
 
 	return block
 }
-
-// --- Test runner ---
-
 func TestSpecForkChoice(t *testing.T) {
 	logger.Quiet = true
 	defer func() { logger.Quiet = false }()

@@ -61,8 +61,6 @@ func stripTablePrefix(table Table, fullKey []byte) []byte {
 	return fullKey[prefixLen:]
 }
 
-// --- ReadView ---
-
 type pebbleReadView struct {
 	db *pebble.DB
 }
@@ -111,8 +109,6 @@ func prefixUpperBound(prefix []byte) []byte {
 	return nil // all 0xFF — no upper bound
 }
 
-// --- WriteBatch ---
-
 type pebbleWriteBatch struct {
 	db    *pebble.DB
 	batch *pebble.Batch
@@ -139,8 +135,6 @@ func (b *pebbleWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
 func (b *pebbleWriteBatch) Commit() error {
 	return b.batch.Commit(pebble.NoSync)
 }
-
-// --- Iterator ---
 
 type pebbleIterator struct {
 	iter    *pebble.Iterator

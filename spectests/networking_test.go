@@ -112,9 +112,6 @@ func runNetCodecFixture(t *testing.T, fx netFixture) string {
 		return "skip"
 	}
 }
-
-// --- varint ---
-
 func testVarint(t *testing.T, fx netFixture) string {
 	val, ok := fx.Input["value"].(float64)
 	if !ok {
@@ -146,9 +143,6 @@ func testVarint(t *testing.T, fx netFixture) string {
 	}
 	return "pass"
 }
-
-// --- gossip_topic ---
-
 func testGossipTopic(t *testing.T, fx netFixture) string {
 	kind, _ := fx.Input["kind"].(string)
 	forkDigest, _ := fx.Input["forkDigest"].(string)
@@ -183,11 +177,9 @@ func testGossipTopic(t *testing.T, fx netFixture) string {
 	return "pass"
 }
 
-// --- gossip_message_id ---
-
 // testGossipMessageID replicates the spec formula inline so we can feed explicit
 // (topic, data, domain) triples without going through gean's snappy-detection path.
-// Formula rs:
+// Formula:
 //
 //	SHA256(domain || uint64_le(len(topic)) || topic || data)[:20]
 func testGossipMessageID(t *testing.T, fx netFixture) string {
@@ -232,9 +224,6 @@ func testGossipMessageID(t *testing.T, fx netFixture) string {
 	}
 	return "pass"
 }
-
-// --- enr ---
-
 func testENR(t *testing.T, fx netFixture) string {
 	enrStr, _ := fx.Input["enrString"].(string)
 	wantMultiaddr, _ := fx.Output["multiaddr"].(string)
@@ -259,8 +248,6 @@ func testENR(t *testing.T, fx netFixture) string {
 	}
 	return "pass"
 }
-
-// --- discv5_message ---
 
 var discv5TypeByte = map[string]byte{
 	"ping":     0x01,
@@ -330,9 +317,6 @@ func testDiscv5Message(t *testing.T, fx netFixture) string {
 	}
 	return "pass"
 }
-
-// --- helpers ---
-
 func decodeHex(s string) ([]byte, error) {
 	s = strings.TrimPrefix(s, "0x")
 	return hex.DecodeString(s)

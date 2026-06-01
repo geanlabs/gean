@@ -6,9 +6,6 @@ import (
 )
 
 // All metrics use the lean_ prefix.
-
-// --- Gauges ---
-
 var (
 	metricHeadSlot = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_head_slot", Help: "Latest head slot",
@@ -70,9 +67,6 @@ var (
 		Name: "lean_gossip_mesh_peers", Help: "Number of peers in the gossipsub mesh",
 	})
 )
-
-// --- Counters ---
-
 var (
 	metricAttestationsValid = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_attestations_valid_total", Help: "Total valid attestations processed",
@@ -126,9 +120,6 @@ var (
 		Name: "lean_peer_disconnection_events_total", Help: "Total peer disconnection events",
 	}, []string{"direction", "reason"})
 )
-
-// --- Histograms ---
-
 var (
 	metricBlockProcessingTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_fork_choice_block_processing_time_seconds",
@@ -244,9 +235,6 @@ var (
 		Buckets: []float64{0.4, 0.6, 0.75, 0.8, 0.805, 0.81, 0.815, 0.82, 0.825, 0.85, 0.9, 1.0, 1.2, 1.6},
 	})
 )
-
-// --- Counters for block production ---
-
 var (
 	metricBlockBuildingSuccess = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_block_building_success_total", Help: "Successful block builds",
@@ -255,14 +243,10 @@ var (
 		Name: "lean_block_building_failures_total", Help: "Failed block builds",
 	})
 )
-
-// --- Sync status gauge ---
-
 var metricNodeSyncStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "lean_node_sync_status", Help: "Node sync status (one of idle/syncing/synced is set to 1)",
 }, []string{"status"})
 
-// --- Duty-gate skip counters ---
 //
 // Increment once per slot the duty gate denied production. The node-local
 // prefix matches gean's convention for per-node state (lean_node_*) rather
@@ -279,8 +263,6 @@ var (
 		Help: "Attestation batches skipped because the local view was too stale (sync-lag duty gate).",
 	})
 )
-
-// --- Public update functions ---
 
 func SetNodeInfo(name, version string) { metricNodeInfo.WithLabelValues(name, version).Set(1) }
 func SetNodeStartTime(t float64)       { metricNodeStartTime.Set(t) }

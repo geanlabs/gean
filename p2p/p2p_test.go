@@ -9,8 +9,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// --- Encoding tests ---
-
 func TestSnappyRawRoundtrip(t *testing.T) {
 	data := []byte("hello lean consensus world")
 	compressed := SnappyRawEncode(data)
@@ -142,9 +140,6 @@ func TestSuccessUntouchedByErrorMessageCap(t *testing.T) {
 		t.Fatal("success payload should not be truncated")
 	}
 }
-
-// --- Topic tests ---
-
 func TestTopicStrings(t *testing.T) {
 	if BlockTopic() != "/leanconsensus/12345678/block/ssz_snappy" {
 		t.Fatalf("block topic: %s", BlockTopic())
@@ -171,9 +166,6 @@ func TestSubnetID(t *testing.T) {
 		t.Fatal("subnet 7%4 != 3")
 	}
 }
-
-// --- Message ID tests ---
-
 func TestComputeMessageIDDeterministic(t *testing.T) {
 	topic := BlockTopic()
 	data := SnappyRawEncode([]byte("block data"))
@@ -205,9 +197,6 @@ func TestComputeMessageIDInvalidSnappy(t *testing.T) {
 		t.Fatalf("should still produce 20-byte ID, got %d", len(id))
 	}
 }
-
-// --- Status message tests ---
-
 func TestStatusMessageSSZRoundtrip(t *testing.T) {
 	status := &StatusMessage{
 		FinalizedRoot: [32]byte{0xab},
@@ -279,9 +268,6 @@ func TestBlocksByRootRequestSingleRoot36Bytes(t *testing.T) {
 		t.Fatal("single root roundtrip mismatch")
 	}
 }
-
-// --- Peer store tests ---
-
 func TestPeerStoreAddRemove(t *testing.T) {
 	ps := NewPeerStore()
 	if ps.Count() != 0 {
@@ -320,9 +306,6 @@ func TestPeerStoreRandomPeerNoneAvailable(t *testing.T) {
 		t.Fatal("should return empty when no peers")
 	}
 }
-
-// --- Bootnode loading ---
-
 func TestLoadBootnodesEmpty(t *testing.T) {
 	tmpFile := t.TempDir() + "/nodes.yaml"
 	os.WriteFile(tmpFile, []byte("# empty\n"), 0644)

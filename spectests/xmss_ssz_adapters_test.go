@@ -26,7 +26,6 @@ const (
 	xmssNodeListLimit uint64 = 1 << 17
 )
 
-// --- PublicKey -------------------------------------------------------------
 //
 // SSZ Container { root: Vector[Fp, 8], parameter: Vector[Fp, 5] }
 // Both fields are fixed-size, so the wire form is plain concatenation:
@@ -73,7 +72,6 @@ func (p *sszPublicKeyAdapter) HashTreeRootWith(hh ssz.HashWalker) error {
 	return nil
 }
 
-// --- HashTreeOpening -------------------------------------------------------
 //
 // SSZ Container { siblings: List[Vector[Fp, 8], NODE_LIST_LIMIT] }
 // Wire form: 4-byte offset (= 4) then concatenated 32-byte digests.
@@ -135,7 +133,6 @@ func (h *sszHashTreeOpeningAdapter) HashTreeRootWith(hh ssz.HashWalker) error {
 	return nil
 }
 
-// --- HashTreeLayer ---------------------------------------------------------
 //
 // SSZ Container { start_index: uint64, nodes: List[Vector[Fp, 8], NODE_LIST_LIMIT] }
 // Wire form: 8-byte start_index + 4-byte offset (=12) + concatenated nodes.
@@ -202,7 +199,6 @@ func (h *sszHashTreeLayerAdapter) HashTreeRootWith(hh ssz.HashWalker) error {
 	return nil
 }
 
-// --- Signature -------------------------------------------------------------
 //
 // SSZ Container { path: HashTreeOpening, rho: Vector[Fp, 7], hashes: HashDigestList }
 // path and hashes are variable-size, so the wire form is the standard

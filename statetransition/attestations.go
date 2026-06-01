@@ -145,8 +145,6 @@ func tryFinalize(
 	}
 }
 
-// --- justified_slots operations ---
-
 // IsSlotJustified reports whether the given slot has been justified, with
 // the convention that slots at or before finalized are implicitly justified.
 func IsSlotJustified(state *types.State, finalizedSlot, slot uint64) bool {
@@ -194,9 +192,6 @@ func shiftJustifiedSlots(state *types.State, delta uint64) {
 	}
 	state.JustifiedSlots = newBits
 }
-
-// --- helpers ---
-
 func checkpointExists(state *types.State, cp *types.Checkpoint) bool {
 	slot := cp.Slot
 	if slot >= uint64(len(state.HistoricalBlockHashes)) {
