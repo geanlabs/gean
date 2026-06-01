@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/node"
-	"github.com/geanlabs/gean/storage"
-	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/store"
+	"github.com/geanlabs/gean/internal/types"
 )
 
 func TestMain(m *testing.M) {
@@ -15,8 +15,8 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-func newTestStore() *node.ConsensusStore {
-	return node.NewConsensusStore(storage.NewInMemoryBackend())
+func newTestStore() *store.ConsensusStore {
+	return store.NewConsensusStore(storage.NewInMemoryBackend())
 }
 
 func TestRecoverStoreTime_PostGenesis(t *testing.T) {

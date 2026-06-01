@@ -43,8 +43,8 @@ on the base branch, you're out of scope.
 
 Drop any file matching `references/dont-touch.md` before analysis. The most
 common ones: `*_encoding.go` (generated), `xmss/rust/` (different review
-process), `specfixtures/*.go` (mirrors JSON shape), spec-mirroring function
-bodies in `statetransition/` (structure must match leanSpec for
+process), `internal/specfixtures/*.go` (mirrors JSON shape), spec-mirroring function
+bodies in `internal/statetransition/` (structure must match leanSpec for
 auditability). If the entire diff is don't-touch, say so and stop.
 
 ### 3. Read each remaining file and classify additions
@@ -58,13 +58,13 @@ field), classify it into one of the six categories from
 | `dead-code` | Unused function/method, unreachable branch, variable written never read, exported symbol no caller imports |
 | `premature-abstraction` | Helper called exactly once, interface with one implementor, generic that has only one instantiation, wrapper that adds no behavior |
 | `defensive-bloat` | Validation at an internal boundary already guaranteed by the caller, nil-check on a value the type system says can't be nil, error path that can't be reached |
-| `duplicates-existing-util` | New code that could call a function already in this package (or `types/`, `storage/`, `logger/`, etc.) |
+| `duplicates-existing-util` | New code that could call a function already in this package (or `internal/types/`, `internal/storage/`, `logger/`, etc.) |
 | `comment-bloat` | Comments that restate the code, "added for X" / "used by Y" rot, stale TODOs, multi-line docstrings on obvious functions |
 | `over-validated-boundary` | Treating an internal caller's input as if it were external user input |
 
 For each finding, before reporting it, you MUST:
 
-- **Grep the package** (and `types/`, `storage/`, `logger/`) for utilities
+- **Grep the package** (and `internal/types/`, `internal/storage/`, `logger/`) for utilities
   that already do what the new code does. The single highest-value finding
   type is "this could reuse `X` in `path/file.go:LINE`" — humans miss these
   most often.
@@ -78,14 +78,14 @@ For each finding, before reporting it, you MUST:
 |---|---|---|
 | `cosmetic` | Comments, naming, formatting, log strings. Cannot affect runtime behavior. | Auto-apply when user requests `--fix`. |
 | `structural` | Code refactor; behavior must be preserved, tests must re-pass. Examples: inlining a one-use helper, deleting an unused field, collapsing two branches. | Apply on explicit per-finding approval. Re-run tests after each apply. |
-| `consensus-critical` | Anything in `statetransition/`, `forkchoice/`, `node/` (engine, store, fork choice integration), `types/` (non-encoding), `p2p/host.go`, `p2p/reqresp.go`, or the XMSS Go binding. | **Report only.** Never apply without explicit per-finding human review, even on `--fix`. |
+| `consensus-critical` | Anything in `internal/statetransition/`, `internal/forkchoice/`, `internal/node/` (engine, store, fork choice integration), `internal/types/` (non-encoding), `internal/p2p/host.go`, `internal/p2p/reqresp.go`, or the XMSS Go binding. | **Report only.** Never apply without explicit per-finding human review, even on `--fix`. |
 
 When in doubt, escalate the risk class. A wrong "structural" call on
 consensus code is much worse than a verbose report.
 
 ### 5. Cross-reference spec compliance
 
-For findings inside `statetransition/` or `types/`, check whether the
+For findings inside `internal/statetransition/` or `internal/types/`, check whether the
 "redundant" code mirrors a named leanSpec function. Code that looks
 duplicated may be intentionally mirroring two separate spec functions to
 preserve auditability. See `.claude/skills/spec-compliant/references/spec-gean-mapping.md`
@@ -104,7 +104,7 @@ saved descending within each category. End with the summary table.
 
 ### dead-code
 
-#### #1 — `node/sync.go:142-168` (−27 LOC) — `structural`
+#### #1 — `internal/syncer/sync.go:142-168` (−27 LOC) — `structural`
 **Finding:** `markStaleRoots` is exported but only called inside the package,
 and its only caller `pruneStaleRoots` was deleted in commit abc1234. No
 external imports.
@@ -115,11 +115,11 @@ external imports.
 **Why safe:** No callers outside the file. `go vet ./...` and
 `make test` should pass unchanged.
 
-**Test coverage:** `node/sync_test.go:88` (TestMarkStaleRoots) — also delete.
+**Test coverage:** `internal/syncer/sync_test.go:88` (TestMarkStaleRoots) — also delete.
 
 ---
 
-#### #2 — `p2p/peers.go:55-58` (−4 LOC) — `cosmetic`
+#### #2 — `internal/p2p/peers.go:55-58` (−4 LOC) — `cosmetic`
 **Finding:** Unreachable branch — `if peer == nil` after `peer, ok :=
 m[id]; !ok { return }` two lines above.
 
@@ -133,7 +133,7 @@ m[id]; !ok { return }` two lines above.
 
 ### premature-abstraction
 
-#### #3 — `node/validator.go:204-218` (−15 LOC) — `consensus-critical`
+#### #3 — `internal/node/validator.go:204-218` (−15 LOC) — `consensus-critical`
 **Finding:** `wrapAttestationSigner` is a 14-line wrapper around
 `keys.SignAttestation` with a single call site at `validator.go:312`. Adds
 no behavior.
@@ -143,7 +143,7 @@ no behavior.
 **Why safe (proposed):** Wrapper is pure passthrough; inlining is a
 behavior-preserving refactor.
 
-**Test coverage:** `node/validator_test.go:177` covers the call site.
+**Test coverage:** `internal/node/validator_test.go:177` covers the call site.
 
 > **Report-only.** Consensus-critical path. Even though the refactor is
 > mechanical, the wrapper may exist to mark a future signature-policy
@@ -153,16 +153,16 @@ behavior-preserving refactor.
 
 ### duplicates-existing-util
 
-#### #4 — `node/block.go:88-104` (−14 LOC) — `structural`
+#### #4 — `internal/node/block.go:88-104` (−14 LOC) — `structural`
 **Finding:** New helper `bytesToHex` duplicates
-`types/util.go:42 BytesToHex`, same signature, same body.
+`internal/types/util.go:42 BytesToHex`, same signature, same body.
 
 **Suggested change:** Delete the local helper, import + call
 `types.BytesToHex`.
 
 **Why safe:** Identical implementation; same test coverage flows through.
 
-**Test coverage:** `types/util_test.go:60` covers BytesToHex.
+**Test coverage:** `internal/types/util_test.go:60` covers BytesToHex.
 
 ---
 
@@ -172,7 +172,7 @@ behavior-preserving refactor.
 
 ### comment-bloat
 
-#### #5 — `storage/pebble.go:201-209` (−8 LOC) — `cosmetic`
+#### #5 — `internal/storage/pebble.go:201-209` (−8 LOC) — `cosmetic`
 **Finding:** 8-line comment explaining what `Get` does, when the function
 signature `Get(table Table, key []byte) ([]byte, error)` is
 self-documenting. Comment also includes "added for issue #142" which is PR
@@ -215,7 +215,7 @@ When the user replies with `apply #N` or similar after the report:
 1. Apply only the requested findings, in order.
 2. For each finding, run the smallest test scope that covers it
    (`go test ./<package>/`). For consensus-critical findings, also run
-   `make test`. For findings in `types/`, also run `make sszgen` first if a
+   `make test`. For findings in `internal/types/`, also run `make sszgen` first if a
    struct changed, then `make test`.
 3. Commit each applied finding as its own commit with the finding ID and a
    one-line summary, so each is trivially revertible:

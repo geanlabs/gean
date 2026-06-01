@@ -29,7 +29,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/internal/types"
 	"gopkg.in/yaml.v3"
 )
 

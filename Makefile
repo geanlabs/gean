@@ -21,7 +21,7 @@ ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
-	@go build -ldflags "-X github.com/geanlabs/gean/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
+	@go build -ldflags "-X github.com/geanlabs/gean/internal/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
 test: ## Run unit tests (excludes crypto FFI and spec tests)
@@ -31,7 +31,7 @@ test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
 	go test ./xmss/ -v -count=1
 
 test-spec: leanSpec/fixtures ## Run spec fixture tests only (fast, excludes xmss FFI)
-	go test ./spectests/  -count=1 -tags=spectests
+	go test ./internal/spectests/  -count=1 -tags=spectests
 
 test-all: leanSpec/fixtures ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
@@ -46,14 +46,14 @@ fmt: ## Format all Go code
 	cd xmss/rust && cargo fmt
 
 sszgen: ## Regenerate SSZ encoding files from struct tags
-	@rm -f types/*_encoding.go
-	sszgen --path pkg/types --objs ChainConfig --output types/config_encoding.go
-	sszgen --path pkg/types --objs Checkpoint --output types/checkpoint_encoding.go
-	sszgen --path pkg/types --objs Validator --output types/validator_encoding.go
-	sszgen --path pkg/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SignedAggregatedAttestation --exclude-objs Checkpoint --output types/attestation_encoding.go
-	sszgen --path pkg/types --objs BlockHeader,BlockBody,Block,AggregatedSignatureProof,BlockSignatures,SignedBlock --exclude-objs Checkpoint,AttestationData,Attestation,AggregatedAttestation,AggregatedSignatureProof --output types/block_encoding.go
-	sszgen --path pkg/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output types/state_encoding.go
-	sszgen --path types --objs BlocksByRangeRequest --output types/blocks_by_range_encoding.go
+	@rm -f internal/types/*_encoding.go
+	sszgen --path internal/types --objs ChainConfig --output internal/types/config_encoding.go
+	sszgen --path internal/types --objs Checkpoint --output internal/types/checkpoint_encoding.go
+	sszgen --path internal/types --objs Validator --output internal/types/validator_encoding.go
+	sszgen --path internal/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/types/attestation_encoding.go
+	sszgen --path internal/types --objs BlockHeader,BlockBody,Block,AggregatedSignatureProof,BlockSignatures,SignedBlock --exclude-objs Checkpoint,AttestationData,Attestation,AggregatedAttestation,AggregatedSignatureProof --output internal/types/block_encoding.go
+	sszgen --path internal/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/types/state_encoding.go
+	sszgen --path internal/types --objs BlocksByRangeRequest --output internal/types/blocks_by_range_encoding.go
 
 clean: ## Remove build artifacts and generated files
 	rm -rf bin data
@@ -132,4 +132,3 @@ run-devnet: docker-build lean-quickstart ## Run local multi-client devnet
 	@echo "Starting local devnet with gean client (\"$(DOCKER_TAG)\" tag)."
 	@cd lean-quickstart \
 		&& NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > ../devnet.log 2>&1
-

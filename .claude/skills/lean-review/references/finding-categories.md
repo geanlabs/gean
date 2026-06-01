@@ -90,9 +90,9 @@ guarantees can't happen.
   paths return `nil`.
 
 **Not a finding when:**
-- The function is exported and called from `cmd/` or `api/` (external
+- The function is exported and called from `cmd/` or `internal/api/` (external
   boundary — validate).
-- The function is called from gossip handlers in `p2p/` (external boundary —
+- The function is called from gossip handlers in `internal/p2p/` (external boundary —
   validate). Gossip messages come from untrusted peers; defensive checks
   there are not bloat.
 - The check exists to make a future invariant violation **loud** (panics
@@ -108,16 +108,16 @@ single highest-value finding type — humans miss these most often, especially
 in AI-generated code.
 
 **Looks like:**
-- Bitlist manipulation in `node/` that could call `types/bitlist.go`
+- Bitlist manipulation in `internal/node/` that could call `internal/types/bitlist.go`
   (`BitlistGet`, `BitlistSet`, `BitlistLen`, `BitlistExtend`,
   `NewBitlistSSZ`).
-- Hex encoding/decoding helpers that duplicate `types/util.go`.
+- Hex encoding/decoding helpers that duplicate `internal/types/util.go`.
 - Custom logger formatting that should go through `logger.Info/Warn/Error`.
 - A "merge two sorted slices" function when `sort.Slice` + iteration would
   be one line.
 - A retry loop when `context.WithTimeout` does the job.
 - A new SSZ encoder by hand when `make sszgen` would produce one.
-- Manual storage key construction when `storage/keys.go` has an encoder
+- Manual storage key construction when `internal/storage/keys.go` has an encoder
   (`EncodeLiveChainKey` etc.).
 
 **Proof required:**
@@ -129,7 +129,7 @@ in AI-generated code.
 **Not a finding when:**
 - The "duplicate" is intentionally specialized for a hot path and the
   generic version allocates (rare — confirm with a benchmark first).
-- The existing utility lives in a different test build (e.g. `spectests/`
+- The existing utility lives in a different test build (e.g. `internal/spectests/`
   with build tag `spectests`).
 
 ---
@@ -168,12 +168,12 @@ Treating an internal caller's input with the same suspicion you'd give a
 gossip peer or an HTTP request.
 
 **Looks like:**
-- A `statetransition/` function that re-checks fields the engine populated
+- A `internal/statetransition/` function that re-checks fields the engine populated
   from a verified block.
-- A `forkchoice/` function that re-validates a root the engine just looked
+- A `internal/forkchoice/` function that re-validates a root the engine just looked
   up from the store.
 - A storage backend that validates the structure of a key constructed by
-  `storage/keys.go`.
+  `internal/storage/keys.go`.
 
 **Proof required:**
 - Show the caller is internal and the value comes from a trusted source
@@ -181,7 +181,7 @@ gossip peer or an HTTP request.
 - Show no external boundary sits between the trusted source and this call.
 
 **Not a finding when:**
-- The function is also called from a test driver or `api/test_driver.go`
+- The function is also called from a test driver or `internal/api/test_driver.go`
   (`HIVE_LEAN_TEST_DRIVER=1` path) where input may be adversarial.
 - The function is called from both internal trusted paths and external
   untrusted paths — leave the validation; it's the boundary.
@@ -205,6 +205,6 @@ this exist to catch?" If you can't answer, it's likely bloat. If the answer
 is "a real bug that happened or could happen in this code path," it stays.
 
 **Bias toward leaving consensus code alone.** When a finding is in
-`statetransition/`, `forkchoice/`, `node/`, or `types/`, the bar is higher.
+`internal/statetransition/`, `internal/forkchoice/`, `internal/node/`, or `internal/types/`, the bar is higher.
 A "saved" 5 LOC in fork-choice vote accounting is not worth a 1% chance of
 introducing a fork.

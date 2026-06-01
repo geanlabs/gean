@@ -3,7 +3,7 @@ package xmss
 import (
 	"sync"
 
-	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/internal/types"
 )
 
 // PubKeyCache caches parsed C PublicKey handles to avoid repeated FFI calls.

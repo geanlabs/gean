@@ -68,7 +68,7 @@ For **each item** in the spec-diff output:
 
 #### Type/Container changes
 
-Search `types/*.go` files (skip `*_encoding.go` which are generated).
+Search `internal/types/*.go` files (skip `*_encoding.go` which are generated).
 
 - `[New]` type: grep for a Go struct with the matching name (apply name transforms:
   Python `PascalCase` usually maps directly to Go `PascalCase`). If not found, mark ❌.
@@ -93,7 +93,7 @@ Apply Python-to-Go name transformation (`snake_case` -> `PascalCase`).
 
 #### Constant changes
 
-Search `types/constants.go`. Python `UPPER_SNAKE_CASE` maps to Go `PascalCase`
+Search `internal/types/constants.go`. Python `UPPER_SNAKE_CASE` maps to Go `PascalCase`
 (e.g., `SECONDS_PER_SLOT` -> `SecondsPerSlot`).
 
 #### Test vector changes
@@ -101,12 +101,12 @@ Search `types/constants.go`. Python `UPPER_SNAKE_CASE` maps to Go `PascalCase`
 For each test category in the spec-diff Test Vectors section:
 
 1. Check the corresponding gean test file exists (see mapping table):
-   - `state_transition` -> `spectests/stf_test.go`
-   - `fork_choice` (fc) -> `spectests/forkchoice_test.go`
-   - `verify_signatures` -> `spectests/signatures_test.go`
-   - `ssz` -> check `spectests/` for SSZ tests
+   - `state_transition` -> `internal/spectests/stf_test.go`
+   - `fork_choice` (fc) -> `internal/spectests/forkchoice_test.go`
+   - `verify_signatures` -> `internal/spectests/signatures_test.go`
+   - `ssz` -> check `internal/spectests/` for SSZ tests
 
-2. Check fixture parser (`spectests/fixture.go`) for new/modified fields in fixtures.
+2. Check fixture parser (`internal/spectests/fixture.go`) for new/modified fields in fixtures.
    If the spec added a new field to a test fixture type and gean's parser doesn't
    handle it, mark ⚠️.
 

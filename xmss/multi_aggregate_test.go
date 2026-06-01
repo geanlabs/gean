@@ -18,7 +18,7 @@ func TestMultipleAggregationsSequential(t *testing.T) {
 	EnsureProverReady()
 	EnsureVerifierReady()
 
-	for slot := uint32(0); slot < 5; slot++ {
+	for slot := range uint32(5) {
 		var message [32]byte
 		message[0] = byte(slot)
 		message[1] = 0xab

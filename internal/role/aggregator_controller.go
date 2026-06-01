@@ -1,0 +1,46 @@
+package role
+
+import (
+	"sync/atomic"
+
+	"github.com/geanlabs/gean/internal/metrics"
+)
+
+// Controller holds the runtime aggregator-role flag exposed by the
+// admin API. Reads are lock-free via atomic.Bool; Set
+// atomically swaps the value and returns the previous state so the HTTP
+// handler can report {"previous": ...}. The Prometheus lean_is_aggregator
+// gauge is synced on every transition so observability stays accurate across
+// toggles.
+//
+// Contract: each logical decision that branches on is_aggregator should call
+// Get() exactly once and cache the result locally if the same value is
+// needed in multiple places within the same decision. Re-reading mid-
+// decision can observe a toggle in flight.
+type Controller struct {
+	flag atomic.Bool
+}
+
+// New seeds the controller with initial and syncs the
+// Prometheus gauge to match, so metrics are correct from boot onward.
+func New(initial bool) *Controller {
+	c := &Controller{}
+	c.flag.Store(initial)
+	metrics.SetIsAggregator(initial)
+	return c
+}
+
+// Get returns the current aggregator-role flag.
+func (c *Controller) Get() bool {
+	return c.flag.Load()
+}
+
+// Set atomically swaps the flag to v and returns the previous value. The
+// Prometheus gauge is updated only when the value actually changes.
+func (c *Controller) Set(v bool) bool {
+	prev := c.flag.Swap(v)
+	if prev != v {
+		metrics.SetIsAggregator(v)
+	}
+	return prev
+}

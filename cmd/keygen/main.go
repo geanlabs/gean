@@ -101,7 +101,7 @@ func generateKeys(numValidators, numNodes int, outputDir, keysDir string, basePo
 
 	// Generate dual XMSS validator keys (attestation + proposal per validator).
 	log.Printf("generating %d XMSS validator keypairs (2 keys each, ~40s per key)...", numValidators)
-	for i := 0; i < numValidators; i++ {
+	for i := range numValidators {
 		log.Printf("  generating validator %d/%d...", i+1, numValidators)
 
 		attPubHex, attSkFile := generateAndSaveKey(i, "attestation", keysDir)
@@ -122,7 +122,7 @@ func generateKeys(numValidators, numNodes int, outputDir, keysDir string, basePo
 
 	// Generate node keys.
 	log.Printf("generating %d node keys...", numNodes)
-	for i := 0; i < numNodes; i++ {
+	for i := range numNodes {
 		keyBytes := make([]byte, 32)
 		rand.Read(keyBytes)
 		keyHex := hex.EncodeToString(keyBytes)
@@ -188,7 +188,7 @@ func writeAnnotatedValidatorsYAML(outputDir string, validators []validatorInfo, 
 		nodeValidators[nodeIdx] = append(nodeValidators[nodeIdx], v)
 	}
 	y := ""
-	for i := 0; i < numNodes; i++ {
+	for i := range numNodes {
 		y += fmt.Sprintf("node%d:\n", i)
 		for _, v := range nodeValidators[i] {
 			y += fmt.Sprintf("  - index: %d\n    attestation_pubkey_hex: %s\n    proposal_pubkey_hex: %s\n    attestation_sk_file: %s\n    proposal_sk_file: %s\n",

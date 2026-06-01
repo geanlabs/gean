@@ -3,7 +3,7 @@ package xmss
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/internal/types"
 )
 
 // TestProposerSigThroughBlockSSZ simulates the exact P2P path:

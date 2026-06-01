@@ -95,7 +95,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/internal/types"
 )
 
 // Size constants.
@@ -170,7 +170,7 @@ func VerifySignatureSSZ(pubkey [types.PubkeySize]byte, slot uint32, message [32]
 }
 
 // ChildProof represents a pre-aggregated proof with its participants' public keys.
-// Used as input to recursive aggregation.
+// Used as input to recursive validator.
 type ChildProof struct {
 	Pubkeys   []CPubKey // Parsed public keys of participants
 	ProofData []byte    // SSZ-encoded proof bytes
