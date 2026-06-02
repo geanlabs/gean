@@ -24,6 +24,8 @@ make sszgen       # regenerate internal/types/*_encoding.go from struct tags (af
 
 Run a single Go test: `go test ./internal/node -run TestName -v -count=1`. For spec tests you must pass the build tag: `go test ./internal/spectests/ -run TestName -tags=spectests -count=1`.
 
+Hive test-driver routes are excluded from normal binaries. Build with `go build -tags hive_testdriver ./cmd/gean` and set `HIVE_LEAN_TEST_DRIVER=1` to expose them.
+
 `make test` deliberately omits `xmss`, `spectests`, and `cmd/` — running a plain `go test ./...` will try to link the FFI and fail unless `make ffi` has run. When in doubt, use the make targets.
 
 ### Spec fixtures

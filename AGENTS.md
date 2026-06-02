@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`gean` is a Go module (`github.com/geanlabs/gean`) for a lean consensus client. Top-level Go code is limited to CLI entry points in `cmd/` and the XMSS crypto/FFI package in `xmss/`. All client and protocol implementation packages live under `internal/`: `types/`, `statetransition/`, `node/`, `store/`, `storage/`, `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`, `role/`, `dutygate/`, `metrics/`, `p2p/`, `sync/`, `forkchoice/`, `api/`, `genesis/`, `checkpoint/`, `logger/`, and `specfixtures/`. XMSS crypto uses Go bindings in `xmss/` plus Rust FFI crates in `xmss/rust/`. Package tests sit beside source files as `*_test.go`; broader spec fixture tests are in `internal/spectests/`.
+`gean` is a Go module (`github.com/geanlabs/gean`) for a lean consensus client. Top-level Go code is limited to CLI entry points in `cmd/` and the XMSS crypto/FFI package in `xmss/`. All client and protocol implementation packages live under `internal/`: `types/`, `statetransition/`, `node/`, `store/`, `storage/`, `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`, `role/`, `dutygate/`, `metrics/`, `p2p/`, `syncer/`, `forkchoice/`, `api/`, `genesis/`, `checkpoint/`, `logger/`, and `specfixtures/`. XMSS crypto uses Go bindings in `xmss/` plus Rust FFI crates in `xmss/rust/`. Package tests sit beside source files as `*_test.go`; broader spec fixture tests are in `internal/spectests/`.
 
 ## Build, Test, and Development Commands
 
@@ -14,6 +14,7 @@
 - `make lint`: runs `go vet`, `cargo fmt --check`, and `cargo clippy`.
 - `make fmt`: runs `gofmt -w .` and Rust `cargo fmt`.
 - `make run-setup` then `make run`: generate a local testnet and start node0.
+- `go build -tags hive_testdriver ./cmd/gean`: build a binary that can expose Hive test-driver routes when `HIVE_LEAN_TEST_DRIVER=1`.
 
 ## Coding Style & Naming Conventions
 

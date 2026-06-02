@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/pprof"
 
-	"github.com/geanlabs/gean/internal/api/testdriver"
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/role"
@@ -17,9 +16,7 @@ import (
 )
 
 // buildAPIMux registers gean's runtime API routes on a fresh ServeMux. The
-// mux is returned so callers can attach additional routes (e.g. the test
-// driver routes under StartAPIServerWithTestDriver) before binding it to a
-// listener.
+// mux is returned so alternate build targets can attach additional routes.
 func buildAPIMux(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.ServeMux {
 	mux := http.NewServeMux()
 
@@ -45,27 +42,6 @@ func StartAPIServer(address string, s *store.ConsensusStore, fc *forkchoice.Fork
 	}
 
 	logger.Info(logger.Network, "api server listening on %s", address)
-	return http.Serve(listener, mux)
-}
-
-// StartAPIServerWithTestDriver starts the API server with the production
-// routes plus the four test-driver endpoints under /lean/v0/test_driver/.
-// The test-driver routes are gated on HIVE_LEAN_TEST_DRIVER being truthy at
-// process start; callers should branch on testdriver.IsEnabled before
-// invoking this constructor. The split-constructor pattern (rather than an
-// in-handler env-var check) keeps production binaries from accidentally
-// exposing the test-driver session even when the env var is set, because
-// the routes simply do not exist on the mux when StartAPIServer is used.
-func StartAPIServerWithTestDriver(address string, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) error {
-	mux := buildAPIMux(s, fc, aggCtl)
-	testdriver.RegisterRoutes(mux, testdriver.NewSession())
-
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		return fmt.Errorf("api listen: %w", err)
-	}
-
-	logger.Info(logger.Network, "api server listening on %s (test-driver routes enabled)", address)
 	return http.Serve(listener, mux)
 }
 

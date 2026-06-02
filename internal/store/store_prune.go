@@ -11,32 +11,25 @@ const (
 	PruningIntervalSlots = 7200 // Periodic pruning every ~8 hours at 4s/slot
 )
 
-// PruneOnFinalization performs canonicality-based pruning when finalization advances.
-// Identifies canonical chain from oldFinalized to newFinalized, prunes non-canonical
-// states/blocks, and cleans up stale attestation data.
-// Uses canonicality analysis to prune dead forks.
+// PruneOnFinalization removes non-canonical data and stale attestation data
+// after finalization advances.
 func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinalizedSlot, newFinalizedSlot uint64, newFinalizedRoot [32]byte) {
 	if newFinalizedSlot <= oldFinalizedSlot {
 		return
 	}
 
-	// 1. Identify canonical and non-canonical roots in the fork choice tree.
 	canonical, nonCanonical := fc.GetCanonicalAnalysis(newFinalizedRoot)
 
-	// 2. Prune non-canonical states and blocks from DB.
 	prunedStates := pruneStatesByRoots(s, nonCanonical)
 	prunedBlocks := pruneBlocksByRoots(s, nonCanonical)
 
-	// 3. Prune old canonical states (keep only the finalized root's state).
 	// canonical[0] is the finalized root — keep it, prune earlier ancestors.
 	if len(canonical) > 1 {
 		prunedStates += pruneStatesByRoots(s, canonical[1:])
 	}
 
-	// 4. Prune live chain entries below finalized.
 	prunedChain := pruneLiveChain(s, newFinalizedSlot)
 
-	// 5. Prune stale attestation data (attestation sigs + payloads with target <= finalized).
 	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
 	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
 	prunedNew := s.NewPayloads.PruneBelow(newFinalizedSlot)
@@ -46,9 +39,7 @@ func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinali
 		prunedKnown+prunedNew, len(nonCanonical))
 }
 
-// PeriodicPrune runs canonicality-based pruning as a fallback when finalization stalls.
-// Only triggers when finalization is more than 2*PruningIntervalSlots behind current slot.
-// Runs canonicality-based pruning as a fallback safety mechanism.
+// PeriodicPrune runs canonicality-based pruning when finalization stalls.
 func PeriodicPrune(s *ConsensusStore, fc *forkchoice.ForkChoice, currentSlot, finalizedSlot uint64) {
 	if currentSlot == 0 || currentSlot%PruningIntervalSlots != 0 {
 		return
