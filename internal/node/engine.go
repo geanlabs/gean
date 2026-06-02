@@ -10,6 +10,7 @@ import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/p2p"
+	"github.com/geanlabs/gean/internal/pending"
 	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
@@ -46,10 +47,8 @@ type Engine struct {
 	AggCtl              *role.Controller
 	DutyGate            *dutygate.Gate // gates validator signing when local view is stale
 	CommitteeCount      uint64
-	PendingBlocks       map[[32]byte]map[[32]byte]bool // parent_root -> {child_roots}
-	PendingBlockParents map[[32]byte][32]byte          // block_root -> missing_ancestor
-	PendingBlockDepths  map[[32]byte]int               // block_root -> fetch depth
-	PendingAttestations *PendingAttestationBuffer      // gossip atts buffered by unknown head root
+	Pending             *pending.BlockBuffer       // blocks buffered awaiting an unknown parent
+	PendingAttestations *pending.AttestationBuffer // gossip atts buffered by unknown head root
 
 	// Channels for receiving messages from P2P goroutine.
 	BlockCh       chan *types.SignedBlock
@@ -88,10 +87,8 @@ func New(
 		AggCtl:                aggCtl,
 		DutyGate:              dutygate.New(),
 		CommitteeCount:        committeeCount,
-		PendingBlocks:         make(map[[32]byte]map[[32]byte]bool),
-		PendingBlockParents:   make(map[[32]byte][32]byte),
-		PendingBlockDepths:    make(map[[32]byte]int),
-		PendingAttestations:   NewPendingAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		Pending:               pending.NewBlockBuffer(),
+		PendingAttestations:   pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		BlockCh:               make(chan *types.SignedBlock, 64),
 		AttestationCh:         make(chan *types.SignedAttestation, 256),
 		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),

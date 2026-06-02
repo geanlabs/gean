@@ -3,6 +3,7 @@ package node
 import (
 	"testing"
 
+	"github.com/geanlabs/gean/internal/pending"
 	"github.com/geanlabs/gean/internal/role"
 )
 
@@ -14,7 +15,7 @@ import (
 // the entries for that root.
 func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 	e := &Engine{
-		PendingAttestations: NewPendingAttestationBuffer(8, 64),
+		PendingAttestations: pending.NewAttestationBuffer(8, 64),
 	}
 
 	var head [32]byte
@@ -57,7 +58,7 @@ func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 // an unknown head root cleanly — no error, no panic, no spurious work.
 func TestReplayPendingAttestations_NoBucketIsNoOp(t *testing.T) {
 	e := &Engine{
-		PendingAttestations: NewPendingAttestationBuffer(8, 64),
+		PendingAttestations: pending.NewAttestationBuffer(8, 64),
 		AggCtl:              role.New(false),
 	}
 

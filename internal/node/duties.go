@@ -157,3 +157,22 @@ func (e *Engine) produceAttestations(slot uint64) {
 		metrics.ObserveAttestationsProductionTime(time.Since(prodStart).Seconds())
 	}
 }
+
+// getOurProposer checks if any of our validators is the proposer for this slot.
+func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
+	if e.Keys == nil {
+		return 0, false
+	}
+	headState := e.Store.GetState(e.Store.Head())
+	if headState == nil {
+		return 0, false
+	}
+	numValidators := headState.NumValidators()
+
+	for _, vid := range e.Keys.ValidatorIDs() {
+		if types.IsProposer(slot, vid, numValidators) {
+			return vid, true
+		}
+	}
+	return 0, false
+}

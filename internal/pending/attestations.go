@@ -1,4 +1,7 @@
-package node
+// Package pending holds buffers for out-of-order gossip: attestations and
+// blocks that reference a head/parent not yet known locally, replayed once the
+// missing block arrives.
+package pending
 
 import (
 	"sync"
@@ -6,15 +9,15 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// PendingAttestationBuffer holds gossip attestations whose referenced head
-// block is not yet in the store. When that head block later arrives, the
-// engine drains the bucket and replays the attestations through the normal
-// gossip path so signatures get verified against real state.
+// AttestationBuffer holds gossip attestations whose referenced head block is
+// not yet in the store. When that head block later arrives, the engine drains
+// the bucket and replays the attestations through the normal gossip path so
+// signatures get verified against real state.
 //
 // Keyed by head.Root so draining on block arrival is O(1). Per-root and total
-// caps bound memory under adversarial load; per-root overflow drops the
-// oldest entry in the bucket (FIFO).
-type PendingAttestationBuffer struct {
+// caps bound memory under adversarial load; per-root overflow drops the oldest
+// entry in the bucket (FIFO).
+type AttestationBuffer struct {
 	mu         sync.Mutex
 	byHead     map[[32]byte][]*types.SignedAttestation
 	perRootCap int
@@ -24,11 +27,11 @@ type PendingAttestationBuffer struct {
 	rejected   int // cumulative total-cap rejections
 }
 
-// NewPendingAttestationBuffer constructs a buffer with the given caps.
-// perRootCap bounds the depth of any single head-root bucket; totalCap bounds
-// the sum across all buckets.
-func NewPendingAttestationBuffer(perRootCap, totalCap int) *PendingAttestationBuffer {
-	return &PendingAttestationBuffer{
+// NewAttestationBuffer constructs a buffer with the given caps. perRootCap
+// bounds the depth of any single head-root bucket; totalCap bounds the sum
+// across all buckets.
+func NewAttestationBuffer(perRootCap, totalCap int) *AttestationBuffer {
+	return &AttestationBuffer{
 		byHead:     make(map[[32]byte][]*types.SignedAttestation),
 		perRootCap: perRootCap,
 		totalCap:   totalCap,
@@ -39,9 +42,9 @@ func NewPendingAttestationBuffer(perRootCap, totalCap int) *PendingAttestationBu
 //
 // Returns added=true when the attestation landed in the buffer. Returns
 // dropped>0 when adding this entry evicted an older one in the same bucket
-// (per-root FIFO overflow). Returns added=false when the total cap is hit
-// and the attestation was rejected outright.
-func (b *PendingAttestationBuffer) Add(headRoot [32]byte, att *types.SignedAttestation) (added bool, dropped int) {
+// (per-root FIFO overflow). Returns added=false when the total cap is hit and
+// the attestation was rejected outright.
+func (b *AttestationBuffer) Add(headRoot [32]byte, att *types.SignedAttestation) (added bool, dropped int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -69,7 +72,7 @@ func (b *PendingAttestationBuffer) Add(headRoot [32]byte, att *types.SignedAttes
 
 // Drain atomically removes and returns the bucket for headRoot. Returns nil
 // when no bucket exists.
-func (b *PendingAttestationBuffer) Drain(headRoot [32]byte) []*types.SignedAttestation {
+func (b *AttestationBuffer) Drain(headRoot [32]byte) []*types.SignedAttestation {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -84,7 +87,7 @@ func (b *PendingAttestationBuffer) Drain(headRoot [32]byte) []*types.SignedAttes
 
 // PruneBelow drops every buffered attestation whose Data.Slot <= finalizedSlot.
 // Empty buckets are removed. Returns the number of attestations removed.
-func (b *PendingAttestationBuffer) PruneBelow(finalizedSlot uint64) int {
+func (b *AttestationBuffer) PruneBelow(finalizedSlot uint64) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -110,14 +113,14 @@ func (b *PendingAttestationBuffer) PruneBelow(finalizedSlot uint64) int {
 
 // Total returns the current total number of buffered attestations across all
 // head-root buckets.
-func (b *PendingAttestationBuffer) Total() int {
+func (b *AttestationBuffer) Total() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.total
 }
 
 // Len returns the current number of distinct head-root buckets.
-func (b *PendingAttestationBuffer) Len() int {
+func (b *AttestationBuffer) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.byHead)
@@ -125,7 +128,7 @@ func (b *PendingAttestationBuffer) Len() int {
 
 // Stats returns cumulative eviction (per-root FIFO overflow) and rejection
 // (total cap exceeded) counters since construction.
-func (b *PendingAttestationBuffer) Stats() (evicted, rejected int) {
+func (b *AttestationBuffer) Stats() (evicted, rejected int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.evicted, b.rejected

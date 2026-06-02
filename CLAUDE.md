@@ -53,13 +53,13 @@ A slot is **4s**, divided into **5 intervals of 800ms** (`internal/types/constan
 Behavior is matched against the spec's `get_proposal_head` / `accept_new_attestations` ordering — preserve the order of head-update vs. proposal in `onTick`.
 
 ### Engine (`internal/node/`) — the coordination core
-`Engine` (`internal/node/node.go`) owns runtime wiring and is single-threaded over a `select` loop in `Run`: it multiplexes the ticker, `BlockCh`, `AggregationCh`, and `FailedRootCh`. P2P runs on its own goroutine and feeds these channels. Two things run **off** the tick loop to avoid blocking it:
+`Engine` (`internal/node/engine.go`) owns runtime wiring and is single-threaded over a `select` loop in `Run`: it multiplexes the ticker, `BlockCh`, `AggregationCh`, and `FailedRootCh`. P2P runs on its own goroutine and feeds these channels. Two things run **off** the tick loop to avoid blocking it:
 - **Aggregation worker** (`aggregation.RunWorker`, `internal/aggregation/store_aggregate.go`) — XMSS aggregation is slow FFI work, dispatched via a capacity-1 channel; backlog is dropped on purpose (best-effort per slot).
 - **Attestation verification** — each gossip attestation gets its own goroutine (~500ms XMSS verify each); `AttestationSignatureMap` is mutex-protected.
 
-`Engine` holds sibling components — `store.ConsensusStore`, `ForkChoice`, `p2p.Host`, `xmss.KeyManager`, `AggregatorController`, `DutyGate` — and wires metrics/p2p hooks at `Run` startup. **`ForkChoice` does NOT live inside `ConsensusStore`** — the Engine calls fork choice with store data as parameters.
+`Engine` holds sibling components — `store.ConsensusStore`, `ForkChoice`, `p2p.Host`, `xmss.KeyManager`, `role.Controller`, `dutygate.Gate`, and the `pending.BlockBuffer`/`pending.AttestationBuffer` out-of-order buffers — and wires metrics/p2p hooks at `Run` startup. **`ForkChoice` does NOT live inside `ConsensusStore`** — the Engine calls fork choice with store data as parameters.
 
-Pending-block / pending-attestation buffers handle out-of-order gossip: blocks whose parents are unknown are buffered (`PendingBlocks`/`PendingBlockParents`/`PendingBlockDepths`) and their ancestors fetched via the `runFetchBatcher` (coalesces fetch roots into BlocksByRange requests); attestations referencing unknown head roots are buffered in `PendingAttestationBuffer`.
+Pending-block / pending-attestation buffers handle out-of-order gossip: blocks whose parents are unknown are tracked by `pending.BlockBuffer` and fetched via `runFetchBatcher` (coalesces fetch roots into BlocksByRange requests); attestations referencing unknown head roots are buffered in `pending.AttestationBuffer`.
 
 ### State transition (`internal/statetransition/`)
 Pure spec logic, no I/O. `StateTransition` = `ProcessSlots` → `ProcessBlock` → verify `state_root`. This is the package that must mirror `leanSpec` most closely; spec-compliance work concentrates here and in `internal/types/`.

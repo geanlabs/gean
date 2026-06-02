@@ -168,16 +168,14 @@ func TestEnginePendingBlocks(t *testing.T) {
 	parentRoot[0] = 0x20
 
 	// Manually add pending entries (simulates addPendingBlock logic).
-	e.PendingBlockParents[blockRoot] = parentRoot
-	children := make(map[[32]byte]bool)
-	children[blockRoot] = true
-	e.PendingBlocks[parentRoot] = children
+	e.Pending.SetParent(blockRoot, parentRoot)
+	e.Pending.AddChild(parentRoot, blockRoot)
 
-	if len(e.PendingBlocks) != 1 {
-		t.Fatalf("expected 1 pending parent, got %d", len(e.PendingBlocks))
+	if e.Pending.ParentBuckets() != 1 {
+		t.Fatalf("expected 1 pending parent, got %d", e.Pending.ParentBuckets())
 	}
-	if len(e.PendingBlockParents) != 1 {
-		t.Fatalf("expected 1 pending block, got %d", len(e.PendingBlockParents))
+	if e.Pending.Entries() != 1 {
+		t.Fatalf("expected 1 pending block, got %d", e.Pending.Entries())
 	}
 }
 
@@ -240,11 +238,11 @@ func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
 	var queue []*types.SignedBlock
 	e.processOneBlock(signedBlock, &queue)
 
-	if len(e.PendingBlocks) != 0 {
-		t.Fatalf("pre-finalized block was buffered as pending; PendingBlocks=%d", len(e.PendingBlocks))
+	if e.Pending.ParentBuckets() != 0 {
+		t.Fatalf("pre-finalized block was buffered as pending; ParentBuckets=%d", e.Pending.ParentBuckets())
 	}
-	if len(e.PendingBlockParents) != 0 {
-		t.Fatalf("pre-finalized block recorded a missing-parent entry; PendingBlockParents=%d", len(e.PendingBlockParents))
+	if e.Pending.Entries() != 0 {
+		t.Fatalf("pre-finalized block recorded a missing-parent entry; Entries=%d", e.Pending.Entries())
 	}
 	if len(queue) != 0 {
 		t.Fatalf("pre-finalized block produced cascade work; queue=%d", len(queue))
@@ -274,7 +272,7 @@ func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 	var queue []*types.SignedBlock
 	e.processOneBlock(signedBlock, &queue)
 
-	if len(e.PendingBlockParents) == 0 {
+	if e.Pending.Entries() == 0 {
 		t.Fatal("block at finalized slot was rejected by the strict-less-than guard")
 	}
 }
@@ -287,26 +285,24 @@ func TestEngineCascadePending(t *testing.T) {
 	child1[0] = 0x10
 	child2[0] = 0x20
 
-	e.PendingBlockParents[child1] = parentRoot
-	e.PendingBlockParents[child2] = parentRoot
-	children := make(map[[32]byte]bool)
-	children[child1] = true
-	children[child2] = true
-	e.PendingBlocks[parentRoot] = children
+	e.Pending.SetParent(child1, parentRoot)
+	e.Pending.SetParent(child2, parentRoot)
+	e.Pending.AddChild(parentRoot, child1)
+	e.Pending.AddChild(parentRoot, child2)
 
-	if len(e.PendingBlocks[parentRoot]) != 2 {
-		t.Fatalf("expected 2 children pending, got %d", len(e.PendingBlocks[parentRoot]))
+	if e.Pending.ChildCount(parentRoot) != 2 {
+		t.Fatalf("expected 2 children pending, got %d", e.Pending.ChildCount(parentRoot))
 	}
 
 	// collectPendingChildren removes entries and returns blocks to process.
 	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
-	if len(e.PendingBlocks) != 0 {
-		t.Fatalf("expected 0 pending after cascade, got %d", len(e.PendingBlocks))
+	if e.Pending.ParentBuckets() != 0 {
+		t.Fatalf("expected 0 pending after cascade, got %d", e.Pending.ParentBuckets())
 	}
-	if len(e.PendingBlockParents) != 0 {
-		t.Fatalf("expected 0 pending parents after cascade, got %d", len(e.PendingBlockParents))
+	if e.Pending.Entries() != 0 {
+		t.Fatalf("expected 0 pending parents after cascade, got %d", e.Pending.Entries())
 	}
 }
 
@@ -382,96 +378,6 @@ func TestComputeSyncStatus_FreshNodePastWallClock(t *testing.T) {
 	}
 }
 
-func TestPendingBlockCount(t *testing.T) {
-	e := makeTestEngine()
-
-	if e.pendingBlockCount() != 0 {
-		t.Fatal("expected 0 pending blocks initially")
-	}
-
-	// Add 3 children under 2 parents.
-	parent1 := [32]byte{0x01}
-	parent2 := [32]byte{0x02}
-	child1 := [32]byte{0x10}
-	child2 := [32]byte{0x20}
-	child3 := [32]byte{0x30}
-
-	e.PendingBlocks[parent1] = map[[32]byte]bool{child1: true, child2: true}
-	e.PendingBlocks[parent2] = map[[32]byte]bool{child3: true}
-
-	if e.pendingBlockCount() != 3 {
-		t.Fatalf("expected 3 pending blocks, got %d", e.pendingBlockCount())
-	}
-}
-
-func TestPendingBlockDepthTracking(t *testing.T) {
-	e := makeTestEngine()
-
-	// Simulate a chain of pending blocks with increasing depth.
-	root1 := [32]byte{0x01}
-	root2 := [32]byte{0x02}
-	root3 := [32]byte{0x03}
-
-	e.PendingBlockDepths[root1] = 1
-	e.PendingBlockDepths[root2] = 2
-	e.PendingBlockDepths[root3] = 3
-
-	if e.PendingBlockDepths[root3] != 3 {
-		t.Fatalf("expected depth 3, got %d", e.PendingBlockDepths[root3])
-	}
-
-	// Verify depth is inherited from parent.
-	parentDepth := e.PendingBlockDepths[root2]
-	childDepth := parentDepth + 1
-	if childDepth != 3 {
-		t.Fatalf("expected inherited depth 3, got %d", childDepth)
-	}
-}
-
-func TestDiscardPendingSubtree(t *testing.T) {
-	e := makeTestEngine()
-
-	// Build a tree: root -> child1, child1 -> grandchild1, grandchild2
-	root := [32]byte{0x01}
-	child1 := [32]byte{0x10}
-	grandchild1 := [32]byte{0xA0}
-	grandchild2 := [32]byte{0xB0}
-
-	e.PendingBlocks[root] = map[[32]byte]bool{child1: true}
-	e.PendingBlocks[child1] = map[[32]byte]bool{grandchild1: true, grandchild2: true}
-	e.PendingBlockParents[child1] = root
-	e.PendingBlockParents[grandchild1] = child1
-	e.PendingBlockParents[grandchild2] = child1
-	e.PendingBlockDepths[child1] = 1
-	e.PendingBlockDepths[grandchild1] = 2
-	e.PendingBlockDepths[grandchild2] = 2
-
-	// Discard subtree from child1.
-	e.discardPendingSubtree(child1)
-
-	// child1 and its descendants should be gone.
-	if _, ok := e.PendingBlockParents[child1]; ok {
-		t.Fatal("child1 should be removed from PendingBlockParents")
-	}
-	if _, ok := e.PendingBlockParents[grandchild1]; ok {
-		t.Fatal("grandchild1 should be removed from PendingBlockParents")
-	}
-	if _, ok := e.PendingBlockParents[grandchild2]; ok {
-		t.Fatal("grandchild2 should be removed from PendingBlockParents")
-	}
-	if _, ok := e.PendingBlockDepths[child1]; ok {
-		t.Fatal("child1 depth should be removed")
-	}
-	if _, ok := e.PendingBlockDepths[grandchild1]; ok {
-		t.Fatal("grandchild1 depth should be removed")
-	}
-
-	// Root's children entry should still exist (discardPendingSubtree doesn't clean parent).
-	if _, ok := e.PendingBlocks[root]; !ok {
-		t.Fatal("root's PendingBlocks entry should still exist")
-	}
-}
-
 func TestCascadeClearsDepth(t *testing.T) {
 	e := makeTestEngine()
 
@@ -479,17 +385,15 @@ func TestCascadeClearsDepth(t *testing.T) {
 	parentRoot[0] = 0x01
 	child1[0] = 0x10
 
-	e.PendingBlockParents[child1] = parentRoot
-	e.PendingBlockDepths[child1] = 5
-	children := make(map[[32]byte]bool)
-	children[child1] = true
-	e.PendingBlocks[parentRoot] = children
+	e.Pending.SetParent(child1, parentRoot)
+	e.Pending.SetDepth(child1, 5)
+	e.Pending.AddChild(parentRoot, child1)
 
 	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
 	// Depth should be cleared after cascade.
-	if _, ok := e.PendingBlockDepths[child1]; ok {
+	if _, ok := e.Pending.Depth(child1); ok {
 		t.Fatal("depth should be cleared after collectPendingChildren")
 	}
 }

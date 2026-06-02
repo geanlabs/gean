@@ -1,4 +1,4 @@
-package node
+package pending
 
 import (
 	"sync"
@@ -15,20 +15,8 @@ func makeAtt(slot uint64) *types.SignedAttestation {
 	}
 }
 
-// makeAttForHead is like makeAtt but also fills in Head.Root so a test can
-// assert which head bucket an attestation lives under without sharing
-// fixtures across tests.
-func makeAttForHead(slot uint64, head [32]byte) *types.SignedAttestation {
-	return &types.SignedAttestation{
-		Data: &types.AttestationData{
-			Slot: slot,
-			Head: &types.Checkpoint{Root: head},
-		},
-	}
-}
-
-func TestPendingAttestationBuffer_AddAndDrain(t *testing.T) {
-	buf := NewPendingAttestationBuffer(8, 64)
+func TestAttestationBuffer_AddAndDrain(t *testing.T) {
+	buf := NewAttestationBuffer(8, 64)
 
 	var head [32]byte
 	head[0] = 0x01
@@ -51,16 +39,16 @@ func TestPendingAttestationBuffer_AddAndDrain(t *testing.T) {
 	}
 }
 
-func TestPendingAttestationBuffer_DrainMissing(t *testing.T) {
-	buf := NewPendingAttestationBuffer(8, 64)
+func TestAttestationBuffer_DrainMissing(t *testing.T) {
+	buf := NewAttestationBuffer(8, 64)
 	var head [32]byte
 	if got := buf.Drain(head); got != nil {
 		t.Fatalf("drain on empty key: got %v, want nil", got)
 	}
 }
 
-func TestPendingAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
-	buf := NewPendingAttestationBuffer(2, 64)
+func TestAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
+	buf := NewAttestationBuffer(2, 64)
 
 	var head [32]byte
 	head[0] = 0x01
@@ -98,8 +86,8 @@ func TestPendingAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
 	}
 }
 
-func TestPendingAttestationBuffer_TotalCapRejection(t *testing.T) {
-	buf := NewPendingAttestationBuffer(8, 2)
+func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
+	buf := NewAttestationBuffer(8, 2)
 
 	var h1, h2, h3 [32]byte
 	h1[0], h2[0], h3[0] = 0x01, 0x02, 0x03
@@ -130,12 +118,12 @@ func TestPendingAttestationBuffer_TotalCapRejection(t *testing.T) {
 	}
 }
 
-// TestPendingAttestationBuffer_FIFOEvictsEvenAtTotalCap verifies that
+// TestAttestationBuffer_FIFOEvictsEvenAtTotalCap verifies that
 // per-root FIFO eviction is permitted even when the buffer is at totalCap,
 // because the eviction swaps one entry for another and does not grow total.
-func TestPendingAttestationBuffer_FIFOEvictsEvenAtTotalCap(t *testing.T) {
+func TestAttestationBuffer_FIFOEvictsEvenAtTotalCap(t *testing.T) {
 	// perRootCap=2, totalCap=2 — a single bucket can saturate both caps.
-	buf := NewPendingAttestationBuffer(2, 2)
+	buf := NewAttestationBuffer(2, 2)
 
 	var head [32]byte
 	head[0] = 0x01
@@ -158,8 +146,8 @@ func TestPendingAttestationBuffer_FIFOEvictsEvenAtTotalCap(t *testing.T) {
 	}
 }
 
-func TestPendingAttestationBuffer_PruneBelow(t *testing.T) {
-	buf := NewPendingAttestationBuffer(8, 64)
+func TestAttestationBuffer_PruneBelow(t *testing.T) {
+	buf := NewAttestationBuffer(8, 64)
 
 	var h1, h2 [32]byte
 	h1[0], h2[0] = 0x01, 0x02
@@ -198,13 +186,13 @@ func TestPendingAttestationBuffer_PruneBelow(t *testing.T) {
 	}
 }
 
-// TestPendingAttestationBuffer_Concurrent exercises the buffer under
+// TestAttestationBuffer_Concurrent exercises the buffer under
 // concurrent Add/Drain/PruneBelow load. Run with -race to catch any locking
 // regression. We don't assert exact counts because Drain races with Add by
 // design — we only assert that the buffer's accounting stays consistent
 // (total == sum-of-bucket-lengths) at the end.
-func TestPendingAttestationBuffer_Concurrent(t *testing.T) {
-	buf := NewPendingAttestationBuffer(16, 1024)
+func TestAttestationBuffer_Concurrent(t *testing.T) {
+	buf := NewAttestationBuffer(16, 1024)
 
 	const writers = 8
 	const drainers = 4
