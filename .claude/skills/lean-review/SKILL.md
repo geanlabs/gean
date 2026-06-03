@@ -17,6 +17,34 @@ user may say "apply #2, #5, #7" or "fix the cosmetic ones" and the skill will
 apply only those specific findings, never the consensus-critical ones without
 explicit per-finding confirmation.
 
+## Non-negotiable rules (gean philosophy)
+
+These hold regardless of category or risk class. Treat a violation of any of
+them as a finding in its own right.
+
+1. **Reduction over addition.** Never propose adding code. The only output is
+   "what comes out." If the honest fix is "add a helper," say so as a note and
+   stop — don't author it.
+2. **Simplicity over cleverness.** No generics, reflection, deep interface
+   hierarchies, single-impl interfaces, or premature flags. Buffer caps/limits
+   stay package-level `const` sized for devnet-4 ("promote to a flag *when* a
+   deployment needs it," not before).
+3. **SSZ `*_encoding.go` is generated, never hand-authored.** Flag any
+   hand-written or hand-edited `*_encoding.go`, or any by-hand SSZ
+   encode/decode that `make sszgen` would produce. The fix is always: edit the
+   struct + tags, run `make sszgen`. If `make sszgen` fails, STOP and report
+   the error — never suggest writing/patching the file by hand as a fallback.
+4. **No foreign-client comments.** When code mirrors another client
+   (ethlambda, zeam) or leanSpec, its comments must be peculiar to gean and as
+   short as necessary. Flag any comment copied from, or naming, another client
+   ("from ethlambda", "see zeam", etc.). A short leanSpec *function-name*
+   cross-ref is allowed; provenance prose and other-client names are not.
+5. **Concept count, not LOC.** A finding is real only when it removes a named
+   thing a reader must hold in their head. Collapsing two lines into one is not
+   a finding.
+6. **Spec structure is load-bearing.** Code that mirrors leanSpec function
+   names/control-flow is not "duplication" — leave it, tag report-only.
+
 ## Quick start
 
 ```bash
@@ -78,7 +106,7 @@ For each finding, before reporting it, you MUST:
 |---|---|---|
 | `cosmetic` | Comments, naming, formatting, log strings. Cannot affect runtime behavior. | Auto-apply when user requests `--fix`. |
 | `structural` | Code refactor; behavior must be preserved, tests must re-pass. Examples: inlining a one-use helper, deleting an unused field, collapsing two branches. | Apply on explicit per-finding approval. Re-run tests after each apply. |
-| `consensus-critical` | Anything in `internal/statetransition/`, `internal/forkchoice/`, `internal/node/` (engine, store, fork choice integration), `internal/types/` (non-encoding), `internal/p2p/host.go`, `internal/p2p/reqresp.go`, or the XMSS Go binding. | **Report only.** Never apply without explicit per-finding human review, even on `--fix`. |
+| `consensus-critical` | Anything in `internal/statetransition/`, `internal/forkchoice/`, `internal/node/` (engine/tick/gossip/head/import — the single-writer loop), `internal/pending/`, `internal/store/consensus_store.go`, `internal/types/` (non-encoding), `internal/p2p/host.go`, `internal/p2p/reqresp.go`, or the XMSS Go binding. | **Report only.** Never apply without explicit per-finding human review, even on `--fix`. |
 
 When in doubt, escalate the risk class. A wrong "structural" call on
 consensus code is much worse than a verbose report.
@@ -104,7 +132,7 @@ saved descending within each category. End with the summary table.
 
 ### dead-code
 
-#### #1 — `internal/syncer/sync.go:142-168` (−27 LOC) — `structural`
+#### #1 — `internal/syncer/backfill.go:142-168` (−27 LOC) — `structural`
 **Finding:** `markStaleRoots` is exported but only called inside the package,
 and its only caller `pruneStaleRoots` was deleted in commit abc1234. No
 external imports.
@@ -115,7 +143,7 @@ external imports.
 **Why safe:** No callers outside the file. `go vet ./...` and
 `make test` should pass unchanged.
 
-**Test coverage:** `internal/syncer/sync_test.go:88` (TestMarkStaleRoots) — also delete.
+**Test coverage:** `internal/syncer/backfill_test.go:88` (TestMarkStaleRoots) — also delete.
 
 ---
 
@@ -133,9 +161,9 @@ m[id]; !ok { return }` two lines above.
 
 ### premature-abstraction
 
-#### #3 — `internal/node/validator.go:204-218` (−15 LOC) — `consensus-critical`
+#### #3 — `internal/node/duties.go:204-218` (−15 LOC) — `consensus-critical`
 **Finding:** `wrapAttestationSigner` is a 14-line wrapper around
-`keys.SignAttestation` with a single call site at `validator.go:312`. Adds
+`keys.SignAttestation` with a single call site at `duties.go:312`. Adds
 no behavior.
 
 **Suggested change:** Inline the call. See report-only note below.
@@ -143,7 +171,7 @@ no behavior.
 **Why safe (proposed):** Wrapper is pure passthrough; inlining is a
 behavior-preserving refactor.
 
-**Test coverage:** `internal/node/validator_test.go:177` covers the call site.
+**Test coverage:** `internal/node/duties_test.go:177` covers the call site.
 
 > **Report-only.** Consensus-critical path. Even though the refactor is
 > mechanical, the wrapper may exist to mark a future signature-policy
@@ -153,16 +181,16 @@ behavior-preserving refactor.
 
 ### duplicates-existing-util
 
-#### #4 — `internal/node/block.go:88-104` (−14 LOC) — `structural`
-**Finding:** New helper `bytesToHex` duplicates
-`internal/types/util.go:42 BytesToHex`, same signature, same body.
+#### #4 — `internal/node/gossip.go:88-104` (−14 LOC) — `structural`
+**Finding:** New helper `shortRoot` duplicates
+`internal/types/helpers.go:25 ShortRoot`, same signature, same body.
 
 **Suggested change:** Delete the local helper, import + call
-`types.BytesToHex`.
+`types.ShortRoot`.
 
 **Why safe:** Identical implementation; same test coverage flows through.
 
-**Test coverage:** `internal/types/util_test.go:60` covers BytesToHex.
+**Test coverage:** `internal/types/helpers_test.go` covers ShortRoot.
 
 ---
 
@@ -219,7 +247,7 @@ When the user replies with `apply #N` or similar after the report:
    struct changed, then `make test`.
 3. Commit each applied finding as its own commit with the finding ID and a
    one-line summary, so each is trivially revertible:
-   `git commit -m "lean-review #4: inline bytesToHex into types.BytesToHex"`
+   `git commit -m "lean-review #4: inline shortRoot into types.ShortRoot"`
 4. If any test fails: stop, revert the last commit, report which finding
    caused the failure, do not continue to the next finding.
 5. Refuse `apply #N` for any consensus-critical finding unless the user

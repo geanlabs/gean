@@ -109,16 +109,22 @@ in AI-generated code.
 
 **Looks like:**
 - Bitlist manipulation in `internal/node/` that could call `internal/types/bitlist.go`
-  (`BitlistGet`, `BitlistSet`, `BitlistLen`, `BitlistExtend`,
-  `NewBitlistSSZ`).
-- Hex encoding/decoding helpers that duplicate `internal/types/util.go`.
-- Custom logger formatting that should go through `logger.Info/Warn/Error`.
+  (`BitlistGet`, `BitlistSet`, `BitlistLen`, `BitlistCount`, `BitlistExtend`,
+  `BitlistIndices`, `BitlistFromIndices`, `NewBitlistSSZ`).
+- Root/proposer/logging helpers that duplicate `internal/types/helpers.go`
+  (`IsZeroRoot`, `ProposerIndex`, `IsProposer`, `ShortRoot`).
+- Custom logger formatting that should go through `logger.Info/Warn/Error`
+  with a component const (`logger.Node`, `logger.Chain`, …).
 - A "merge two sorted slices" function when `sort.Slice` + iteration would
   be one line.
 - A retry loop when `context.WithTimeout` does the job.
-- A new SSZ encoder by hand when `make sszgen` would produce one.
+- A new SSZ encoder/decoder written by hand. **This is always a finding and
+  always wrong**, not merely a duplicate: SSZ codecs live in generated
+  `*_encoding.go` and must come from `make sszgen` (edit struct + tags, then
+  regen). Never suggest hand-writing one; if `make sszgen` can't produce it,
+  the fix is to report that, not to author the file.
 - Manual storage key construction when `internal/storage/keys.go` has an encoder
-  (`EncodeLiveChainKey` etc.).
+  (`EncodeLiveChainKey`/`DecodeLiveChainKey`).
 
 **Proof required:**
 - Name the existing utility with file:line.
@@ -148,16 +154,28 @@ Comments that don't help a future reader.
 - Commented-out code blocks.
 - Section banners (`// ====== Helpers ======`).
 - Docstring-style comments on private helpers.
+- **Foreign-client comments** — comments copied from, or naming, another
+  client when gean mirrors its logic: "from ethlambda", "see zeam's X",
+  "lodestar does Y here", or whole comment blocks lifted verbatim from
+  another codebase. gean's comments must be peculiar to gean and as short as
+  necessary. This is the single most common form of comment-bloat in ported
+  code — flag every instance.
 
 **Proof required:**
 - The comment can be deleted without losing information a future reader
   needs.
+- For a foreign-client comment: the comment names another client/codebase, or
+  matches a comment in the source it was ported from. Provenance is not
+  information a gean reader needs.
 
 **Not a finding when:**
 - The comment explains *why*, not *what* — e.g. "this must run before X
   because Y," "leanSpec PR #708 requires this gate," "wall-clock recovery
   needed or gossip rejects all attestations as future." Per the repo
   CLAUDE-style guidance, *why* comments stay; *what* comments go.
+- It's a short leanSpec **function-name** cross-ref (e.g. "mirrors
+  `process_attestations`") that aids auditability. Naming the *spec* is fine;
+  naming another *client* is not.
 - It's a `// SPDX-License-Identifier` or similar required header.
 
 ---
@@ -181,8 +199,9 @@ gossip peer or an HTTP request.
 - Show no external boundary sits between the trusted source and this call.
 
 **Not a finding when:**
-- The function is also called from a test driver or `internal/api/test_driver.go`
-  (`HIVE_LEAN_TEST_DRIVER=1` path) where input may be adversarial.
+- The function is also called from the hive test driver
+  (`internal/api/testdriver/`, `HIVE_LEAN_TEST_DRIVER=1` path) where input may
+  be adversarial.
 - The function is called from both internal trusted paths and external
   untrusted paths — leave the validation; it's the boundary.
 
@@ -208,3 +227,14 @@ is "a real bug that happened or could happen in this code path," it stays.
 `internal/statetransition/`, `internal/forkchoice/`, `internal/node/`, or `internal/types/`, the bar is higher.
 A "saved" 5 LOC in fork-choice vote accounting is not worth a 1% chance of
 introducing a fork.
+
+**The "generated, never by hand" rule.** Any hand-written or hand-edited
+`*_encoding.go`, or any by-hand SSZ codec, is a finding regardless of how clean
+it looks — the only sanctioned source is `make sszgen`. The fix is never "tidy
+the hand-written codec"; it is "delete it, edit the struct + tags, regenerate."
+If regeneration fails, report the failure and stop.
+
+**The "gean comments only" rule.** A comment that names another client
+(ethlambda, zeam, lodestar, …) or was copied from one is a finding. Ported
+logic gets gean-specific comments, short and *why*-focused. Spec function-name
+cross-refs are the one allowed external reference.
