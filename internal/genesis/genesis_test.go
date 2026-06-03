@@ -161,8 +161,8 @@ func TestLoadGenesisConfigAcceptsLeanchainFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load leanchain config: %v", err)
 	}
-	if config.ActiveEpoch == nil || *config.ActiveEpoch != 18 {
-		t.Fatalf("ACTIVE_EPOCH not parsed: %v", config.ActiveEpoch)
+	if config.ActiveEpoch != 18 {
+		t.Fatalf("ACTIVE_EPOCH not parsed: %d", config.ActiveEpoch)
 	}
 	if config.AttestationCommitteeCount == nil || *config.AttestationCommitteeCount != types.AttestationCommitteeCount {
 		t.Fatalf("ATTESTATION_COMMITTEE_COUNT not parsed: %v", config.AttestationCommitteeCount)
