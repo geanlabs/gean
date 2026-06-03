@@ -29,8 +29,9 @@ import (
 const apiFixturesRoot = "../../leanSpec/fixtures/consensus/api_endpoint/lstar/api/test_api_endpoints"
 
 // The spec ships its deterministic test keys here. The fixture's leanEnv
-// ("prod"/"test") selects the subdirectory; each N.json has hex-encoded
-// attestation_public and proposal_public that feed into genesis state.
+// ("prod"/"test") selects the subdirectory; each N.json carries hex-encoded
+// attestation_keypair.public_key and proposal_keypair.public_key that feed
+// into genesis state.
 const apiKeysRoot = "../../leanSpec/packages/testing/src/consensus_testing/test_keys"
 
 type apiFixtureOuter map[string]apiFixture
@@ -114,7 +115,10 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 		GenesisTime:       fx.GenesisParams.GenesisTime,
 		GenesisValidators: validators,
 	}
-	state := gc.GenesisState()
+	state, err := gc.GenesisState()
+	if err != nil {
+		t.Fatalf("build genesis state: %v", err)
+	}
 
 	// Seed store + fork choice from the genesis state.
 	backend := storage.NewInMemoryBackend()
@@ -244,15 +248,19 @@ func loadSpecValidators(leanEnv string, n uint64) ([]genesis.GenesisValidatorEnt
 			return nil, err
 		}
 		var kf struct {
-			AttestationPublic string `json:"attestation_public"`
-			ProposalPublic    string `json:"proposal_public"`
+			AttestationKeypair struct {
+				PublicKey string `json:"public_key"`
+			} `json:"attestation_keypair"`
+			ProposalKeypair struct {
+				PublicKey string `json:"public_key"`
+			} `json:"proposal_keypair"`
 		}
 		if err := json.Unmarshal(raw, &kf); err != nil {
 			return nil, err
 		}
 		entries[i] = genesis.GenesisValidatorEntry{
-			AttestationPubkey: "0x" + kf.AttestationPublic,
-			ProposalPubkey:    "0x" + kf.ProposalPublic,
+			AttestationPubkey: "0x" + kf.AttestationKeypair.PublicKey,
+			ProposalPubkey:    "0x" + kf.ProposalKeypair.PublicKey,
 		}
 	}
 	return entries, nil

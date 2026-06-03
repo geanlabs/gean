@@ -1,0 +1,223 @@
+package blockbuilder
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/geanlabs/gean/internal/types"
+)
+
+func TestSortedPayloadsSkipsMalformedEntries(t *testing.T) {
+	validData := mockAttestationData()
+	validRoot, err := validData.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash valid data: %v", err)
+	}
+	payloads := []AttestationPayload{
+		{DataRoot: [32]byte{0x01}},
+		{DataRoot: [32]byte{0x02}, Data: nil},
+		{DataRoot: [32]byte{0x03}, Data: &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}}, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
+		{DataRoot: validRoot, Data: validData, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
+	}
+
+	sorted, payloadErrors := sortedPayloads(payloads)
+	if len(sorted) != 1 {
+		t.Fatalf("sorted payloads=%d, want 1", len(sorted))
+	}
+	if len(payloadErrors) != 3 {
+		t.Fatalf("payload errors=%d, want 3", len(payloadErrors))
+	}
+	for _, payloadErr := range payloadErrors {
+		if !errors.Is(payloadErr.Err, ErrMalformedPayload) {
+			t.Fatalf("payload error=%v, want ErrMalformedPayload", payloadErr.Err)
+		}
+	}
+	if sorted[0].DataRoot != validRoot {
+		t.Fatalf("data root=%x, want %x", sorted[0].DataRoot, validRoot)
+	}
+}
+
+func TestValidatePayloadRejectsMalformedFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload AttestationPayload
+	}{
+		{
+			name:    "nil data",
+			payload: AttestationPayload{},
+		},
+		{
+			name: "empty proofs",
+			payload: AttestationPayload{
+				Data: mockAttestationData(),
+			},
+		},
+		{
+			name: "nil head",
+			payload: AttestationPayload{
+				Data:   &types.AttestationData{Source: &types.Checkpoint{}, Target: &types.Checkpoint{}},
+				Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+			},
+		},
+		{
+			name: "nil target",
+			payload: AttestationPayload{
+				Data:   &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}},
+				Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+			},
+		},
+		{
+			name: "nil source",
+			payload: AttestationPayload{
+				Data:   &types.AttestationData{Head: &types.Checkpoint{}, Target: &types.Checkpoint{}},
+				Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validatePayload(test.payload); !errors.Is(err, ErrMalformedPayload) {
+				t.Fatalf("validatePayload() error=%v, want ErrMalformedPayload", err)
+			}
+		})
+	}
+}
+
+func TestSortedPayloadsReportsMismatchedDataRoot(t *testing.T) {
+	payloads := []AttestationPayload{{
+		DataRoot: [32]byte{0x04},
+		Data:     mockAttestationData(),
+		Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+	}}
+
+	sorted, payloadErrors := sortedPayloads(payloads)
+	if len(sorted) != 0 {
+		t.Fatalf("sorted payloads=%d, want 0", len(sorted))
+	}
+	if len(payloadErrors) != 1 {
+		t.Fatalf("payload errors=%d, want 1", len(payloadErrors))
+	}
+	if !errors.Is(payloadErrors[0].Err, ErrPayloadRootMismatch) {
+		t.Fatalf("payload error=%v, want ErrPayloadRootMismatch", payloadErrors[0].Err)
+	}
+}
+
+func TestSortedPayloadsOrdersByTargetSlotThenRoot(t *testing.T) {
+	lowSlot := mockAttestationData()
+	lowSlot.Target.Slot = 4
+	highLeft := mockAttestationData()
+	highLeft.Target.Slot = 8
+	highLeft.Head.Root = [32]byte{0x21}
+	highRight := mockAttestationData()
+	highRight.Target.Slot = 8
+	highRight.Head.Root = [32]byte{0x22}
+
+	lowRoot := hashAttestationData(t, lowSlot)
+	leftRoot := hashAttestationData(t, highLeft)
+	rightRoot := hashAttestationData(t, highRight)
+
+	sorted, payloadErrors := sortedPayloads([]AttestationPayload{
+		{DataRoot: rightRoot, Data: highRight, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
+		{DataRoot: leftRoot, Data: highLeft, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
+		{DataRoot: lowRoot, Data: lowSlot, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
+	})
+
+	if len(payloadErrors) != 0 {
+		t.Fatalf("payload errors=%d, want 0", len(payloadErrors))
+	}
+	if len(sorted) != 3 {
+		t.Fatalf("sorted payloads=%d, want 3", len(sorted))
+	}
+	if sorted[0].DataRoot != lowRoot {
+		t.Fatalf("first root=%x, want low slot root %x", sorted[0].DataRoot, lowRoot)
+	}
+	if compareRoots(sorted[1].DataRoot, sorted[2].DataRoot) > 0 {
+		t.Fatalf("same-slot payloads sorted out of root order: %x after %x", sorted[1].DataRoot, sorted[2].DataRoot)
+	}
+}
+
+func TestSortedPayloadsMergesDuplicateRoots(t *testing.T) {
+	data := mockAttestationData()
+	root := hashAttestationData(t, data)
+	firstProof := mockProof([]uint64{1})
+	secondProof := mockProof([]uint64{2})
+	first := AttestationPayload{
+		DataRoot: root,
+		Data:     data,
+		Proofs:   []*types.AggregatedSignatureProof{firstProof},
+	}
+
+	sorted, payloadErrors := sortedPayloads([]AttestationPayload{
+		first,
+		{
+			DataRoot: root,
+			Data:     data,
+			Proofs:   []*types.AggregatedSignatureProof{secondProof},
+		},
+	})
+
+	if len(payloadErrors) != 0 {
+		t.Fatalf("payload errors=%d, want 0", len(payloadErrors))
+	}
+	if len(sorted) != 1 {
+		t.Fatalf("sorted payloads=%d, want 1", len(sorted))
+	}
+	if len(sorted[0].Proofs) != 2 {
+		t.Fatalf("proofs=%d, want 2", len(sorted[0].Proofs))
+	}
+	if sorted[0].Proofs[0] != firstProof || sorted[0].Proofs[1] != secondProof {
+		t.Fatal("duplicate root proofs were not preserved in order")
+	}
+
+	sorted[0].Proofs[0] = nil
+	if first.Proofs[0] == nil {
+		t.Fatal("canonical payload proof slice aliases input slice")
+	}
+}
+
+func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
+	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
+	workingState, err := transitionBlock(headState, 3, newBlock(3, 0, parentRoot, nil))
+	if err != nil {
+		t.Fatalf("transition header: %v", err)
+	}
+
+	payload := AttestationPayload{
+		DataRoot: dataRoot,
+		Data:     data,
+		Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{0})},
+	}
+	knownRoots := map[[32]byte]bool{parentRoot: true}
+	if err := payloadBuildIssue(workingState, knownRoots, payload); err != nil {
+		t.Fatalf("expected payload to be buildable, got %v", err)
+	}
+
+	if err := payloadBuildIssue(workingState, nil, payload); !errors.Is(err, ErrPayloadHeadUnknown) {
+		t.Fatalf("payload build issue=%v, want ErrPayloadHeadUnknown", err)
+	}
+
+	sameSlot := *data
+	sameSlot.Target = &types.Checkpoint{Slot: data.Source.Slot, Root: data.Source.Root}
+	payload.Data = &sameSlot
+	if err := payloadBuildIssue(workingState, knownRoots, payload); !errors.Is(err, ErrPayloadVoteInvalid) {
+		t.Fatalf("payload build issue=%v, want ErrPayloadVoteInvalid", err)
+	}
+
+	farState, err := workingState.Clone()
+	if err != nil {
+		t.Fatalf("clone working state: %v", err)
+	}
+	farRoot := [32]byte{0x77}
+	for len(farState.HistoricalBlockHashes) <= 7 {
+		farState.HistoricalBlockHashes = append(farState.HistoricalBlockHashes, make([]byte, types.RootSize))
+	}
+	farState.HistoricalBlockHashes[7] = copyRoot(farRoot)
+
+	farTarget := *data
+	farTarget.Target = &types.Checkpoint{Slot: 7, Root: farRoot}
+	payload.Data = &farTarget
+	if err := payloadBuildIssue(farState, knownRoots, payload); !errors.Is(err, ErrPayloadVoteInvalid) {
+		t.Fatalf("payload build issue=%v, want ErrPayloadVoteInvalid", err)
+	}
+}

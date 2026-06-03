@@ -10,12 +10,10 @@ func TestPubKeyCacheGetAndReuse(t *testing.T) {
 	cache := NewPubKeyCache()
 	defer cache.Close()
 
-	// Use a real-looking pubkey (52 bytes).
 	var pubkey [types.PubkeySize]byte
 	pubkey[0] = 0x01
 	pubkey[51] = 0xFF
 
-	// First call parses (FFI).
 	pk1, err := cache.Get(pubkey)
 	if err != nil {
 		t.Fatalf("first Get: %v", err)
@@ -24,7 +22,6 @@ func TestPubKeyCacheGetAndReuse(t *testing.T) {
 		t.Fatal("first Get returned nil")
 	}
 
-	// Second call returns cached (no FFI).
 	pk2, err := cache.Get(pubkey)
 	if err != nil {
 		t.Fatalf("second Get: %v", err)

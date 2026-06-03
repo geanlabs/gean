@@ -16,7 +16,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	logger.Quiet = true
+	logger.SetQuiet(true)
 	os.Exit(m.Run())
 }
 
@@ -24,7 +24,6 @@ func makeTestEngine() *Engine {
 	backend := storage.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 
-	// Set up genesis state.
 	s.SetConfig(&types.ChainConfig{GenesisTime: 1000})
 	var genesisRoot [32]byte
 	genesisRoot[0] = 0x01
@@ -80,9 +79,6 @@ func TestEngineUpdateSafeTarget(t *testing.T) {
 	}
 }
 
-// makeSafeTargetEngine builds an engine with a 3-block chain and N validators
-// in head state. Returns the engine and the slot-2 block root used as the
-// safe-target candidate by the regression test below.
 func makeSafeTargetEngine(t *testing.T, numValidators int) (*Engine, [32]byte) {
 	t.Helper()
 	e := makeTestEngine()
@@ -107,9 +103,9 @@ func makeSafeTargetEngine(t *testing.T, numValidators int) (*Engine, [32]byte) {
 	return e, block2
 }
 
-// planAggregatedVoteForBlock returns an attestation-data payload + proof where
-// the first `numVoters` validators vote for the given head/target block.
-func planAggregatedVoteForBlock(targetRoot [32]byte, targetSlot, numValidators, numVoters uint64) ([32]byte, *types.AttestationData, *types.AggregatedSignatureProof) {
+func planAggregatedVoteForBlock(t *testing.T, targetRoot [32]byte, targetSlot, numValidators, numVoters uint64) ([32]byte, *types.AttestationData, *types.AggregatedSignatureProof) {
+	t.Helper()
+
 	bits := types.NewBitlistSSZ(numValidators)
 	for i := range numVoters {
 		types.BitlistSet(bits, i)
@@ -120,21 +116,21 @@ func planAggregatedVoteForBlock(targetRoot [32]byte, targetSlot, numValidators, 
 		Target: &types.Checkpoint{Root: targetRoot, Slot: targetSlot},
 		Source: &types.Checkpoint{},
 	}
-	dataRoot, _ := data.HashTreeRoot()
+	dataRoot, err := data.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash attestation data: %v", err)
+	}
 	return dataRoot, data, &types.AggregatedSignatureProof{Participants: bits}
 }
 
-// TestUpdateSafeTarget_IgnoresKnownPool reproduces the scenario where votes
-// living only in the known pool must not advance safe target.
-// The same votes via the new pool must advance it.
 func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
-	const numValidators = 6 // threshold = ceil(2*6/3) = 4
+	const numValidators = 6
 
 	t.Run("known_pool_only_does_not_advance", func(t *testing.T) {
 		e, block2 := makeSafeTargetEngine(t, numValidators)
 		genesis := e.Store.Head()
 
-		dataRoot, data, proof := planAggregatedVoteForBlock(block2, 2, numValidators, 4)
+		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
 		e.Store.KnownPayloads.Push(dataRoot, data, proof)
 
 		e.updateSafeTarget()
@@ -148,7 +144,7 @@ func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 	t.Run("new_pool_advances", func(t *testing.T) {
 		e, block2 := makeSafeTargetEngine(t, numValidators)
 
-		dataRoot, data, proof := planAggregatedVoteForBlock(block2, 2, numValidators, 4)
+		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
 		e.Store.NewPayloads.Push(dataRoot, data, proof)
 
 		e.updateSafeTarget()
@@ -167,7 +163,6 @@ func TestEnginePendingBlocks(t *testing.T) {
 	blockRoot[0] = 0x10
 	parentRoot[0] = 0x20
 
-	// Manually add pending entries (simulates addPendingBlock logic).
 	e.Pending.SetParent(blockRoot, parentRoot)
 	e.Pending.AddChild(parentRoot, blockRoot)
 
@@ -179,10 +174,6 @@ func TestEnginePendingBlocks(t *testing.T) {
 	}
 }
 
-// Engine.Run must invoke onTick once before the for-select loop accepts
-// ticker fires. Without the bootstrap call there is up to one tick interval
-// (800ms) of dead time after start where store.time stays at its boot value.
-// The polling check below trips well inside that window.
 func TestEngineRun_InvokesInitialOnTick(t *testing.T) {
 	e := makeTestEngine()
 
@@ -205,8 +196,6 @@ func TestEngineRun_InvokesInitialOnTick(t *testing.T) {
 		}
 	}()
 
-	// The ticker fires every MillisecondsPerInterval (800ms). Anything
-	// observed before that came from the bootstrap call.
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		if e.Store.Time() > 0 {
@@ -216,6 +205,13 @@ func TestEngineRun_InvokesInitialOnTick(t *testing.T) {
 	}
 
 	t.Fatalf("Engine.Run did not invoke initial onTick within 200ms; store.time=%d", e.Store.Time())
+}
+
+func TestOnTickNilAggregationController(t *testing.T) {
+	e := makeTestEngine()
+	e.AggCtl = nil
+
+	e.onTick()
 }
 
 func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
@@ -257,9 +253,6 @@ func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 	parentRoot[0] = 0xBB
 	e.Store.SetLatestFinalized(&types.Checkpoint{Root: finalizedRoot, Slot: 10})
 
-	// Block AT the finalized slot must pass the guard (strict less-than). With
-	// no parent state available it gets buffered as pending; that's the proof
-	// the new guard didn't drop it.
 	signedBlock := &types.SignedBlock{
 		Block: &types.Block{
 			Slot:       10,
@@ -294,7 +287,6 @@ func TestEngineCascadePending(t *testing.T) {
 		t.Fatalf("expected 2 children pending, got %d", e.Pending.ChildCount(parentRoot))
 	}
 
-	// collectPendingChildren removes entries and returns blocks to process.
 	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
@@ -309,16 +301,13 @@ func TestEngineCascadePending(t *testing.T) {
 func TestEngineMessageHandler(t *testing.T) {
 	e := makeTestEngine()
 
-	// Verify Engine implements the MessageHandler interface.
 	block := &types.SignedBlock{
 		Block:     &types.Block{Slot: 1},
 		Signature: &types.BlockSignatures{},
 	}
 
-	// Should not panic — just push to channel.
 	e.OnBlock(block)
 
-	// Check channel received it.
 	select {
 	case received := <-e.BlockCh:
 		if received.Block.Slot != 1 {
@@ -331,7 +320,6 @@ func TestEngineMessageHandler(t *testing.T) {
 
 func TestEngineGetOurProposer(t *testing.T) {
 	e := makeTestEngine()
-	// No keys — should return false.
 	_, ok := e.getOurProposer(1)
 	if ok {
 		t.Fatal("should not be proposer without keys")
@@ -340,8 +328,7 @@ func TestEngineGetOurProposer(t *testing.T) {
 
 func TestEngineCurrentSlot(t *testing.T) {
 	e := makeTestEngine()
-	// Genesis at 1000s, slot 1 starts at 1004s.
-	slot := e.currentSlot(1004 * 1000) // 1004000ms
+	slot := e.currentSlot(1004000)
 	if slot != 1 {
 		t.Fatalf("expected slot 1, got %d", slot)
 	}
@@ -349,32 +336,53 @@ func TestEngineCurrentSlot(t *testing.T) {
 
 func TestEngineCurrentInterval(t *testing.T) {
 	e := makeTestEngine()
-	// Genesis at 1000s. Interval 0 of slot 1 starts at 1004000ms.
-	// Interval 1 starts at 1004800ms.
 	interval := e.currentInterval(1004800)
 	if interval != 1 {
 		t.Fatalf("expected interval 1, got %d", interval)
 	}
 }
 
-// TestComputeSyncStatus_FreshNodePastWallClock locks the contract the
-// maybePropose sync gate relies on: a fresh engine (head=0) with current
-// slot past the SyncLagSlots window must report syncer.SyncSyncing (not syncer.SyncSynced).
-// If this returned syncer.SyncSynced, the gate would allow self-production on
-// startup, reintroducing the rpc-compat 'forkchoice includes expected node
-// fields' failure.
+func TestEngineClockHandlesOverflowGenesisTime(t *testing.T) {
+	e := makeTestEngine()
+	e.Store.SetConfig(&types.ChainConfig{GenesisTime: ^uint64(0)/1000 + 1})
+
+	if slot := e.currentSlot(^uint64(0)); slot != 0 {
+		t.Fatalf("overflow genesis currentSlot=%d, want 0", slot)
+	}
+	if interval := e.currentInterval(^uint64(0)); interval != 0 {
+		t.Fatalf("overflow genesis currentInterval=%d, want 0", interval)
+	}
+}
+
+func TestNilEngineClockReturnsZero(t *testing.T) {
+	var e *Engine
+	if slot := e.currentSlot(1); slot != 0 {
+		t.Fatalf("nil engine currentSlot=%d, want 0", slot)
+	}
+	if interval := e.currentInterval(1); interval != 0 {
+		t.Fatalf("nil engine currentInterval=%d, want 0", interval)
+	}
+}
+
 func TestComputeSyncStatus_FreshNodePastWallClock(t *testing.T) {
 	e := makeTestEngine()
 
-	// head=0, currentSlot=39: 0 + SyncLagSlots(2) = 2, 2 >= 39 is false → syncer.SyncSyncing.
 	if status := e.computeSyncStatus(39); status != syncer.SyncSyncing {
 		t.Errorf("head=0 currentSlot=39 should be syncer.SyncSyncing, got %s", status)
 	}
 
-	// head=0, currentSlot=2: 0 + 2 = 2, 2 >= 2 is true → syncer.SyncSynced.
-	// Documents the boundary: the gate opens at currentSlot ≤ head + SyncLagSlots.
 	if status := e.computeSyncStatus(2); status != syncer.SyncSynced {
 		t.Errorf("head=0 currentSlot=2 should be syncer.SyncSynced, got %s", status)
+	}
+}
+
+func TestComputeSyncStatusAvoidsHeadSlotOverflow(t *testing.T) {
+	e := makeTestEngine()
+	head := e.Store.Head()
+	e.Store.InsertBlockHeader(head, &types.BlockHeader{Slot: ^uint64(0)})
+
+	if status := e.computeSyncStatus(^uint64(0)); status != syncer.SyncSynced {
+		t.Fatalf("max head/current slot status=%s, want %s", status, syncer.SyncSynced)
 	}
 }
 
@@ -392,8 +400,47 @@ func TestCascadeClearsDepth(t *testing.T) {
 	var queue []*types.SignedBlock
 	e.collectPendingChildren(parentRoot, &queue)
 
-	// Depth should be cleared after cascade.
 	if _, ok := e.Pending.Depth(child1); ok {
 		t.Fatal("depth should be cleared after collectPendingChildren")
+	}
+}
+
+func TestBufferMissingParentKeepsImmediateParentLink(t *testing.T) {
+	e := makeTestEngine()
+
+	var missingRoot, parentRoot, blockRoot [32]byte
+	missingRoot[0] = 0xAA
+	parentRoot[0] = 0xBB
+	blockRoot[0] = 0xCC
+
+	e.Pending.SetParent(parentRoot, missingRoot)
+	e.Pending.SetDepth(parentRoot, 1)
+	e.Pending.AddChild(missingRoot, parentRoot)
+
+	signedBlock := &types.SignedBlock{
+		Block: &types.Block{
+			Slot:       2,
+			ParentRoot: parentRoot,
+			Body:       &types.BlockBody{},
+		},
+		Signature: &types.BlockSignatures{},
+	}
+
+	var queue []*types.SignedBlock
+	e.bufferMissingParentBlock(signedBlock, blockRoot, parentRoot, &queue)
+
+	if got := e.Pending.ResolveAncestor(blockRoot); got != missingRoot {
+		t.Fatalf("resolved ancestor=0x%x, want missing root 0x%x", got, missingRoot)
+	}
+	if e.Pending.ChildCount(parentRoot) != 1 {
+		t.Fatalf("parent child count=%d, want 1", e.Pending.ChildCount(parentRoot))
+	}
+
+	e.Pending.DiscardSubtree(blockRoot)
+	if e.Pending.ChildCount(parentRoot) != 0 {
+		t.Fatalf("stale child entry left under immediate parent; count=%d", e.Pending.ChildCount(parentRoot))
+	}
+	if e.Pending.Count() != 1 {
+		t.Fatalf("pending count=%d, want only parentRoot waiting on missingRoot", e.Pending.Count())
 	}
 }

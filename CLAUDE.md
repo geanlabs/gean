@@ -54,7 +54,7 @@ Behavior is matched against the spec's `get_proposal_head` / `accept_new_attesta
 
 ### Engine (`internal/node/`) — the coordination core
 `Engine` (`internal/node/engine.go`) owns runtime wiring and is single-threaded over a `select` loop in `Run`: it multiplexes the ticker, `BlockCh`, `AggregationCh`, and `FailedRootCh`. P2P runs on its own goroutine and feeds these channels. Two things run **off** the tick loop to avoid blocking it:
-- **Aggregation worker** (`aggregation.RunWorker`, `internal/aggregation/store_aggregate.go`) — XMSS aggregation is slow FFI work, dispatched via a capacity-1 channel; backlog is dropped on purpose (best-effort per slot).
+- **Aggregation worker** (`aggregation.RunWorker`, `internal/aggregation/worker.go`) — XMSS aggregation is slow FFI work, dispatched via a capacity-1 channel; backlog is dropped on purpose (best-effort per slot).
 - **Attestation verification** — each gossip attestation gets its own goroutine (~500ms XMSS verify each); `AttestationSignatureMap` is mutex-protected.
 
 `Engine` holds sibling components — `store.ConsensusStore`, `ForkChoice`, `p2p.Host`, `xmss.KeyManager`, `role.Controller`, `dutygate.Gate`, and the `pending.BlockBuffer`/`pending.AttestationBuffer` out-of-order buffers — and wires metrics/p2p hooks at `Run` startup. **`ForkChoice` does NOT live inside `ConsensusStore`** — the Engine calls fork choice with store data as parameters.

@@ -116,7 +116,7 @@ func TestStateTransitionHandler_GenesisNoBlocks(t *testing.T) {
 	}
 
 	var resp stateTransitionResponse
-	status := postJSON(t, TestDriverStateTransitionHandler(), fixture, &resp)
+	status := postJSON(t, StateTransitionHandler(), fixture, &resp)
 
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d", status)
@@ -143,7 +143,7 @@ func TestStateTransitionHandler_GenesisNoBlocks(t *testing.T) {
 func TestStateTransitionHandler_MalformedBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("not json"))
 	rec := httptest.NewRecorder()
-	TestDriverStateTransitionHandler()(rec, req)
+	StateTransitionHandler()(rec, req)
 	if rec.Result().StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 on malformed body, got %d", rec.Result().StatusCode)
 	}
@@ -285,7 +285,7 @@ func TestVerifySignatures_RejectsMalformedAnchor(t *testing.T) {
 	}
 
 	var resp verifySignaturesResponse
-	status := postJSON(t, TestDriverVerifySignaturesHandler(), fixture, &resp)
+	status := postJSON(t, VerifySignaturesHandler(), fixture, &resp)
 
 	if status != http.StatusOK {
 		t.Fatalf("expected 200 on logical failure, got %d", status)

@@ -24,11 +24,15 @@ func TestPebblePutAndGet(t *testing.T) {
 	defer b.Close()
 
 	wb, _ := b.BeginWrite()
-	wb.PutBatch(TableBlockHeaders, []KV{
+	if err := wb.PutBatch(TableBlockHeaders, []KV{
 		{Key: []byte("root1"), Value: []byte("header1")},
 		{Key: []byte("root2"), Value: []byte("header2")},
-	})
-	wb.Commit()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	rv, _ := b.BeginRead()
 	val, _ := rv.Get(TableBlockHeaders, []byte("root1"))
@@ -55,6 +59,31 @@ func TestPebbleGetMissing(t *testing.T) {
 	}
 }
 
+func TestPebblePutNilValueStoresEmptyValue(t *testing.T) {
+	b, err := NewPebbleBackend(tempDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	wb, _ := b.BeginWrite()
+	if err := wb.PutBatch(TableMetadata, []KV{{Key: []byte("key"), Value: nil}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	rv, _ := b.BeginRead()
+	val, err := rv.Get(TableMetadata, []byte("key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val == nil || len(val) != 0 {
+		t.Fatalf("value=%v, want non-nil empty value", val)
+	}
+}
+
 func TestPebbleDelete(t *testing.T) {
 	b, err := NewPebbleBackend(tempDir(t))
 	if err != nil {
@@ -63,15 +92,23 @@ func TestPebbleDelete(t *testing.T) {
 	defer b.Close()
 
 	wb, _ := b.BeginWrite()
-	wb.PutBatch(TableStates, []KV{
+	if err := wb.PutBatch(TableStates, []KV{
 		{Key: []byte("k1"), Value: []byte("v1")},
 		{Key: []byte("k2"), Value: []byte("v2")},
-	})
-	wb.Commit()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	wb2, _ := b.BeginWrite()
-	wb2.DeleteBatch(TableStates, [][]byte{[]byte("k1")})
-	wb2.Commit()
+	if err := wb2.DeleteBatch(TableStates, [][]byte{[]byte("k1")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb2.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	rv, _ := b.BeginRead()
 	val, _ := rv.Get(TableStates, []byte("k1"))
@@ -92,10 +129,14 @@ func TestPebbleTableIsolation(t *testing.T) {
 	defer b.Close()
 
 	wb, _ := b.BeginWrite()
-	wb.PutBatch(TableBlockHeaders, []KV{
+	if err := wb.PutBatch(TableBlockHeaders, []KV{
 		{Key: []byte("root"), Value: []byte("header")},
-	})
-	wb.Commit()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	rv, _ := b.BeginRead()
 	val, _ := rv.Get(TableStates, []byte("root"))
@@ -112,12 +153,16 @@ func TestPebblePrefixIterator(t *testing.T) {
 	defer b.Close()
 
 	wb, _ := b.BeginWrite()
-	wb.PutBatch(TableLiveChain, []KV{
+	if err := wb.PutBatch(TableLiveChain, []KV{
 		{Key: []byte("aa_1"), Value: []byte("v1")},
 		{Key: []byte("aa_2"), Value: []byte("v2")},
 		{Key: []byte("bb_1"), Value: []byte("v3")},
-	})
-	wb.Commit()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	rv, _ := b.BeginRead()
 	it, err := rv.PrefixIterator(TableLiveChain, []byte("aa"))
@@ -138,24 +183,107 @@ func TestPebblePrefixIterator(t *testing.T) {
 	}
 }
 
+func TestPebbleReadResultsAreCallerOwned(t *testing.T) {
+	b, err := NewPebbleBackend(tempDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	wb, _ := b.BeginWrite()
+	if err := wb.PutBatch(TableMetadata, []KV{{Key: []byte("key"), Value: []byte("value")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	rv, _ := b.BeginRead()
+	val, err := rv.Get(TableMetadata, []byte("key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	val[0] = 'X'
+
+	fresh, err := rv.Get(TableMetadata, []byte("key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(fresh) != "value" {
+		t.Fatalf("stored value mutated through Get result: %q", string(fresh))
+	}
+
+	it, err := rv.PrefixIterator(TableMetadata, []byte("key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer it.Close()
+	if !it.Next() {
+		t.Fatal("expected iterator entry")
+	}
+	key := it.Key()
+	iterVal := it.Value()
+	key[0] = 'X'
+	iterVal[0] = 'X'
+	if string(it.Key()) != "key" || string(it.Value()) != "value" {
+		t.Fatal("iterator key/value should be caller-owned copies")
+	}
+}
+
+func TestPebblePrefixIteratorSupportsEmptyKey(t *testing.T) {
+	b, err := NewPebbleBackend(tempDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	wb, _ := b.BeginWrite()
+	if err := wb.PutBatch(TableMetadata, []KV{{Key: nil, Value: []byte("empty")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	rv, _ := b.BeginRead()
+	it, err := rv.PrefixIterator(TableMetadata, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer it.Close()
+	if !it.Next() {
+		t.Fatal("expected empty-key entry")
+	}
+	if key := it.Key(); key == nil || len(key) != 0 {
+		t.Fatalf("key=%v, want non-nil empty slice", key)
+	}
+	if string(it.Value()) != "empty" {
+		t.Fatalf("value=%q, want empty", string(it.Value()))
+	}
+}
+
 func TestPebblePersistence(t *testing.T) {
 	dir := tempDir(t)
 
-	// Write data.
 	{
 		b, err := NewPebbleBackend(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
 		wb, _ := b.BeginWrite()
-		wb.PutBatch(TableMetadata, []KV{
+		if err := wb.PutBatch(TableMetadata, []KV{
 			{Key: []byte("key"), Value: []byte("value")},
-		})
-		wb.Commit()
-		b.Close()
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := wb.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	// Reopen and read.
 	{
 		b, err := NewPebbleBackend(dir)
 		if err != nil {
@@ -167,5 +295,58 @@ func TestPebblePersistence(t *testing.T) {
 		if string(val) != "value" {
 			t.Fatalf("expected value after reopen, got %s", string(val))
 		}
+	}
+}
+
+func TestPebbleEstimateTableBytes(t *testing.T) {
+	b, err := NewPebbleBackend(tempDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	wb, _ := b.BeginWrite()
+	if err := wb.PutBatch(TableMetadata, []KV{
+		{Key: []byte("k"), Value: []byte("value")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.PutBatch(TableStates, []KV{
+		{Key: []byte("k"), Value: []byte("larger-value")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	size := b.EstimateTableBytes(TableMetadata)
+	if size != uint64(len("k")+len("value")) {
+		t.Fatalf("metadata size=%d, want %d", size, len("k")+len("value"))
+	}
+}
+
+func TestPebbleWriteBatchClosedAfterCommit(t *testing.T) {
+	b, err := NewPebbleBackend(tempDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	wb, _ := b.BeginWrite()
+	if err := wb.PutBatch(TableMetadata, []KV{{Key: []byte("key"), Value: []byte("value")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.PutBatch(TableMetadata, []KV{{Key: []byte("next"), Value: []byte("value")}}); err != errBatchClosed {
+		t.Fatalf("PutBatch after commit error=%v, want %v", err, errBatchClosed)
+	}
+	if err := wb.DeleteBatch(TableMetadata, [][]byte{[]byte("key")}); err != errBatchClosed {
+		t.Fatalf("DeleteBatch after commit error=%v, want %v", err, errBatchClosed)
+	}
+	if err := wb.Commit(); err != errBatchClosed {
+		t.Fatalf("Commit after commit error=%v, want %v", err, errBatchClosed)
 	}
 }

@@ -2,7 +2,9 @@ package xmss
 
 import (
 	"encoding/hex"
+	"errors"
 	"testing"
+	"unsafe"
 )
 
 const reamPublicKeyHex = "7bbaf95bd653c827b5775e00b973b24d50ab4743db3373244f29c95fdf4ccc628788ba2b5b9d635acdb25770e8ceef66bfdecd0a"
@@ -31,7 +33,7 @@ func TestVerifySignatureSSZValid(t *testing.T) {
 	var sig [2536]byte
 	copy(sig[:], sigBytes)
 
-	var message [32]byte // all zeros
+	var message [32]byte
 
 	valid, err := VerifySignatureSSZ(pubkey, reamSlot, message, sig)
 	if err != nil {
@@ -118,20 +120,17 @@ func TestParseSignatureRoundtrip(t *testing.T) {
 }
 
 func TestKeyGenerateSignVerifyRoundtrip(t *testing.T) {
-	// Generate a keypair via FFI.
 	kp, err := GenerateKeyPair("gean-test-seed-phrase", 0, 1<<18)
 	if err != nil {
 		t.Fatalf("key generation failed: %v", err)
 	}
 	defer kp.Close()
 
-	// Get pubkey bytes for verification.
 	pubkey, err := kp.PublicKeyBytes()
 	if err != nil {
 		t.Fatalf("pubkey serialization failed: %v", err)
 	}
 
-	// Sign a message at slot 0.
 	var message [32]byte
 	message[0] = 0xab
 	message[31] = 0xcd
@@ -141,7 +140,6 @@ func TestKeyGenerateSignVerifyRoundtrip(t *testing.T) {
 		t.Fatalf("sign failed: %v", err)
 	}
 
-	// Verify with correct slot and message.
 	valid, err := VerifySignatureSSZ(pubkey, 0, message, sig)
 	if err != nil {
 		t.Fatalf("verify error: %v", err)
@@ -150,7 +148,6 @@ func TestKeyGenerateSignVerifyRoundtrip(t *testing.T) {
 		t.Fatal("signature should be valid")
 	}
 
-	// Verify with wrong slot — must fail.
 	valid, err = VerifySignatureSSZ(pubkey, 1, message, sig)
 	if err != nil {
 		t.Fatalf("verify error: %v", err)
@@ -159,7 +156,6 @@ func TestKeyGenerateSignVerifyRoundtrip(t *testing.T) {
 		t.Fatal("signature should be invalid with wrong slot")
 	}
 
-	// Verify with wrong message — must fail.
 	var wrongMsg [32]byte
 	wrongMsg[0] = 0xff
 	valid, err = VerifySignatureSSZ(pubkey, 0, wrongMsg, sig)
@@ -172,14 +168,47 @@ func TestKeyGenerateSignVerifyRoundtrip(t *testing.T) {
 }
 
 func TestVerifySignatureSSZMalformedPubkey(t *testing.T) {
-	var pubkey [52]byte // all zeros — invalid
+	var pubkey [52]byte
 	var sig [2536]byte
 	var message [32]byte
 
 	_, err := VerifySignatureSSZ(pubkey, 0, message, sig)
-	// Should return error or invalid, not panic
 	if err != nil {
-		return // error is acceptable for malformed input
+		return
 	}
-	// returning false is also fine
+}
+
+func TestAggregateWithChildrenRejectsMalformedChildProof(t *testing.T) {
+	var message [32]byte
+	marker := byte(1)
+	pubkey := CPubKey(unsafe.Pointer(&marker))
+
+	_, err := AggregateWithChildren(nil, nil, []ChildProof{
+		{Pubkeys: []CPubKey{pubkey}},
+		{Pubkeys: []CPubKey{pubkey}, ProofData: []byte{0x01}},
+	}, message, 0)
+	if !errors.Is(err, ErrMalformedChildProof) {
+		t.Fatalf("error=%v, want ErrMalformedChildProof", err)
+	}
+}
+
+func TestAggregateRejectsNilRawInputs(t *testing.T) {
+	var message [32]byte
+	marker := byte(1)
+	pubkey := CPubKey(unsafe.Pointer(&marker))
+
+	if _, err := AggregateSignatures([]CPubKey{nil}, []CSig{CSig(unsafe.Pointer(&marker))}, message, 0); !errors.Is(err, ErrMalformedRawInput) {
+		t.Fatalf("nil pubkey error=%v, want ErrMalformedRawInput", err)
+	}
+	if _, err := AggregateSignatures([]CPubKey{pubkey}, []CSig{nil}, message, 0); !errors.Is(err, ErrMalformedRawInput) {
+		t.Fatalf("nil signature error=%v, want ErrMalformedRawInput", err)
+	}
+}
+
+func TestVerifyAggregatedSignatureRejectsNilPubkey(t *testing.T) {
+	var message [32]byte
+	err := VerifyAggregatedSignature([]byte{0x01}, []CPubKey{nil}, message, 0)
+	if !errors.Is(err, ErrMalformedRawInput) {
+		t.Fatalf("error=%v, want ErrMalformedRawInput", err)
+	}
 }

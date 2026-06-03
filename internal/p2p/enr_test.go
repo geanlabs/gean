@@ -7,7 +7,6 @@ import (
 )
 
 func TestParseENR(t *testing.T) {
-	// From lean-quickstart nodes.yaml
 	enr := "enr:-IW4QGGifTt9ypyMtChDISUNX3z4z5iPdiEPOmBoILvnDuWIKbWVmKXxZERPnw0piQyaBNCENFEPoIi-vxsnsrBig9MBgmlkgnY0gmlwhH8AAAGEcXVpY4IjKYlzZWNwMjU2azGhAhMMnGF1rmIPQ9tWgqfkNmvsG-aIyc9EJU5JFo3Tegys"
 
 	ma, err := ParseENR(enr)
@@ -15,9 +14,6 @@ func TestParseENR(t *testing.T) {
 		t.Fatalf("ParseENR failed: %v", err)
 	}
 
-	t.Logf("Parsed multiaddr: %s", ma.String())
-
-	// Should contain ip4, udp, quic-v1, p2p components
 	maStr := ma.String()
 	if maStr == "" {
 		t.Fatal("empty multiaddr")
@@ -53,10 +49,7 @@ func TestBuildTransportMultiaddr(t *testing.T) {
 	}
 }
 
-// TestParseENR_PrefersIPv4 confirms that an ENR with both ip and ip6 yields an
-// IPv4 multiaddr.
 func TestParseENR_PrefersIPv4(t *testing.T) {
-	// ENR containing both ip4 and ip6 fields.
 	enr := "enr:-PK4QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFh2F0dG5ldHOIgQAAAAAAAICEZXRoMpASNFZ4q83vAGQAAAAAAAAAgmlkgnY0gmlwhAoAAAGDaXA2kCABDbgAAAAAAAAAAAAAAAGNaXNfYWdncmVnYXRvcgGEcXVpY4IjKYVxdWljNoIjKolzZWNwMjU2azGhA8pjTK4NSay0Adikxrb-jFW3DRFb9AB2nMFADzJYzTE4iHN5bmNuZXRzCoN1ZHCCdl-EdWRwNoJ2YA"
 	ma, err := ParseENR(enr)
 	if err != nil {

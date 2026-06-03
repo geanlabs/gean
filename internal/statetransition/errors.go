@@ -68,3 +68,13 @@ func (e *SlotGapTooLargeError) Error() string {
 
 var ErrNoValidators = fmt.Errorf("state has no validators")
 var ErrZeroHashInJustificationRoots = fmt.Errorf("zero hash found in justifications_roots")
+var ErrMalformedState = fmt.Errorf("malformed state")
+var ErrMalformedBlock = fmt.Errorf("malformed block")
+
+func malformedState(field string) error {
+	return fmt.Errorf("%w: %s is nil", ErrMalformedState, field)
+}
+
+func malformedBlock(field string) error {
+	return fmt.Errorf("%w: %s is nil", ErrMalformedBlock, field)
+}

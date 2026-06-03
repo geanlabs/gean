@@ -9,8 +9,6 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-// LoadBootnodes reads bootnodes from a YAML/text file.
-// Supports both multiaddr format (/ip4/...) and ENR format (enr:...).
 func LoadBootnodes(path string) ([]multiaddr.Multiaddr, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -20,13 +18,14 @@ func LoadBootnodes(path string) ([]multiaddr.Multiaddr, error) {
 
 	var addrs []multiaddr.Multiaddr
 	scanner := bufio.NewScanner(f)
+	lineNo := 0
 	for scanner.Scan() {
+		lineNo++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		// Strip YAML list marker.
 		if strings.HasPrefix(line, "- ") {
 			line = strings.TrimPrefix(line, "- ")
 			line = strings.Trim(line, "\"' ")
@@ -36,7 +35,6 @@ func LoadBootnodes(path string) ([]multiaddr.Multiaddr, error) {
 			continue
 		}
 
-		// ENR format.
 		if strings.HasPrefix(line, "enr:") {
 			ma, err := ParseENR(line)
 			if err != nil {
@@ -46,7 +44,6 @@ func LoadBootnodes(path string) ([]multiaddr.Multiaddr, error) {
 			continue
 		}
 
-		// Multiaddr format.
 		if strings.HasPrefix(line, "/") {
 			ma, err := multiaddr.NewMultiaddr(line)
 			if err != nil {
@@ -56,7 +53,7 @@ func LoadBootnodes(path string) ([]multiaddr.Multiaddr, error) {
 			continue
 		}
 
-		// Skip unknown formats.
+		return nil, fmt.Errorf("invalid bootnode line %d: %q", lineNo, line)
 	}
 
 	return addrs, scanner.Err()

@@ -4,15 +4,8 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/internal/pending"
-	"github.com/geanlabs/gean/internal/role"
 )
 
-// TestReplayPendingAttestations_DrainsBucket verifies the replay helper
-// empties the bucket for the given head root. We can't easily verify that
-// the spawned goroutines successfully re-validate the attestations without
-// a full Engine + Store + XMSS, so this test focuses on the drain semantics:
-// after replayPendingAttestations returns, the buffer must no longer hold
-// the entries for that root.
 func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 	e := &Engine{
 		PendingAttestations: pending.NewAttestationBuffer(8, 64),
@@ -21,8 +14,6 @@ func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 	var head [32]byte
 	head[0] = 0x42
 
-	// Buffer 3 attestations under one head root, plus one under a different
-	// root to confirm the drain is targeted (does not nuke unrelated entries).
 	for _, slot := range []uint64{10, 11, 12} {
 		e.PendingAttestations.Add(head, makeAttForHead(slot, head))
 	}
@@ -34,15 +25,6 @@ func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 		t.Fatalf("setup: total=%d, want 4", e.PendingAttestations.Total())
 	}
 
-	// Replay for `head` should drain only that bucket. Note that the spawned
-	// onGossipAttestation goroutines will fail/return quickly because the
-	// Engine has no Store/AggCtl; we don't depend on their behavior here,
-	// only on the synchronous Drain that happens inside the helper.
-	//
-	// To avoid the goroutines panicking on nil AggCtl, we wire a controller
-	// disabled by default — onGossipAttestation early-returns on AggCtl.Get()
-	// being false, which is the safe path for this unit-level test.
-	e.AggCtl = role.New(false)
 	e.replayPendingAttestations(head)
 
 	if e.PendingAttestations.Total() != 1 {
@@ -54,18 +36,14 @@ func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 	}
 }
 
-// TestReplayPendingAttestations_NoBucketIsNoOp verifies the helper handles
-// an unknown head root cleanly — no error, no panic, no spurious work.
 func TestReplayPendingAttestations_NoBucketIsNoOp(t *testing.T) {
 	e := &Engine{
 		PendingAttestations: pending.NewAttestationBuffer(8, 64),
-		AggCtl:              role.New(false),
 	}
 
 	var head [32]byte
 	head[0] = 0xff
 
-	// Nothing buffered — must not panic.
 	e.replayPendingAttestations(head)
 
 	if e.PendingAttestations.Total() != 0 {

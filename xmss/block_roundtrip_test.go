@@ -6,9 +6,6 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// TestProposerSigThroughBlockSSZ simulates the exact P2P path:
-// Node1 signs → builds SignedBlock → SSZ marshal → SSZ unmarshal →
-// extract ProposerSignature → ParseSignature → aggregate.
 func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	kp, err := GenerateKeyPair("block-roundtrip-0", 0, 1<<18)
 	if err != nil {
@@ -16,22 +13,26 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	}
 	defer kp.Close()
 
-	pkBytes, _ := kp.PublicKeyBytes()
+	pkBytes, err := kp.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("pubkey: %v", err)
+	}
 
-	// Build a block and sign its root
 	block := &types.Block{
 		Slot:          1,
 		ProposerIndex: 0,
 		Body:          &types.BlockBody{},
 	}
-	blockRoot, _ := block.HashTreeRoot()
+	blockRoot, err := block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("block root: %v", err)
+	}
 
-	sig, err := kp.Sign(1, blockRoot) // slot 1
+	sig, err := kp.Sign(1, blockRoot)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
 
-	// Build a SignedBlock with this signature as ProposerSignature
 	signedBlock := &types.SignedBlock{
 		Block: block,
 		Signature: &types.BlockSignatures{
@@ -39,27 +40,22 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 		},
 	}
 
-	// SSZ marshal (simulates P2P send)
 	encoded, err := signedBlock.MarshalSSZ()
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	// SSZ unmarshal (simulates P2P receive)
 	decoded := &types.SignedBlock{}
 	if err := decoded.UnmarshalSSZ(encoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Extract ProposerSignature from decoded block
 	extractedSig := decoded.Signature.ProposerSignature
 
-	// Verify the raw bytes match
 	if extractedSig != sig {
 		t.Fatal("signature bytes changed through block SSZ round-trip")
 	}
 
-	// Parse to C handle
 	csig, err := ParseSignature(extractedSig[:])
 	if err != nil {
 		t.Fatalf("parse sig: %v", err)
@@ -72,7 +68,6 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	}
 	defer FreePublicKey(cpk)
 
-	// Aggregate with slot=1 and the block root as message
 	EnsureProverReady()
 	proof, err := AggregateSignatures([]CPubKey{cpk}, []CSig{csig}, blockRoot, 1)
 	if err != nil {
@@ -80,7 +75,6 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	}
 	t.Logf("aggregate succeeded: proof=%d bytes", len(proof))
 
-	// Verify
 	EnsureVerifierReady()
 	if err := VerifyAggregatedSignature(proof, []CPubKey{cpk}, blockRoot, 1); err != nil {
 		t.Fatalf("verify FAILED: %v", err)

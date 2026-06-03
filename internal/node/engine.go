@@ -8,7 +8,6 @@ import (
 	"github.com/geanlabs/gean/internal/dutygate"
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/p2p"
 	"github.com/geanlabs/gean/internal/pending"
 	"github.com/geanlabs/gean/internal/role"
@@ -17,23 +16,13 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-// gitCommit is injected at link time via -ldflags "-X .../internal/node.gitCommit=$(GIT_COMMIT)"
-// from Makefile / Dockerfile, surfaced through the lean_node_info Prometheus gauge.
 var gitCommit = "unknown"
 
-// Engine is the consensus coordination loop.
-// It owns Store, ForkChoice, and KeyManager as siblings.
-
-// Pending block limits to prevent stuck-forever scenarios.
 const (
-	MaxBlockFetchDepth = 512  // Max ancestor chain depth before discarding
-	MaxPendingBlocks   = 1024 // Max pending blocks before rejecting new ones
+	MaxBlockFetchDepth = 512
+	MaxPendingBlocks   = 1024
 )
 
-// Pending-attestation buffer caps. perRoot bounds the depth of any single
-// head-root bucket; total bounds the sum across all buckets. Sized for
-// devnet-4 expectations (low validator counts, short propagation windows);
-// promote to flags if a future deployment needs different ceilings.
 const (
 	PendingAttestationsPerRootCap = 8
 	PendingAttestationsTotalCap   = 512
@@ -45,32 +34,22 @@ type Engine struct {
 	P2P                 *p2p.Host
 	Keys                *xmss.KeyManager
 	AggCtl              *role.Controller
-	DutyGate            *dutygate.Gate // gates validator signing when local view is stale
+	DutyGate            *dutygate.Gate
 	CommitteeCount      uint64
-	Pending             *pending.BlockBuffer       // blocks buffered awaiting an unknown parent
-	PendingAttestations *pending.AttestationBuffer // gossip atts buffered by unknown head root
+	Pending             *pending.BlockBuffer
+	PendingAttestations *pending.AttestationBuffer
 
-	// Channels for receiving messages from P2P goroutine.
 	BlockCh       chan *types.SignedBlock
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
-	FailedRootCh  chan [32]byte // roots that exhausted all fetch retries — triggers subtree cleanup
-	FetchRootCh   chan [32]byte // roots to fetch — coalesced into batches by the fetch batcher
+	FailedRootCh  chan [32]byte
+	FetchRootCh   chan [32]byte
 
-	// AggregationDispatchCh hands one slot's interval-2 aggregation work to the
-	// worker goroutine. Buffered to capacity 1: a backlog of more than one slot
-	// means the worker is too slow, and dropping the new dispatch is preferable
-	// to delaying the next tick. Drops are spec-permissible (aggregation is
-	// best-effort per slot) and surface via lean_aggregation_dispatch_dropped_total.
 	AggregationDispatchCh chan aggregation.Dispatch
 
-	// lastTick holds the wall time of the previous onTick invocation. Zero
-	// means no prior tick — the very first tick records no observation
-	// (would otherwise pollute the histogram with a process-startup delta).
 	lastTick time.Time
 }
 
-// New creates a new Engine.
 func New(
 	s *store.ConsensusStore,
 	fc *forkchoice.ForkChoice,
@@ -79,13 +58,13 @@ func New(
 	aggCtl *role.Controller,
 	committeeCount uint64,
 ) *Engine {
-	return &Engine{
+	e := &Engine{
 		Store:                 s,
 		FC:                    fc,
 		P2P:                   p2pHost,
 		Keys:                  keys,
 		AggCtl:                aggCtl,
-		DutyGate:              dutygate.New(),
+		DutyGate:              dutygate.New(logDutyGateEvent),
 		CommitteeCount:        committeeCount,
 		Pending:               pending.NewBlockBuffer(),
 		PendingAttestations:   pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
@@ -96,116 +75,19 @@ func New(
 		FetchRootCh:           make(chan [32]byte, 256),
 		AggregationDispatchCh: make(chan aggregation.Dispatch, 1),
 	}
+	e.configureP2PHooks()
+	return e
 }
 
-// Run starts the engine's main loop.
-// This is the single-writer goroutine — all state mutations happen here.
 func (e *Engine) Run(ctx context.Context) {
-	// Wire gossip-size hooks into the p2p layer.
-	p2p.GossipBlockSizeHook = metrics.ObserveGossipBlockSize
-	p2p.GossipAttestationSizeHook = metrics.ObserveGossipAttestationSize
-	p2p.GossipAggregationSizeHook = metrics.ObserveGossipAggregationSize
-
-	// Wire peer event hooks. Client label is "unknown" until libp2p
-	// identify-based client detection is added (follow-up); spec result
-	// label is "success" for the accepted-connection path.
-	p2p.PeerConnectedHook = func(direction string) {
-		metrics.IncPeerConnection(direction, "success")
-	}
-	p2p.PeerDisconnectedHook = func(direction, reason string) {
-		metrics.IncPeerDisconnection(direction, reason)
-	}
-	p2p.PeerCountHook = func(count int) {
-		metrics.SetConnectedPeers("unknown", count)
-	}
-
-	// Initial sync status is "idle" until peers connect.
-	metrics.SetSyncStatus("idle")
-
-	// Initialize static metrics.
-	// lean_is_aggregator is kept in sync via Controller.Set on
-	// every transition; New already seeded it at boot.
-	metrics.SetNodeInfo("gean", gitCommit)
-	metrics.SetNodeStartTime(float64(time.Now().Unix()))
-	metrics.SetAttestationCommitteeCount(e.CommitteeCount)
-	if e.Keys != nil {
-		vids := e.Keys.ValidatorIDs()
-		metrics.SetValidatorsCount(len(vids))
-		if len(vids) > 0 && e.CommitteeCount > 0 {
-			metrics.SetAttestationCommitteeSubnet(vids[0] % e.CommitteeCount)
-		}
-	}
+	e.initMetrics()
 
 	ticker := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
 	defer ticker.Stop()
 
-	// Start the fetch batcher: coalesces individual fetch requests into
-	// batches of up to MaxBlocksPerRequest roots per peer request.
-	go e.runFetchBatcher(ctx)
-
-	// Start the aggregation worker: drains AggregationDispatchCh so
-	// interval-2 aggregation runs off the tick loop and the consensus tick
-	// never blocks on the slow XMSS FFI.
-	go aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P)
+	e.startWorkers(ctx)
 
 	logger.Info(logger.Node, "started")
-
-	// Process gossip attestations concurrently — each gets its own goroutine
-	// for XMSS verification (~500ms each), so attestations are verified as
-	// they arrive rather than queued.
-	// AttestationSignatureMap is mutex-protected for safe concurrent writes.
-	go func() {
-		for att := range e.AttestationCh {
-			att := att
-			go e.onGossipAttestation(att)
-		}
-	}()
-
-	// Initial-tick catch-up: run onTick once before the ticker fires so the
-	// store, head, and sync status reflect wall-clock time immediately
-	// instead of sitting at boot state for up to one tick interval (800ms).
 	e.onTick()
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Info(logger.Node, "shutting down")
-			return
-
-		case <-ticker.C:
-			e.onTick()
-
-		case block := <-e.BlockCh:
-			e.onBlock(block)
-
-		case agg := <-e.AggregationCh:
-			e.onGossipAggregatedAttestation(agg)
-
-		case root := <-e.FailedRootCh:
-			e.onFailedRoot(root)
-		}
-	}
-}
-func (e *Engine) OnBlock(block *types.SignedBlock) {
-	select {
-	case e.BlockCh <- block:
-	default:
-		logger.Warn(logger.Chain, "block channel full, dropping")
-	}
-}
-
-func (e *Engine) OnGossipAttestation(att *types.SignedAttestation) {
-	select {
-	case e.AttestationCh <- att:
-	default:
-		logger.Warn(logger.Gossip, "attestation channel full, dropping")
-	}
-}
-
-func (e *Engine) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
-	select {
-	case e.AggregationCh <- agg:
-	default:
-		logger.Warn(logger.Signature, "aggregation channel full, dropping")
-	}
+	e.dispatch(ctx, ticker.C)
 }

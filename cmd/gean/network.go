@@ -65,12 +65,8 @@ func startNodeNetworking(ctx context.Context, n *node.Engine, s *store.Consensus
 	p2pHost.StartGossipListeners(n)
 	go n.Run(ctx)
 
-	// Wire PeerStatusHook BEFORE dialing bootnodes (below). A fast initial
-	// dial must not fire a peer-connected event while the hook is still nil,
-	// or the Status reqresp handshake that drives backfill is skipped for that
-	// peer. Keep these two statements in this order.
 	syncDriver := syncer.NewSyncDriver(ctx, n, s, p2pHost)
-	p2p.PeerStatusHook = syncDriver.OnPeerConnected
+	p2pHost.Hooks.PeerStatus = syncDriver.OnPeerConnected
 	go syncDriver.Run()
 
 	p2pHost.ConnectBootnodes(ctx, bootnodes)

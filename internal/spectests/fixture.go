@@ -3,15 +3,13 @@
 package spectests
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 
+	"github.com/geanlabs/gean/internal/specfixtures"
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// TestFixture wraps the top-level JSON (key = test name, value = test data).
 type TestFixture map[string]StateTransitionTest
 
 type StateTransitionTest struct {
@@ -66,7 +64,6 @@ type TestBlockBody struct {
 	Attestations TestDataList `json:"attestations"`
 }
 
-// TestDataList wraps the { "data": [...] } pattern used in fixtures.
 type TestDataList struct {
 	Data []json.RawMessage `json:"data"`
 }
@@ -114,40 +111,37 @@ type TestPostState struct {
 }
 
 func parseHexRoot(s string) [32]byte {
-	s = strings.TrimPrefix(s, "0x")
-	b, err := hex.DecodeString(s)
+	root, err := specfixtures.ParseHexRoot(s)
 	if err != nil {
-		panic(fmt.Sprintf("parseHexRoot: invalid hex %q: %v", s, err))
+		panic(fmt.Sprintf("parseHexRoot: %v", err))
 	}
-	var root [32]byte
-	copy(root[:], b)
 	return root
 }
 
 func parseHexBytes(s string) []byte {
-	s = strings.TrimPrefix(s, "0x")
-	b, err := hex.DecodeString(s)
+	b, err := specfixtures.ParseHexBytes(s)
 	if err != nil {
-		panic(fmt.Sprintf("parseHexBytes: invalid hex %q: %v", s, err))
+		panic(fmt.Sprintf("parseHexBytes: %v", err))
 	}
 	return b
 }
 
 func parseHexPubkey(s string) [types.PubkeySize]byte {
-	b := parseHexBytes(s)
-	var pk [types.PubkeySize]byte
-	copy(pk[:], b)
+	pk, err := specfixtures.ParseHexPubkey(s)
+	if err != nil {
+		panic(fmt.Sprintf("parseHexPubkey: %v", err))
+	}
 	return pk
 }
 
 func parseHexSignature(s string) [types.SignatureSize]byte {
-	b := parseHexBytes(s)
-	var sig [types.SignatureSize]byte
-	copy(sig[:], b)
+	sig, err := specfixtures.ParseHexSignature(s)
+	if err != nil {
+		panic(fmt.Sprintf("parseHexSignature: %v", err))
+	}
 	return sig
 }
 
-// ToState converts test JSON pre-state to gean's types.State.
 func (ts *TestState) ToState() *types.State {
 	state := &types.State{
 		Config: &types.ChainConfig{
@@ -179,24 +173,19 @@ func (ts *TestState) ToState() *types.State {
 		})
 	}
 
-	// HistoricalBlockHashes: array of hex strings
 	for _, raw := range ts.HistoricalBlockHashes.Data {
 		var s string
 		if err := json.Unmarshal(raw, &s); err != nil {
 			panic(fmt.Sprintf("HistoricalBlockHashes: %v", err))
 		}
 		b := parseHexBytes(s)
-		// Ensure 32 bytes
 		h := make([]byte, 32)
 		copy(h, b)
 		state.HistoricalBlockHashes = append(state.HistoricalBlockHashes, h)
 	}
 
-	// JustifiedSlots: array of boolean values representing bit positions.
-	// Convert to SSZ bitlist.
 	state.JustifiedSlots = parseBoolBitlist(ts.JustifiedSlots.Data)
 
-	// JustificationsRoots: array of hex strings
 	for _, raw := range ts.JustificationsRoots.Data {
 		var s string
 		if err := json.Unmarshal(raw, &s); err != nil {
@@ -208,38 +197,19 @@ func (ts *TestState) ToState() *types.State {
 		state.JustificationsRoots = append(state.JustificationsRoots, h)
 	}
 
-	// JustificationsValidators: array of booleans -> bitlist
 	state.JustificationsValidators = parseBoolBitlist(ts.JustificationsValidators.Data)
 
 	return state
 }
 
-// parseBoolBitlist converts a JSON array of booleans to an SSZ bitlist.
-// An empty array returns a minimal bitlist (just the delimiter bit).
 func parseBoolBitlist(data []json.RawMessage) []byte {
-	length := uint64(len(data))
-	if length == 0 {
-		return types.NewBitlistSSZ(0)
-	}
-	bl := types.NewBitlistSSZ(length)
-	for i, raw := range data {
-		var val bool
-		if err := json.Unmarshal(raw, &val); err != nil {
-			// Try parsing as integer (0/1)
-			var intVal int
-			if err2 := json.Unmarshal(raw, &intVal); err2 != nil {
-				panic(fmt.Sprintf("parseBoolBitlist index %d: %v / %v", i, err, err2))
-			}
-			val = intVal != 0
-		}
-		if val {
-			types.BitlistSet(bl, uint64(i))
-		}
+	bl, err := specfixtures.ParseBoolBitlist(data)
+	if err != nil {
+		panic(fmt.Sprintf("parseBoolBitlist: %v", err))
 	}
 	return bl
 }
 
-// ToBlock converts test JSON block to gean's types.Block.
 func (tb *TestBlock) ToBlock() *types.Block {
 	block := &types.Block{
 		Slot:          tb.Slot,
@@ -281,8 +251,6 @@ func (tb *TestBlock) ToBlock() *types.Block {
 	return block
 }
 
-// Validate checks fields in the post-state expectation against actual state.
-// Only non-nil fields are checked (selective validation).
 func (tp *TestPostState) Validate(state *types.State) error {
 	if tp.Slot != nil {
 		if state.Slot != *tp.Slot {

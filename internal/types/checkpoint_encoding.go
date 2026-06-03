@@ -7,12 +7,10 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the Checkpoint object
 func (c *Checkpoint) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(c)
 }
 
-// MarshalSSZTo ssz marshals the Checkpoint object to a target array
 func (c *Checkpoint) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -25,7 +23,6 @@ func (c *Checkpoint) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the Checkpoint object
 func (c *Checkpoint) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -42,18 +39,15 @@ func (c *Checkpoint) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the Checkpoint object
 func (c *Checkpoint) SizeSSZ() (size int) {
 	size = 40
 	return
 }
 
-// HashTreeRoot ssz hashes the Checkpoint object
 func (c *Checkpoint) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(c)
 }
 
-// HashTreeRootWith ssz hashes the Checkpoint object with a hasher
 func (c *Checkpoint) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -67,7 +61,6 @@ func (c *Checkpoint) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the Checkpoint object
 func (c *Checkpoint) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(c)
 }

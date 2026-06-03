@@ -12,6 +12,18 @@ func root(b byte) [32]byte {
 	return r
 }
 
+func rootsEqual(a, b [][32]byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func makeAttData(headRoot [32]byte, slot uint64) *types.AttestationData {
 	return &types.AttestationData{
 		Slot:   slot,
@@ -120,7 +132,7 @@ func TestProtoArrayLinearChain(t *testing.T) {
 	fc.OnBlock(2, rootC, rootB)
 
 	// Validator 0 attests to rootC
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootC), 2, makeAttData(rootC, 2))
+	fc.votes.SetKnown(0, fc.NodeIndex(rootC), 2, makeAttData(rootC, 2))
 
 	head := fc.UpdateHead(rootA)
 	if head != rootC {
@@ -135,9 +147,9 @@ func TestProtoArrayForkHeavier(t *testing.T) {
 	fc.OnBlock(1, rootC, rootA)
 
 	// 2 votes for rootB, 1 for rootC
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.Votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.Votes.SetKnown(2, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
+	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(2, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
 
 	head := fc.UpdateHead(rootA)
 	if head != rootB {
@@ -153,8 +165,8 @@ func TestProtoArrayTiebreakLexicographic(t *testing.T) {
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
 
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.Votes.SetKnown(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
+	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
 
 	head := fc.UpdateHead(rootA)
 	if head != rootC {
@@ -171,6 +183,180 @@ func TestProtoArrayNoAttestations(t *testing.T) {
 	}
 }
 
+func TestProtoArrayReparentsOrphanWhenParentArrives(t *testing.T) {
+	anchor, parent, child := root(1), root(2), root(3)
+	fc := New(0, anchor, [32]byte{})
+
+	fc.OnBlock(2, child, parent)
+	childIdx := fc.NodeIndex(child)
+	if childIdx < 0 {
+		t.Fatal("orphan child should be indexed")
+	}
+	if fc.array.nodes[childIdx].Parent != -1 {
+		t.Fatalf("orphan child parent index=%d, want -1", fc.array.nodes[childIdx].Parent)
+	}
+
+	fc.OnBlock(1, parent, anchor)
+	childIdx = fc.NodeIndex(child)
+	parentIdx := fc.NodeIndex(parent)
+	if childIdx < 0 || parentIdx < 0 {
+		t.Fatal("parent and child should both be indexed")
+	}
+	if fc.array.nodes[childIdx].Parent != parentIdx {
+		t.Fatalf("child parent index=%d, want %d", fc.array.nodes[childIdx].Parent, parentIdx)
+	}
+
+	fc.votes.SetKnown(0, childIdx, 2, makeAttData(child, 2))
+	if head := fc.UpdateHead(anchor); head != child {
+		t.Fatalf("head=%x, want reparented child %x", head[:4], child[:4])
+	}
+}
+
+func TestCanonicalAnalysisIncludesReparentedOrphanDescendant(t *testing.T) {
+	anchor, parent, child, fork := root(1), root(2), root(3), root(4)
+	fc := New(0, anchor, [32]byte{})
+	fc.OnBlock(2, child, parent)
+	fc.OnBlock(1, parent, anchor)
+	fc.OnBlock(1, fork, anchor)
+
+	canonical, nonCanonical := fc.GetCanonicalAnalysis(parent)
+	if !rootsEqual(canonical, [][32]byte{parent, anchor}) {
+		t.Fatalf("canonical=%x, want parent,anchor", canonical)
+	}
+	if !rootsEqual(nonCanonical, [][32]byte{fork}) {
+		t.Fatalf("nonCanonical=%x, want fork only", nonCanonical)
+	}
+}
+
+func TestProtoArrayRejectsInvalidParentSlot(t *testing.T) {
+	anchor, child := root(1), root(2)
+	fc := New(2, anchor, [32]byte{})
+
+	fc.OnBlock(2, child, anchor)
+	if idx := fc.NodeIndex(child); idx != -1 {
+		t.Fatalf("invalid child index=%d, want -1", idx)
+	}
+
+	fc.OnBlock(3, child, child)
+	if idx := fc.NodeIndex(child); idx != -1 {
+		t.Fatalf("self-parented child index=%d, want -1", idx)
+	}
+}
+
+func TestProtoArrayPartialValueGuards(t *testing.T) {
+	var nilArray *ProtoArray
+	if nilArray.Len() != 0 {
+		t.Fatal("nil protoarray length should be 0")
+	}
+	if nilArray.Nodes() != nil {
+		t.Fatal("nil protoarray nodes should be nil")
+	}
+	nilArray.OnBlock(1, root(2), root(1))
+	nilArray.ApplyScoreChanges([]int64{1}, 0)
+	if got := nilArray.FindHead(root(1)); got != root(1) {
+		t.Fatalf("nil protoarray head=%x, want justified root", got[:4])
+	}
+	nilArray.Prune(root(1))
+
+	var zero ProtoArray
+	anchor := root(1)
+	zero.OnBlock(0, anchor, [32]byte{})
+	if zero.Len() != 1 {
+		t.Fatalf("zero protoarray len=%d, want 1", zero.Len())
+	}
+	if got := zero.FindHead(anchor); got != anchor {
+		t.Fatalf("zero protoarray head=%x, want anchor", got[:4])
+	}
+}
+
+func TestProtoArrayDoesNotReparentInvalidOrphanSlot(t *testing.T) {
+	anchor, parent, child := root(1), root(2), root(3)
+	fc := New(0, anchor, [32]byte{})
+
+	fc.OnBlock(1, child, parent)
+	fc.OnBlock(2, parent, anchor)
+
+	childIdx := fc.NodeIndex(child)
+	if childIdx < 0 {
+		t.Fatal("orphan child should remain indexed")
+	}
+	if fc.array.nodes[childIdx].Parent != -1 {
+		t.Fatalf("invalid orphan parent index=%d, want -1", fc.array.nodes[childIdx].Parent)
+	}
+}
+
+func TestPruneReparentedOrphanKeepsDescendantAndRemapsVote(t *testing.T) {
+	anchor, parent, child := root(1), root(2), root(3)
+	fc := New(0, anchor, [32]byte{})
+	fc.OnBlock(2, child, parent)
+	fc.OnBlock(1, parent, anchor)
+
+	childIdx := fc.NodeIndex(child)
+	fc.votes.SetKnown(0, childIdx, 2, makeAttData(child, 2))
+	if head := fc.UpdateHead(anchor); head != child {
+		t.Fatalf("head before prune=%x, want child", head[:4])
+	}
+
+	fc.Prune(parent)
+	parentIdx := fc.NodeIndex(parent)
+	childIdx = fc.NodeIndex(child)
+	if parentIdx != 0 || childIdx != 1 {
+		t.Fatalf("post-prune parent/child indexes=%d/%d, want 0/1", parentIdx, childIdx)
+	}
+	if fc.NodeIndex(anchor) != -1 {
+		t.Fatal("anchor should be pruned")
+	}
+	tracker := fc.votes.Votes[0]
+	if tracker.AppliedIndex != childIdx {
+		t.Fatalf("applied index=%d, want child index %d", tracker.AppliedIndex, childIdx)
+	}
+	if tracker.LatestKnown == nil || tracker.LatestKnown.Index != childIdx {
+		t.Fatalf("latest known=%+v, want child index %d", tracker.LatestKnown, childIdx)
+	}
+	if head := fc.UpdateHead(parent); head != child {
+		t.Fatalf("head after prune=%x, want child", head[:4])
+	}
+}
+
+func TestUpdateSafeTargetDoesNotReuseHeadDescendant(t *testing.T) {
+	rootA, rootB := root(1), root(2)
+	fc := New(0, rootA, [32]byte{})
+	fc.OnBlock(1, rootB, rootA)
+
+	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	if head := fc.UpdateHead(rootA); head != rootB {
+		t.Fatalf("head=%x, want rootB", head[:4])
+	}
+
+	if safe := fc.UpdateSafeTarget(rootA, 3); safe != rootA {
+		t.Fatalf("safe target reused head descendant: got %x, want rootA", safe[:4])
+	}
+}
+
+func TestUpdateSafeTargetUsesNewVotesAboveThreshold(t *testing.T) {
+	rootA, rootB := root(1), root(2)
+	fc := New(0, rootA, [32]byte{})
+	fc.OnBlock(1, rootB, rootA)
+
+	for vid := uint64(0); vid < 3; vid++ {
+		fc.votes.SetNew(vid, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	}
+
+	if safe := fc.UpdateSafeTarget(rootA, 4); safe != rootB {
+		t.Fatalf("safe target=%x, want rootB", safe[:4])
+	}
+}
+
+func TestUpdateSafeTargetZeroValidatorsStaysAtJustifiedRoot(t *testing.T) {
+	rootA, rootB := root(1), root(2)
+	fc := New(0, rootA, [32]byte{})
+	fc.OnBlock(1, rootB, rootA)
+
+	if safe := fc.UpdateSafeTarget(rootA, 0); safe != rootA {
+		t.Fatalf("safe target=%x, want justified root %x", safe[:4], rootA[:4])
+	}
+}
+
 func TestProtoArrayVoteChange(t *testing.T) {
 	rootA, rootB, rootC, rootD := root(1), root(2), root(3), root(4)
 	fc := New(0, rootA, [32]byte{})
@@ -179,51 +365,19 @@ func TestProtoArrayVoteChange(t *testing.T) {
 	fc.OnBlock(2, rootD, rootC)
 
 	// Initially vote for rootB at slot 1.
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
 	head := fc.UpdateHead(rootA)
 	if head != rootB {
 		t.Fatalf("expected rootB initially, got %x", head[:4])
 	}
 
-	// Vote-change at a later slot is a normal target update — should move
-	// the head. (Same-slot re-vote with a different target is equivocation
-	// and is dropped; see TestProtoArrayEquivocation.)
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootD), 2, makeAttData(rootD, 2))
+	// A later-slot re-vote is a normal target update and moves the head. The
+	// latest vote per validator is last-wins, so the new target replaces the
+	// old one.
+	fc.votes.SetKnown(0, fc.NodeIndex(rootD), 2, makeAttData(rootD, 2))
 	head = fc.UpdateHead(rootA)
 	if head != rootD {
 		t.Fatalf("expected rootD after vote change, got %x", head[:4])
-	}
-}
-
-func TestProtoArrayEquivocation(t *testing.T) {
-	// Same-slot, different-target re-vote from one validator must be ignored
-	// (first-wins). Mirrors the spec fork-choice equivocation rule covered
-	// by the hive fixture test_same_slot_equivocating_attesters_count_once.
-	rootA, rootB, rootC := root(1), root(2), root(3)
-	fc := New(0, rootA, [32]byte{})
-	fc.OnBlock(1, rootB, rootA)
-	fc.OnBlock(1, rootC, rootA)
-
-	// First vote: validator 0 → rootB at slot 1.
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	head := fc.UpdateHead(rootA)
-	if head != rootB {
-		t.Fatalf("expected rootB after first vote, got %x", head[:4])
-	}
-
-	// Equivocating second vote: validator 0 → rootC at the same slot.
-	// Must be dropped; head stays on rootB.
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
-	head = fc.UpdateHead(rootA)
-	if head != rootB {
-		t.Fatalf("expected rootB to persist after equivocating vote, got %x", head[:4])
-	}
-
-	// Same equivocation rule on the SetNew (gossip) path.
-	fc.Votes.SetNew(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.Votes.SetNew(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
-	if fc.Votes.Votes[1].LatestNew == nil || fc.Votes.Votes[1].LatestNew.Index != fc.NodeIndex(rootB) {
-		t.Fatalf("validator 1 LatestNew should pin to rootB, got %+v", fc.Votes.Votes[1].LatestNew)
 	}
 }
 
@@ -233,20 +387,38 @@ func TestProtoArrayPrune(t *testing.T) {
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(2, rootC, rootB)
 
-	if fc.Array.Len() != 3 {
-		t.Fatalf("expected 3 nodes, got %d", fc.Array.Len())
+	if fc.array.Len() != 3 {
+		t.Fatalf("expected 3 nodes, got %d", fc.array.Len())
 	}
 
 	fc.Prune(rootB)
 
-	if fc.Array.Len() != 2 {
-		t.Fatalf("expected 2 nodes after prune, got %d", fc.Array.Len())
+	if fc.array.Len() != 2 {
+		t.Fatalf("expected 2 nodes after prune, got %d", fc.array.Len())
 	}
 	if fc.NodeIndex(rootA) != -1 {
 		t.Fatal("rootA should be pruned")
 	}
 	if fc.NodeIndex(rootB) < 0 {
 		t.Fatal("rootB should still exist")
+	}
+}
+
+func TestCanonicalAnalysisSeparatesFinalizedForks(t *testing.T) {
+	anchor, a, b, c, forkBefore, forkAfter := root(1), root(2), root(3), root(4), root(5), root(6)
+	fc := New(0, anchor, [32]byte{})
+	fc.OnBlock(1, a, anchor)
+	fc.OnBlock(2, b, a)
+	fc.OnBlock(3, c, b)
+	fc.OnBlock(2, forkBefore, a)
+	fc.OnBlock(3, forkAfter, b)
+
+	canonical, nonCanonical := fc.GetCanonicalAnalysis(b)
+	if !rootsEqual(canonical, [][32]byte{b, a, anchor}) {
+		t.Fatalf("canonical=%x, want b,a,anchor", canonical)
+	}
+	if !rootsEqual(nonCanonical, [][32]byte{forkBefore}) {
+		t.Fatalf("nonCanonical=%x, want forkBefore", nonCanonical)
 	}
 }
 
@@ -261,13 +433,13 @@ func TestProtoArrayDeepChain(t *testing.T) {
 	}
 
 	// Attest to tip
-	fc.Votes.SetKnown(0, fc.NodeIndex(roots[9]), 9, makeAttData(roots[9], 9))
+	fc.votes.SetKnown(0, fc.NodeIndex(roots[9]), 9, makeAttData(roots[9], 9))
 	head := fc.UpdateHead(roots[0])
 	if head != roots[9] {
 		t.Fatalf("expected root[9], got %x", head[:4])
 	}
 }
-func TestDebugOracleLinearChain(t *testing.T) {
+func TestSpecOracleLinearChain(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
 
 	// Spec
@@ -286,16 +458,16 @@ func TestDebugOracleLinearChain(t *testing.T) {
 	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(2, rootC, rootB)
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootC), 2, makeAttData(rootC, 2))
-	fc.Votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(0, fc.NodeIndex(rootC), 2, makeAttData(rootC, 2))
+	fc.votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
 	protoHead := fc.UpdateHead(rootA)
 
 	if specHead != protoHead {
-		t.Fatalf("ORACLE MISMATCH: spec=%x proto=%x", specHead[:4], protoHead[:4])
+		t.Fatalf("oracle mismatch: spec=%x proto=%x", specHead[:4], protoHead[:4])
 	}
 }
 
-func TestDebugOracleFork(t *testing.T) {
+func TestSpecOracleFork(t *testing.T) {
 	rootA, rootB, rootC := root(1), root(2), root(3)
 
 	blocks := map[[32]byte]BlockInfo{
@@ -313,17 +485,17 @@ func TestDebugOracleFork(t *testing.T) {
 	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.Votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.Votes.SetKnown(2, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
+	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(2, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
 	protoHead := fc.UpdateHead(rootA)
 
 	if specHead != protoHead {
-		t.Fatalf("ORACLE MISMATCH: spec=%x proto=%x", specHead[:4], protoHead[:4])
+		t.Fatalf("oracle mismatch: spec=%x proto=%x", specHead[:4], protoHead[:4])
 	}
 }
 
-func TestDebugOracleTiebreak(t *testing.T) {
+func TestSpecOracleTiebreak(t *testing.T) {
 	rootA := root(1)
 	rootB := root(2)
 	rootC := root(3)
@@ -342,12 +514,12 @@ func TestDebugOracleTiebreak(t *testing.T) {
 	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 	fc.OnBlock(1, rootC, rootA)
-	fc.Votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.Votes.SetKnown(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
+	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.votes.SetKnown(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
 	protoHead := fc.UpdateHead(rootA)
 
 	if specHead != protoHead {
-		t.Fatalf("ORACLE MISMATCH: spec=%x proto=%x", specHead[:4], protoHead[:4])
+		t.Fatalf("oracle mismatch: spec=%x proto=%x", specHead[:4], protoHead[:4])
 	}
 }
 
@@ -369,10 +541,10 @@ func TestReorgDepth(t *testing.T) {
 		wantDepth uint64
 	}{
 		{"same head no reorg", a3, a3, 0},
-		{"normal extension a → a2 (no reorg)", a, a2, 0},
-		{"1-block reorg a → b at slot 1", a, b, 1},
-		{"2-block reorg a2 → b2 at slot 2", a2, b2, 2},
-		{"3-block reorg a3 → b at slot 1", a3, b, 3},
+		{"normal extension a to a2", a, a2, 0},
+		{"1-block reorg a to b at slot 1", a, b, 1},
+		{"2-block reorg a2 to b2 at slot 2", a2, b2, 2},
+		{"3-block reorg a3 to b at slot 1", a3, b, 3},
 		{"unknown old root", root(99), a, 0},
 		{"unknown new root", a, root(99), 0},
 	}
@@ -387,13 +559,64 @@ func TestReorgDepth(t *testing.T) {
 	}
 }
 
+func TestAncestorAtDepth(t *testing.T) {
+	anchor, a, b, c := root(1), root(2), root(3), root(4)
+	fc := New(0, anchor, [32]byte{})
+	fc.OnBlock(1, a, anchor)
+	fc.OnBlock(2, b, a)
+	fc.OnBlock(3, c, b)
+
+	cases := []struct {
+		depth    int
+		wantRoot [32]byte
+		wantSlot uint64
+	}{
+		{depth: 0, wantRoot: c, wantSlot: 3},
+		{depth: 1, wantRoot: b, wantSlot: 2},
+		{depth: 2, wantRoot: a, wantSlot: 1},
+		{depth: 3, wantRoot: anchor, wantSlot: 0},
+		{depth: 99, wantRoot: anchor, wantSlot: 0},
+	}
+
+	for _, tc := range cases {
+		gotRoot, gotSlot, ok := fc.AncestorAtDepth(c, tc.depth)
+		if !ok {
+			t.Fatalf("depth %d returned ok=false", tc.depth)
+		}
+		if gotRoot != tc.wantRoot || gotSlot != tc.wantSlot {
+			t.Fatalf("depth %d root/slot=%x/%d, want %x/%d",
+				tc.depth, gotRoot[:4], gotSlot, tc.wantRoot[:4], tc.wantSlot)
+		}
+	}
+}
+
+func TestAncestorAtDepthStartsFromProvidedRoot(t *testing.T) {
+	anchor, a, b, fork := root(1), root(2), root(3), root(4)
+	fc := New(0, anchor, [32]byte{})
+	fc.OnBlock(1, a, anchor)
+	fc.OnBlock(2, b, a)
+	fc.OnBlock(3, fork, anchor)
+
+	gotRoot, gotSlot, ok := fc.AncestorAtDepth(b, 1)
+	if !ok {
+		t.Fatal("expected ancestor lookup to succeed")
+	}
+	if gotRoot != a || gotSlot != 1 {
+		t.Fatalf("ancestor root/slot=%x/%d, want %x/1", gotRoot[:4], gotSlot, a[:4])
+	}
+
+	if _, _, ok := fc.AncestorAtDepth(root(99), 1); ok {
+		t.Fatal("unknown root should return ok=false")
+	}
+}
+
 func TestAnchorParentRootPreserved(t *testing.T) {
 	anchorRoot := root(7)
 	anchorParent := root(6)
 
 	fc := New(12, anchorRoot, anchorParent)
 
-	nodes := fc.Array.Nodes()
+	nodes := fc.array.Nodes()
 	if len(nodes) != 1 {
 		t.Fatalf("expected 1 anchor node, got %d", len(nodes))
 	}
@@ -408,12 +631,125 @@ func TestAnchorParentRootPreserved(t *testing.T) {
 	}
 }
 
+func TestForkChoicePublicAccessors(t *testing.T) {
+	var nilFC *ForkChoice
+	unknown := root(9)
+	if nilFC.Len() != 0 {
+		t.Fatal("nil forkchoice length should be 0")
+	}
+	if nilFC.Nodes() != nil {
+		t.Fatal("nil forkchoice nodes should be nil")
+	}
+	if nilFC.NodeIndex(root(1)) != -1 {
+		t.Fatal("nil forkchoice node lookup should fail")
+	}
+	if nilFC.SetKnownVote(0, root(1), 1, nil) {
+		t.Fatal("nil forkchoice should reject known vote")
+	}
+	if nilFC.SetNewVote(0, root(1), 1, nil) {
+		t.Fatal("nil forkchoice should reject new vote")
+	}
+	nilFC.OnBlock(1, root(2), root(1))
+	if got := nilFC.UpdateHead(unknown); got != unknown {
+		t.Fatalf("nil forkchoice head=%x, want justified root %x", got[:4], unknown[:4])
+	}
+	if got := nilFC.UpdateSafeTarget(unknown, 1); got != unknown {
+		t.Fatalf("nil forkchoice safe target=%x, want justified root %x", got[:4], unknown[:4])
+	}
+	nilFC.Prune(root(1))
+	if canonical, nonCanonical := nilFC.GetCanonicalAnalysis(root(1)); canonical != nil || nonCanonical != nil {
+		t.Fatalf("nil forkchoice analysis=%v/%v, want nil/nil", canonical, nonCanonical)
+	}
+	if depth := nilFC.ReorgDepth(root(1), root(2)); depth != 0 {
+		t.Fatalf("nil forkchoice reorg depth=%d, want 0", depth)
+	}
+	if _, _, ok := nilFC.AncestorAtDepth(root(1), 1); ok {
+		t.Fatal("nil forkchoice ancestor lookup should fail")
+	}
+	if _, ok := nilFC.VoteTracker(0); ok {
+		t.Fatal("nil forkchoice tracker lookup should fail")
+	}
+
+	anchor, child := root(1), root(2)
+	fc := New(0, anchor, [32]byte{})
+	fc.OnBlock(1, child, anchor)
+
+	if fc.Len() != 2 {
+		t.Fatalf("len=%d, want 2", fc.Len())
+	}
+	nodes := fc.Nodes()
+	nodes[0].Weight = 99
+	if fc.Nodes()[0].Weight == 99 {
+		t.Fatal("Nodes should return a copy")
+	}
+
+	if !fc.SetKnownVote(0, child, 1, makeAttData(child, 1)) {
+		t.Fatal("known vote for existing root should be accepted")
+	}
+	if !fc.SetNewVote(1, child, 1, makeAttData(child, 1)) {
+		t.Fatal("new vote for existing root should be accepted")
+	}
+	if fc.SetKnownVote(2, root(99), 1, nil) {
+		t.Fatal("known vote for unknown root should be rejected")
+	}
+	if fc.SetNewVote(3, root(99), 1, nil) {
+		t.Fatal("new vote for unknown root should be rejected")
+	}
+
+	tracker, ok := fc.VoteTracker(0)
+	if !ok || tracker.LatestKnown == nil {
+		t.Fatalf("known tracker missing: %+v", tracker)
+	}
+	tracker.LatestKnown.Index = 99
+	tracker.LatestKnown.Data.Head.Slot = 99
+	tracker, ok = fc.VoteTracker(0)
+	if !ok || tracker.LatestKnown.Index == 99 {
+		t.Fatal("VoteTracker should return a copy of the known target")
+	}
+	if tracker.LatestKnown.Data.Head.Slot == 99 {
+		t.Fatal("VoteTracker should copy nested attestation data")
+	}
+
+	tracker, ok = fc.VoteTracker(1)
+	if !ok || tracker.LatestNew == nil {
+		t.Fatalf("new tracker missing: %+v", tracker)
+	}
+	tracker.LatestNew.Index = 99
+	tracker, ok = fc.VoteTracker(1)
+	if !ok || tracker.LatestNew.Index == 99 {
+		t.Fatal("VoteTracker should return a copy of the new target")
+	}
+}
+
+func TestForkChoicePartialValueGuards(t *testing.T) {
+	anchor, child := root(1), root(2)
+	fc := &ForkChoice{array: NewProtoArray(0, anchor, [32]byte{})}
+	fc.OnBlock(1, child, anchor)
+
+	if fc.Len() != 2 {
+		t.Fatalf("partial forkchoice len=%d, want 2", fc.Len())
+	}
+	if fc.SetKnownVote(0, child, 1, makeAttData(child, 1)) {
+		t.Fatal("partial forkchoice without vote store should reject known vote")
+	}
+	if fc.SetNewVote(0, child, 1, makeAttData(child, 1)) {
+		t.Fatal("partial forkchoice without vote store should reject new vote")
+	}
+	if head := fc.UpdateHead(anchor); head != child {
+		t.Fatalf("partial forkchoice head=%x, want child", head[:4])
+	}
+	fc.Prune(child)
+	if fc.NodeIndex(anchor) != -1 || fc.NodeIndex(child) != 0 {
+		t.Fatal("partial forkchoice should prune protoarray even without vote store")
+	}
+}
+
 func TestGenesisAnchorParentRootZero(t *testing.T) {
 	genesisRoot := root(1)
 
 	fc := New(0, genesisRoot, [32]byte{})
 
-	nodes := fc.Array.Nodes()
+	nodes := fc.array.Nodes()
 	if nodes[0].ParentRoot != ([32]byte{}) {
 		t.Fatalf("genesis ParentRoot = %x, want zero", nodes[0].ParentRoot)
 	}

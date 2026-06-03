@@ -2,12 +2,33 @@ package p2p
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/types"
 	"github.com/golang/snappy"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, os.ErrClosed
+}
+
+type captureHandler struct {
+	block *types.SignedBlock
+}
+
+func (h *captureHandler) OnBlock(block *types.SignedBlock) { h.block = block }
+func (h *captureHandler) OnGossipAttestation(att *types.SignedAttestation) {
+}
+func (h *captureHandler) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
+}
 
 func TestSnappyRawRoundtrip(t *testing.T) {
 	data := []byte("hello lean consensus world")
@@ -70,6 +91,26 @@ func TestResponseEncoding(t *testing.T) {
 	}
 }
 
+func TestWriteResponseReportsWriteFailure(t *testing.T) {
+	if writeResponse(failingWriter{}, "test", RespSuccess, []byte("payload")) {
+		t.Fatal("expected writeResponse to report failure")
+	}
+}
+
+func TestWriteResponseWritesEncodedResponse(t *testing.T) {
+	var buf bytes.Buffer
+	if !writeResponse(&buf, "test", RespSuccess, []byte("payload")) {
+		t.Fatal("expected writeResponse success")
+	}
+	code, payload, err := DecodeResponse(&buf)
+	if err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if code != RespSuccess || !bytes.Equal(payload, []byte("payload")) {
+		t.Fatalf("code=%d payload=%q, want success/payload", code, payload)
+	}
+}
+
 func TestErrorMessageTruncatedOnEncode(t *testing.T) {
 	oversized := bytes.Repeat([]byte("A"), MaxErrorMessageSize+100)
 	encoded := EncodeResponse(RespInvalidRequest, oversized)
@@ -100,10 +141,6 @@ func TestErrorMessageAtBoundaryRoundtrips(t *testing.T) {
 	}
 }
 
-// Verifies that a hand-crafted error chunk whose body exceeds
-// MaxErrorMessageSize is rejected by DecodeResponse. Constructed by
-// encoding a >256-byte payload as if for SUCCESS (no truncation) and
-// then rewriting byte 0 to an error code.
 func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
 	oversized := bytes.Repeat([]byte("C"), MaxErrorMessageSize+1)
 	encoded := EncodeResponse(RespSuccess, oversized)
@@ -114,8 +151,6 @@ func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
 	}
 }
 
-// Rejects block-format snappy data (the historic self-to-self fallback path).
-// Spec requires framed-only on req/resp.
 func TestReqRespPayloadRejectsBlockFormatSnappy(t *testing.T) {
 	raw := []byte("hello world")
 	blockFormat := snappy.Encode(nil, raw)
@@ -123,6 +158,35 @@ func TestReqRespPayloadRejectsBlockFormatSnappy(t *testing.T) {
 	_, err := DecodeReqRespPayload(chunk)
 	if err == nil {
 		t.Fatal("expected error decoding block-format snappy as framed, got nil")
+	}
+}
+
+func TestReqRespPayloadRejectsDeclaredLengthMismatch(t *testing.T) {
+	encoded := EncodeReqRespPayload([]byte("x"))
+	encoded[0] = 0
+	_, err := DecodeReqRespPayload(encoded)
+	if err == nil {
+		t.Fatal("expected length mismatch error")
+	}
+}
+
+func TestReqRespPayloadRejectsDecodedBodyPastDeclaredLength(t *testing.T) {
+	var framed bytes.Buffer
+	w := snappy.NewBufferedWriter(&framed)
+	if _, err := w.Write(bytes.Repeat([]byte("x"), 1024)); err != nil {
+		t.Fatalf("write snappy payload: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close snappy writer: %v", err)
+	}
+
+	encoded := append(EncodeVarint(1), framed.Bytes()...)
+	_, err := DecodeReqRespPayload(encoded)
+	if err == nil {
+		t.Fatal("expected length mismatch for decoded body past declared length")
+	}
+	if !strings.Contains(err.Error(), "length mismatch: declared 1") {
+		t.Fatalf("error=%v, want declared length mismatch", err)
 	}
 }
 
@@ -140,6 +204,81 @@ func TestSuccessUntouchedByErrorMessageCap(t *testing.T) {
 		t.Fatal("success payload should not be truncated")
 	}
 }
+
+func TestDecodeResponseConcatenatedChunks(t *testing.T) {
+	encoded := append(EncodeResponse(RespSuccess, []byte("one")), EncodeResponse(RespSuccess, []byte("two"))...)
+	reader := bytes.NewReader(encoded)
+
+	code, data, err := DecodeResponse(reader)
+	if err != nil {
+		t.Fatalf("decode first: %v", err)
+	}
+	if code != RespSuccess || string(data) != "one" {
+		t.Fatalf("first response: code=%d data=%q", code, data)
+	}
+
+	code, data, err = DecodeResponse(reader)
+	if err != nil {
+		t.Fatalf("decode second: %v", err)
+	}
+	if code != RespSuccess || string(data) != "two" {
+		t.Fatalf("second response: code=%d data=%q", code, data)
+	}
+}
+
+func TestDispatchMessageRequiresHandler(t *testing.T) {
+	h := &Host{}
+	if err := h.dispatchMessage(BlockTopic(), nil, nil); err == nil {
+		t.Fatal("expected missing handler error")
+	}
+}
+
+func TestDispatchMessageUsesHostHooks(t *testing.T) {
+	block := &types.SignedBlock{
+		Block:     &types.Block{Body: &types.BlockBody{}},
+		Signature: &types.BlockSignatures{},
+	}
+	data, err := block.MarshalSSZ()
+	if err != nil {
+		t.Fatalf("marshal block: %v", err)
+	}
+
+	var observedSize int
+	h := &Host{
+		Hooks: Hooks{
+			GossipBlockSize: func(bytes int) {
+				observedSize = bytes
+			},
+		},
+	}
+	handler := &captureHandler{}
+
+	if err := h.dispatchMessage(BlockTopic(), data, handler); err != nil {
+		t.Fatalf("dispatch block: %v", err)
+	}
+	if observedSize != len(data) {
+		t.Fatalf("observed size=%d, want %d", observedSize, len(data))
+	}
+	if handler.block == nil {
+		t.Fatal("block handler was not called")
+	}
+}
+
+func TestPublishRejectsNilMessages(t *testing.T) {
+	h := &Host{}
+	ctx := context.Background()
+
+	if err := h.PublishBlock(ctx, nil); err == nil {
+		t.Fatal("expected nil block error")
+	}
+	if err := h.PublishAttestation(ctx, nil, 1); err == nil {
+		t.Fatal("expected nil attestation error")
+	}
+	if err := h.PublishAggregatedAttestation(ctx, nil); err == nil {
+		t.Fatal("expected nil aggregation error")
+	}
+}
+
 func TestTopicStrings(t *testing.T) {
 	if BlockTopic() != "/leanconsensus/12345678/block/ssz_snappy" {
 		t.Fatalf("block topic: %s", BlockTopic())
@@ -155,6 +294,35 @@ func TestTopicStrings(t *testing.T) {
 	}
 }
 
+func TestIsAttestationSubnetTopic(t *testing.T) {
+	tests := []struct {
+		topic string
+		want  bool
+	}{
+		{AttestationSubnetTopic(0), true},
+		{AttestationSubnetTopic(42), true},
+		{"/leanconsensus/12345678/attestation_/ssz_snappy", false},
+		{"/leanconsensus/12345678/attestation_x/ssz_snappy", false},
+		{"/leanconsensus/12345678/not_attestation_0/ssz_snappy", false},
+		{"/other/12345678/attestation_0/ssz_snappy", false},
+		{"/leanconsensus/12345678/attestation_0/json", false},
+	}
+
+	for _, test := range tests {
+		if got := isAttestationSubnetTopic(test.topic); got != test.want {
+			t.Fatalf("isAttestationSubnetTopic(%q)=%t, want %t", test.topic, got, test.want)
+		}
+	}
+}
+
+func TestDispatchMessageRejectsNearMissAttestationTopic(t *testing.T) {
+	h := &Host{}
+	err := h.dispatchMessage("/leanconsensus/12345678/not_attestation_0/ssz_snappy", nil, &captureHandler{})
+	if err == nil {
+		t.Fatal("expected unknown topic error")
+	}
+}
+
 func TestSubnetID(t *testing.T) {
 	if SubnetID(0, 1) != 0 {
 		t.Fatal("subnet 0%1 != 0")
@@ -165,7 +333,11 @@ func TestSubnetID(t *testing.T) {
 	if SubnetID(7, 4) != 3 {
 		t.Fatal("subnet 7%4 != 3")
 	}
+	if SubnetID(7, 0) != 0 {
+		t.Fatal("subnet with zero committees should return 0")
+	}
 }
+
 func TestComputeMessageIDDeterministic(t *testing.T) {
 	topic := BlockTopic()
 	data := SnappyRawEncode([]byte("block data"))
@@ -197,6 +369,38 @@ func TestComputeMessageIDInvalidSnappy(t *testing.T) {
 		t.Fatalf("should still produce 20-byte ID, got %d", len(id))
 	}
 }
+
+func TestComputeMessageIDMatchesWireFormula(t *testing.T) {
+	topic := BlockTopic()
+	payload := []byte("block data")
+	raw := SnappyRawEncode(payload)
+
+	got := ComputeMessageID(topic, raw)
+	want := messageIDDigest(domainValidSnappy, topic, payload)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("valid snappy message ID=%x, want %x", got, want)
+	}
+
+	invalidRaw := []byte{0xff, 0xfe, 0xfd}
+	got = ComputeMessageID(topic, invalidRaw)
+	want = messageIDDigest(domainInvalidSnappy, topic, invalidRaw)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("invalid snappy message ID=%x, want %x", got, want)
+	}
+}
+
+func messageIDDigest(domain [4]byte, topic string, data []byte) []byte {
+	h := sha256.New()
+	var topicLen [8]byte
+	topicBytes := []byte(topic)
+	binary.LittleEndian.PutUint64(topicLen[:], uint64(len(topicBytes)))
+	h.Write(domain[:])
+	h.Write(topicLen[:])
+	h.Write(topicBytes)
+	h.Write(data)
+	return h.Sum(nil)[:20]
+}
+
 func TestStatusMessageSSZRoundtrip(t *testing.T) {
 	status := &StatusMessage{
 		FinalizedRoot: [32]byte{0xab},
@@ -231,11 +435,9 @@ func TestBlocksByRootRequestSSZRoundtrip(t *testing.T) {
 	}
 	encoded := EncodeBlocksByRootRequest(roots)
 
-	// SSZ container: 4-byte offset + 2 * 32 bytes = 68 bytes.
 	if len(encoded) != 68 {
 		t.Fatalf("expected 68 bytes, got %d", len(encoded))
 	}
-	// First 4 bytes should be offset = 4 (little-endian).
 	if encoded[0] != 4 || encoded[1] != 0 || encoded[2] != 0 || encoded[3] != 0 {
 		t.Fatalf("unexpected offset bytes: %v", encoded[:4])
 	}
@@ -253,7 +455,6 @@ func TestBlocksByRootRequestSSZRoundtrip(t *testing.T) {
 }
 
 func TestBlocksByRootRequestSingleRoot36Bytes(t *testing.T) {
-	// Simulate what other clients send: 1 root = 36 bytes (4-byte offset + 32 bytes).
 	roots := [][32]byte{{0xde, 0xad, 0xbe, 0xef}}
 	encoded := EncodeBlocksByRootRequest(roots)
 	if len(encoded) != 36 {
@@ -268,6 +469,41 @@ func TestBlocksByRootRequestSingleRoot36Bytes(t *testing.T) {
 		t.Fatal("single root roundtrip mismatch")
 	}
 }
+
+func TestValidateFetchedBlockRootRejectsUnrequestedAndDuplicateBlocks(t *testing.T) {
+	requestedBlock, requestedRoot := signedBlockForP2PTest(t, 1)
+	otherBlock, _ := signedBlockForP2PTest(t, 2)
+
+	requestedRoots := requestedRootSet([][32]byte{requestedRoot})
+	seenRoots := make(map[[32]byte]bool)
+	if err := validateFetchedBlockRoot(requestedBlock, requestedRoots, seenRoots); err != nil {
+		t.Fatalf("requested block rejected: %v", err)
+	}
+	if err := validateFetchedBlockRoot(requestedBlock, requestedRoots, seenRoots); err == nil {
+		t.Fatal("expected duplicate block root rejection")
+	}
+	if err := validateFetchedBlockRoot(otherBlock, requestedRoots, make(map[[32]byte]bool)); err == nil {
+		t.Fatal("expected unrequested block root rejection")
+	}
+}
+
+func signedBlockForP2PTest(t *testing.T, slot uint64) (*types.SignedBlock, [32]byte) {
+	t.Helper()
+
+	block := &types.Block{
+		Slot: slot,
+		Body: &types.BlockBody{},
+	}
+	root, err := block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash test block: %v", err)
+	}
+	return &types.SignedBlock{
+		Block:     block,
+		Signature: &types.BlockSignatures{},
+	}, root
+}
+
 func TestPeerStoreAddRemove(t *testing.T) {
 	ps := NewPeerStore()
 	if ps.Count() != 0 {
@@ -332,5 +568,20 @@ func TestLoadBootnodesWithYAMLList(t *testing.T) {
 	}
 	if len(addrs) != 2 {
 		t.Fatalf("expected 2 addrs, got %d", len(addrs))
+	}
+}
+
+func TestLoadBootnodesRejectsInvalidLine(t *testing.T) {
+	tmpFile := t.TempDir() + "/nodes.yaml"
+	if err := os.WriteFile(tmpFile, []byte("not-a-bootnode\n"), 0644); err != nil {
+		t.Fatalf("write bootnodes: %v", err)
+	}
+
+	addrs, err := LoadBootnodes(tmpFile)
+	if err == nil {
+		t.Fatalf("expected invalid line error, got addrs=%v", addrs)
+	}
+	if !strings.Contains(err.Error(), "invalid bootnode line 1") {
+		t.Fatalf("error=%v, want invalid line with number", err)
 	}
 }

@@ -7,9 +7,6 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// makeChainStore builds a store with a chain whose blocks fall on the given
-// slots. Slot 0 is always genesis. Returns the store and a slot→root map for
-// assertions.
 func makeChainStore(t *testing.T, slots []uint64) (*store.ConsensusStore, map[uint64][32]byte) {
 	t.Helper()
 	s := makeTestStore()
@@ -18,7 +15,7 @@ func makeChainStore(t *testing.T, slots []uint64) (*store.ConsensusStore, map[ui
 	var prevRoot [32]byte
 	for _, slot := range slots {
 		var root [32]byte
-		root[0] = byte(slot + 1) // distinct, non-zero
+		root[0] = byte(slot + 1)
 		signed := &types.SignedBlock{
 			Block: &types.Block{
 				Slot:       slot,
@@ -36,7 +33,6 @@ func makeChainStore(t *testing.T, slots []uint64) (*store.ConsensusStore, map[ui
 	return s, roots
 }
 
-// TestGetCanonicalBlocksInRange_FullChain — range covers the entire chain.
 func TestGetCanonicalBlocksInRange_FullChain(t *testing.T) {
 	s, roots := makeChainStore(t, []uint64{0, 2, 5, 7})
 
@@ -53,7 +49,6 @@ func TestGetCanonicalBlocksInRange_FullChain(t *testing.T) {
 	_ = roots
 }
 
-// TestGetCanonicalBlocksInRange_ZeroCount — count=0 returns nil.
 func TestGetCanonicalBlocksInRange_ZeroCount(t *testing.T) {
 	s, _ := makeChainStore(t, []uint64{0, 1, 2})
 	if got := s.GetCanonicalBlocksInRange(0, 0); got != nil {
@@ -61,26 +56,20 @@ func TestGetCanonicalBlocksInRange_ZeroCount(t *testing.T) {
 	}
 }
 
-// TestGetCanonicalBlocksInRange_SkipsEmptySlots — range that includes empty
-// slots (no block produced) returns only the slots that actually have blocks.
 func TestGetCanonicalBlocksInRange_SkipsEmptySlots(t *testing.T) {
-	// Chain at slots 0, 2, 5, 7. Slots 1, 3, 4, 6 are empty.
 	s, _ := makeChainStore(t, []uint64{0, 2, 5, 7})
 
-	// [3, 7) covers slots 3, 4, 5, 6. Only slot 5 has a block.
 	got := s.GetCanonicalBlocksInRange(3, 4)
 	if len(got) != 1 || got[0].Block.Slot != 5 {
 		t.Fatalf("expected single block at slot 5, got %d blocks", len(got))
 	}
 
-	// [2, 6) covers slots 2, 3, 4, 5. Blocks at 2 and 5.
 	got = s.GetCanonicalBlocksInRange(2, 4)
 	if len(got) != 2 || got[0].Block.Slot != 2 || got[1].Block.Slot != 5 {
 		t.Fatalf("expected blocks at [2, 5], got %d blocks", len(got))
 	}
 }
 
-// TestGetCanonicalBlocksInRange_AboveHead — range above head returns nothing.
 func TestGetCanonicalBlocksInRange_AboveHead(t *testing.T) {
 	s, _ := makeChainStore(t, []uint64{0, 2, 5, 7})
 
@@ -90,7 +79,6 @@ func TestGetCanonicalBlocksInRange_AboveHead(t *testing.T) {
 	}
 }
 
-// TestGetCanonicalBlocksInRange_AscendingOrder — output must be ascending by slot.
 func TestGetCanonicalBlocksInRange_AscendingOrder(t *testing.T) {
 	s, _ := makeChainStore(t, []uint64{0, 1, 2, 3, 4, 5})
 
@@ -106,11 +94,9 @@ func TestGetCanonicalBlocksInRange_AscendingOrder(t *testing.T) {
 	}
 }
 
-// TestGetCanonicalBlocksInRange_PartialFromGenesis — typical bulk-sync request.
 func TestGetCanonicalBlocksInRange_PartialFromGenesis(t *testing.T) {
 	s, _ := makeChainStore(t, []uint64{0, 1, 2, 3, 4, 5, 6, 7})
 
-	// Request first 3 blocks.
 	got := s.GetCanonicalBlocksInRange(0, 3)
 	if len(got) != 3 {
 		t.Fatalf("expected 3 blocks, got %d", len(got))

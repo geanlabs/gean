@@ -1,247 +1,98 @@
 package main
 
-// Keygen generates all config files needed to run a standalone gean devnet.
-//
-// First run: generates XMSS keys, node keys, and all config files (~40s per validator).
-// Subsequent runs: skips key generation, only refreshes config.yaml with new genesis time.
-//
-// Usage:
-//   go run ./cmd/keygen --validators 5 --nodes 3 --output testnet
-
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
-
-	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
-
-	"github.com/geanlabs/gean/xmss"
 )
 
-// manifest stores generated key info so we can skip regeneration.
-type manifest struct {
-	Validators []validatorInfo `json:"validators"`
-	Nodes      []nodeInfo      `json:"nodes"`
-}
-
-type validatorInfo struct {
-	Index                int    `json:"index"`
-	AttestationPubkeyHex string `json:"attestation_pubkey_hex"`
-	ProposalPubkeyHex    string `json:"proposal_pubkey_hex"`
-	AttestationSkFile    string `json:"attestation_sk_file"`
-	ProposalSkFile       string `json:"proposal_sk_file"`
-}
-
-type nodeInfo struct {
-	KeyFile string `json:"key_file"`
-	PeerID  string `json:"peer_id"`
-}
+var errInvalidOptions = errors.New("invalid keygen options")
 
 func main() {
-	numValidators := flag.Int("validators", 5, "Number of validators to generate")
-	numNodes := flag.Int("nodes", 3, "Number of nodes")
-	outputDir := flag.String("output", "testnet", "Output directory")
-	basePort := flag.Int("base-port", 9000, "Base P2P port (incremented per node)")
+	if err := run(os.Args[1:], os.Stderr); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	flag.Parse()
-
-	if *numValidators < 1 || *numNodes < 1 {
-		log.Fatal("need at least 1 validator and 1 node")
+func run(args []string, stderr io.Writer) error {
+	opts, err := parseOptions(args, stderr)
+	if err != nil {
+		return err
 	}
 
-	os.MkdirAll(*outputDir, 0755)
-	keysDir := filepath.Join(*outputDir, "hash-sig-keys")
-	os.MkdirAll(keysDir, 0755)
-
-	manifestPath := filepath.Join(*outputDir, "manifest.json")
-
-	// Try to load existing manifest (skip key generation if valid).
-	var m manifest
-	if existing, err := loadManifest(manifestPath); err == nil &&
-		len(existing.Validators) == *numValidators &&
-		len(existing.Nodes) == *numNodes &&
-		keysExist(keysDir, existing.Validators) &&
-		nodeKeysExist(*outputDir, existing.Nodes) {
-
-		log.Printf("keys already exist (%d validators, %d nodes) — skipping generation",
-			len(existing.Validators), len(existing.Nodes))
-		m = *existing
-	} else {
-		// Generate fresh keys.
-		m = generateKeys(*numValidators, *numNodes, *outputDir, keysDir, *basePort)
-		saveManifest(manifestPath, &m)
+	keysDir := filepath.Join(opts.OutputDir, "hash-sig-keys")
+	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+	if err := os.MkdirAll(keysDir, 0o755); err != nil {
+		return fmt.Errorf("create key dir: %w", err)
 	}
 
-	// Always refresh config.yaml with fresh genesis time (30 seconds from now).
+	manifestPath := filepath.Join(opts.OutputDir, "manifest.json")
+	m, reused, err := loadOrGenerate(opts, keysDir, manifestPath)
+	if err != nil {
+		return err
+	}
+	if reused {
+		log.Printf("keys already exist (%d validators, %d nodes) - skipping generation",
+			len(m.Validators), len(m.Nodes))
+	}
+
 	genesisTime := uint64(time.Now().Unix()) + 30
-	writeConfigYAML(*outputDir, genesisTime, m.Validators)
-	writeAnnotatedValidatorsYAML(*outputDir, m.Validators, *numNodes)
-	writeNodesYAML(*outputDir, m.Nodes, *basePort)
+	if err := writeConfigYAML(opts.OutputDir, genesisTime, m.Validators); err != nil {
+		return err
+	}
+	if err := writeAnnotatedValidatorsYAML(opts.OutputDir, m.Validators, opts.Nodes); err != nil {
+		return err
+	}
+	if err := writeNodesYAML(opts.OutputDir, m.Nodes, opts.BasePort); err != nil {
+		return err
+	}
 
+	logSummary(opts, genesisTime, m)
+	return nil
+}
+
+func parseOptions(args []string, stderr io.Writer) (options, error) {
+	opts := options{}
+	fs := flag.NewFlagSet("keygen", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.IntVar(&opts.Validators, "validators", 5, "Number of validators to generate")
+	fs.IntVar(&opts.Nodes, "nodes", 3, "Number of nodes")
+	fs.StringVar(&opts.OutputDir, "output", "testnet", "Output directory")
+	fs.IntVar(&opts.BasePort, "base-port", 9000, "Base P2P port (incremented per node)")
+
+	if err := fs.Parse(args); err != nil {
+		return opts, err
+	}
+	if opts.Validators < 1 || opts.Nodes < 1 {
+		return opts, fmt.Errorf("%w: need at least 1 validator and 1 node", errInvalidOptions)
+	}
+	if opts.OutputDir == "" {
+		return opts, fmt.Errorf("%w: output directory is required", errInvalidOptions)
+	}
+	if opts.BasePort < 1 || opts.BasePort > 65535 {
+		return opts, fmt.Errorf("%w: base port range exceeds 1..65535", errInvalidOptions)
+	}
+	if opts.Nodes > 65535-opts.BasePort+1 {
+		return opts, fmt.Errorf("%w: base port range exceeds 1..65535", errInvalidOptions)
+	}
+	return opts, nil
+}
+
+func logSummary(opts options, genesisTime uint64, m manifest) {
 	log.Println("---")
-	log.Printf("output: %s", *outputDir)
+	log.Printf("output: %s", opts.OutputDir)
 	log.Printf("genesis time: %d (in 30 seconds: %s)", genesisTime,
 		time.Unix(int64(genesisTime), 0).Format(time.RFC3339))
 	log.Printf("validators: %d, nodes: %d", len(m.Validators), len(m.Nodes))
 	log.Println("")
 	log.Println("run immediately:")
 	log.Printf("  bin/gean --custom-network-config-dir %s --node-key %s/node0.key --node-id node0 --is-aggregator --data-dir data/node0",
-		*outputDir, *outputDir)
-}
-
-func generateKeys(numValidators, numNodes int, outputDir, keysDir string, basePort int) manifest {
-	var m manifest
-
-	// Generate dual XMSS validator keys (attestation + proposal per validator).
-	log.Printf("generating %d XMSS validator keypairs (2 keys each, ~40s per key)...", numValidators)
-	for i := range numValidators {
-		log.Printf("  generating validator %d/%d...", i+1, numValidators)
-
-		attPubHex, attSkFile := generateAndSaveKey(i, "attestation", keysDir)
-		propPubHex, propSkFile := generateAndSaveKey(i, "proposal", keysDir)
-
-		m.Validators = append(m.Validators, validatorInfo{
-			Index:                i,
-			AttestationPubkeyHex: attPubHex,
-			ProposalPubkeyHex:    propPubHex,
-			AttestationSkFile:    attSkFile,
-			ProposalSkFile:       propSkFile,
-		})
-
-		log.Printf("  validator %d: att=%s...%s prop=%s...%s",
-			i, attPubHex[:8], attPubHex[len(attPubHex)-8:],
-			propPubHex[:8], propPubHex[len(propPubHex)-8:])
-	}
-
-	// Generate node keys.
-	log.Printf("generating %d node keys...", numNodes)
-	for i := range numNodes {
-		keyBytes := make([]byte, 32)
-		rand.Read(keyBytes)
-		keyHex := hex.EncodeToString(keyBytes)
-
-		keyFile := fmt.Sprintf("node%d.key", i)
-		keyPath := filepath.Join(outputDir, keyFile)
-		os.WriteFile(keyPath, []byte(keyHex), 0600)
-
-		privKey, _ := libp2pcrypto.UnmarshalSecp256k1PrivateKey(keyBytes)
-		peerID, _ := peer.IDFromPrivateKey(privKey)
-
-		m.Nodes = append(m.Nodes, nodeInfo{
-			KeyFile: keyFile,
-			PeerID:  peerID.String(),
-		})
-		log.Printf("  node%d: peer_id=%s", i, peerID)
-	}
-
-	return m
-}
-
-// generateAndSaveKey generates one XMSS keypair and saves the SK file.
-// Returns (pubkey_hex, sk_filename).
-func generateAndSaveKey(validatorIdx int, keyType, keysDir string) (string, string) {
-	seed := fmt.Sprintf("gean-testnet-validator-%d-%s-%d", validatorIdx, keyType, time.Now().UnixNano())
-
-	kp, err := xmss.GenerateKeyPair(seed, 0, 1<<18)
-	if err != nil {
-		log.Fatalf("key generation failed for validator %d %s: %v", validatorIdx, keyType, err)
-	}
-	defer kp.Close()
-
-	pkBytes, err := kp.PublicKeyBytes()
-	if err != nil {
-		log.Fatalf("pubkey serialization failed for validator %d %s: %v", validatorIdx, keyType, err)
-	}
-
-	skBytes, err := kp.PrivateKeyBytes()
-	if err != nil {
-		log.Fatalf("private key serialization failed for validator %d %s: %v", validatorIdx, keyType, err)
-	}
-
-	skFile := fmt.Sprintf("validator_%d_%s_sk.ssz", validatorIdx, keyType)
-	skPath := filepath.Join(keysDir, skFile)
-	os.WriteFile(skPath, skBytes, 0600)
-
-	return hex.EncodeToString(pkBytes[:]), skFile
-}
-
-func writeConfigYAML(outputDir string, genesisTime uint64, validators []validatorInfo) {
-	y := fmt.Sprintf("GENESIS_TIME: %d\nGENESIS_VALIDATORS:\n", genesisTime)
-	for _, v := range validators {
-		y += fmt.Sprintf("  - attestation_pubkey: \"%s\"\n    proposal_pubkey: \"%s\"\n",
-			v.AttestationPubkeyHex, v.ProposalPubkeyHex)
-	}
-	os.WriteFile(filepath.Join(outputDir, "config.yaml"), []byte(y), 0644)
-}
-
-func writeAnnotatedValidatorsYAML(outputDir string, validators []validatorInfo, numNodes int) {
-	nodeValidators := make(map[int][]validatorInfo)
-	for _, v := range validators {
-		nodeIdx := v.Index % numNodes
-		nodeValidators[nodeIdx] = append(nodeValidators[nodeIdx], v)
-	}
-	y := ""
-	for i := range numNodes {
-		y += fmt.Sprintf("node%d:\n", i)
-		for _, v := range nodeValidators[i] {
-			y += fmt.Sprintf("  - index: %d\n    attestation_pubkey_hex: %s\n    proposal_pubkey_hex: %s\n    attestation_sk_file: %s\n    proposal_sk_file: %s\n",
-				v.Index, v.AttestationPubkeyHex, v.ProposalPubkeyHex,
-				v.AttestationSkFile, v.ProposalSkFile)
-		}
-	}
-	os.WriteFile(filepath.Join(outputDir, "annotated_validators.yaml"), []byte(y), 0644)
-}
-
-func writeNodesYAML(outputDir string, nodes []nodeInfo, basePort int) {
-	yaml := ""
-	for i, node := range nodes {
-		port := basePort + i
-		yaml += fmt.Sprintf("- \"/ip4/127.0.0.1/udp/%d/quic-v1/p2p/%s\"\n", port, node.PeerID)
-	}
-	os.WriteFile(filepath.Join(outputDir, "nodes.yaml"), []byte(yaml), 0644)
-}
-
-func loadManifest(path string) (*manifest, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var m manifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, err
-	}
-	return &m, nil
-}
-
-func saveManifest(path string, m *manifest) {
-	data, _ := json.MarshalIndent(m, "", "  ")
-	os.WriteFile(path, data, 0644)
-}
-
-func keysExist(keysDir string, validators []validatorInfo) bool {
-	for _, v := range validators {
-		if _, err := os.Stat(filepath.Join(keysDir, v.AttestationSkFile)); err != nil {
-			return false
-		}
-		if _, err := os.Stat(filepath.Join(keysDir, v.ProposalSkFile)); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
-func nodeKeysExist(outputDir string, nodes []nodeInfo) bool {
-	for _, n := range nodes {
-		if _, err := os.Stat(filepath.Join(outputDir, n.KeyFile)); err != nil {
-			return false
-		}
-	}
-	return true
+		opts.OutputDir, opts.OutputDir)
 }

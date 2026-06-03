@@ -8,15 +8,10 @@ import (
 	"github.com/cockroachdb/pebble"
 )
 
-// PebbleBackend is a persistent storage backend using CockroachDB's Pebble.
-//
-// Pebble doesn't have column families, so we prefix keys with the table name
-// to achieve table isolation: "{table_name}\x00{key}".
 type PebbleBackend struct {
 	db *pebble.DB
 }
 
-// NewPebbleBackend opens or creates a Pebble database at the given path.
 func NewPebbleBackend(dir string) (*PebbleBackend, error) {
 	db, err := pebble.Open(filepath.Clean(dir), &pebble.Options{})
 	if err != nil {
@@ -30,19 +25,31 @@ func (p *PebbleBackend) BeginRead() (ReadView, error) {
 }
 
 func (p *PebbleBackend) BeginWrite() (WriteBatch, error) {
-	return &pebbleWriteBatch{db: p.db, batch: p.db.NewBatch()}, nil
+	return &pebbleWriteBatch{batch: p.db.NewBatch()}, nil
 }
 
 func (p *PebbleBackend) EstimateTableBytes(table Table) uint64 {
-	// Pebble doesn't have per-prefix size estimates like RocksDB column families.
-	return 0
+	rv, err := p.BeginRead()
+	if err != nil {
+		return 0
+	}
+	it, err := rv.PrefixIterator(table, nil)
+	if err != nil {
+		return 0
+	}
+	defer it.Close()
+
+	var total uint64
+	for it.Next() {
+		total += uint64(len(it.Key()) + len(it.Value()))
+	}
+	return total
 }
 
 func (p *PebbleBackend) Close() error {
 	return p.db.Close()
 }
 
-// tableKey creates a prefixed key: "{table}\x00{key}".
 func tableKey(table Table, key []byte) []byte {
 	prefix := []byte(table)
 	result := make([]byte, len(prefix)+1+len(key))
@@ -52,10 +59,9 @@ func tableKey(table Table, key []byte) []byte {
 	return result
 }
 
-// stripTablePrefix removes the table prefix from a key.
 func stripTablePrefix(table Table, fullKey []byte) []byte {
 	prefixLen := len([]byte(table)) + 1
-	if len(fullKey) <= prefixLen {
+	if len(fullKey) < prefixLen {
 		return nil
 	}
 	return fullKey[prefixLen:]
@@ -74,9 +80,7 @@ func (v *pebbleReadView) Get(table Table, key []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer closer.Close()
-	cp := make([]byte, len(val))
-	copy(cp, val)
-	return cp, nil
+	return bytes.Clone(val), nil
 }
 
 func (v *pebbleReadView) PrefixIterator(table Table, prefix []byte) (Iterator, error) {
@@ -92,8 +96,6 @@ func (v *pebbleReadView) PrefixIterator(table Table, prefix []byte) (Iterator, e
 	return &pebbleIterator{iter: iter, table: table}, nil
 }
 
-// prefixUpperBound computes the upper bound for a prefix scan.
-// Increments the last byte; if it overflows, the prefix has no upper bound.
 func prefixUpperBound(prefix []byte) []byte {
 	if len(prefix) == 0 {
 		return nil
@@ -106,15 +108,18 @@ func prefixUpperBound(prefix []byte) []byte {
 			return upper
 		}
 	}
-	return nil // all 0xFF — no upper bound
+	return nil
 }
 
 type pebbleWriteBatch struct {
-	db    *pebble.DB
-	batch *pebble.Batch
+	batch  *pebble.Batch
+	closed bool
 }
 
 func (b *pebbleWriteBatch) PutBatch(table Table, entries []KV) error {
+	if b.closed {
+		return errBatchClosed
+	}
 	for _, e := range entries {
 		if err := b.batch.Set(tableKey(table, e.Key), e.Value, nil); err != nil {
 			return err
@@ -124,6 +129,9 @@ func (b *pebbleWriteBatch) PutBatch(table Table, entries []KV) error {
 }
 
 func (b *pebbleWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
+	if b.closed {
+		return errBatchClosed
+	}
 	for _, k := range keys {
 		if err := b.batch.Delete(tableKey(table, k), nil); err != nil {
 			return err
@@ -133,7 +141,16 @@ func (b *pebbleWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
 }
 
 func (b *pebbleWriteBatch) Commit() error {
-	return b.batch.Commit(pebble.NoSync)
+	if b.closed {
+		return errBatchClosed
+	}
+	err := b.batch.Commit(pebble.NoSync)
+	closeErr := b.batch.Close()
+	b.closed = true
+	if err != nil {
+		return err
+	}
+	return closeErr
 }
 
 type pebbleIterator struct {

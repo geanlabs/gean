@@ -16,7 +16,6 @@ func TestBlocksByRangeRequestSSZRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	// Two uint64 fields = 16 bytes, no variable-size content.
 	if len(encoded) != 16 {
 		t.Fatalf("expected 16 bytes, got %d", len(encoded))
 	}

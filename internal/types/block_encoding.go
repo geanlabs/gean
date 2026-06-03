@@ -7,12 +7,10 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the BlockHeader object
 func (b *BlockHeader) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
 }
 
-// MarshalSSZTo ssz marshals the BlockHeader object to a target array
 func (b *BlockHeader) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -34,7 +32,6 @@ func (b *BlockHeader) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the BlockHeader object
 func (b *BlockHeader) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -60,18 +57,15 @@ func (b *BlockHeader) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the BlockHeader object
 func (b *BlockHeader) SizeSSZ() (size int) {
 	size = 112
 	return
 }
 
-// HashTreeRoot ssz hashes the BlockHeader object
 func (b *BlockHeader) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(b)
 }
 
-// HashTreeRootWith ssz hashes the BlockHeader object with a hasher
 func (b *BlockHeader) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -94,17 +88,14 @@ func (b *BlockHeader) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the BlockHeader object
 func (b *BlockHeader) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }
 
-// MarshalSSZ ssz marshals the BlockBody object
 func (b *BlockBody) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
 }
 
-// MarshalSSZTo ssz marshals the BlockBody object to a target array
 func (b *BlockBody) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(4)
@@ -133,7 +124,6 @@ func (b *BlockBody) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the BlockBody object
 func (b *BlockBody) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -177,7 +167,6 @@ func (b *BlockBody) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the BlockBody object
 func (b *BlockBody) SizeSSZ() (size int) {
 	size = 4
 
@@ -190,12 +179,10 @@ func (b *BlockBody) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the BlockBody object
 func (b *BlockBody) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(b)
 }
 
-// HashTreeRootWith ssz hashes the BlockBody object with a hasher
 func (b *BlockBody) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -219,17 +206,14 @@ func (b *BlockBody) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the BlockBody object
 func (b *BlockBody) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }
 
-// MarshalSSZ ssz marshals the Block object
 func (b *Block) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
 }
 
-// MarshalSSZTo ssz marshals the Block object to a target array
 func (b *Block) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(84)
@@ -257,7 +241,6 @@ func (b *Block) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the Block object
 func (b *Block) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -302,7 +285,6 @@ func (b *Block) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the Block object
 func (b *Block) SizeSSZ() (size int) {
 	size = 84
 
@@ -315,12 +297,10 @@ func (b *Block) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the Block object
 func (b *Block) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(b)
 }
 
-// HashTreeRootWith ssz hashes the Block object with a hasher
 func (b *Block) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -345,17 +325,14 @@ func (b *Block) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the Block object
 func (b *Block) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }
 
-// MarshalSSZ ssz marshals the BlockSignatures object
 func (b *BlockSignatures) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
 }
 
-// MarshalSSZTo ssz marshals the BlockSignatures object to a target array
 func (b *BlockSignatures) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(2540)
@@ -387,7 +364,6 @@ func (b *BlockSignatures) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the BlockSignatures object
 func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -434,7 +410,6 @@ func (b *BlockSignatures) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the BlockSignatures object
 func (b *BlockSignatures) SizeSSZ() (size int) {
 	size = 2540
 
@@ -447,12 +422,10 @@ func (b *BlockSignatures) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the BlockSignatures object
 func (b *BlockSignatures) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(b)
 }
 
-// HashTreeRootWith ssz hashes the BlockSignatures object with a hasher
 func (b *BlockSignatures) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -479,17 +452,14 @@ func (b *BlockSignatures) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the BlockSignatures object
 func (b *BlockSignatures) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }
 
-// MarshalSSZ ssz marshals the SignedBlock object
 func (s *SignedBlock) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(s)
 }
 
-// MarshalSSZTo ssz marshals the SignedBlock object to a target array
 func (s *SignedBlock) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(8)
@@ -517,7 +487,6 @@ func (s *SignedBlock) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the SignedBlock object
 func (s *SignedBlock) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -566,7 +535,6 @@ func (s *SignedBlock) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the SignedBlock object
 func (s *SignedBlock) SizeSSZ() (size int) {
 	size = 8
 
@@ -585,12 +553,10 @@ func (s *SignedBlock) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the SignedBlock object
 func (s *SignedBlock) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(s)
 }
 
-// HashTreeRootWith ssz hashes the SignedBlock object with a hasher
 func (s *SignedBlock) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -608,7 +574,6 @@ func (s *SignedBlock) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the SignedBlock object
 func (s *SignedBlock) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(s)
 }

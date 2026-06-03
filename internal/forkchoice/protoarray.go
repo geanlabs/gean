@@ -1,25 +1,25 @@
 package forkchoice
 
-import "bytes"
+import (
+	"bytes"
+	"sort"
+)
 
-// ProtoNode is a single block in the proto-array tree.
 type ProtoNode struct {
 	Slot           uint64
 	Root           [32]byte
 	ParentRoot     [32]byte
-	Parent         int   // index into nodes, -1 if none
-	Weight         int64 // accumulated attestation weight
-	BestChild      int   // index, -1 if none
-	BestDescendant int   // index, -1 if none
+	Parent         int
+	Weight         int64
+	BestChild      int
+	BestDescendant int
 }
 
-// ProtoArray is a flat array representing the block tree for O(n) fork choice.
 type ProtoArray struct {
 	nodes   []ProtoNode
-	indices map[[32]byte]int // root -> index
+	indices map[[32]byte]int
 }
 
-// NewProtoArray creates a proto-array with an anchor block.
 func NewProtoArray(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *ProtoArray {
 	pa := &ProtoArray{
 		indices: make(map[[32]byte]int),
@@ -37,23 +37,31 @@ func NewProtoArray(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *Pr
 	return pa
 }
 
-// Nodes returns a snapshot copy of all proto-array nodes. Safe to expose to
-// callers since the returned slice is detached from internal storage.
 func (pa *ProtoArray) Nodes() []ProtoNode {
+	if pa == nil {
+		return nil
+	}
 	out := make([]ProtoNode, len(pa.nodes))
 	copy(out, pa.nodes)
 	return out
 }
 
-// OnBlock registers a new block in the proto-array.
-
 func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {
+	if pa == nil || root == parentRoot {
+		return
+	}
+	if pa.indices == nil {
+		pa.indices = make(map[[32]byte]int)
+	}
 	if _, exists := pa.indices[root]; exists {
-		return // already registered
+		return
 	}
 	nodeIndex := len(pa.nodes)
 	parentIdx := -1
 	if idx, ok := pa.indices[parentRoot]; ok {
+		if slot <= pa.nodes[idx].Slot {
+			return
+		}
 		parentIdx = idx
 	}
 
@@ -67,32 +75,53 @@ func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {
 		BestDescendant: -1,
 	})
 	pa.indices[root] = nodeIndex
+	pa.linkOrphanChildren(root, nodeIndex)
 }
 
-// ApplyScoreChanges propagates weight deltas backward through the array
-// and recalculates bestChild/bestDescendant.
+func (pa *ProtoArray) linkOrphanChildren(parentRoot [32]byte, parentIdx int) {
+	if parentIdx < 0 || parentIdx >= len(pa.nodes) {
+		return
+	}
+	parentSlot := pa.nodes[parentIdx].Slot
+	for i := range pa.nodes {
+		node := &pa.nodes[i]
+		if i == parentIdx || node.Parent >= 0 || node.ParentRoot != parentRoot {
+			continue
+		}
+		if node.Slot <= parentSlot {
+			continue
+		}
+		node.Parent = parentIdx
+	}
+}
 
 func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
+	if pa == nil {
+		return
+	}
 	if len(deltas) != len(pa.nodes) {
 		return
 	}
 
-	// Pass 1: iterate backward, apply deltas and propagate to parents.
-	for i := len(pa.nodes) - 1; i >= 0; i-- {
+	order := pa.descendingSlotOrder()
+	for _, i := range order {
 		pa.nodes[i].Weight += deltas[i]
 		if pa.nodes[i].Parent >= 0 {
 			deltas[pa.nodes[i].Parent] += deltas[i]
 		}
 	}
 
-	// Pass 2: iterate backward, recalculate bestChild and bestDescendant.
-	for i := len(pa.nodes) - 1; i >= 0; i-- {
+	for i := range pa.nodes {
+		pa.nodes[i].BestChild = -1
+		pa.nodes[i].BestDescendant = -1
+	}
+
+	for _, i := range order {
 		parentIdx := pa.nodes[i].Parent
 		if parentIdx < 0 {
 			continue
 		}
 
-		// This node's best descendant, or itself if it meets the cutoff.
 		nodeBestDesc := pa.nodes[i].BestDescendant
 		if nodeBestDesc < 0 {
 			if pa.nodes[i].Weight >= cutoffWeight {
@@ -106,7 +135,6 @@ func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 		shouldUpdate := false
 
 		if parent.BestChild == i {
-			// Already best child — just update descendant if changed.
 			if parent.BestDescendant != nodeBestDesc {
 				shouldUpdate = true
 			}
@@ -115,13 +143,11 @@ func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 			if bestChild.Weight < pa.nodes[i].Weight {
 				shouldUpdate = true
 			} else if bestChild.Weight == pa.nodes[i].Weight {
-				// Tie-break: lexicographically larger root wins.
 				if bytes.Compare(bestChild.Root[:], pa.nodes[i].Root[:]) < 0 {
 					shouldUpdate = true
 				}
 			}
 		} else {
-			// No best child yet.
 			shouldUpdate = true
 		}
 
@@ -132,9 +158,25 @@ func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 	}
 }
 
-// FindHead returns the head root by walking the bestDescendant chain from justifiedRoot.
+func (pa *ProtoArray) descendingSlotOrder() []int {
+	order := make([]int, len(pa.nodes))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		left, right := pa.nodes[order[i]], pa.nodes[order[j]]
+		if left.Slot != right.Slot {
+			return left.Slot > right.Slot
+		}
+		return order[i] > order[j]
+	})
+	return order
+}
 
 func (pa *ProtoArray) FindHead(justifiedRoot [32]byte) [32]byte {
+	if pa == nil {
+		return justifiedRoot
+	}
 	idx, ok := pa.indices[justifiedRoot]
 	if !ok {
 		return justifiedRoot
@@ -146,55 +188,76 @@ func (pa *ProtoArray) FindHead(justifiedRoot [32]byte) [32]byte {
 	return pa.nodes[bestDesc].Root
 }
 
-// FindHeadWithThreshold is like FindHead but with a minimum weight cutoff.
-// Used for safe target computation (2/3 threshold).
-func (pa *ProtoArray) FindHeadWithThreshold(justifiedRoot [32]byte, minScore int64) [32]byte {
-	return pa.FindHead(justifiedRoot) // cutoff applied during ApplyScoreChanges
-}
-
-// Prune removes all nodes below the finalized root.
-func (pa *ProtoArray) Prune(finalizedRoot [32]byte) {
+func (pa *ProtoArray) Prune(finalizedRoot [32]byte) map[int]int {
+	if pa == nil {
+		return nil
+	}
 	finalizedIdx, ok := pa.indices[finalizedRoot]
 	if !ok || finalizedIdx == 0 {
-		return
+		return nil
 	}
 
-	// Remove pruned nodes from indices.
-	for i := range finalizedIdx {
-		delete(pa.indices, pa.nodes[i].Root)
-	}
-
-	// Shift nodes.
-	pa.nodes = pa.nodes[finalizedIdx:]
-
-	// Rebuild indices.
-	newIndices := make(map[[32]byte]int, len(pa.nodes))
-	for i := range pa.nodes {
-		newIndices[pa.nodes[i].Root] = i
-		// Adjust parent pointers.
-		if pa.nodes[i].Parent >= 0 {
-			pa.nodes[i].Parent -= finalizedIdx
-			if pa.nodes[i].Parent < 0 {
-				pa.nodes[i].Parent = -1
+	keep := make([]bool, len(pa.nodes))
+	keep[finalizedIdx] = true
+	for changed := true; changed; {
+		changed = false
+		for i, node := range pa.nodes {
+			if keep[i] || node.Parent < 0 || node.Parent >= len(pa.nodes) {
+				continue
 			}
-		}
-		if pa.nodes[i].BestChild >= 0 {
-			pa.nodes[i].BestChild -= finalizedIdx
-			if pa.nodes[i].BestChild < 0 {
-				pa.nodes[i].BestChild = -1
-			}
-		}
-		if pa.nodes[i].BestDescendant >= 0 {
-			pa.nodes[i].BestDescendant -= finalizedIdx
-			if pa.nodes[i].BestDescendant < 0 {
-				pa.nodes[i].BestDescendant = -1
+			if keep[node.Parent] {
+				keep[i] = true
+				changed = true
 			}
 		}
 	}
+
+	kept := make([]int, 0, len(pa.nodes)-finalizedIdx)
+	for i, keepNode := range keep {
+		if keepNode {
+			kept = append(kept, i)
+		}
+	}
+	sort.SliceStable(kept, func(i, j int) bool {
+		left, right := pa.nodes[kept[i]], pa.nodes[kept[j]]
+		if left.Slot != right.Slot {
+			return left.Slot < right.Slot
+		}
+		return kept[i] < kept[j]
+	})
+
+	indexMap := make(map[int]int, len(kept))
+	newNodes := make([]ProtoNode, 0, len(kept))
+	for _, oldIdx := range kept {
+		indexMap[oldIdx] = len(newNodes)
+		newNodes = append(newNodes, pa.nodes[oldIdx])
+	}
+
+	newIndices := make(map[[32]byte]int, len(newNodes))
+	for i := range newNodes {
+		newIndices[newNodes[i].Root] = i
+		newNodes[i].Parent = remapProtoIndex(newNodes[i].Parent, indexMap)
+		newNodes[i].BestChild = remapProtoIndex(newNodes[i].BestChild, indexMap)
+		newNodes[i].BestDescendant = remapProtoIndex(newNodes[i].BestDescendant, indexMap)
+	}
+	pa.nodes = newNodes
 	pa.indices = newIndices
+	return indexMap
 }
 
-// Len returns the number of nodes.
+func remapProtoIndex(oldIdx int, indexMap map[int]int) int {
+	if oldIdx < 0 {
+		return -1
+	}
+	if newIdx, ok := indexMap[oldIdx]; ok {
+		return newIdx
+	}
+	return -1
+}
+
 func (pa *ProtoArray) Len() int {
+	if pa == nil {
+		return 0
+	}
 	return len(pa.nodes)
 }

@@ -4,10 +4,7 @@ import (
 	"testing"
 )
 
-// TestAggregateSignaturesRoundtrip generates keys, signs, serializes signatures
-// to SSZ bytes, deserializes back, and aggregates — same path as the engine.
 func TestAggregateSignaturesRoundtrip(t *testing.T) {
-	// Generate two keypairs.
 	kp1, err := GenerateKeyPair("agg-test-validator-0", 0, 1<<18)
 	if err != nil {
 		t.Fatalf("keygen 0: %v", err)
@@ -20,7 +17,6 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 	}
 	defer kp2.Close()
 
-	// Sign the same message at slot 0.
 	var message [32]byte
 	message[0] = 0xab
 
@@ -33,9 +29,14 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 		t.Fatalf("sign 1: %v", err)
 	}
 
-	// Verify individually (same path as onGossipAttestation).
-	pk1Bytes, _ := kp1.PublicKeyBytes()
-	pk2Bytes, _ := kp2.PublicKeyBytes()
+	pk1Bytes, err := kp1.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("pubkey 1: %v", err)
+	}
+	pk2Bytes, err := kp2.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("pubkey 2: %v", err)
+	}
 
 	valid, err := VerifySignatureSSZ(pk1Bytes, 0, message, sig1Bytes)
 	if err != nil || !valid {
@@ -46,7 +47,6 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 		t.Fatalf("verify sig2: valid=%v err=%v", valid, err)
 	}
 
-	// Now parse pubkeys and signatures to opaque handles (same path as node.aggregateFromSnapshot).
 	cpk1, err := ParsePublicKey(pk1Bytes)
 	if err != nil {
 		t.Fatalf("parse pk1: %v", err)
@@ -71,7 +71,6 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 	}
 	defer FreeSignature(csig2)
 
-	// Aggregate.
 	EnsureProverReady()
 
 	proofBytes, err := AggregateSignatures(
@@ -89,7 +88,6 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 
 	t.Logf("aggregation succeeded: proof size = %d bytes", len(proofBytes))
 
-	// Verify the aggregated proof.
 	EnsureVerifierReady()
 
 	err = VerifyAggregatedSignature(proofBytes, []CPubKey{cpk1, cpk2}, message, 0)

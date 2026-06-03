@@ -182,8 +182,8 @@ func (sba *sigSBA) toSignedBlock() *types.SignedBlock {
 // Test runner.
 
 func TestSpecSignatures(t *testing.T) {
-	logger.Quiet = true
-	defer func() { logger.Quiet = false }()
+	logger.SetQuiet(true)
+	defer logger.SetQuiet(false)
 
 	fixtureDir := "../../leanSpec/fixtures/consensus/verify_signatures"
 

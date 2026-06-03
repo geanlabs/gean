@@ -1,17 +1,18 @@
 package statetransition
 
-import (
-	"github.com/geanlabs/gean/internal/types"
-)
+import "github.com/geanlabs/gean/internal/types"
 
-// ProcessSlots advances the state to targetSlot, caching the state root in the
-// block header if it hasn't been set yet.
 func ProcessSlots(state *types.State, targetSlot uint64) error {
+	if state == nil {
+		return malformedState("state")
+	}
+	if state.LatestBlockHeader == nil {
+		return malformedState("latest block header")
+	}
 	if state.Slot >= targetSlot {
 		return &StateSlotIsNewerError{TargetSlot: targetSlot, CurrentSlot: state.Slot}
 	}
 
-	// Cache state root in latest_block_header if zero (first call after genesis).
 	if state.LatestBlockHeader.StateRoot == types.ZeroRoot {
 		root, err := state.HashTreeRoot()
 		if err != nil {
@@ -20,7 +21,6 @@ func ProcessSlots(state *types.State, targetSlot uint64) error {
 		state.LatestBlockHeader.StateRoot = root
 	}
 
-	// Advance directly to target slot.
 	state.Slot = targetSlot
 	return nil
 }

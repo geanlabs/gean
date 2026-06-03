@@ -12,8 +12,6 @@ func makeTestStore() *store.ConsensusStore {
 	return s
 }
 
-// makeAttForHead builds a minimal SignedAttestation tagged with a head root,
-// used by the engine-level pending-attestation replay tests.
 func makeAttForHead(slot uint64, head [32]byte) *types.SignedAttestation {
 	return &types.SignedAttestation{
 		Data: &types.AttestationData{

@@ -1,176 +1,119 @@
 package forkchoice
 
-// ForkChoice wraps a ProtoArray and VoteStore for LMD GHOST head selection.
+import "github.com/geanlabs/gean/internal/types"
+
 type ForkChoice struct {
-	Array *ProtoArray
-	Votes *VoteStore
+	array *ProtoArray
+	votes *VoteStore
 }
 
-// New creates a ForkChoice initialized with an anchor block.
 func New(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *ForkChoice {
 	return &ForkChoice{
-		Array: NewProtoArray(anchorSlot, anchorRoot, anchorParentRoot),
-		Votes: NewVoteStore(),
+		array: NewProtoArray(anchorSlot, anchorRoot, anchorParentRoot),
+		votes: NewVoteStore(),
 	}
 }
 
-// OnBlock registers a new block.
 func (fc *ForkChoice) OnBlock(slot uint64, root, parentRoot [32]byte) {
-	fc.Array.OnBlock(slot, root, parentRoot)
+	if fc == nil || fc.array == nil {
+		return
+	}
+	fc.array.OnBlock(slot, root, parentRoot)
 }
 
-// UpdateHead computes the LMD GHOST head using known attestations.
-// Returns the head root.
 func (fc *ForkChoice) UpdateHead(justifiedRoot [32]byte) [32]byte {
-	deltas := ComputeDeltas(fc.Array.Len(), fc.Votes, true)
-	fc.Array.ApplyScoreChanges(deltas, 0)
-	return fc.Array.FindHead(justifiedRoot)
+	if fc == nil || fc.array == nil {
+		return justifiedRoot
+	}
+	deltas := ComputeDeltas(fc.array.Len(), fc.votes, true)
+	fc.array.ApplyScoreChanges(deltas, 0)
+	return fc.array.FindHead(justifiedRoot)
 }
 
-// UpdateSafeTarget computes the head using a 2/3 supermajority threshold.
-// Reads votes from VoteTracker.LatestNew (fromKnown=false). The caller is
-// responsible for populating LatestNew from the new pool only: safe target is
-// an availability signal derived strictly from freshly received votes, not
-// historical knowledge from the known pool.
 func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uint64) [32]byte {
-	minScore := int64((2*numValidators + 2) / 3) // ceil(2n/3)
-	deltas := ComputeDeltas(fc.Array.Len(), fc.Votes, false)
-	fc.Array.ApplyScoreChanges(deltas, minScore)
-	return fc.Array.FindHead(justifiedRoot)
+	if fc == nil || fc.array == nil {
+		return justifiedRoot
+	}
+	if numValidators == 0 {
+		return justifiedRoot
+	}
+	minScore := quorumScore(numValidators)
+	deltas := ComputeDeltas(fc.array.Len(), fc.votes, false)
+	fc.array.ApplyScoreChanges(deltas, minScore)
+	return fc.array.FindHead(justifiedRoot)
 }
 
-// Prune removes nodes below the finalized root and remaps vote indices.
-// Without remapping, VoteTracker.AppliedIndex references stale pre-prune
-// indices, causing phantom weight inflation and fork-choice divergence.
 func (fc *ForkChoice) Prune(finalizedRoot [32]byte) {
-	finalizedIdx, ok := fc.Array.indices[finalizedRoot]
+	if fc == nil || fc.array == nil {
+		return
+	}
+	finalizedIdx, ok := fc.array.indices[finalizedRoot]
 	if !ok || finalizedIdx == 0 {
 		return
 	}
 
-	fc.Array.Prune(finalizedRoot)
+	indexMap := fc.array.Prune(finalizedRoot)
 
-	// Remap all vote tracker indices by the prune offset.
-	fc.Votes.RemapIndices(finalizedIdx, fc.Array.Len())
+	if fc.votes != nil && indexMap != nil {
+		fc.votes.RemapIndices(indexMap)
+	}
 }
 
-// NodeIndex returns the proto-array index for a root, or -1 if not found.
 func (fc *ForkChoice) NodeIndex(root [32]byte) int {
-	if idx, ok := fc.Array.indices[root]; ok {
+	if fc == nil || fc.array == nil {
+		return -1
+	}
+	if idx, ok := fc.array.indices[root]; ok {
 		return idx
 	}
 	return -1
 }
 
-// GetCanonicalAnalysis identifies canonical and non-canonical roots relative to an anchor.
-// Returns (canonical, nonCanonical) where canonical[0] is the anchor root.
-// Walks the proto-array tree to separate canonical from non-canonical blocks.
-func (fc *ForkChoice) GetCanonicalAnalysis(anchorRoot [32]byte) (canonical, nonCanonical [][32]byte) {
-	anchorIdx, ok := fc.Array.indices[anchorRoot]
-	if !ok {
-		return nil, nil
+func (fc *ForkChoice) Len() int {
+	if fc == nil || fc.array == nil {
+		return 0
 	}
-
-	// Phase 1: Build canonical view by walking parent pointers from head to anchor.
-	canonicalSet := make(map[[32]byte]bool)
-
-	// Walk backwards from the last node to find canonical chain through anchor.
-	// Start from the highest-index node that descends from anchor.
-	for i := len(fc.Array.nodes) - 1; i >= anchorIdx; i-- {
-		node := &fc.Array.nodes[i]
-		// Check if this node is on the canonical path by walking up to anchor.
-		if i == anchorIdx {
-			canonicalSet[node.Root] = true
-			break
-		}
-	}
-
-	// Walk from anchor forwards: a node is canonical if its parent is canonical.
-	canonicalSet[fc.Array.nodes[anchorIdx].Root] = true
-	for i := anchorIdx + 1; i < len(fc.Array.nodes); i++ {
-		node := &fc.Array.nodes[i]
-		if node.Parent >= anchorIdx {
-			parentRoot := fc.Array.nodes[node.Parent].Root
-			if canonicalSet[parentRoot] {
-				canonicalSet[node.Root] = true
-			}
-		}
-	}
-
-	// Phase 2: Segregate into canonical (at/below anchor slot) and non-canonical.
-	anchorSlot := fc.Array.nodes[anchorIdx].Slot
-
-	for i := anchorIdx; i < len(fc.Array.nodes); i++ {
-		node := &fc.Array.nodes[i]
-		if canonicalSet[node.Root] {
-			if node.Slot <= anchorSlot {
-				canonical = append(canonical, node.Root)
-			}
-			// Descendants above anchor slot are kept (still live)
-		} else {
-			nonCanonical = append(nonCanonical, node.Root)
-		}
-	}
-
-	return canonical, nonCanonical
+	return fc.array.Len()
 }
 
-// ReorgDepth returns the number of blocks abandoned from oldHead during a
-// reorg to newHead — i.e. the count of oldHead's ancestors (including oldHead
-// itself) that are not also ancestors of newHead. Returns 0 when oldHead and
-// newHead share a chain (no reorg, normal extension, or unknown root).
-func (fc *ForkChoice) ReorgDepth(oldHead, newHead [32]byte) uint64 {
-	if oldHead == newHead {
-		return 0
+func (fc *ForkChoice) Nodes() []ProtoNode {
+	if fc == nil || fc.array == nil {
+		return nil
 	}
-	newIdx, ok := fc.Array.indices[newHead]
-	if !ok {
-		return 0
-	}
-	oldIdx, ok := fc.Array.indices[oldHead]
-	if !ok {
-		return 0
-	}
-
-	newAncestors := make(map[[32]byte]struct{})
-	for cur := newIdx; cur >= 0; cur = fc.Array.nodes[cur].Parent {
-		newAncestors[fc.Array.nodes[cur].Root] = struct{}{}
-	}
-
-	depth := uint64(0)
-	for cur := oldIdx; cur >= 0; cur = fc.Array.nodes[cur].Parent {
-		if _, hit := newAncestors[fc.Array.nodes[cur].Root]; hit {
-			return depth
-		}
-		depth++
-	}
-	return depth
+	return fc.array.Nodes()
 }
 
-// GetCanonicalAncestorAtDepth returns the canonical block at depth steps back from head.
-// Walks parent pointers from head backwards by depth steps.
-func (fc *ForkChoice) GetCanonicalAncestorAtDepth(depth int) (root [32]byte, slot uint64, ok bool) {
-	if len(fc.Array.nodes) == 0 {
-		return [32]byte{}, 0, false
+func (fc *ForkChoice) SetKnownVote(validatorID uint64, headRoot [32]byte, slot uint64, data *types.AttestationData) bool {
+	if fc == nil || fc.votes == nil {
+		return false
 	}
-
-	// Start from the last node (head) and walk back.
-	idx := len(fc.Array.nodes) - 1
-	remaining := depth
-	if idx < remaining {
-		idx = 0
-		remaining = 0
+	idx := fc.NodeIndex(headRoot)
+	if idx < 0 {
+		return false
 	}
+	fc.votes.SetKnown(validatorID, idx, slot, data)
+	return true
+}
 
-	for remaining > 0 && idx > 0 {
-		parentIdx := fc.Array.nodes[idx].Parent
-		if parentIdx < 0 {
-			break
-		}
-		idx = parentIdx
-		remaining--
+func (fc *ForkChoice) SetNewVote(validatorID uint64, headRoot [32]byte, slot uint64, data *types.AttestationData) bool {
+	if fc == nil || fc.votes == nil {
+		return false
 	}
+	idx := fc.NodeIndex(headRoot)
+	if idx < 0 {
+		return false
+	}
+	fc.votes.SetNew(validatorID, idx, slot, data)
+	return true
+}
 
-	node := &fc.Array.nodes[idx]
-	return node.Root, node.Slot, true
+func (fc *ForkChoice) VoteTracker(validatorID uint64) (*VoteTracker, bool) {
+	if fc == nil || fc.votes == nil {
+		return nil, false
+	}
+	tracker, ok := fc.votes.Votes[validatorID]
+	if !ok {
+		return nil, false
+	}
+	return copyVoteTracker(tracker), true
 }

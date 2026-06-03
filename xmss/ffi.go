@@ -1,14 +1,5 @@
 package xmss
 
-// CGo bindings to gean's Rust glue libraries (hashsig-glue + multisig-glue).
-//
-// Build the FFI libraries first:
-//   make ffi
-//
-// The unified cgo-glue staticlib is compiled to xmss/rust/target/multisig-release/.
-// It bundles the hashsig-glue and multisig-glue rlib exports through a single
-// archive so std/alloc symbols dedup once at the cgo link step.
-
 // #cgo CFLAGS: -I.
 // #cgo linux LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread
 // #cgo darwin LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
@@ -17,13 +8,10 @@ package xmss
 // #include <stdlib.h>
 // #include <stdbool.h>
 //
-// // Opaque types from hashsig-glue
 // typedef struct KeyPair KeyPair;
 // typedef struct PublicKey PublicKey;
 // typedef struct PrivateKey PrivateKey;
 // typedef struct Signature Signature;
-//
-// // --- hashsig-glue FFI ---
 //
 // KeyPair* hashsig_keypair_from_ssz(
 //     const uint8_t* private_key_ptr, size_t private_key_len,
@@ -53,12 +41,9 @@ package xmss
 // KeyPair* hashsig_keypair_generate(const char* seed_phrase,
 //     size_t activation_epoch, size_t num_active_epochs);
 //
-// // --- multisig-glue FFI ---
-//
 // void xmss_setup_prover();
 // void xmss_setup_verifier();
 //
-// // Recursive aggregation: raw XMSS sigs + children proofs.
 // typedef struct AggregatedXMSS AggregatedXMSS;
 //
 // const AggregatedXMSS* xmss_aggregate(
@@ -98,16 +83,14 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// Size constants.
 const (
 	MessageLength    = 32
-	MaxProofSize     = 1 << 20  // 1 MiB (ByteListMiB)
-	SignatureBuffer  = 4000     // buffer for SSZ signature serialization
-	PubkeyBuffer     = 256      // buffer for SSZ pubkey serialization
-	PrivateKeyBuffer = 10 << 20 // 10 MiB upper bound for SSZ private key serialization
+	MaxProofSize     = 1 << 20
+	SignatureBuffer  = 4000
+	PubkeyBuffer     = 256
+	PrivateKeyBuffer = 10 << 20
 )
 
-// Errors.
 var (
 	ErrEmptyInput          = errors.New("empty input")
 	ErrCountMismatch       = errors.New("public key count does not match signature count")
@@ -121,37 +104,28 @@ var (
 	ErrSignatureError      = errors.New("signature verification error (malformed data)")
 	ErrPubkeyParseFailed   = errors.New("public key parsing failed")
 	ErrKeypairParseFailed  = errors.New("keypair parsing failed")
+	ErrMalformedChildProof = errors.New("malformed child proof")
+	ErrMalformedRawInput   = errors.New("malformed raw signature input")
 )
 
-// Lazy initialization guards
 var (
 	proverOnce   sync.Once
 	verifierOnce sync.Once
 )
 
-// EnsureProverReady initializes the aggregation prover (expensive, runs once).
-// Matches multisig-glue xmss_setup_prover with PROVER_INIT Once guard.
 func EnsureProverReady() {
 	proverOnce.Do(func() {
 		C.xmss_setup_prover()
 	})
 }
 
-// EnsureVerifierReady initializes the aggregation verifier (runs once).
-// Matches multisig-glue xmss_setup_verifier with VERIFIER_INIT Once guard.
 func EnsureVerifierReady() {
 	verifierOnce.Do(func() {
 		C.xmss_setup_verifier()
 	})
 }
 
-// VerifySignatureSSZ verifies an individual XMSS signature from raw bytes.
-// No aggregation VM setup needed — single sig verification is standalone.
-// Returns (valid, error). Error means malformed input, not invalid signature.
 func VerifySignatureSSZ(pubkey [types.PubkeySize]byte, slot uint32, message [32]byte, signature [types.SignatureSize]byte) (bool, error) {
-	// No EnsureVerifierReady() — that's for aggregation only.
-	// Single sig verify is stateless (matches old gean pattern).
-
 	result := C.hashsig_verify_ssz(
 		(*C.uint8_t)(unsafe.Pointer(&pubkey[0])), C.size_t(types.PubkeySize),
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
@@ -169,18 +143,13 @@ func VerifySignatureSSZ(pubkey [types.PubkeySize]byte, slot uint32, message [32]
 	}
 }
 
-// ChildProof represents a pre-aggregated proof with its participants' public keys.
-// Used as input to recursive validator.
 type ChildProof struct {
-	Pubkeys   []CPubKey // Parsed public keys of participants
-	ProofData []byte    // SSZ-encoded proof bytes
+	Pubkeys   []CPubKey
+	ProofData []byte
 }
 
-// LogInvRate controls proof compression depth.
-const LogInvRate = 2 // Production value per spec PROD_CONFIG
+const LogInvRate = 2
 
-// AggregateSignatures aggregates raw XMSS signatures into a single ZK proof.
-// Backward-compatible wrapper: no children, just raw sigs.
 func AggregateSignatures(
 	pubkeys []CPubKey,
 	sigs []CSig,
@@ -190,8 +159,6 @@ func AggregateSignatures(
 	return AggregateWithChildren(pubkeys, sigs, nil, message, slot)
 }
 
-// AggregateWithChildren aggregates raw XMSS signatures + children proofs into
-// a single recursive ZK proof. Matches spec AggregatedSignatureProof.aggregate().
 func AggregateWithChildren(
 	pubkeys []CPubKey,
 	sigs []CSig,
@@ -208,8 +175,14 @@ func AggregateWithChildren(
 	if numRaw > 0 && len(sigs) != numRaw {
 		return nil, fmt.Errorf("%w: %d pubkeys, %d sigs", ErrCountMismatch, numRaw, len(sigs))
 	}
+	if err := validateRawInputs(pubkeys, sigs); err != nil {
+		return nil, err
+	}
 	if numRaw == 0 && numChildren < 2 {
 		return nil, fmt.Errorf("at least 2 children required when no raw sigs provided")
+	}
+	if err := validateChildProofs(children); err != nil {
+		return nil, err
 	}
 
 	EnsureProverReady()
@@ -219,7 +192,6 @@ func AggregateWithChildren(
 	var pinner runtime.Pinner
 	defer pinner.Unpin()
 
-	// Convert raw pubkeys/sigs to C arrays.
 	var rawPkPtr **C.PublicKey
 	var rawSigPtr **C.Signature
 	if numRaw > 0 {
@@ -237,14 +209,12 @@ func AggregateWithChildren(
 		rawSigPtr = (**C.Signature)(unsafe.Pointer(&cSigs[0]))
 	}
 
-	// Build children arrays for FFI.
 	var childAllPkPtr **C.PublicKey
 	var childNumKeysPtr *C.size_t
 	var childProofPtrsPtr **C.uint8_t
 	var childProofLensPtr *C.size_t
 
 	if numChildren > 0 {
-		// Flatten all child pubkeys into one array.
 		var allChildPks []*C.PublicKey
 		childNumKeys := make([]C.size_t, numChildren)
 		childProofPtrs := make([]*C.uint8_t, numChildren)
@@ -288,7 +258,6 @@ func AggregateWithChildren(
 	}
 	defer C.xmss_free_aggregate_signature((*C.AggregatedXMSS)(unsafe.Pointer(aggSig)))
 
-	// Serialize to SSZ bytes using pooled buffer.
 	bufPtr := getProofBuf()
 	buf := *bufPtr
 	n := C.xmss_aggregate_signature_to_bytes(
@@ -311,8 +280,44 @@ func AggregateWithChildren(
 	return result, nil
 }
 
-// VerifyAggregatedSignature verifies an aggregated XMSS proof.
-// Takes SSZ proof bytes + array of pubkey pointers for participating validators.
+func validateRawInputs(pubkeys []CPubKey, sigs []CSig) error {
+	if err := validatePublicKeys(pubkeys); err != nil {
+		return err
+	}
+	for i, sig := range sigs {
+		if sig == nil {
+			return fmt.Errorf("%w: signature %d is nil", ErrMalformedRawInput, i)
+		}
+	}
+	return nil
+}
+
+func validatePublicKeys(pubkeys []CPubKey) error {
+	for i, pk := range pubkeys {
+		if pk == nil {
+			return fmt.Errorf("%w: pubkey %d is nil", ErrMalformedRawInput, i)
+		}
+	}
+	return nil
+}
+
+func validateChildProofs(children []ChildProof) error {
+	for i, child := range children {
+		if len(child.Pubkeys) == 0 {
+			return fmt.Errorf("%w: child %d has no pubkeys", ErrMalformedChildProof, i)
+		}
+		if len(child.ProofData) == 0 {
+			return fmt.Errorf("%w: child %d proof data is empty", ErrMalformedChildProof, i)
+		}
+		for j, pk := range child.Pubkeys {
+			if pk == nil {
+				return fmt.Errorf("%w: child %d pubkey %d is nil", ErrMalformedChildProof, i, j)
+			}
+		}
+	}
+	return nil
+}
+
 func VerifyAggregatedSignature(
 	proofData []byte,
 	pubkeys []CPubKey,
@@ -321,6 +326,9 @@ func VerifyAggregatedSignature(
 ) error {
 	if len(proofData) == 0 || len(pubkeys) == 0 {
 		return ErrEmptyInput
+	}
+	if err := validatePublicKeys(pubkeys); err != nil {
+		return err
 	}
 
 	EnsureVerifierReady()
@@ -349,15 +357,10 @@ func VerifyAggregatedSignature(
 	return nil
 }
 
-// CPubKey is an opaque handle to a C PublicKey, exported as unsafe.Pointer
-// so other packages can hold and pass it without importing C types.
 type CPubKey = unsafe.Pointer
 
-// CSig is an opaque handle to a C Signature.
 type CSig = unsafe.Pointer
 
-// ParsePublicKey creates an opaque PublicKey handle from SSZ-encoded bytes.
-// Caller must call FreePublicKey when done.
 func ParsePublicKey(pubkeyBytes [types.PubkeySize]byte) (CPubKey, error) {
 	pk := C.hashsig_public_key_from_ssz(
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBytes[0])),
@@ -369,15 +372,12 @@ func ParsePublicKey(pubkeyBytes [types.PubkeySize]byte) (CPubKey, error) {
 	return unsafe.Pointer(pk), nil
 }
 
-// FreePublicKey frees a PublicKey handle created by ParsePublicKey.
 func FreePublicKey(pk CPubKey) {
 	if pk != nil {
 		C.hashsig_public_key_free((*C.PublicKey)(pk))
 	}
 }
 
-// ParseSignature creates an opaque Signature handle from SSZ-encoded bytes.
-// Caller must call FreeSignature when done.
 func ParseSignature(sigBytes []byte) (CSig, error) {
 	if len(sigBytes) == 0 {
 		return nil, ErrInvalidSignature
@@ -392,16 +392,12 @@ func ParseSignature(sigBytes []byte) (CSig, error) {
 	return unsafe.Pointer(sig), nil
 }
 
-// FreeSignature frees a Signature handle created by ParseSignature.
 func FreeSignature(sig CSig) {
 	if sig != nil {
 		C.hashsig_signature_free((*C.Signature)(sig))
 	}
 }
 
-// GenerateKeyPair generates a new XMSS keypair from a seed phrase.
-// Used for testing. The returned ValidatorKeyPair must be closed when done.
-// Matches hashsig-glue hashsig_keypair_generate.
 func GenerateKeyPair(seedPhrase string, activationEpoch, numActiveEpochs uint64) (*ValidatorKeyPair, error) {
 	cSeed := C.CString(seedPhrase)
 	defer C.free(unsafe.Pointer(cSeed))
@@ -413,13 +409,16 @@ func GenerateKeyPair(seedPhrase string, activationEpoch, numActiveEpochs uint64)
 	return &ValidatorKeyPair{handle: kp, Index: 0}, nil
 }
 
-// PublicKeyBytes returns the SSZ-encoded public key bytes from a ValidatorKeyPair.
 func (kp *ValidatorKeyPair) PublicKeyBytes() ([types.PubkeySize]byte, error) {
 	var result [types.PubkeySize]byte
+	publicKey := kp.PublicKeyPtr()
+	if publicKey == nil {
+		return result, fmt.Errorf("keypair is nil or closed")
+	}
 	var buf [PubkeyBuffer]byte
 
 	n := C.hashsig_public_key_to_bytes(
-		kp.PublicKeyPtr(),
+		publicKey,
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
 		C.size_t(len(buf)),
 	)
@@ -430,14 +429,14 @@ func (kp *ValidatorKeyPair) PublicKeyBytes() ([types.PubkeySize]byte, error) {
 	return result, nil
 }
 
-// PrivateKeyBytes returns the SSZ-encoded private key bytes from a
-// ValidatorKeyPair. Private keys are variable-length; the buffer is sized
-// to PrivateKeyBuffer as a wide upper bound and the returned slice is
-// truncated to the actual length the FFI reports.
 func (kp *ValidatorKeyPair) PrivateKeyBytes() ([]byte, error) {
+	privateKey := kp.PrivateKeyPtr()
+	if privateKey == nil {
+		return nil, fmt.Errorf("keypair is nil or closed")
+	}
 	buf := make([]byte, PrivateKeyBuffer)
 	n := C.hashsig_private_key_to_bytes(
-		kp.PrivateKeyPtr(),
+		privateKey,
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
 		C.size_t(len(buf)),
 	)

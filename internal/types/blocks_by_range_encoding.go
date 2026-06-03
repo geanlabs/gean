@@ -7,12 +7,10 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the BlocksByRangeRequest object
 func (b *BlocksByRangeRequest) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
 }
 
-// MarshalSSZTo ssz marshals the BlocksByRangeRequest object to a target array
 func (b *BlocksByRangeRequest) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -25,7 +23,6 @@ func (b *BlocksByRangeRequest) MarshalSSZTo(buf []byte) (dst []byte, err error) 
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the BlocksByRangeRequest object
 func (b *BlocksByRangeRequest) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -42,18 +39,15 @@ func (b *BlocksByRangeRequest) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the BlocksByRangeRequest object
 func (b *BlocksByRangeRequest) SizeSSZ() (size int) {
 	size = 16
 	return
 }
 
-// HashTreeRoot ssz hashes the BlocksByRangeRequest object
 func (b *BlocksByRangeRequest) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(b)
 }
 
-// HashTreeRootWith ssz hashes the BlocksByRangeRequest object with a hasher
 func (b *BlocksByRangeRequest) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -67,7 +61,6 @@ func (b *BlocksByRangeRequest) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the BlocksByRangeRequest object
 func (b *BlocksByRangeRequest) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }

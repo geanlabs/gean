@@ -6,13 +6,11 @@ import (
 	"sync"
 )
 
-// InMemoryBackend is a thread-safe in-memory storage backend for tests.
 type InMemoryBackend struct {
 	mu     sync.RWMutex
 	tables map[Table]map[string][]byte
 }
 
-// NewInMemoryBackend creates a new in-memory backend with all tables initialized.
 func NewInMemoryBackend() *InMemoryBackend {
 	tables := make(map[Table]map[string][]byte)
 	for _, t := range AllTables {
@@ -45,7 +43,6 @@ func (b *InMemoryBackend) EstimateTableBytes(table Table) uint64 {
 
 func (b *InMemoryBackend) Close() error { return nil }
 
-// CountEntries returns the number of entries in a table (for tests).
 func (b *InMemoryBackend) CountEntries(table Table) int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -84,14 +81,9 @@ func (v *inMemoryReadView) PrefixIterator(table Table, prefix []byte) (Iterator,
 	for k, val := range t {
 		kb := []byte(k)
 		if bytes.HasPrefix(kb, prefix) {
-			kcopy := make([]byte, len(kb))
-			copy(kcopy, kb)
-			vcopy := make([]byte, len(val))
-			copy(vcopy, val)
-			entries = append(entries, KV{Key: kcopy, Value: vcopy})
+			entries = append(entries, KV{Key: bytes.Clone(kb), Value: bytes.Clone(val)})
 		}
 	}
-	// Sort by key for deterministic iteration.
 	sort.Slice(entries, func(i, j int) bool {
 		return bytes.Compare(entries[i].Key, entries[j].Key) < 0
 	})
@@ -101,31 +93,40 @@ func (v *inMemoryReadView) PrefixIterator(table Table, prefix []byte) (Iterator,
 type inMemoryWriteBatch struct {
 	backend *InMemoryBackend
 	ops     []batchOp
+	closed  bool
 }
 
 type batchOp struct {
-	table Table
-	key   string
-	value []byte // nil = delete
+	table  Table
+	key    string
+	value  []byte
+	delete bool
 }
 
 func (b *inMemoryWriteBatch) PutBatch(table Table, entries []KV) error {
+	if b.closed {
+		return errBatchClosed
+	}
 	for _, e := range entries {
-		val := make([]byte, len(e.Value))
-		copy(val, e.Value)
-		b.ops = append(b.ops, batchOp{table: table, key: string(e.Key), value: val})
+		b.ops = append(b.ops, batchOp{table: table, key: string(e.Key), value: bytes.Clone(e.Value)})
 	}
 	return nil
 }
 
 func (b *inMemoryWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
+	if b.closed {
+		return errBatchClosed
+	}
 	for _, k := range keys {
-		b.ops = append(b.ops, batchOp{table: table, key: string(k), value: nil})
+		b.ops = append(b.ops, batchOp{table: table, key: string(k), delete: true})
 	}
 	return nil
 }
 
 func (b *inMemoryWriteBatch) Commit() error {
+	if b.closed {
+		return errBatchClosed
+	}
 	b.backend.mu.Lock()
 	defer b.backend.mu.Unlock()
 	for _, op := range b.ops {
@@ -134,13 +135,14 @@ func (b *inMemoryWriteBatch) Commit() error {
 			t = make(map[string][]byte)
 			b.backend.tables[op.table] = t
 		}
-		if op.value == nil {
+		if op.delete {
 			delete(t, op.key)
 		} else {
 			t[op.key] = op.value
 		}
 	}
 	b.ops = nil
+	b.closed = true
 	return nil
 }
 
@@ -158,14 +160,14 @@ func (it *sliceIterator) Key() []byte {
 	if it.pos < 0 || it.pos >= len(it.entries) {
 		return nil
 	}
-	return it.entries[it.pos].Key
+	return bytes.Clone(it.entries[it.pos].Key)
 }
 
 func (it *sliceIterator) Value() []byte {
 	if it.pos < 0 || it.pos >= len(it.entries) {
 		return nil
 	}
-	return it.entries[it.pos].Value
+	return bytes.Clone(it.entries[it.pos].Value)
 }
 
 func (it *sliceIterator) Close() {}

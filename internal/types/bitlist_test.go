@@ -30,6 +30,15 @@ func TestBitlistSetAndGet(t *testing.T) {
 	}
 }
 
+func TestBitlistSetDoesNotMoveDelimiter(t *testing.T) {
+	bl := NewBitlistSSZ(4)
+	BitlistSet(bl, 4)
+	BitlistSet(bl, 7)
+	if got := BitlistLen(bl); got != 4 {
+		t.Fatalf("BitlistLen after out-of-range set=%d, want 4", got)
+	}
+}
+
 func TestBitlistExtend(t *testing.T) {
 	bl := NewBitlistSSZ(4)
 	BitlistSet(bl, 1)
@@ -54,15 +63,67 @@ func TestBitlistEmpty(t *testing.T) {
 	if BitlistCount(bl) != 0 {
 		t.Fatalf("expected count 0, got %d", BitlistCount(bl))
 	}
+	if BitlistGet(bl, 0) {
+		t.Fatal("terminator bit must not be exposed as data")
+	}
 }
 
 func TestBitlistFromRawBytes(t *testing.T) {
-	// 3 bits [true, false, true] + delimiter = 0b00001101 = 0x0d
 	bl := []byte{0x0d}
 	if BitlistLen(bl) != 3 {
 		t.Fatalf("expected length 3, got %d", BitlistLen(bl))
 	}
 	if !BitlistGet(bl, 0) || BitlistGet(bl, 1) || !BitlistGet(bl, 2) {
 		t.Fatal("incorrect bits")
+	}
+}
+
+func TestBitlistIndices(t *testing.T) {
+	bl := NewBitlistSSZ(8)
+	BitlistSet(bl, 0)
+	BitlistSet(bl, 3)
+	BitlistSet(bl, 7)
+
+	got := BitlistIndices(bl)
+	want := []uint64{0, 3, 7}
+	if len(got) != len(want) {
+		t.Fatalf("indices=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("indices=%v, want %v", got, want)
+		}
+	}
+}
+
+func TestBitlistFromIndices(t *testing.T) {
+	bits := BitlistFromIndices([]uint64{0, 3, 7})
+	if !BitlistGet(bits, 0) || !BitlistGet(bits, 3) || !BitlistGet(bits, 7) {
+		t.Fatal("expected bits 0, 3, 7 set")
+	}
+	if BitlistGet(bits, 1) || BitlistGet(bits, 5) {
+		t.Fatal("bits 1, 5 should not be set")
+	}
+	if BitlistLen(bits) != 8 {
+		t.Fatalf("expected length 8, got %d", BitlistLen(bits))
+	}
+}
+
+func TestBitlistHandlesUnrepresentableLengths(t *testing.T) {
+	bits := NewBitlistSSZ(^uint64(0))
+	if BitlistLen(bits) != 0 {
+		t.Fatalf("unrepresentable bitlist length=%d, want 0", BitlistLen(bits))
+	}
+
+	bits = NewBitlistSSZ(1)
+	BitlistSet(bits, 0)
+	extended := BitlistExtend(bits, ^uint64(0))
+	if BitlistLen(extended) != 1 || !BitlistGet(extended, 0) {
+		t.Fatalf("overflow extend changed bitlist: len=%d bits=%x", BitlistLen(extended), extended)
+	}
+
+	bits = BitlistFromIndices([]uint64{^uint64(0)})
+	if BitlistLen(bits) != 0 || BitlistCount(bits) != 0 {
+		t.Fatalf("unrepresentable indices produced len=%d count=%d", BitlistLen(bits), BitlistCount(bits))
 	}
 }

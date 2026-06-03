@@ -2,60 +2,42 @@ package forkchoice
 
 import "github.com/geanlabs/gean/internal/types"
 
-// VoteTracker tracks per-validator attestation targets for delta computation.
-
 type VoteTracker struct {
-	AppliedIndex int // index of last applied vote, -1 if none
+	AppliedIndex int
 	LatestKnown  *VoteTarget
 	LatestNew    *VoteTarget
 }
 
-// VoteTarget is a resolved attestation pointing to a proto-array index.
 type VoteTarget struct {
-	Index int // proto-array node index
+	Index int
 	Slot  uint64
 	Data  *types.AttestationData
 }
 
-// VoteStore holds per-validator vote trackers.
 type VoteStore struct {
-	Votes map[uint64]*VoteTracker // validator_id -> tracker
+	Votes map[uint64]*VoteTracker
 }
 
-// NewVoteStore creates an empty vote store.
 func NewVoteStore() *VoteStore {
 	return &VoteStore{Votes: make(map[uint64]*VoteTracker)}
 }
 
-// SetKnown records a known (on-chain) validator. Same-slot writes
-// pointing to a different target are dropped (see sameSlotConflict).
 func (vs *VoteStore) SetKnown(validatorID uint64, nodeIndex int, slot uint64, data *types.AttestationData) {
-	tracker := vs.getOrCreate(validatorID)
-	if sameSlotConflict(tracker.LatestKnown, slot, nodeIndex) ||
-		sameSlotConflict(tracker.LatestNew, slot, nodeIndex) {
+	if nodeIndex < 0 {
 		return
 	}
+	tracker := vs.getOrCreate(validatorID)
 	tracker.LatestKnown = &VoteTarget{Index: nodeIndex, Slot: slot, Data: data}
 }
 
-// SetNew records a new (gossip-received) validator. Same equivocation
-// guard as SetKnown.
 func (vs *VoteStore) SetNew(validatorID uint64, nodeIndex int, slot uint64, data *types.AttestationData) {
-	tracker := vs.getOrCreate(validatorID)
-	if sameSlotConflict(tracker.LatestKnown, slot, nodeIndex) ||
-		sameSlotConflict(tracker.LatestNew, slot, nodeIndex) {
+	if nodeIndex < 0 {
 		return
 	}
+	tracker := vs.getOrCreate(validatorID)
 	tracker.LatestNew = &VoteTarget{Index: nodeIndex, Slot: slot, Data: data}
 }
 
-// sameSlotConflict reports whether an existing vote at the same slot points
-// to a different proto-array node — i.e. the incoming write would equivocate.
-func sameSlotConflict(existing *VoteTarget, slot uint64, nodeIndex int) bool {
-	return existing != nil && existing.Slot == slot && existing.Index != nodeIndex
-}
-
-// PromoteNewToKnown moves all new votes to known.
 func (vs *VoteStore) PromoteNewToKnown() {
 	for _, tracker := range vs.Votes {
 		if tracker.LatestNew != nil {
@@ -74,35 +56,30 @@ func (vs *VoteStore) getOrCreate(validatorID uint64) *VoteTracker {
 	return t
 }
 
-// RemapIndices adjusts all vote tracker indices after proto-array pruning.
-// Indices pointing to pruned nodes (< offset) are invalidated (-1 / nil).
-// Surviving indices are shifted by -offset to match the new array layout.
-func (vs *VoteStore) RemapIndices(offset int, newLen int) {
+func (vs *VoteStore) RemapIndices(indexMap map[int]int) {
+	if vs == nil || indexMap == nil {
+		return
+	}
 	for _, tracker := range vs.Votes {
-		// Remap AppliedIndex.
+		if tracker == nil {
+			continue
+		}
 		if tracker.AppliedIndex >= 0 {
-			newIdx := tracker.AppliedIndex - offset
-			if newIdx < 0 || newIdx >= newLen {
-				tracker.AppliedIndex = -1
-			} else {
-				tracker.AppliedIndex = newIdx
-			}
+			tracker.AppliedIndex = remapVoteIndex(tracker.AppliedIndex, indexMap)
 		}
 
-		// Remap LatestKnown.
 		if tracker.LatestKnown != nil {
-			newIdx := tracker.LatestKnown.Index - offset
-			if newIdx < 0 || newIdx >= newLen {
+			newIdx := remapVoteIndex(tracker.LatestKnown.Index, indexMap)
+			if newIdx < 0 {
 				tracker.LatestKnown = nil
 			} else {
 				tracker.LatestKnown.Index = newIdx
 			}
 		}
 
-		// Remap LatestNew.
 		if tracker.LatestNew != nil {
-			newIdx := tracker.LatestNew.Index - offset
-			if newIdx < 0 || newIdx >= newLen {
+			newIdx := remapVoteIndex(tracker.LatestNew.Index, indexMap)
+			if newIdx < 0 {
 				tracker.LatestNew = nil
 			} else {
 				tracker.LatestNew.Index = newIdx
@@ -111,24 +88,31 @@ func (vs *VoteStore) RemapIndices(offset int, newLen int) {
 	}
 }
 
-// ComputeDeltas computes weight deltas from vote changes.
+func remapVoteIndex(oldIdx int, indexMap map[int]int) int {
+	if oldIdx < 0 {
+		return -1
+	}
+	if newIdx, ok := indexMap[oldIdx]; ok {
+		return newIdx
+	}
+	return -1
+}
 
-// For each validator:
-//   - Remove weight from previously applied index (if any)
-//   - Add weight to current target index (from known or new pool)
-//
-// Each validator has weight 1.
 func ComputeDeltas(numNodes int, votes *VoteStore, fromKnown bool) []int64 {
 	deltas := make([]int64, numNodes)
+	if votes == nil {
+		return deltas
+	}
 
 	for _, tracker := range votes.Votes {
-		// Remove previous vote.
+		if tracker == nil {
+			continue
+		}
 		if tracker.AppliedIndex >= 0 && tracker.AppliedIndex < numNodes {
 			deltas[tracker.AppliedIndex]--
 		}
 		tracker.AppliedIndex = -1
 
-		// Apply current vote.
 		var target *VoteTarget
 		if fromKnown {
 			target = tracker.LatestKnown
@@ -136,7 +120,7 @@ func ComputeDeltas(numNodes int, votes *VoteStore, fromKnown bool) []int64 {
 			target = tracker.LatestNew
 		}
 
-		if target != nil && target.Index < numNodes {
+		if target != nil && target.Index >= 0 && target.Index < numNodes {
 			deltas[target.Index]++
 			tracker.AppliedIndex = target.Index
 		}

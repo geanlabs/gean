@@ -92,12 +92,26 @@ func TestIntervalsFromUnixTime(t *testing.T) {
 	if got := IntervalsFromUnixTime(gt, gt); got != 0 {
 		t.Fatalf("at genesis should be 0, got %d", got)
 	}
-	// 1 second = 1000ms / 800ms-per-interval = 1 (integer div).
 	if got := IntervalsFromUnixTime(gt+1, gt); got != 1 {
 		t.Fatalf("+1 second should be 1 interval, got %d", got)
 	}
-	// 4 seconds = 1 slot = IntervalsPerSlot intervals.
 	if got := IntervalsFromUnixTime(gt+SecondsPerSlot, gt); got != IntervalsPerSlot {
 		t.Fatalf("+1 slot should be %d intervals, got %d", IntervalsPerSlot, got)
+	}
+}
+
+func TestClockDerivationsHandleOverflow(t *testing.T) {
+	hugeGenesis := ^uint64(0)/1000 + 1
+	if got := CurrentSlot(hugeGenesis, ^uint64(0)); got != 0 {
+		t.Fatalf("CurrentSlot overflow genesis=%d, want 0", got)
+	}
+	if got := CurrentInterval(hugeGenesis, ^uint64(0)); got != 0 {
+		t.Fatalf("CurrentInterval overflow genesis=%d, want 0", got)
+	}
+	if got := TotalIntervals(hugeGenesis, ^uint64(0)); got != 0 {
+		t.Fatalf("TotalIntervals overflow genesis=%d, want 0", got)
+	}
+	if got := IntervalsFromSlot(^uint64(0)); got != ^uint64(0) {
+		t.Fatalf("IntervalsFromSlot overflow=%d, want max", got)
 	}
 }

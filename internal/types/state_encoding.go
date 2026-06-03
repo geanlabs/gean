@@ -7,12 +7,10 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the State object
 func (s *State) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(s)
 }
 
-// MarshalSSZTo ssz marshals the State object to a target array
 func (s *State) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(228)
@@ -125,7 +123,6 @@ func (s *State) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the State object
 func (s *State) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -276,7 +273,6 @@ func (s *State) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the State object
 func (s *State) SizeSSZ() (size int) {
 	size = 228
 
@@ -298,12 +294,10 @@ func (s *State) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the State object
 func (s *State) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(s)
 }
 
-// HashTreeRootWith ssz hashes the State object with a hasher
 func (s *State) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -412,7 +406,6 @@ func (s *State) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the State object
 func (s *State) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(s)
 }

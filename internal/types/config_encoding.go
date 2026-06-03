@@ -7,12 +7,10 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the ChainConfig object
 func (c *ChainConfig) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(c)
 }
 
-// MarshalSSZTo ssz marshals the ChainConfig object to a target array
 func (c *ChainConfig) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -22,7 +20,6 @@ func (c *ChainConfig) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the ChainConfig object
 func (c *ChainConfig) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -36,18 +33,15 @@ func (c *ChainConfig) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the ChainConfig object
 func (c *ChainConfig) SizeSSZ() (size int) {
 	size = 8
 	return
 }
 
-// HashTreeRoot ssz hashes the ChainConfig object
 func (c *ChainConfig) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(c)
 }
 
-// HashTreeRootWith ssz hashes the ChainConfig object with a hasher
 func (c *ChainConfig) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -58,7 +52,6 @@ func (c *ChainConfig) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the ChainConfig object
 func (c *ChainConfig) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(c)
 }

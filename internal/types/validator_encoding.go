@@ -7,12 +7,10 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the Validator object
 func (v *Validator) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(v)
 }
 
-// MarshalSSZTo ssz marshals the Validator object to a target array
 func (v *Validator) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -28,7 +26,6 @@ func (v *Validator) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the Validator object
 func (v *Validator) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -48,18 +45,15 @@ func (v *Validator) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the Validator object
 func (v *Validator) SizeSSZ() (size int) {
 	size = 112
 	return
 }
 
-// HashTreeRoot ssz hashes the Validator object
 func (v *Validator) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(v)
 }
 
-// HashTreeRootWith ssz hashes the Validator object with a hasher
 func (v *Validator) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -76,7 +70,6 @@ func (v *Validator) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the Validator object
 func (v *Validator) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(v)
 }

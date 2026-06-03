@@ -7,12 +7,10 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the AttestationData object
 func (a *AttestationData) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the AttestationData object to a target array
 func (a *AttestationData) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -46,7 +44,6 @@ func (a *AttestationData) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the AttestationData object
 func (a *AttestationData) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -84,18 +81,15 @@ func (a *AttestationData) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the AttestationData object
 func (a *AttestationData) SizeSSZ() (size int) {
 	size = 128
 	return
 }
 
-// HashTreeRoot ssz hashes the AttestationData object
 func (a *AttestationData) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the AttestationData object with a hasher
 func (a *AttestationData) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -130,17 +124,14 @@ func (a *AttestationData) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the AttestationData object
 func (a *AttestationData) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }
 
-// MarshalSSZ ssz marshals the Attestation object
 func (a *Attestation) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the Attestation object to a target array
 func (a *Attestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -158,7 +149,6 @@ func (a *Attestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the Attestation object
 func (a *Attestation) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -180,18 +170,15 @@ func (a *Attestation) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the Attestation object
 func (a *Attestation) SizeSSZ() (size int) {
 	size = 136
 	return
 }
 
-// HashTreeRoot ssz hashes the Attestation object
 func (a *Attestation) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the Attestation object with a hasher
 func (a *Attestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -210,17 +197,14 @@ func (a *Attestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the Attestation object
 func (a *Attestation) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }
 
-// MarshalSSZ ssz marshals the SignedAttestation object
 func (s *SignedAttestation) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(s)
 }
 
-// MarshalSSZTo ssz marshals the SignedAttestation object to a target array
 func (s *SignedAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
@@ -241,7 +225,6 @@ func (s *SignedAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the SignedAttestation object
 func (s *SignedAttestation) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -266,18 +249,15 @@ func (s *SignedAttestation) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the SignedAttestation object
 func (s *SignedAttestation) SizeSSZ() (size int) {
 	size = 2672
 	return
 }
 
-// HashTreeRoot ssz hashes the SignedAttestation object
 func (s *SignedAttestation) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(s)
 }
 
-// HashTreeRootWith ssz hashes the SignedAttestation object with a hasher
 func (s *SignedAttestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -299,17 +279,14 @@ func (s *SignedAttestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the SignedAttestation object
 func (s *SignedAttestation) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(s)
 }
 
-// MarshalSSZ ssz marshals the AggregatedAttestation object
 func (a *AggregatedAttestation) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the AggregatedAttestation object to a target array
 func (a *AggregatedAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(132)
@@ -335,7 +312,6 @@ func (a *AggregatedAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error)
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the AggregatedAttestation object
 func (a *AggregatedAttestation) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -377,7 +353,6 @@ func (a *AggregatedAttestation) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the AggregatedAttestation object
 func (a *AggregatedAttestation) SizeSSZ() (size int) {
 	size = 132
 
@@ -387,12 +362,10 @@ func (a *AggregatedAttestation) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the AggregatedAttestation object
 func (a *AggregatedAttestation) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the AggregatedAttestation object with a hasher
 func (a *AggregatedAttestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -415,17 +388,14 @@ func (a *AggregatedAttestation) HashTreeRootWith(hh ssz.HashWalker) (err error) 
 	return
 }
 
-// GetTree ssz hashes the AggregatedAttestation object
 func (a *AggregatedAttestation) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }
 
-// MarshalSSZ ssz marshals the SignedAggregatedAttestation object
 func (s *SignedAggregatedAttestation) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(s)
 }
 
-// MarshalSSZTo ssz marshals the SignedAggregatedAttestation object to a target array
 func (s *SignedAggregatedAttestation) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(132)
@@ -449,7 +419,6 @@ func (s *SignedAggregatedAttestation) MarshalSSZTo(buf []byte) (dst []byte, err 
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the SignedAggregatedAttestation object
 func (s *SignedAggregatedAttestation) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -490,7 +459,6 @@ func (s *SignedAggregatedAttestation) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the SignedAggregatedAttestation object
 func (s *SignedAggregatedAttestation) SizeSSZ() (size int) {
 	size = 132
 
@@ -503,12 +471,10 @@ func (s *SignedAggregatedAttestation) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the SignedAggregatedAttestation object
 func (s *SignedAggregatedAttestation) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(s)
 }
 
-// HashTreeRootWith ssz hashes the SignedAggregatedAttestation object with a hasher
 func (s *SignedAggregatedAttestation) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -529,17 +495,14 @@ func (s *SignedAggregatedAttestation) HashTreeRootWith(hh ssz.HashWalker) (err e
 	return
 }
 
-// GetTree ssz hashes the SignedAggregatedAttestation object
 func (s *SignedAggregatedAttestation) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(s)
 }
 
-// MarshalSSZ ssz marshals the AggregatedSignatureProof object
 func (a *AggregatedSignatureProof) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the AggregatedSignatureProof object to a target array
 func (a *AggregatedSignatureProof) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(8)
@@ -568,7 +531,6 @@ func (a *AggregatedSignatureProof) MarshalSSZTo(buf []byte) (dst []byte, err err
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the AggregatedSignatureProof object
 func (a *AggregatedSignatureProof) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
@@ -619,7 +581,6 @@ func (a *AggregatedSignatureProof) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the AggregatedSignatureProof object
 func (a *AggregatedSignatureProof) SizeSSZ() (size int) {
 	size = 8
 
@@ -632,12 +593,10 @@ func (a *AggregatedSignatureProof) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the AggregatedSignatureProof object
 func (a *AggregatedSignatureProof) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the AggregatedSignatureProof object with a hasher
 func (a *AggregatedSignatureProof) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
@@ -664,7 +623,6 @@ func (a *AggregatedSignatureProof) HashTreeRootWith(hh ssz.HashWalker) (err erro
 	return
 }
 
-// GetTree ssz hashes the AggregatedSignatureProof object
 func (a *AggregatedSignatureProof) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }

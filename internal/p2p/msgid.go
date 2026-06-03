@@ -5,22 +5,14 @@ import (
 	"encoding/binary"
 )
 
-// Message ID domains.
 var (
 	domainValidSnappy   = [4]byte{0x01, 0x00, 0x00, 0x00}
 	domainInvalidSnappy = [4]byte{0x00, 0x00, 0x00, 0x00}
 )
 
-// ComputeMessageID computes a gossipsub message ID.
-// Format: SHA256(domain || uint64_le(topic_len) || topic || data)[:20]
-//
-// domain = 0x01000000 if snappy decompression succeeds (valid)
-// domain = 0x00000000 if snappy decompression fails (invalid)
-// data = decompressed bytes (if valid) or raw compressed bytes (if invalid)
 func ComputeMessageID(topic string, rawData []byte) []byte {
 	h := sha256.New()
 
-	// Try to decompress — determines domain and data used for hashing.
 	decompressed, err := SnappyRawDecode(rawData)
 
 	var domain [4]byte
@@ -43,5 +35,5 @@ func ComputeMessageID(topic string, rawData []byte) []byte {
 	h.Write(data)
 
 	hash := h.Sum(nil)
-	return hash[:20] // truncate to 20 bytes
+	return hash[:20]
 }

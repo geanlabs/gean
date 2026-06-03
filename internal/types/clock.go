@@ -1,23 +1,21 @@
 package types
 
-// Pure slot-clock derivations.
-// Runtime code carries mutable clock state separately; these helpers are used
-// by tests and callers that only need stateless derivation.
-
-// CurrentSlot returns the slot number at currentTimeMs given genesisTime
-// (seconds since Unix epoch). Returns 0 before genesis.
 func CurrentSlot(genesisTime, currentTimeMs uint64) uint64 {
-	genesisMs := genesisTime * 1000
+	genesisMs, ok := unixMillis(genesisTime)
+	if !ok {
+		return 0
+	}
 	if currentTimeMs < genesisMs {
 		return 0
 	}
 	return (currentTimeMs - genesisMs) / MillisecondsPerSlot
 }
 
-// CurrentInterval returns the interval index within the current slot
-// (0..IntervalsPerSlot-1). Returns 0 before genesis.
 func CurrentInterval(genesisTime, currentTimeMs uint64) uint64 {
-	genesisMs := genesisTime * 1000
+	genesisMs, ok := unixMillis(genesisTime)
+	if !ok {
+		return 0
+	}
 	if currentTimeMs < genesisMs {
 		return 0
 	}
@@ -25,27 +23,48 @@ func CurrentInterval(genesisTime, currentTimeMs uint64) uint64 {
 	return msIntoSlot / MillisecondsPerInterval
 }
 
-// TotalIntervals returns the total interval count since genesis (matches
-// Store.time). Returns 0 before genesis.
 func TotalIntervals(genesisTime, currentTimeMs uint64) uint64 {
-	genesisMs := genesisTime * 1000
+	genesisMs, ok := unixMillis(genesisTime)
+	if !ok {
+		return 0
+	}
 	if currentTimeMs < genesisMs {
 		return 0
 	}
 	return (currentTimeMs - genesisMs) / MillisecondsPerInterval
 }
 
-// IntervalsFromSlot returns the interval count at the start of the given slot.
 func IntervalsFromSlot(slot uint64) uint64 {
+	if slot > ^uint64(0)/IntervalsPerSlot {
+		return ^uint64(0)
+	}
 	return slot * IntervalsPerSlot
 }
 
-// IntervalsFromUnixTime returns the total interval count at the given Unix
-// timestamp (seconds) relative to genesisTime. Returns 0 if the timestamp
-// precedes genesis.
 func IntervalsFromUnixTime(unixSeconds, genesisTime uint64) uint64 {
 	if unixSeconds < genesisTime {
 		return 0
 	}
-	return (unixSeconds - genesisTime) * 1000 / MillisecondsPerInterval
+	return elapsedSecondsToIntervals(unixSeconds - genesisTime)
+}
+
+func unixMillis(seconds uint64) (uint64, bool) {
+	if seconds > ^uint64(0)/1000 {
+		return 0, false
+	}
+	return seconds * 1000, true
+}
+
+func elapsedSecondsToIntervals(seconds uint64) uint64 {
+	wholeSlots := seconds / SecondsPerSlot
+	remainder := seconds % SecondsPerSlot
+	if wholeSlots > ^uint64(0)/IntervalsPerSlot {
+		return ^uint64(0)
+	}
+	base := wholeSlots * IntervalsPerSlot
+	extra := remainder * 1000 / MillisecondsPerInterval
+	if base > ^uint64(0)-extra {
+		return ^uint64(0)
+	}
+	return base + extra
 }

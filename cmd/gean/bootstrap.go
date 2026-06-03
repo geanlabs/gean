@@ -66,35 +66,44 @@ func bootstrapStore(s *store.ConsensusStore, genesisConfig *genesis.GenesisConfi
 		return bootstrapFromCheckpoint(s, genesisConfig, checkpointURL)
 	}
 
-	bootstrapFromGenesis(s, genesisConfig)
-	return nil
+	return bootstrapFromGenesis(s, genesisConfig)
 }
 
 func bootstrapFromCheckpoint(s *store.ConsensusStore, genesisConfig *genesis.GenesisConfig, checkpointURL string) error {
 	logger.Info(logger.Sync, "checkpoint sync: %s", checkpointURL)
-	state, signedBlock, err := checkpoint.FetchCheckpointAnchor(checkpointURL, genesisConfig.GenesisTime, genesisConfig.Validators())
+	validators, err := genesisConfig.Validators()
+	if err != nil {
+		return fmt.Errorf("genesis validators: %w", err)
+	}
+	state, signedBlock, err := checkpoint.FetchCheckpointAnchor(checkpointURL, genesisConfig.GenesisTime, validators)
 	if err != nil {
 		logger.Error(logger.Sync, "checkpoint sync failed: %v", err)
 		return fmt.Errorf("checkpoint sync failed: %w", err)
 	}
 
-	// Use initStoreFromState's RETURN value as the anchor block root: it
-	// canonicalizes header.StateRoot first, so a root computed before this
-	// call would not match what the store records as latest_finalized.Root —
-	// which previously caused /lean/v0/blocks/finalized to 404. See the
-	// initStoreFromState doc in store.go for the full rationale.
-	canonicalRoot := initStoreFromState(s, state)
+	canonicalRoot, err := initStoreFromState(s, state)
+	if err != nil {
+		return err
+	}
 	stateRoot := state.LatestBlockHeader.StateRoot
 	logger.Info(logger.Sync, "checkpoint sync: slot=%d finalized_root=%x justified_root=%x head_root=%x parent_root=%x state_root=%x",
 		state.Slot, state.LatestFinalized.Root, state.LatestJustified.Root, canonicalRoot, state.LatestBlockHeader.ParentRoot, stateRoot)
-	s.StorePendingBlock(canonicalRoot, signedBlock)
+	if err := s.StorePendingBlock(canonicalRoot, signedBlock); err != nil {
+		return fmt.Errorf("store checkpoint block: %w", err)
+	}
 	return nil
 }
 
-func bootstrapFromGenesis(s *store.ConsensusStore, genesisConfig *genesis.GenesisConfig) {
+func bootstrapFromGenesis(s *store.ConsensusStore, genesisConfig *genesis.GenesisConfig) error {
 	logger.Info(logger.Node, "initializing from genesis")
-	genesisState := genesisConfig.GenesisState()
-	canonicalRoot := initStoreFromState(s, genesisState)
+	genesisState, err := genesisConfig.GenesisState()
+	if err != nil {
+		return fmt.Errorf("build genesis state: %w", err)
+	}
+	canonicalRoot, err := initStoreFromState(s, genesisState)
+	if err != nil {
+		return err
+	}
 	genesisSignedBlock := &types.SignedBlock{
 		Block: &types.Block{
 			Slot:          genesisState.LatestBlockHeader.Slot,
@@ -107,5 +116,8 @@ func bootstrapFromGenesis(s *store.ConsensusStore, genesisConfig *genesis.Genesi
 			ProposerSignature: types.BlankXMSSSignature(),
 		},
 	}
-	s.StorePendingBlock(canonicalRoot, genesisSignedBlock)
+	if err := s.StorePendingBlock(canonicalRoot, genesisSignedBlock); err != nil {
+		return fmt.Errorf("store genesis block: %w", err)
+	}
+	return nil
 }

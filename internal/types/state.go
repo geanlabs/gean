@@ -1,6 +1,7 @@
 package types
 
-// State is the full beacon consensus state at a given slot.
+import "fmt"
+
 type State struct {
 	Config                   *ChainConfig `json:"config"`
 	Slot                     uint64       `json:"slot"`
@@ -14,7 +15,26 @@ type State struct {
 	JustificationsValidators []byte       `json:"justifications_validators" ssz:"bitlist" ssz-max:"1073741824"`
 }
 
-// NumValidators returns the validator count.
 func (s *State) NumValidators() uint64 {
+	if s == nil {
+		return 0
+	}
 	return uint64(len(s.Validators))
+}
+
+func (s *State) Clone() (*State, error) {
+	if s == nil {
+		return nil, fmt.Errorf("state is nil")
+	}
+
+	data, err := s.MarshalSSZ()
+	if err != nil {
+		return nil, fmt.Errorf("marshal state: %w", err)
+	}
+
+	clone := &State{}
+	if err := clone.UnmarshalSSZ(data); err != nil {
+		return nil, fmt.Errorf("unmarshal state: %w", err)
+	}
+	return clone, nil
 }

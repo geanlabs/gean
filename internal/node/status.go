@@ -10,36 +10,24 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// SyncLagSlots is the threshold beyond which the node is considered "syncing"
-// rather than "synced". Two slots is generous enough to ride out brief network
-// hiccups without flapping.
 const SyncLagSlots = 2
 
-// updateSyncStatus computes the typed SyncStatus and updates the
-// lean_node_sync_status gauge.
-//   - SyncSynced:  head within SyncLagSlots of wall clock
-//   - SyncSyncing: head behind by more than SyncLagSlots, but we have peers
-//   - SyncIdle:    no peers connected (so we cannot make progress)
 func (e *Engine) updateSyncStatus(currentSlot uint64) {
 	status := e.computeSyncStatus(currentSlot)
 	metrics.SetSyncStatus(status.String())
 }
 
-// computeSyncStatus returns the typed status without mutating any state.
 func (e *Engine) computeSyncStatus(currentSlot uint64) syncer.SyncStatus {
 	if e.P2P != nil && e.P2P.ConnectedPeers() == 0 {
 		return syncer.SyncIdle
 	}
 	headSlot := e.Store.HeadSlot()
-	if headSlot+SyncLagSlots >= currentSlot {
+	if currentSlot <= headSlot || currentSlot-headSlot <= SyncLagSlots {
 		return syncer.SyncSynced
 	}
 	return syncer.SyncSyncing
 }
 
-// GetSyncStatus returns the current typed sync status. Computed on demand
-// from wall-clock + head-slot + peer count; cheap (no I/O), safe to call
-// from any goroutine.
 func (e *Engine) GetSyncStatus() syncer.SyncStatus {
 	return e.computeSyncStatus(e.currentSlot(uint64(time.Now().UnixMilli())))
 }
@@ -74,10 +62,9 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 	statesCount := e.Store.StatesCount()
 	fcNodesCount := 0
 	if e.FC != nil {
-		fcNodesCount = e.FC.Array.Len()
+		fcNodesCount = e.FC.Len()
 	}
 
-	// Build mesh info string with full topic paths.
 	meshInfo := ""
 	if e.P2P != nil {
 		meshSizes := e.P2P.TopicMeshSizes()

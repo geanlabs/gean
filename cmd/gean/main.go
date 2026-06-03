@@ -8,6 +8,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/node"
 	"github.com/geanlabs/gean/internal/role"
 )
@@ -46,11 +47,15 @@ func run(cfg config) error {
 		return err
 	}
 
-	recoverStoreTime(s, inputs.genesisConfig.GenesisTime)
+	if err := recoverStoreTime(s, inputs.genesisConfig.GenesisTime); err != nil {
+		return err
+	}
 
-	headRoot := s.Head()
-	headHeader := s.GetBlockHeader(headRoot)
-	fc := forkchoice.New(headHeader.Slot, headRoot, headHeader.ParentRoot)
+	headSlot, headRoot, parentRoot, err := forkChoiceAnchor(s)
+	if err != nil {
+		return err
+	}
+	fc := forkchoice.New(headSlot, headRoot, parentRoot)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -64,7 +69,7 @@ func run(cfg config) error {
 
 	preinitializeXMSS(cfg.IsAggregator)
 
-	aggCtl := role.New(cfg.IsAggregator)
+	aggCtl := role.NewWithHook(cfg.IsAggregator, metrics.SetIsAggregator)
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount)
 
 	registerReqRespHandlers(p2pHost, s)

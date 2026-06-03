@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -9,19 +10,16 @@ import (
 	"github.com/golang/snappy"
 )
 
-// Max payload sizes.
 const (
-	MaxPayloadSize           = 10 * 1024 * 1024                              // 10 MiB uncompressed
-	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024 // ~12 MiB
-	MaxErrorMessageSize      = 256                                           // ErrorMessage: List[byte, 256]
+	MaxPayloadSize           = 10 * 1024 * 1024
+	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024
+	MaxErrorMessageSize      = 256
 )
 
-// SnappyRawEncode compresses data using raw snappy (no framing).
 func SnappyRawEncode(data []byte) []byte {
 	return snappy.Encode(nil, data)
 }
 
-// SnappyRawDecode decompresses raw snappy data.
 func SnappyRawDecode(data []byte) ([]byte, error) {
 	decodedLen, err := snappy.DecodedLen(data)
 	if err != nil {
@@ -33,15 +31,12 @@ func SnappyRawDecode(data []byte) ([]byte, error) {
 	return snappy.Decode(nil, data)
 }
 
-// EncodeVarint encodes a uint32 as LEB128 varint.
 func EncodeVarint(value uint32) []byte {
 	buf := make([]byte, binary.MaxVarintLen32)
 	n := binary.PutUvarint(buf, uint64(value))
 	return buf[:n]
 }
 
-// DecodeVarint reads a LEB128 varint from a byte slice.
-// Returns the value and remaining bytes.
 func DecodeVarint(buf []byte) (uint32, []byte, error) {
 	val, n := binary.Uvarint(buf)
 	if n <= 0 {
@@ -53,8 +48,6 @@ func DecodeVarint(buf []byte) (uint32, []byte, error) {
 	return uint32(val), buf[n:], nil
 }
 
-// EncodeReqRespPayload encodes a request payload: varint(uncompressed_len) + snappy_framed(data).
-// Uses snappy FRAMED format (not block) for req-resp cross-client compatibility.
 func EncodeReqRespPayload(data []byte) []byte {
 	var buf bytes.Buffer
 	w := snappy.NewBufferedWriter(&buf)
@@ -69,8 +62,6 @@ func EncodeReqRespPayload(data []byte) []byte {
 	return result
 }
 
-// DecodeReqRespPayload decodes a payload: varint(uncompressed_len) + snappy_framed(data).
-// Uses snappy FRAMED format only, per Ethereum ssz_snappy req/resp spec.
 func DecodeReqRespPayload(buf []byte) ([]byte, error) {
 	declaredLen, rest, err := DecodeVarint(buf)
 	if err != nil {
@@ -78,18 +69,20 @@ func DecodeReqRespPayload(buf []byte) ([]byte, error) {
 	}
 
 	r := snappy.NewReader(bytes.NewReader(rest))
-	decoded, err := io.ReadAll(r)
+	decoded, err := io.ReadAll(io.LimitReader(r, int64(declaredLen)+1))
 	if err != nil {
 		return nil, fmt.Errorf("snappy framed decode: %w", err)
 	}
 
-	if declaredLen > 0 && uint32(len(decoded)) != declaredLen {
+	if len(decoded) > MaxPayloadSize {
+		return nil, fmt.Errorf("decoded payload %d exceeds max %d", len(decoded), MaxPayloadSize)
+	}
+	if uint32(len(decoded)) != declaredLen {
 		return nil, fmt.Errorf("length mismatch: declared %d, got %d", declaredLen, len(decoded))
 	}
 	return decoded, nil
 }
 
-// Response codes.
 const (
 	RespSuccess             byte = 0x00
 	RespInvalidRequest      byte = 0x01
@@ -97,9 +90,6 @@ const (
 	RespResourceUnavailable byte = 0x03
 )
 
-// EncodeResponse encodes a response chunk: code + varint(len) + snappy(data).
-// Error response bodies are truncated to MaxErrorMessageSize before encoding
-// per the ErrorMessage: List[byte, 256] wire limit.
 func EncodeResponse(code byte, data []byte) []byte {
 	if code != RespSuccess && len(data) > MaxErrorMessageSize {
 		data = data[:MaxErrorMessageSize]
@@ -111,29 +101,42 @@ func EncodeResponse(code byte, data []byte) []byte {
 	return result
 }
 
-// DecodeResponse reads a response chunk from a reader.
-// Returns (code, decoded_payload, error).
 func DecodeResponse(r io.Reader) (byte, []byte, error) {
-	// Read response code.
-	codeBuf := make([]byte, 1)
-	if _, err := io.ReadFull(r, codeBuf); err != nil {
+	br, ok := r.(interface {
+		io.Reader
+		io.ByteReader
+	})
+	if !ok {
+		br = bufio.NewReader(r)
+	}
+
+	code, err := br.ReadByte()
+	if err != nil {
 		return 0, nil, fmt.Errorf("read response code: %w", err)
 	}
-	code := codeBuf[0]
 
-	// Read remaining bytes.
-	rest, err := io.ReadAll(io.LimitReader(r, int64(MaxCompressedPayloadSize)))
+	declaredLen, err := decodeVarintFrom(br)
 	if err != nil {
-		return code, nil, fmt.Errorf("read response payload: %w", err)
+		return code, nil, fmt.Errorf("decode response length: %w", err)
+	}
+	if declaredLen > MaxPayloadSize {
+		return code, nil, fmt.Errorf("response length %d exceeds max %d", declaredLen, MaxPayloadSize)
 	}
 
-	if len(rest) == 0 {
-		return code, nil, nil
-	}
-
-	decoded, err := DecodeReqRespPayload(rest)
-	if err != nil {
-		return code, nil, fmt.Errorf("decode response payload: %w", err)
+	decoded := make([]byte, declaredLen)
+	sr := snappy.NewReader(br)
+	if declaredLen > 0 {
+		if _, err := io.ReadFull(sr, decoded); err != nil {
+			return code, nil, fmt.Errorf("decode response payload: %w", err)
+		}
+	} else {
+		var scratch [1]byte
+		if n, err := sr.Read(scratch[:]); err != io.EOF {
+			if err != nil {
+				return code, nil, fmt.Errorf("decode empty response payload: %w", err)
+			}
+			return code, nil, fmt.Errorf("length mismatch: declared 0, got at least %d", n)
+		}
 	}
 
 	if code != RespSuccess && len(decoded) > MaxErrorMessageSize {
@@ -141,4 +144,15 @@ func DecodeResponse(r io.Reader) (byte, []byte, error) {
 	}
 
 	return code, decoded, nil
+}
+
+func decodeVarintFrom(r io.ByteReader) (uint32, error) {
+	val, err := binary.ReadUvarint(r)
+	if err != nil {
+		return 0, err
+	}
+	if val > uint64(MaxPayloadSize) {
+		return 0, fmt.Errorf("varint value %d exceeds max payload", val)
+	}
+	return uint32(val), nil
 }

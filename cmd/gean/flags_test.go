@@ -81,7 +81,7 @@ func TestParseConfig_InvalidAggregateSubnetID(t *testing.T) {
 }
 
 func TestParseConfig_AggregateSubnetIDs(t *testing.T) {
-	args := append(validFlagArgs(), "--is-aggregator", "--aggregate-subnet-ids", "1, 2,,3")
+	args := append(validFlagArgs(), "--is-aggregator", "--attestation-committee-count", "4", "--aggregate-subnet-ids", "1, 2,,3")
 	var stderr bytes.Buffer
 	cfg, err := parseConfig(args, &stderr)
 	if err != nil {
@@ -92,5 +92,52 @@ func TestParseConfig_AggregateSubnetIDs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.AggregateSubnetIDs, []uint64{1, 2, 3}) {
 		t.Fatalf("unexpected aggregate subnet IDs: %v", cfg.AggregateSubnetIDs)
+	}
+}
+
+func TestParseConfig_InvalidPorts(t *testing.T) {
+	tests := []struct {
+		name string
+		flag string
+		port string
+	}{
+		{name: "gossip negative", flag: "--gossipsub-port", port: "-1"},
+		{name: "api too high", flag: "--api-port", port: "65536"},
+		{name: "metrics too high", flag: "--metrics-port", port: "65536"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append(validFlagArgs(), tt.flag, tt.port)
+			var stderr bytes.Buffer
+			_, err := parseConfig(args, &stderr)
+			if err == nil {
+				t.Fatal("expected invalid port to fail")
+			}
+			if !strings.Contains(stderr.String(), tt.flag+" must be between 0 and 65535") {
+				t.Fatalf("port validation message not found:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
+func TestParseConfig_AggregateSubnetIDsMustBeInRange(t *testing.T) {
+	args := append(validFlagArgs(), "--is-aggregator", "--attestation-committee-count", "2", "--aggregate-subnet-ids", "0,2")
+	var stderr bytes.Buffer
+	_, err := parseConfig(args, &stderr)
+	if err == nil {
+		t.Fatal("expected out-of-range aggregate subnet to fail")
+	}
+	if !strings.Contains(stderr.String(), "--aggregate-subnet-ids contains 2") {
+		t.Fatalf("subnet range message not found:\n%s", stderr.String())
+	}
+}
+
+func TestConfigAddressesUseJoinHostPort(t *testing.T) {
+	cfg := config{HTTPAddr: "::1", APIPort: 5052, MetricsPort: 5054}
+	if got := cfg.apiAddress(); got != "[::1]:5052" {
+		t.Fatalf("apiAddress=%q, want [::1]:5052", got)
+	}
+	if got := cfg.metricsAddress(); got != "[::1]:5054" {
+		t.Fatalf("metricsAddress=%q, want [::1]:5054", got)
 	}
 }

@@ -13,8 +13,8 @@ import (
 )
 
 func TestSpecStateTransition(t *testing.T) {
-	logger.Quiet = true
-	defer func() { logger.Quiet = false }()
+	logger.SetQuiet(true)
+	defer logger.SetQuiet(false)
 
 	fixtureDir := "../../leanSpec/fixtures/consensus/state_transition"
 

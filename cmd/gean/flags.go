@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -62,6 +63,15 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 		fs.Usage()
 		return cfg, errInvalidConfig
 	}
+	if err := validatePort("gossipsub-port", cfg.GossipPort, stderr); err != nil {
+		return cfg, err
+	}
+	if err := validatePort("api-port", cfg.APIPort, stderr); err != nil {
+		return cfg, err
+	}
+	if err := validatePort("metrics-port", cfg.MetricsPort, stderr); err != nil {
+		return cfg, err
+	}
 	if cfg.CommitteeCount < 1 {
 		fmt.Fprintln(stderr, "--attestation-committee-count must be >= 1")
 		return cfg, errInvalidConfig
@@ -75,8 +85,19 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	if err != nil {
 		return cfg, err
 	}
+	if err := validateAggregateSubnetIDs(subnetIDs, cfg.CommitteeCount, stderr); err != nil {
+		return cfg, err
+	}
 	cfg.AggregateSubnetIDs = subnetIDs
 	return cfg, nil
+}
+
+func validatePort(name string, port int, stderr io.Writer) error {
+	if port < 0 || port > 65535 {
+		fmt.Fprintf(stderr, "--%s must be between 0 and 65535\n", name)
+		return errInvalidConfig
+	}
+	return nil
 }
 
 func parseAggregateSubnetIDs(raw string, stderr io.Writer) ([]uint64, error) {
@@ -99,6 +120,17 @@ func parseAggregateSubnetIDs(raw string, stderr io.Writer) ([]uint64, error) {
 	return ids, nil
 }
 
+func validateAggregateSubnetIDs(ids []uint64, committeeCount uint64, stderr io.Writer) error {
+	for _, id := range ids {
+		if id >= committeeCount {
+			fmt.Fprintf(stderr, "--aggregate-subnet-ids contains %d, want < --attestation-committee-count (%d)\n",
+				id, committeeCount)
+			return errInvalidConfig
+		}
+	}
+	return nil
+}
+
 func (c config) paths() configPaths {
 	return configPaths{
 		config:     filepath.Join(c.ConfigDir, "config.yaml"),
@@ -109,9 +141,9 @@ func (c config) paths() configPaths {
 }
 
 func (c config) apiAddress() string {
-	return fmt.Sprintf("%s:%d", c.HTTPAddr, c.APIPort)
+	return net.JoinHostPort(c.HTTPAddr, strconv.Itoa(c.APIPort))
 }
 
 func (c config) metricsAddress() string {
-	return fmt.Sprintf("%s:%d", c.HTTPAddr, c.MetricsPort)
+	return net.JoinHostPort(c.HTTPAddr, strconv.Itoa(c.MetricsPort))
 }

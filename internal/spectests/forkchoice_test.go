@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/aggregation"
 	"github.com/geanlabs/gean/internal/attestation"
 	"github.com/geanlabs/gean/internal/blockprocessor"
 	"github.com/geanlabs/gean/internal/forkchoice"
@@ -269,10 +268,14 @@ func (fb *fcBlock) toBlock() *types.Block {
 	return block
 }
 func TestSpecForkChoice(t *testing.T) {
-	logger.Quiet = true
-	defer func() { logger.Quiet = false }()
+	logger.SetQuiet(true)
+	defer logger.SetQuiet(false)
 
 	fixtureDir := "../../leanSpec/fixtures/consensus/fork_choice"
+
+	if _, err := os.Stat(fixtureDir); os.IsNotExist(err) {
+		t.Skipf("fixtures not present at %s; skipping", fixtureDir)
+	}
 
 	var files []string
 	err := filepath.Walk(fixtureDir, func(path string, info os.FileInfo, err error) error {
@@ -453,10 +456,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			justifiedRoot := s.LatestJustified().Root
 
 			for vid, data := range attestations {
-				idx := fc.NodeIndex(data.Head.Root)
-				if idx >= 0 {
-					fc.Votes.SetKnown(vid, idx, data.Slot, data)
-				}
+				fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 			}
 
 			newHead := fc.UpdateHead(justifiedRoot)
@@ -521,7 +521,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// Store in new payloads with dummy proof.
-			participants := aggregation.AggregationBitsFromIndices([]uint64{att.ValidatorID})
+			participants := types.BitlistFromIndices([]uint64{att.ValidatorID})
 			proof := &types.AggregatedSignatureProof{
 				Participants: participants,
 				ProofData:    nil,
@@ -529,20 +529,14 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			s.NewPayloads.Push(dataRoot, attData, proof)
 
 			// Feed vote to fork choice so attestation weight is reflected.
-			idx := fc.NodeIndex(attData.Head.Root)
-			if idx >= 0 {
-				fc.Votes.SetNew(att.ValidatorID, idx, attData.Slot, attData)
-			}
+			fc.SetNewVote(att.ValidatorID, attData.Head.Root, attData.Slot, attData)
 
 			// Promote + update head.
 			s.PromoteNewToKnown()
 			knownAtts := s.ExtractLatestKnownAttestations()
 			justifiedRoot := s.LatestJustified().Root
 			for vid, data := range knownAtts {
-				jdx := fc.NodeIndex(data.Head.Root)
-				if jdx >= 0 {
-					fc.Votes.SetKnown(vid, jdx, data.Slot, data)
-				}
+				fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 			}
 			newHead := fc.UpdateHead(justifiedRoot)
 			s.SetHead(newHead)
@@ -610,10 +604,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			// Feed per-validator votes to fork choice from participant bits.
 			participantIDs := types.BitlistIndices(participants)
 			for _, vid := range participantIDs {
-				idx := fc.NodeIndex(attData.Head.Root)
-				if idx >= 0 {
-					fc.Votes.SetNew(vid, idx, attData.Slot, attData)
-				}
+				fc.SetNewVote(vid, attData.Head.Root, attData.Slot, attData)
 			}
 
 			// Promote + update head.
@@ -621,10 +612,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			knownAtts := s.ExtractLatestKnownAttestations()
 			justifiedRoot := s.LatestJustified().Root
 			for vid, data := range knownAtts {
-				jdx := fc.NodeIndex(data.Head.Root)
-				if jdx >= 0 {
-					fc.Votes.SetKnown(vid, jdx, data.Slot, data)
-				}
+				fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 			}
 			newHead := fc.UpdateHead(justifiedRoot)
 			s.SetHead(newHead)
@@ -740,9 +728,6 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 	// Simulate Engine.updateSafeTarget() before reading SafeTarget. Engine
 	// fires this at interval 3; the runner cannot model interval cadence
 	// directly, so it runs on demand whenever a safeTarget* check is set.
-	// fc.Votes still carries LatestNew entries from prior SetNew calls
-	// (the runner promotes the store pool but not the fc.Votes pool), so
-	// UpdateSafeTarget with fromKnown=false reads the right "new pool".
 	if checks.SafeTarget != nil || checks.SafeTargetSlot != nil || checks.SafeTargetRootLabel != nil {
 		simulateUpdateSafeTarget(s, fc)
 	}
@@ -797,12 +782,9 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 	}
 }
 
-// validateAttestationCheck asserts a per-validator attestation expectation
-// against fc.Votes. Location selects the pool: "new" reads LatestNew, "known"
-// reads LatestKnown. Slot fields not set on the check are skipped.
 func validateAttestationCheck(t *testing.T, stepIdx int, fc *forkchoice.ForkChoice, ac fcAttestationCheck) {
 	t.Helper()
-	tracker, ok := fc.Votes.Votes[ac.Validator]
+	tracker, ok := fc.VoteTracker(ac.Validator)
 	if !ok {
 		t.Fatalf("step %d: attestationCheck v=%d location=%q: no vote tracker", stepIdx, ac.Validator, ac.Location)
 	}
@@ -845,10 +827,6 @@ func validateAttestationCheck(t *testing.T, stepIdx int, fc *forkchoice.ForkChoi
 	}
 }
 
-// simulateUpdateSafeTarget mirrors runtime safe-target refresh so the spec
-// runner can validate safeTarget assertions on demand. The runner keeps
-// fc.Votes "new" entries populated from prior SetNew calls, so
-// UpdateSafeTarget reads the right new pool.
 func simulateUpdateSafeTarget(s *store.ConsensusStore, fc *forkchoice.ForkChoice) {
 	headState := s.GetState(s.Head())
 	if headState == nil {

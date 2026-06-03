@@ -4,16 +4,26 @@ import (
 	"testing"
 )
 
-// TestMultipleAggregationsSequential tests calling aggregate multiple times
-// with different data — simulates multiple interval 2 ticks.
 func TestMultipleAggregationsSequential(t *testing.T) {
-	kp1, _ := GenerateKeyPair("multi-agg-0", 0, 1<<18)
+	kp1, err := GenerateKeyPair("multi-agg-0", 0, 1<<18)
+	if err != nil {
+		t.Fatalf("keygen 0: %v", err)
+	}
 	defer kp1.Close()
-	kp2, _ := GenerateKeyPair("multi-agg-1", 0, 1<<18)
+	kp2, err := GenerateKeyPair("multi-agg-1", 0, 1<<18)
+	if err != nil {
+		t.Fatalf("keygen 1: %v", err)
+	}
 	defer kp2.Close()
 
-	pk1, _ := kp1.PublicKeyBytes()
-	pk2, _ := kp2.PublicKeyBytes()
+	pk1, err := kp1.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("pubkey 0: %v", err)
+	}
+	pk2, err := kp2.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("pubkey 1: %v", err)
+	}
 
 	EnsureProverReady()
 	EnsureVerifierReady()
@@ -32,15 +42,26 @@ func TestMultipleAggregationsSequential(t *testing.T) {
 			t.Fatalf("slot %d sign kp2: %v", slot, err)
 		}
 
-		// Parse from SSZ bytes (simulating P2P round-trip)
-		csig1, _ := ParseSignature(sig1[:])
+		csig1, err := ParseSignature(sig1[:])
+		if err != nil {
+			t.Fatalf("slot %d parse sig1: %v", slot, err)
+		}
 		defer FreeSignature(csig1)
-		csig2, _ := ParseSignature(sig2[:])
+		csig2, err := ParseSignature(sig2[:])
+		if err != nil {
+			t.Fatalf("slot %d parse sig2: %v", slot, err)
+		}
 		defer FreeSignature(csig2)
 
-		cpk1, _ := ParsePublicKey(pk1)
+		cpk1, err := ParsePublicKey(pk1)
+		if err != nil {
+			t.Fatalf("slot %d parse pk1: %v", slot, err)
+		}
 		defer FreePublicKey(cpk1)
-		cpk2, _ := ParsePublicKey(pk2)
+		cpk2, err := ParsePublicKey(pk2)
+		if err != nil {
+			t.Fatalf("slot %d parse pk2: %v", slot, err)
+		}
 		defer FreePublicKey(cpk2)
 
 		proof, err := AggregateSignatures(

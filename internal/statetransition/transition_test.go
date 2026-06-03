@@ -1,12 +1,12 @@
 package statetransition
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// makeGenesisState creates a minimal genesis state with n validators.
 func makeGenesisState(n int) *types.State {
 	validators := make([]*types.Validator, n)
 	for i := range n {
@@ -63,12 +63,24 @@ func TestProcessSlotsRejectsOlderSlot(t *testing.T) {
 	}
 }
 
+func TestProcessSlotsRejectsMalformedState(t *testing.T) {
+	if err := ProcessSlots(nil, 1); !errors.Is(err, ErrMalformedState) {
+		t.Fatalf("ProcessSlots(nil) error=%v, want ErrMalformedState", err)
+	}
+
+	state := makeGenesisState(1)
+	state.LatestBlockHeader = nil
+	if err := ProcessSlots(state, 1); !errors.Is(err, ErrMalformedState) {
+		t.Fatalf("ProcessSlots without header error=%v, want ErrMalformedState", err)
+	}
+}
+
 func TestProcessBlockHeaderValidatesSlot(t *testing.T) {
 	state := makeGenesisState(3)
 	state.Slot = 1
 
 	block := &types.Block{
-		Slot:          2, // doesn't match state.Slot
+		Slot:          2,
 		ProposerIndex: 0,
 		Body:          &types.BlockBody{},
 	}
@@ -78,15 +90,60 @@ func TestProcessBlockHeaderValidatesSlot(t *testing.T) {
 	}
 }
 
+func TestProcessBlockHeaderRejectsMalformedInputs(t *testing.T) {
+	if err := ProcessBlockHeader(nil, &types.Block{}); !errors.Is(err, ErrMalformedState) {
+		t.Fatalf("nil state error=%v, want ErrMalformedState", err)
+	}
+
+	state := makeGenesisState(1)
+	state.LatestBlockHeader = nil
+	if err := ProcessBlockHeader(state, &types.Block{}); !errors.Is(err, ErrMalformedState) {
+		t.Fatalf("nil latest header error=%v, want ErrMalformedState", err)
+	}
+
+	state = makeGenesisState(1)
+	state.LatestJustified = nil
+	if err := ProcessBlockHeader(state, &types.Block{}); !errors.Is(err, ErrMalformedState) {
+		t.Fatalf("nil latest justified error=%v, want ErrMalformedState", err)
+	}
+
+	state = makeGenesisState(1)
+	state.LatestFinalized = nil
+	if err := ProcessBlockHeader(state, &types.Block{}); !errors.Is(err, ErrMalformedState) {
+		t.Fatalf("nil latest finalized error=%v, want ErrMalformedState", err)
+	}
+
+	state = makeGenesisState(1)
+	if err := ProcessBlockHeader(state, nil); !errors.Is(err, ErrMalformedBlock) {
+		t.Fatalf("nil block error=%v, want ErrMalformedBlock", err)
+	}
+
+	if err := ProcessBlockHeader(state, &types.Block{}); !errors.Is(err, ErrMalformedBlock) {
+		t.Fatalf("nil block body error=%v, want ErrMalformedBlock", err)
+	}
+
+	state = makeGenesisState(1)
+	ProcessSlots(state, 1)
+	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
+	block := &types.Block{
+		Slot:          1,
+		ProposerIndex: 0,
+		ParentRoot:    parentRoot,
+		Body:          &types.BlockBody{Attestations: []*types.AggregatedAttestation{nil}},
+	}
+	if err := ProcessBlockHeader(state, block); !errors.Is(err, ErrMalformedBlock) {
+		t.Fatalf("nil attestation error=%v, want ErrMalformedBlock", err)
+	}
+}
+
 func TestProcessBlockHeaderValidatesProposer(t *testing.T) {
 	state := makeGenesisState(3)
-	// Advance state to slot 1 via process_slots.
 	ProcessSlots(state, 1)
 
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 	block := &types.Block{
 		Slot:          1,
-		ProposerIndex: 2, // wrong: slot 1 % 3 = 1
+		ProposerIndex: 2,
 		ParentRoot:    parentRoot,
 		Body:          &types.BlockBody{},
 	}
@@ -105,8 +162,8 @@ func TestProcessBlockHeaderValidatesParentRoot(t *testing.T) {
 
 	block := &types.Block{
 		Slot:          1,
-		ProposerIndex: 1,              // correct: 1 % 3 = 1
-		ParentRoot:    [32]byte{0xff}, // wrong parent root
+		ProposerIndex: 1,
+		ParentRoot:    [32]byte{0xff},
 		Body:          &types.BlockBody{},
 	}
 	err := ProcessBlockHeader(state, block)
@@ -125,7 +182,7 @@ func TestProcessBlockHeaderUpdatesState(t *testing.T) {
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 	block := &types.Block{
 		Slot:          1,
-		ProposerIndex: 1, // 1 % 3 = 1
+		ProposerIndex: 1,
 		ParentRoot:    parentRoot,
 		Body:          &types.BlockBody{},
 	}
@@ -133,7 +190,6 @@ func TestProcessBlockHeaderUpdatesState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Block header should be updated.
 	if state.LatestBlockHeader.Slot != 1 {
 		t.Fatalf("expected header slot 1, got %d", state.LatestBlockHeader.Slot)
 	}
@@ -141,9 +197,110 @@ func TestProcessBlockHeaderUpdatesState(t *testing.T) {
 		t.Fatal("new header should have zero state root")
 	}
 
-	// Historical block hashes should have parent root.
 	if len(state.HistoricalBlockHashes) != 1 {
 		t.Fatalf("expected 1 historical hash, got %d", len(state.HistoricalBlockHashes))
+	}
+}
+
+func TestProcessBlockHeaderDoesNotMutateStateOnBodyRootError(t *testing.T) {
+	state := makeGenesisState(3)
+	ProcessSlots(state, 1)
+
+	parentHeader := *state.LatestBlockHeader
+	justified := *state.LatestJustified
+	finalized := *state.LatestFinalized
+	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
+	block := &types.Block{
+		Slot:          1,
+		ProposerIndex: 1,
+		ParentRoot:    parentRoot,
+		Body: &types.BlockBody{Attestations: []*types.AggregatedAttestation{{
+			Data: &types.AttestationData{
+				Head:   &types.Checkpoint{},
+				Target: &types.Checkpoint{},
+				Source: &types.Checkpoint{},
+			},
+		}}},
+	}
+
+	if err := ProcessBlockHeader(state, block); err == nil {
+		t.Fatal("expected body root error")
+	}
+	if state.LatestBlockHeader.Slot != parentHeader.Slot ||
+		state.LatestBlockHeader.StateRoot != parentHeader.StateRoot {
+		t.Fatalf("latest header mutated on error: %+v before %+v", state.LatestBlockHeader, parentHeader)
+	}
+	if state.LatestJustified.Root != justified.Root || state.LatestJustified.Slot != justified.Slot {
+		t.Fatalf("latest justified mutated on error: %+v before %+v", state.LatestJustified, justified)
+	}
+	if state.LatestFinalized.Root != finalized.Root || state.LatestFinalized.Slot != finalized.Slot {
+		t.Fatalf("latest finalized mutated on error: %+v before %+v", state.LatestFinalized, finalized)
+	}
+	if len(state.HistoricalBlockHashes) != 0 {
+		t.Fatalf("historical hashes mutated on error: len=%d", len(state.HistoricalBlockHashes))
+	}
+}
+
+func TestProcessBlockHeaderDoesNotMutateStateOnSlotGapError(t *testing.T) {
+	state := makeGenesisState(1)
+	state.Slot = 1
+	state.HistoricalBlockHashes = make([][]byte, types.HistoricalRootsLimit)
+
+	parentHeader := *state.LatestBlockHeader
+	justified := *state.LatestJustified
+	finalized := *state.LatestFinalized
+	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
+	block := &types.Block{
+		Slot:          1,
+		ProposerIndex: 0,
+		ParentRoot:    parentRoot,
+		Body:          &types.BlockBody{},
+	}
+
+	var gapErr *SlotGapTooLargeError
+	if err := ProcessBlockHeader(state, block); !errors.As(err, &gapErr) {
+		t.Fatalf("ProcessBlockHeader error=%v, want SlotGapTooLargeError", err)
+	}
+	if state.LatestBlockHeader.Slot != parentHeader.Slot ||
+		state.LatestBlockHeader.StateRoot != parentHeader.StateRoot {
+		t.Fatalf("latest header mutated on error: %+v before %+v", state.LatestBlockHeader, parentHeader)
+	}
+	if state.LatestJustified.Root != justified.Root || state.LatestJustified.Slot != justified.Slot {
+		t.Fatalf("latest justified mutated on error: %+v before %+v", state.LatestJustified, justified)
+	}
+	if state.LatestFinalized.Root != finalized.Root || state.LatestFinalized.Slot != finalized.Slot {
+		t.Fatalf("latest finalized mutated on error: %+v before %+v", state.LatestFinalized, finalized)
+	}
+	if len(state.HistoricalBlockHashes) != types.HistoricalRootsLimit {
+		t.Fatalf("historical hashes len=%d, want %d", len(state.HistoricalBlockHashes), types.HistoricalRootsLimit)
+	}
+}
+
+func TestProcessBlockHeaderRejectsOverflowSizedSlotGap(t *testing.T) {
+	state := makeGenesisState(1)
+	hugeSlot := ^uint64(0)
+	state.Slot = hugeSlot
+	state.HistoricalBlockHashes = [][]byte{make([]byte, types.RootSize)}
+
+	parentHeader := *state.LatestBlockHeader
+	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
+	block := &types.Block{
+		Slot:          hugeSlot,
+		ProposerIndex: 0,
+		ParentRoot:    parentRoot,
+		Body:          &types.BlockBody{},
+	}
+
+	var gapErr *SlotGapTooLargeError
+	if err := ProcessBlockHeader(state, block); !errors.As(err, &gapErr) {
+		t.Fatalf("ProcessBlockHeader error=%v, want SlotGapTooLargeError", err)
+	}
+	if state.LatestBlockHeader.Slot != parentHeader.Slot ||
+		state.LatestBlockHeader.StateRoot != parentHeader.StateRoot {
+		t.Fatalf("latest header mutated on overflow gap: %+v before %+v", state.LatestBlockHeader, parentHeader)
+	}
+	if len(state.HistoricalBlockHashes) != 1 {
+		t.Fatalf("historical hashes len=%d, want 1", len(state.HistoricalBlockHashes))
 	}
 }
 
@@ -154,7 +311,7 @@ func TestProcessBlockHeaderSkippedSlots(t *testing.T) {
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 	block := &types.Block{
 		Slot:          4,
-		ProposerIndex: 1, // 4 % 3 = 1
+		ProposerIndex: 1,
 		ParentRoot:    parentRoot,
 		Body:          &types.BlockBody{},
 	}
@@ -162,12 +319,10 @@ func TestProcessBlockHeaderSkippedSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Parent was at slot 0, block at slot 4: 1 parent + 3 empty = 4 entries.
 	if len(state.HistoricalBlockHashes) != 4 {
 		t.Fatalf("expected 4 historical hashes, got %d", len(state.HistoricalBlockHashes))
 	}
 
-	// First should be parent root, rest should be zero.
 	var zeroHash [32]byte
 	var first [32]byte
 	copy(first[:], state.HistoricalBlockHashes[0])
@@ -180,5 +335,11 @@ func TestProcessBlockHeaderSkippedSlots(t *testing.T) {
 		if h != zeroHash {
 			t.Fatalf("entry %d should be zero for skipped slot", i)
 		}
+	}
+}
+
+func TestStateTransitionRejectsNilBlock(t *testing.T) {
+	if err := StateTransition(makeGenesisState(1), nil); !errors.Is(err, ErrMalformedBlock) {
+		t.Fatalf("StateTransition nil block error=%v, want ErrMalformedBlock", err)
 	}
 }

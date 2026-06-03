@@ -1,6 +1,5 @@
 package storage
 
-// Table represents a logical storage table.
 type Table string
 
 const (
@@ -12,7 +11,6 @@ const (
 	TableLiveChain       Table = "live_chain"
 )
 
-// AllTables returns all 6 storage tables.
 var AllTables = []Table{
 	TableBlockHeaders,
 	TableBlockBodies,

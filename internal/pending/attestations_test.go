@@ -7,8 +7,6 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// makeAtt builds a minimal SignedAttestation with the given slot. Other
-// fields are zero-valued; the buffer only inspects Data.Slot for pruning.
 func makeAtt(slot uint64) *types.SignedAttestation {
 	return &types.SignedAttestation{
 		Data: &types.AttestationData{Slot: slot},
@@ -55,7 +53,6 @@ func TestAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
 
 	a, b, c := makeAtt(10), makeAtt(11), makeAtt(12)
 
-	// Fill bucket to per-root cap.
 	if added, dropped := buf.Add(head, a); !added || dropped != 0 {
 		t.Fatalf("add a: added=%v dropped=%d", added, dropped)
 	}
@@ -63,7 +60,6 @@ func TestAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
 		t.Fatalf("add b: added=%v dropped=%d", added, dropped)
 	}
 
-	// Third add overflows: oldest (a) evicted, total stays at 2.
 	added, dropped := buf.Add(head, c)
 	if !added || dropped != 1 {
 		t.Fatalf("add c: added=%v dropped=%d, want true,1", added, dropped)
@@ -76,7 +72,6 @@ func TestAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
 	if len(drained) != 2 {
 		t.Fatalf("drain: %d entries, want 2", len(drained))
 	}
-	// FIFO: oldest evicted, so we expect b then c, not a.
 	if drained[0] != b || drained[1] != c {
 		t.Fatalf("FIFO order broken: got [%p %p], want [%p %p]", drained[0], drained[1], b, c)
 	}
@@ -98,7 +93,7 @@ func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
 	if added, _ := buf.Add(h2, makeAtt(2)); !added {
 		t.Fatalf("second add should succeed")
 	}
-	// Third distinct-root add hits totalCap=2 → reject.
+
 	added, dropped := buf.Add(h3, makeAtt(3))
 	if added || dropped != 0 {
 		t.Fatalf("third add (over total cap): added=%v dropped=%d, want false,0", added, dropped)
@@ -110,19 +105,12 @@ func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
 		t.Fatalf("rejected count: got %d, want 1", rejected)
 	}
 
-	// Total cap is hard: an intra-bucket add that does NOT trigger FIFO
-	// eviction is rejected when total == totalCap. (h1 has 1 entry,
-	// perRootCap=8, so we'd otherwise just append — but total is at cap.)
 	if added, dropped := buf.Add(h1, makeAtt(99)); added || dropped != 0 {
 		t.Fatalf("intra-bucket add at total cap: added=%v dropped=%d, want false,0", added, dropped)
 	}
 }
 
-// TestAttestationBuffer_FIFOEvictsEvenAtTotalCap verifies that
-// per-root FIFO eviction is permitted even when the buffer is at totalCap,
-// because the eviction swaps one entry for another and does not grow total.
 func TestAttestationBuffer_FIFOEvictsEvenAtTotalCap(t *testing.T) {
-	// perRootCap=2, totalCap=2 — a single bucket can saturate both caps.
 	buf := NewAttestationBuffer(2, 2)
 
 	var head [32]byte
@@ -135,8 +123,6 @@ func TestAttestationBuffer_FIFOEvictsEvenAtTotalCap(t *testing.T) {
 		t.Fatalf("setup: total=%d, want 2", buf.Total())
 	}
 
-	// Bucket is at perRootCap AND total is at totalCap. FIFO eviction must
-	// still succeed (one in, one out — total unchanged).
 	added, dropped := buf.Add(head, c)
 	if !added || dropped != 1 {
 		t.Fatalf("FIFO at total cap: added=%v dropped=%d, want true,1", added, dropped)
@@ -152,7 +138,6 @@ func TestAttestationBuffer_PruneBelow(t *testing.T) {
 	var h1, h2 [32]byte
 	h1[0], h2[0] = 0x01, 0x02
 
-	// h1: slots 5, 10, 15. h2: slots 3, 20.
 	for _, slot := range []uint64{5, 10, 15} {
 		buf.Add(h1, makeAtt(slot))
 	}
@@ -163,7 +148,6 @@ func TestAttestationBuffer_PruneBelow(t *testing.T) {
 		t.Fatalf("setup: total=%d len=%d, want 5,2", buf.Total(), buf.Len())
 	}
 
-	// Prune at slot 10: drops slot<=10 → 5, 10, 3. Keeps 15, 20.
 	removed := buf.PruneBelow(10)
 	if removed != 3 {
 		t.Fatalf("prune removed=%d, want 3", removed)
@@ -171,12 +155,10 @@ func TestAttestationBuffer_PruneBelow(t *testing.T) {
 	if buf.Total() != 2 {
 		t.Fatalf("after prune: total=%d, want 2", buf.Total())
 	}
-	// h2's only surviving entry stays under h2; h1's only surviving entry stays under h1.
 	if buf.Len() != 2 {
 		t.Fatalf("after prune: len=%d, want 2 (both buckets non-empty)", buf.Len())
 	}
 
-	// Prune everything → empty buckets removed.
 	removed = buf.PruneBelow(100)
 	if removed != 2 {
 		t.Fatalf("final prune removed=%d, want 2", removed)
@@ -186,11 +168,76 @@ func TestAttestationBuffer_PruneBelow(t *testing.T) {
 	}
 }
 
-// TestAttestationBuffer_Concurrent exercises the buffer under
-// concurrent Add/Drain/PruneBelow load. Run with -race to catch any locking
-// regression. We don't assert exact counts because Drain races with Add by
-// design — we only assert that the buffer's accounting stays consistent
-// (total == sum-of-bucket-lengths) at the end.
+func TestAttestationBuffer_RejectsMalformedAndInvalidCaps(t *testing.T) {
+	var head [32]byte
+
+	buf := NewAttestationBuffer(0, 64)
+	if added, dropped := buf.Add(head, makeAtt(1)); added || dropped != 0 {
+		t.Fatalf("invalid per-root cap: added=%v dropped=%d, want false,0", added, dropped)
+	}
+
+	buf = NewAttestationBuffer(8, 0)
+	if added, dropped := buf.Add(head, makeAtt(1)); added || dropped != 0 {
+		t.Fatalf("invalid total cap: added=%v dropped=%d, want false,0", added, dropped)
+	}
+
+	buf = NewAttestationBuffer(8, 64)
+	if added, dropped := buf.Add(head, nil); added || dropped != 0 {
+		t.Fatalf("nil attestation: added=%v dropped=%d, want false,0", added, dropped)
+	}
+	if added, dropped := buf.Add(head, &types.SignedAttestation{}); added || dropped != 0 {
+		t.Fatalf("nil data: added=%v dropped=%d, want false,0", added, dropped)
+	}
+	if evicted, rejected := buf.Stats(); evicted != 0 || rejected != 2 {
+		t.Fatalf("stats: evicted=%d rejected=%d, want 0,2", evicted, rejected)
+	}
+}
+
+func TestAttestationBuffer_NilGuards(t *testing.T) {
+	var buf *AttestationBuffer
+	var head [32]byte
+
+	if added, dropped := buf.Add(head, makeAtt(1)); added || dropped != 0 {
+		t.Fatalf("nil add: added=%v dropped=%d, want false,0", added, dropped)
+	}
+	if drained := buf.Drain(head); drained != nil {
+		t.Fatalf("nil drain=%v, want nil", drained)
+	}
+	if removed := buf.PruneBelow(10); removed != 0 {
+		t.Fatalf("nil prune removed=%d, want 0", removed)
+	}
+	if total := buf.Total(); total != 0 {
+		t.Fatalf("nil total=%d, want 0", total)
+	}
+	if length := buf.Len(); length != 0 {
+		t.Fatalf("nil len=%d, want 0", length)
+	}
+	if evicted, rejected := buf.Stats(); evicted != 0 || rejected != 0 {
+		t.Fatalf("nil stats=%d/%d, want 0/0", evicted, rejected)
+	}
+}
+
+func TestAttestationBuffer_PruneBelowDropsMalformedEntries(t *testing.T) {
+	buf := NewAttestationBuffer(8, 64)
+	var head [32]byte
+
+	buf.byHead[head] = []*types.SignedAttestation{
+		nil,
+		{},
+		makeAtt(5),
+		makeAtt(20),
+	}
+	buf.total = 4
+
+	if removed := buf.PruneBelow(10); removed != 3 {
+		t.Fatalf("removed=%d, want 3", removed)
+	}
+	drained := buf.Drain(head)
+	if len(drained) != 1 || drained[0].Data.Slot != 20 {
+		t.Fatalf("drained=%v, want only slot 20", drained)
+	}
+}
+
 func TestAttestationBuffer_Concurrent(t *testing.T) {
 	buf := NewAttestationBuffer(16, 1024)
 
@@ -201,7 +248,6 @@ func TestAttestationBuffer_Concurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// Writers each pick from a small set of head roots so buckets fill.
 	wg.Add(writers)
 	for i := range writers {
 		i := i
@@ -209,13 +255,12 @@ func TestAttestationBuffer_Concurrent(t *testing.T) {
 			defer wg.Done()
 			for j := range opsPerGoroutine {
 				var root [32]byte
-				root[0] = byte(j % 4) // 4 distinct head roots, contention guaranteed
+				root[0] = byte(j % 4)
 				buf.Add(root, makeAtt(uint64(i*1000+j)))
 			}
 		}()
 	}
 
-	// Drainers race against writers on the same root namespace.
 	wg.Add(drainers)
 	for range drainers {
 		go func() {
@@ -228,7 +273,6 @@ func TestAttestationBuffer_Concurrent(t *testing.T) {
 		}()
 	}
 
-	// Pruners cull below an advancing slot.
 	wg.Add(pruners)
 	for range pruners {
 		go func() {
@@ -241,9 +285,6 @@ func TestAttestationBuffer_Concurrent(t *testing.T) {
 
 	wg.Wait()
 
-	// Final consistency: drain every known head root and confirm Total
-	// drops to 0. If the internal counter ever drifted from actual bucket
-	// contents under -race, this would surface as a non-zero residual.
 	for r := range 4 {
 		var root [32]byte
 		root[0] = byte(r)

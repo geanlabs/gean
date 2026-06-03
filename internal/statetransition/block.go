@@ -1,10 +1,11 @@
 package statetransition
 
 import (
+	"fmt"
+
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// ProcessBlock validates a block and applies it to the state.
 func ProcessBlock(state *types.State, block *types.Block) error {
 	if err := ProcessBlockHeader(state, block); err != nil {
 		return err
@@ -12,31 +13,48 @@ func ProcessBlock(state *types.State, block *types.Block) error {
 	return ProcessAttestations(state, block.Body.Attestations)
 }
 
-// ProcessBlockHeader validates the block header and updates the state.
 func ProcessBlockHeader(state *types.State, block *types.Block) error {
+	if state == nil {
+		return malformedState("state")
+	}
+	if state.LatestBlockHeader == nil {
+		return malformedState("latest block header")
+	}
+	if state.LatestJustified == nil {
+		return malformedState("latest justified")
+	}
+	if state.LatestFinalized == nil {
+		return malformedState("latest finalized")
+	}
+	if block == nil {
+		return malformedBlock("block")
+	}
+	if block.Body == nil {
+		return malformedBlock("body")
+	}
+	if err := validateBlockBody(block.Body); err != nil {
+		return err
+	}
+
 	numValidators := state.NumValidators()
 	if numValidators == 0 {
 		return ErrNoValidators
 	}
 
-	// Block slot must match state slot (after process_slots).
 	if block.Slot != state.Slot {
 		return &SlotMismatchError{StateSlot: state.Slot, BlockSlot: block.Slot}
 	}
 
-	// Block must be newer than parent.
 	parentHeader := state.LatestBlockHeader
 	if block.Slot <= parentHeader.Slot {
 		return &ParentSlotIsNewerError{ParentSlot: parentHeader.Slot, BlockSlot: block.Slot}
 	}
 
-	// Proposer must be correct: slot % num_validators.
 	expectedProposer := types.ProposerIndex(block.Slot, numValidators)
 	if block.ProposerIndex != expectedProposer {
 		return &InvalidProposerError{Expected: expectedProposer, Found: block.ProposerIndex}
 	}
 
-	// Parent root must match hash of latest block header.
 	parentRoot, err := parentHeader.HashTreeRoot()
 	if err != nil {
 		return err
@@ -45,16 +63,16 @@ func ProcessBlockHeader(state *types.State, block *types.Block) error {
 		return &InvalidParentError{Expected: parentRoot, Found: block.ParentRoot}
 	}
 
-	// Genesis parent special case: initialize justified/finalized checkpoints.
-	if parentHeader.Slot == 0 {
-		state.LatestJustified.Root = parentRoot
-		state.LatestFinalized.Root = parentRoot
+	bodyRoot, err := block.Body.HashTreeRoot()
+	if err != nil {
+		return err
 	}
 
-	// Guard against overflowing historical_block_hashes.
 	numEmptySlots := block.Slot - parentHeader.Slot - 1
 	newEntries := 1 + numEmptySlots
-	if uint64(len(state.HistoricalBlockHashes))+newEntries > types.HistoricalRootsLimit {
+	currentHistoricalRoots := uint64(len(state.HistoricalBlockHashes))
+	if currentHistoricalRoots > types.HistoricalRootsLimit ||
+		newEntries > types.HistoricalRootsLimit-currentHistoricalRoots {
 		return &SlotGapTooLargeError{
 			Gap:     newEntries,
 			Current: state.Slot,
@@ -62,14 +80,16 @@ func ProcessBlockHeader(state *types.State, block *types.Block) error {
 		}
 	}
 
-	// Append parent root + zeros for skipped slots to historical_block_hashes.
-	parentRootBytes := parentRoot[:]
-	state.HistoricalBlockHashes = append(state.HistoricalBlockHashes, parentRootBytes)
-	for range numEmptySlots {
-		state.HistoricalBlockHashes = append(state.HistoricalBlockHashes, make([]byte, 32))
+	if parentHeader.Slot == 0 {
+		state.LatestJustified.Root = parentRoot
+		state.LatestFinalized.Root = parentRoot
 	}
 
-	// Extend justified_slots to cover slots up to block.slot - 1, relative to finalized boundary.
+	state.HistoricalBlockHashes = append(state.HistoricalBlockHashes, copyRootBytes(parentRoot))
+	for range numEmptySlots {
+		state.HistoricalBlockHashes = append(state.HistoricalBlockHashes, make([]byte, types.RootSize))
+	}
+
 	lastMaterializedSlot := block.Slot - 1
 	if lastMaterializedSlot > state.LatestFinalized.Slot {
 		requiredLen := lastMaterializedSlot - state.LatestFinalized.Slot
@@ -79,13 +99,6 @@ func ProcessBlockHeader(state *types.State, block *types.Block) error {
 		}
 	}
 
-	// Compute body root for the new block header.
-	bodyRoot, err := block.Body.HashTreeRoot()
-	if err != nil {
-		return err
-	}
-
-	// Update latest block header (state_root intentionally zeroed; filled in process_slots).
 	state.LatestBlockHeader = &types.BlockHeader{
 		Slot:          block.Slot,
 		ProposerIndex: block.ProposerIndex,
@@ -94,5 +107,14 @@ func ProcessBlockHeader(state *types.State, block *types.Block) error {
 		BodyRoot:      bodyRoot,
 	}
 
+	return nil
+}
+
+func validateBlockBody(body *types.BlockBody) error {
+	for i, attestation := range body.Attestations {
+		if attestation == nil {
+			return malformedBlock(fmt.Sprintf("body.attestations[%d]", i))
+		}
+	}
 	return nil
 }

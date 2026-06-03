@@ -2,7 +2,6 @@ package storage
 
 import "encoding/binary"
 
-// Metadata keys.
 var (
 	KeyTime            = []byte("time")
 	KeyConfig          = []byte("config")
@@ -12,25 +11,25 @@ var (
 	KeyLatestFinalized = []byte("latest_finalized")
 )
 
-// Retention constants.
 const (
-	BlocksToKeep = 21_600 // ~1 day at 4s slots
-	StatesToKeep = 3_000  // ~3.3 hours at 4s slots
+	LiveChainKeySize = 40
+	BlocksToKeep     = 21_600
+	StatesToKeep     = 3_000
 )
 
-// EncodeLiveChainKey encodes a LiveChain key: slot (8 bytes big-endian) || root (32 bytes).
-// Big-endian ensures lexicographic ordering matches numeric ordering.
 func EncodeLiveChainKey(slot uint64, root [32]byte) []byte {
-	key := make([]byte, 8+32)
+	key := make([]byte, LiveChainKeySize)
 	binary.BigEndian.PutUint64(key[:8], slot)
-	copy(key[8:], root[:])
+	copy(key[8:LiveChainKeySize], root[:])
 	return key
 }
 
-// DecodeLiveChainKey decodes a LiveChain key into (slot, root).
 func DecodeLiveChainKey(key []byte) (uint64, [32]byte) {
+	if len(key) < LiveChainKeySize {
+		return 0, [32]byte{}
+	}
 	slot := binary.BigEndian.Uint64(key[:8])
 	var root [32]byte
-	copy(root[:], key[8:])
+	copy(root[:], key[8:LiveChainKeySize])
 	return slot, root
 }

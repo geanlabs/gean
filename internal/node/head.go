@@ -6,17 +6,12 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// updateHead runs LMD GHOST using known attestations.
 func (e *Engine) updateHead() {
 	attestations := e.Store.ExtractLatestKnownAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
-	// Feed attestations to fork choice vote store.
 	for vid, data := range attestations {
-		idx := e.FC.NodeIndex(data.Head.Root)
-		if idx >= 0 {
-			e.FC.Votes.SetKnown(vid, idx, data.Slot, data)
-		}
+		e.FC.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 	}
 
 	oldHead := e.Store.Head()
@@ -32,8 +27,6 @@ func (e *Engine) updateHead() {
 			justified := e.Store.LatestJustified()
 			finalized := e.Store.LatestFinalized()
 
-			// Check if this is a real reorg (new head's parent != old head)
-			// or normal chain extension (new head is child of old head).
 			isReorg := newHeader.ParentRoot != oldHead
 
 			metrics.SetHeadSlot(newHeader.Slot)
@@ -62,20 +55,12 @@ func (e *Engine) updateHead() {
 	}
 }
 
-// updateSafeTarget runs LMD GHOST with 2/3 threshold using only the new pool.
-// Safe target is an availability signal: it must reflect only freshly received
-// votes from the current slot, not historical knowledge migrated into the
-// known pool.
 func (e *Engine) updateSafeTarget() {
 	attestations := e.Store.ExtractLatestNewAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
-	// Feed new-pool attestations to vote store as "new" for safe target.
 	for vid, data := range attestations {
-		idx := e.FC.NodeIndex(data.Head.Root)
-		if idx >= 0 {
-			e.FC.Votes.SetNew(vid, idx, data.Slot, data)
-		}
+		e.FC.SetNewVote(vid, data.Head.Root, data.Slot, data)
 	}
 
 	headState := e.Store.GetState(e.Store.Head())

@@ -2,28 +2,28 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"sync"
 	"time"
 )
 
-// ANSI color codes.
 const (
-	reset   = "\033[0m"
-	dim     = "\033[2m"
-	red     = "\033[31m"
-	green   = "\033[32m"
-	yellow  = "\033[33m"
-	blue    = "\033[34m"
-	magenta = "\033[35m"
-	cyan    = "\033[36m"
-	white   = "\033[37m"
-	bold    = "\033[1m"
+	reset  = "\033[0m"
+	dim    = "\033[2m"
+	red    = "\033[31m"
+	green  = "\033[32m"
+	yellow = "\033[33m"
+	cyan   = "\033[36m"
+	bold   = "\033[1m"
 )
 
-// Quiet suppresses all log output when true. Used during tests.
-var Quiet bool
+var (
+	mu     sync.Mutex
+	output io.Writer = os.Stderr
+	quiet  bool
+)
 
-// Component tags matching lean client conventions.
 const (
 	Chain      = "chain"
 	Validator  = "validator"
@@ -38,35 +38,47 @@ const (
 )
 
 func timestamp() string {
-	return time.Now().Format("2006-01-02T15:04:05.000Z")
+	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
-// Info logs an info-level message with a component tag.
 func Info(component, format string, args ...any) {
-	if Quiet {
-		return
-	}
-	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "%s%s%s %s%sINFO%s %s[%s]%s %s\n",
-		dim, timestamp(), reset, bold, green, reset, cyan, component, reset, msg)
+	emit(green, "INFO", component, format, args...)
 }
 
-// Warn logs a warning-level message with a component tag.
 func Warn(component, format string, args ...any) {
-	if Quiet {
-		return
-	}
-	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "%s%s%s %s%sWARN%s %s[%s]%s %s\n",
-		dim, timestamp(), reset, bold, yellow, reset, cyan, component, reset, msg)
+	emit(yellow, "WARN", component, format, args...)
 }
 
-// Error logs an error-level message with a component tag.
 func Error(component, format string, args ...any) {
-	if Quiet {
+	emit(red, "ERROR", component, format, args...)
+}
+
+func SetOutput(w io.Writer) {
+	mu.Lock()
+	defer mu.Unlock()
+	output = w
+}
+
+func SetQuiet(enabled bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	quiet = enabled
+}
+
+func IsQuiet() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return quiet
+}
+
+func emit(levelColor, level, component, format string, args ...any) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if quiet || output == nil {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "%s%s%s %s%sERROR%s %s[%s]%s %s\n",
-		dim, timestamp(), reset, bold, red, reset, cyan, component, reset, msg)
+	fmt.Fprintf(output, "%s%s%s %s%s%s%s %s[%s]%s %s\n",
+		dim, timestamp(), reset, bold, levelColor, level, reset, cyan, component, reset, msg)
 }
