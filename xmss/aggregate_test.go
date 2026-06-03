@@ -97,3 +97,86 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 
 	t.Log("aggregated verification succeeded")
 }
+
+// TestAggregateRejectsChildProofWithWrongMessage exercises the fallible
+// aggregation path: a structurally valid child proof bound to one message must
+// be rejected as a Go error when re-aggregated under a different message, rather
+// than panicking across the FFI boundary.
+func TestAggregateRejectsChildProofWithWrongMessage(t *testing.T) {
+	kpChild, err := GenerateKeyPair("agg-wrongmsg-child", 0, 1<<18)
+	if err != nil {
+		t.Fatalf("keygen child: %v", err)
+	}
+	defer kpChild.Close()
+	kpRaw, err := GenerateKeyPair("agg-wrongmsg-raw", 0, 1<<18)
+	if err != nil {
+		t.Fatalf("keygen raw: %v", err)
+	}
+	defer kpRaw.Close()
+
+	childPk, err := kpChild.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("child pubkey: %v", err)
+	}
+	rawPk, err := kpRaw.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("raw pubkey: %v", err)
+	}
+
+	var msgA, msgB [32]byte
+	msgA[0] = 0xaa
+	msgB[0] = 0xbb
+
+	EnsureProverReady()
+
+	// A valid single-signer child proof bound to msgA.
+	childSig, err := kpChild.Sign(0, msgA)
+	if err != nil {
+		t.Fatalf("sign child: %v", err)
+	}
+	cChildSig, err := ParseSignature(childSig[:])
+	if err != nil {
+		t.Fatalf("parse child sig: %v", err)
+	}
+	defer FreeSignature(cChildSig)
+	cChildPk, err := ParsePublicKey(childPk)
+	if err != nil {
+		t.Fatalf("parse child pk: %v", err)
+	}
+	defer FreePublicKey(cChildPk)
+
+	childProof, err := AggregateSignatures([]CPubKey{cChildPk}, []CSig{cChildSig}, msgA, 0)
+	if err != nil {
+		t.Fatalf("build child proof: %v", err)
+	}
+
+	// A raw signature bound to msgB.
+	rawSig, err := kpRaw.Sign(0, msgB)
+	if err != nil {
+		t.Fatalf("sign raw: %v", err)
+	}
+	cRawSig, err := ParseSignature(rawSig[:])
+	if err != nil {
+		t.Fatalf("parse raw sig: %v", err)
+	}
+	defer FreeSignature(cRawSig)
+	cRawPk, err := ParsePublicKey(rawPk)
+	if err != nil {
+		t.Fatalf("parse raw pk: %v", err)
+	}
+	defer FreePublicKey(cRawPk)
+
+	// Aggregate under msgB while feeding a child bound to msgA: the aggregator
+	// must reject it with an error, never panic.
+	_, err = AggregateWithChildren(
+		[]CPubKey{cRawPk},
+		[]CSig{cRawSig},
+		[]ChildProof{{Pubkeys: []CPubKey{cChildPk}, ProofData: childProof}},
+		msgB,
+		0,
+	)
+	if err == nil {
+		t.Fatal("expected error for child proof bound to a different message, got nil")
+	}
+	t.Logf("rejected mismatched child proof cleanly: %v", err)
+}
