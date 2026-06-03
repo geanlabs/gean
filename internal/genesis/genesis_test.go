@@ -123,29 +123,58 @@ GENESIS_VALIDATORS:
 	}
 }
 
-func TestLoadGenesisConfigNumValidatorsConsistent(t *testing.T) {
+func TestLoadGenesisConfigValidatorCountConsistent(t *testing.T) {
 	tmpFile := t.TempDir() + "/config.yaml"
-	writeGenesisConfig(t, tmpFile, "NUM_VALIDATORS: 3\n"+testConfigYAML)
+	writeGenesisConfig(t, tmpFile, "VALIDATOR_COUNT: 3\n"+testConfigYAML)
 
 	config, err := LoadGenesisConfig(tmpFile)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if config.NumValidators == nil {
-		t.Fatal("NumValidators should be parsed when NUM_VALIDATORS is set")
+	if config.ValidatorCount == nil {
+		t.Fatal("ValidatorCount should be parsed when VALIDATOR_COUNT is set")
 	}
-	if *config.NumValidators != 3 {
-		t.Fatalf("NumValidators: expected 3, got %d", *config.NumValidators)
+	if *config.ValidatorCount != 3 {
+		t.Fatalf("ValidatorCount: expected 3, got %d", *config.ValidatorCount)
 	}
 }
 
-func TestLoadGenesisConfigNumValidatorsMismatch(t *testing.T) {
+func TestLoadGenesisConfigValidatorCountMismatch(t *testing.T) {
 	tmpFile := t.TempDir() + "/config.yaml"
-	writeGenesisConfig(t, tmpFile, "NUM_VALIDATORS: 5\n"+testConfigYAML)
+	writeGenesisConfig(t, tmpFile, "VALIDATOR_COUNT: 5\n"+testConfigYAML)
 
 	_, err := LoadGenesisConfig(tmpFile)
 	if err == nil {
-		t.Fatal("expected error when NUM_VALIDATORS disagrees with len(GENESIS_VALIDATORS)")
+		t.Fatal("expected error when VALIDATOR_COUNT disagrees with len(GENESIS_VALIDATORS)")
+	}
+}
+
+// TestLoadGenesisConfigAcceptsLeanchainFields covers the shared leanchain
+// config.yaml schema other clients also consume (committee count, key lifetime,
+// validator count) — these must parse, not trip strict field checking.
+func TestLoadGenesisConfigAcceptsLeanchainFields(t *testing.T) {
+	tmpFile := t.TempDir() + "/config.yaml"
+	writeGenesisConfig(t, tmpFile,
+		"ATTESTATION_COMMITTEE_COUNT: 1\nACTIVE_EPOCH: 18\nVALIDATOR_COUNT: 3\n"+testConfigYAML)
+
+	config, err := LoadGenesisConfig(tmpFile)
+	if err != nil {
+		t.Fatalf("load leanchain config: %v", err)
+	}
+	if config.ActiveEpoch == nil || *config.ActiveEpoch != 18 {
+		t.Fatalf("ACTIVE_EPOCH not parsed: %v", config.ActiveEpoch)
+	}
+	if config.AttestationCommitteeCount == nil || *config.AttestationCommitteeCount != types.AttestationCommitteeCount {
+		t.Fatalf("ATTESTATION_COMMITTEE_COUNT not parsed: %v", config.AttestationCommitteeCount)
+	}
+}
+
+func TestLoadGenesisConfigRejectsWrongCommitteeCount(t *testing.T) {
+	tmpFile := t.TempDir() + "/config.yaml"
+	writeGenesisConfig(t, tmpFile, "ATTESTATION_COMMITTEE_COUNT: 2\n"+testConfigYAML)
+
+	if _, err := LoadGenesisConfig(tmpFile); err == nil {
+		t.Fatal("expected error when ATTESTATION_COMMITTEE_COUNT disagrees with gean's const")
 	}
 }
 
