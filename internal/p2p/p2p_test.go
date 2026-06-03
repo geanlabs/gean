@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"os"
 	"strings"
 	"testing"
@@ -70,6 +71,53 @@ func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
 		if !strings.Contains(out, part) {
 			t.Fatalf("publish log missing %q:\n%s", part, out)
 		}
+	}
+}
+
+func TestPublishBlockLogsCanonicalBlockRoot(t *testing.T) {
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	logger.SetQuiet(false)
+	t.Cleanup(func() {
+		logger.SetOutput(os.Stderr)
+	})
+
+	signed := &types.SignedBlock{
+		Block: &types.Block{
+			Slot:          7,
+			ProposerIndex: 3,
+			Body:          &types.BlockBody{},
+		},
+		Signature: &types.BlockSignatures{
+			ProposerSignature: [types.SignatureSize]byte{0x42},
+		},
+	}
+	blockRoot, err := signed.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("block root: %v", err)
+	}
+	signedRoot, err := signed.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("signed block root: %v", err)
+	}
+	if blockRoot == signedRoot {
+		t.Fatal("test setup failed: signed block root unexpectedly equals canonical block root")
+	}
+
+	h := &Host{}
+	err = h.PublishBlock(context.Background(), signed)
+	if err == nil || !strings.Contains(err.Error(), "not subscribed to topic") {
+		t.Fatalf("PublishBlock error=%v, want missing topic after log", err)
+	}
+
+	out := buf.String()
+	want := "block_root=0x" + hex.EncodeToString(blockRoot[:])
+	if !strings.Contains(out, want) {
+		t.Fatalf("publish log missing canonical root %s:\n%s", want, out)
+	}
+	wrong := "block_root=0x" + hex.EncodeToString(signedRoot[:])
+	if strings.Contains(out, wrong) {
+		t.Fatalf("publish log used signed-block root %s:\n%s", wrong, out)
 	}
 }
 

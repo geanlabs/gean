@@ -41,7 +41,7 @@ func (h *Host) PublishBlock(ctx context.Context, block *types.SignedBlock) error
 	if block.Block != nil {
 		info.slot = block.Block.Slot
 		info.proposer = fmt.Sprintf("%d", block.Block.ProposerIndex)
-		if root, err := block.HashTreeRoot(); err == nil {
+		if root, err := block.Block.HashTreeRoot(); err == nil {
 			info.blockRoot = root
 			info.hasBlockRoot = true
 		}
@@ -127,7 +127,13 @@ func formatOptionalRoot(root [32]byte, ok bool) string {
 	return fmt.Sprintf("0x%x", root)
 }
 
+var snappyBuildVersionValue = detectSnappyBuildVersion()
+
 func snappyBuildVersion() string {
+	return snappyBuildVersionValue
+}
+
+func detectSnappyBuildVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "github.com/golang/snappy@unknown"
