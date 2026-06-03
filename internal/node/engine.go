@@ -58,6 +58,7 @@ func New(
 	aggCtl *role.Controller,
 	committeeCount uint64,
 ) *Engine {
+	p2p.SetClientGitCommit(gitCommit)
 	e := &Engine{
 		Store:                 s,
 		FC:                    fc,

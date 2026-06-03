@@ -67,6 +67,34 @@ func TestTryFinalizeKeepsStateWhenGapIsJustifiable(t *testing.T) {
 	}
 }
 
+func TestTryFinalizeIgnoresStaleFinalizedSource(t *testing.T) {
+	state := makeGenesisState(1)
+	state.LatestFinalized = &types.Checkpoint{Slot: 4, Root: [32]byte{0x04}}
+	state.LatestJustified = &types.Checkpoint{Slot: 6, Root: [32]byte{0x06}}
+	state.JustifiedSlots = types.NewBitlistSSZ(2)
+	types.BitlistSet(state.JustifiedSlots, 1)
+
+	justifications := map[[32]byte][]bool{
+		{0x06}: {true},
+	}
+
+	tryFinalize(
+		state,
+		&types.Checkpoint{Slot: 1, Root: [32]byte{0x01}},
+		&types.Checkpoint{Slot: 6, Root: [32]byte{0x06}},
+		&justifications,
+		nil,
+	)
+
+	if state.LatestFinalized.Slot != 4 || state.LatestFinalized.Root != [32]byte{0x04} {
+		t.Fatalf("latest finalized=%+v, want slot 4", state.LatestFinalized)
+	}
+	if types.BitlistLen(state.JustifiedSlots) != 2 || !types.BitlistGet(state.JustifiedSlots, 1) {
+		t.Fatalf("justified slots changed: len=%d bits=%08b",
+			types.BitlistLen(state.JustifiedSlots), state.JustifiedSlots)
+	}
+}
+
 func TestShiftJustifiedSlotsClearsWhenDeltaCoversWindow(t *testing.T) {
 	state := makeGenesisState(1)
 	state.JustifiedSlots = types.NewBitlistSSZ(2)

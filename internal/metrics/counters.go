@@ -18,6 +18,10 @@ var (
 	metricAggregationDispatchDropped = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_aggregation_dispatch_dropped_total", Help: "Interval-2 aggregation dispatches dropped because the worker was still busy with the previous slot",
 	})
+	metricAggregatorSkipped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_aggregator_skipped_total",
+		Help: "Aggregation cycles skipped by reason",
+	}, []string{"reason"})
 	metricForkChoiceReorgs = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_fork_choice_reorgs_total", Help: "Total fork choice reorgs",
 	})

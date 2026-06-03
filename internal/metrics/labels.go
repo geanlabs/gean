@@ -7,6 +7,22 @@ const maxLabelRunes = 64
 
 var syncStatusLabels = []string{"idle", "syncing", "synced", unknownLabel}
 
+const (
+	AggregatorSkipNotAggregator = "not_aggregator"
+	AggregatorSkipNotSynced     = "not_synced"
+	AggregatorSkipMissingState  = "missing_state"
+	AggregatorSkipSpawnFailed   = "spawn_failed"
+	AggregatorSkipOther         = "other"
+)
+
+var aggregatorSkipReasons = []string{
+	AggregatorSkipNotAggregator,
+	AggregatorSkipNotSynced,
+	AggregatorSkipMissingState,
+	AggregatorSkipSpawnFailed,
+	AggregatorSkipOther,
+}
+
 func syncStatusLabel(status string) string {
 	status = labelOrUnknown(status)
 	for _, label := range syncStatusLabels {
@@ -15,6 +31,16 @@ func syncStatusLabel(status string) string {
 		}
 	}
 	return unknownLabel
+}
+
+func aggregatorSkipReason(reason string) string {
+	reason = labelOrUnknown(reason)
+	for _, allowed := range aggregatorSkipReasons {
+		if reason == allowed {
+			return reason
+		}
+	}
+	return AggregatorSkipOther
 }
 
 func labelOrUnknown(label string) string {

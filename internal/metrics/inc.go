@@ -12,6 +12,9 @@ func IncPqSigAttestationSigsTotal()          { metricPqSigAttestationSigsTotal.I
 func IncPqSigAttestationSigsValid()          { metricPqSigAttestationSigsValid.Inc() }
 func IncPqSigAttestationSigsInvalid()        { metricPqSigAttestationSigsInvalid.Inc() }
 func IncAggregationDispatchDropped()         { metricAggregationDispatchDropped.Inc() }
+func IncAggregatorSkipped(reason string) {
+	metricAggregatorSkipped.WithLabelValues(aggregatorSkipReason(reason)).Inc()
+}
 func IncFinalization(result string) {
 	metricFinalizationsTotal.WithLabelValues(labelOrUnknown(result)).Inc()
 }

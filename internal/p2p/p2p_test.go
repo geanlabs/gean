@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/types"
 	"github.com/golang/snappy"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -28,6 +29,48 @@ func (h *captureHandler) OnBlock(block *types.SignedBlock) { h.block = block }
 func (h *captureHandler) OnGossipAttestation(att *types.SignedAttestation) {
 }
 func (h *captureHandler) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
+}
+
+func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	logger.SetQuiet(false)
+	t.Cleanup(func() {
+		logger.SetOutput(os.Stderr)
+		SetClientGitCommit(unknownBuildValue)
+	})
+
+	SetClientGitCommit("abc123")
+	sszData := []byte("signed block ssz")
+	compressed := SnappyRawEncode(sszData)
+	root := [32]byte{0xaa}
+	logPublish(BlockTopic(), sszData, compressed, publishLogInfo{
+		slot:         7,
+		proposer:     "3",
+		blockRoot:    root,
+		hasBlockRoot: true,
+	})
+
+	out := buf.String()
+	wantParts := []string{
+		"publish gossip",
+		"topic=" + BlockTopic(),
+		"slot=7",
+		"proposer=3",
+		"block_root=0xaa",
+		"sha256_ssz=0x",
+		"sha256_compressed=0x",
+		"compressed_len=",
+		"snappy_self_decode_ok=true",
+		"message_id=0x",
+		"client_git_sha=abc123",
+		"snappy=github.com/golang/snappy@",
+	}
+	for _, part := range wantParts {
+		if !strings.Contains(out, part) {
+			t.Fatalf("publish log missing %q:\n%s", part, out)
+		}
+	}
 }
 
 func TestSnappyRawRoundtrip(t *testing.T) {

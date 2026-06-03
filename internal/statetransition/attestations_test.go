@@ -64,6 +64,56 @@ func TestLatestJustifiedDoesNotRegressWithinBlock(t *testing.T) {
 	}
 }
 
+func TestProcessAttestationsStaleSourceJustifiesWithoutReFinalizing(t *testing.T) {
+	const numValidators = 4
+
+	var r1, r4, r6 [types.RootSize]byte
+	r1[0] = 1
+	r4[0] = 4
+	r6[0] = 6
+
+	hashes := make([][]byte, 7)
+	for i := range hashes {
+		hashes[i] = make([]byte, types.RootSize)
+	}
+	copy(hashes[1], r1[:])
+	copy(hashes[4], r4[:])
+	copy(hashes[6], r6[:])
+
+	state := makeGenesisState(numValidators)
+	state.LatestJustified = &types.Checkpoint{Slot: 4, Root: r4}
+	state.LatestFinalized = &types.Checkpoint{Slot: 4, Root: r4}
+	state.HistoricalBlockHashes = hashes
+	state.JustifiedSlots = types.NewBitlistSSZ(0)
+
+	att := &types.AggregatedAttestation{
+		AggregationBits: types.BitlistFromIndices([]uint64{0, 1, 2}),
+		Data: &types.AttestationData{
+			Slot:   7,
+			Head:   &types.Checkpoint{Slot: 6, Root: r6},
+			Target: &types.Checkpoint{Slot: 6, Root: r6},
+			Source: &types.Checkpoint{Slot: 1, Root: r1},
+		},
+	}
+
+	if err := ProcessAttestations(state, []*types.AggregatedAttestation{att}); err != nil {
+		t.Fatalf("ProcessAttestations: %v", err)
+	}
+	if state.LatestJustified.Slot != 6 || state.LatestJustified.Root != r6 {
+		t.Fatalf("latest justified=%+v, want slot 6 root %x", state.LatestJustified, r6)
+	}
+	if state.LatestFinalized.Slot != 4 || state.LatestFinalized.Root != r4 {
+		t.Fatalf("latest finalized=%+v, want slot 4 root %x", state.LatestFinalized, r4)
+	}
+	if !types.BitlistGet(state.JustifiedSlots, 1) {
+		t.Fatalf("target slot 6 was not recorded in justified slots: %08b", state.JustifiedSlots)
+	}
+	if len(state.JustificationsRoots) != 0 || types.BitlistLen(state.JustificationsValidators) != 0 {
+		t.Fatalf("pending justifications roots=%d validators_len=%d, want none",
+			len(state.JustificationsRoots), types.BitlistLen(state.JustificationsValidators))
+	}
+}
+
 func TestProcessAttestationsRejectsMalformedState(t *testing.T) {
 	if err := ProcessAttestations(nil, nil); !errors.Is(err, ErrMalformedState) {
 		t.Fatalf("nil state error=%v, want ErrMalformedState", err)

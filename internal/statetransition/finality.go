@@ -12,15 +12,19 @@ func tryFinalize(
 		return
 	}
 
+	finalizedSlot := state.LatestFinalized.Slot
+	if source.Slot <= finalizedSlot {
+		return
+	}
+
 	for slot := source.Slot + 1; slot < target.Slot; slot++ {
 		if SlotIsJustifiableAfter(slot, state.LatestFinalized.Slot) {
 			return
 		}
 	}
 
-	oldFinalizedSlot := state.LatestFinalized.Slot
 	state.LatestFinalized = copyCheckpoint(source)
-	shiftJustifiedSlots(state, state.LatestFinalized.Slot-oldFinalizedSlot)
+	shiftJustifiedSlots(state, state.LatestFinalized.Slot-finalizedSlot)
 
 	for root := range *justifications {
 		slot, found := rootToSlot[root]

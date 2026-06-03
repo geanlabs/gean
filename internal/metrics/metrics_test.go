@@ -24,6 +24,29 @@ func TestCountCounterWrappersIgnoreNonPositiveValues(t *testing.T) {
 	}
 }
 
+func TestIncAggregatorSkippedUsesBoundedReasons(t *testing.T) {
+	reasons := []string{
+		AggregatorSkipNotAggregator,
+		AggregatorSkipNotSynced,
+		AggregatorSkipMissingState,
+		AggregatorSkipSpawnFailed,
+		AggregatorSkipOther,
+	}
+	for _, reason := range reasons {
+		before := metricValue(t, metricAggregatorSkipped.WithLabelValues(reason))
+		IncAggregatorSkipped(reason)
+		if got := metricValue(t, metricAggregatorSkipped.WithLabelValues(reason)); got != before+1 {
+			t.Fatalf("aggregator skipped %s=%v, want %v", reason, got, before+1)
+		}
+	}
+
+	beforeOther := metricValue(t, metricAggregatorSkipped.WithLabelValues(AggregatorSkipOther))
+	IncAggregatorSkipped("unexpected")
+	if got := metricValue(t, metricAggregatorSkipped.WithLabelValues(AggregatorSkipOther)); got != beforeOther+1 {
+		t.Fatalf("unexpected reason did not map to other: got %v want %v", got, beforeOther+1)
+	}
+}
+
 func TestGaugeWrappersClampNegativeCounts(t *testing.T) {
 	SetValidatorsCount(-1)
 	if got := metricValue(t, metricValidatorsCount); got != 0 {

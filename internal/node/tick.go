@@ -35,15 +35,8 @@ func (e *Engine) onTick() {
 
 	store.OnTick(e.Store, timestampMs, hasProposal)
 
-	if currentInterval == 2 && isAgg {
-		snap := aggregation.SnapshotInputs(e.Store)
-		if snap != nil {
-			select {
-			case e.AggregationDispatchCh <- aggregation.Dispatch{Snapshot: snap, Slot: currentSlot}:
-			default:
-				metrics.IncAggregationDispatchDropped()
-			}
-		}
+	if currentInterval == 2 {
+		e.dispatchAggregationCycle(currentSlot, isAgg)
 	}
 
 	if currentInterval == 0 || currentInterval == 4 {
@@ -61,6 +54,41 @@ func (e *Engine) onTick() {
 	if currentInterval == 3 {
 		e.updateSafeTarget()
 		store.PeriodicPrune(e.Store, e.FC, currentSlot, e.Store.LatestFinalized().Slot)
+	}
+}
+
+func (e *Engine) dispatchAggregationCycle(currentSlot uint64, isAggregator bool) {
+	if !isAggregator {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipNotAggregator)
+		return
+	}
+	// The sync-lag duty gate is spec-defined only for block and attestation; gean
+	// also applies it to aggregation. Aggregating on a stale view only produces
+	// best-effort aggregates that get dropped, so gating when lagging is safe and
+	// surfaces the not_synced skip reason.
+	if e.DutyGate != nil && !e.DutyGate.Decide("aggregation", currentSlot, e.Store.HeadSlot(), e.Store.MaxStoredBlockSlot()) {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipNotSynced)
+		return
+	}
+	if e.Store.AttestationSignatures.Len() == 0 && e.Store.NewPayloads.Len() == 0 {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
+		return
+	}
+	if e.Store.GetState(e.Store.Head()) == nil {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipMissingState)
+		return
+	}
+
+	snap := aggregation.SnapshotInputs(e.Store)
+	if snap == nil {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
+		return
+	}
+	select {
+	case e.AggregationDispatchCh <- aggregation.Dispatch{Snapshot: snap, Slot: currentSlot}:
+	default:
+		metrics.IncAggregationDispatchDropped()
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipSpawnFailed)
 	}
 }
 
