@@ -53,9 +53,13 @@ func (gc *GenesisConfig) validate() error {
 		return fmt.Errorf("GENESIS_VALIDATORS has %d validators (max %d)",
 			len(gc.GenesisValidators), types.ValidatorRegistryLimit)
 	}
-	if gc.NumValidators != nil && *gc.NumValidators != uint64(len(gc.GenesisValidators)) {
-		return fmt.Errorf("NUM_VALIDATORS=%d disagrees with len(GENESIS_VALIDATORS)=%d",
-			*gc.NumValidators, len(gc.GenesisValidators))
+	if gc.ValidatorCount != nil && *gc.ValidatorCount != uint64(len(gc.GenesisValidators)) {
+		return fmt.Errorf("VALIDATOR_COUNT=%d disagrees with len(GENESIS_VALIDATORS)=%d",
+			*gc.ValidatorCount, len(gc.GenesisValidators))
+	}
+	if gc.AttestationCommitteeCount != nil && *gc.AttestationCommitteeCount != types.AttestationCommitteeCount {
+		return fmt.Errorf("ATTESTATION_COMMITTEE_COUNT=%d disagrees with gean's %d",
+			*gc.AttestationCommitteeCount, types.AttestationCommitteeCount)
 	}
 
 	attestationPubkeys := make(map[[types.PubkeySize]byte]int, len(gc.GenesisValidators))
