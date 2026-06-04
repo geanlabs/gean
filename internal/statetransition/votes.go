@@ -6,28 +6,45 @@ func validAttestationShape(agg *types.AggregatedAttestation) bool {
 	return agg != nil && agg.Data != nil && agg.Data.Source != nil && agg.Data.Target != nil
 }
 
-func IsValidVote(state *types.State, source, target *types.Checkpoint) bool {
+const (
+	VoteReasonNilInput               = "nil_input"
+	VoteReasonSourceNotJustified     = "source_not_justified"
+	VoteReasonTargetAlreadyJustified = "target_already_justified"
+	VoteReasonZeroRoot               = "zero_root"
+	VoteReasonChainMismatch          = "chain_mismatch"
+	VoteReasonTargetNotAfterSource   = "target_not_after_source"
+	VoteReasonTargetNotJustifiable   = "target_not_justifiable"
+)
+
+func VoteInvalidReason(state *types.State, source, target *types.Checkpoint) string {
 	if state == nil || state.LatestFinalized == nil || source == nil || target == nil {
-		return false
+		return VoteReasonNilInput
 	}
 
 	finalizedSlot := state.LatestFinalized.Slot
 	if !IsSlotJustified(state, finalizedSlot, source.Slot) {
-		return false
-	}
-	if IsSlotJustified(state, finalizedSlot, target.Slot) {
-		return false
+		return VoteReasonSourceNotJustified
 	}
 	if types.IsZeroRoot(source.Root) || types.IsZeroRoot(target.Root) {
-		return false
+		return VoteReasonZeroRoot
 	}
 	if !checkpointExists(state, source) || !checkpointExists(state, target) {
-		return false
+		return VoteReasonChainMismatch
+	}
+	if IsSlotJustified(state, finalizedSlot, target.Slot) {
+		return VoteReasonTargetAlreadyJustified
 	}
 	if target.Slot <= source.Slot {
-		return false
+		return VoteReasonTargetNotAfterSource
 	}
-	return SlotIsJustifiableAfter(target.Slot, finalizedSlot)
+	if !SlotIsJustifiableAfter(target.Slot, finalizedSlot) {
+		return VoteReasonTargetNotJustifiable
+	}
+	return ""
+}
+
+func IsValidVote(state *types.State, source, target *types.Checkpoint) bool {
+	return VoteInvalidReason(state, source, target) == ""
 }
 
 func IsSlotJustified(state *types.State, finalizedSlot, slot uint64) bool {

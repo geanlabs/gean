@@ -195,6 +195,8 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 
 	if err := payloadBuildIssue(workingState, nil, payload); !errors.Is(err, ErrPayloadHeadUnknown) {
 		t.Fatalf("payload build issue=%v, want ErrPayloadHeadUnknown", err)
+	} else if !IsExpectedSkip(err) {
+		t.Fatalf("head unknown skip was not marked expected: %v", err)
 	}
 
 	sameSlot := *data
@@ -202,6 +204,25 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 	payload.Data = &sameSlot
 	if err := payloadBuildIssue(workingState, knownRoots, payload); !errors.Is(err, ErrPayloadVoteInvalid) {
 		t.Fatalf("payload build issue=%v, want ErrPayloadVoteInvalid", err)
+	}
+
+	alreadyJustified := *data
+	workingState.JustifiedSlots = types.BitlistExtend(workingState.JustifiedSlots, 2)
+	types.BitlistSet(workingState.JustifiedSlots, 1)
+	payload.Data = &alreadyJustified
+	if err := payloadBuildIssue(workingState, knownRoots, payload); !errors.Is(err, ErrPayloadVoteInvalid) {
+		t.Fatalf("payload build issue=%v, want ErrPayloadVoteInvalid", err)
+	} else if !IsExpectedSkip(err) {
+		t.Fatalf("already-justified vote was not marked expected: %v", err)
+	}
+
+	wrongRoot := *data
+	wrongRoot.Target = &types.Checkpoint{Slot: data.Target.Slot, Root: [32]byte{0x99}}
+	payload.Data = &wrongRoot
+	if err := payloadBuildIssue(workingState, knownRoots, payload); !errors.Is(err, ErrPayloadVoteInvalid) {
+		t.Fatalf("payload build issue=%v, want ErrPayloadVoteInvalid", err)
+	} else if IsExpectedSkip(err) {
+		t.Fatalf("chain mismatch was marked expected: %v", err)
 	}
 
 	farState, err := workingState.Clone()
@@ -219,5 +240,7 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 	payload.Data = &farTarget
 	if err := payloadBuildIssue(farState, knownRoots, payload); !errors.Is(err, ErrPayloadVoteInvalid) {
 		t.Fatalf("payload build issue=%v, want ErrPayloadVoteInvalid", err)
+	} else if !IsExpectedSkip(err) {
+		t.Fatalf("not-justifiable vote was not marked expected: %v", err)
 	}
 }

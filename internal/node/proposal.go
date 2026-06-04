@@ -123,6 +123,9 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		return nil, nil, err
 	}
 	for _, payloadErr := range result.PayloadErrors {
+		if blockbuilder.IsExpectedSkip(payloadErr.Err) {
+			continue
+		}
 		logger.Warn(logger.Validator, "block payload issue root=0x%x: %v", payloadErr.DataRoot, payloadErr.Err)
 	}
 

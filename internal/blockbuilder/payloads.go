@@ -81,8 +81,8 @@ func payloadBuildIssue(state *types.State, knownRoots KnownRoots, payload Attest
 	if !knownRoots.Contains(data.Head.Root) {
 		return errPayloadHeadUnknown(data.Head.Root)
 	}
-	if !statetransition.IsValidVote(state, data.Source, data.Target) {
-		return errPayloadVoteInvalid(data)
+	if reason := statetransition.VoteInvalidReason(state, data.Source, data.Target); reason != "" {
+		return errPayloadVoteInvalid(data, reason)
 	}
 	return nil
 }
