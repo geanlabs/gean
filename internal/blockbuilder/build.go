@@ -2,7 +2,9 @@ package blockbuilder
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -12,7 +14,9 @@ func Build(input Input) (*Result, error) {
 	}
 	required := requiredCheckpoint(input.RequiredJustified)
 
+	aggStart := time.Now()
 	plan, err := planAttestations(input)
+	metrics.ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds())
 	if err != nil {
 		return nil, err
 	}

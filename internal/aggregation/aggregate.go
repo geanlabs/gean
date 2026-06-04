@@ -131,6 +131,7 @@ func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache) ([]*types.Si
 				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
 
 			metrics.ObservePqSigAggBuildingTime(aggDuration.Seconds())
+			metrics.ObserveCommitteeSignaturesAggregationTime(aggDuration.Seconds())
 			metrics.IncPqSigAggregatedTotal()
 			metrics.IncPqSigAttestationsInAggregated(len(allIDs))
 

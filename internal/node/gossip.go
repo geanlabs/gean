@@ -77,10 +77,15 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 	if agg.Proof == nil || len(agg.Proof.ProofData) == 0 {
 		return
 	}
-	if err := attestation.VerifyAggregatedGossipAttestation(e.Store, agg.Data, agg.Proof.Participants, agg.Proof.ProofData); err != nil {
+	verifyStart := time.Now()
+	err := attestation.VerifyAggregatedGossipAttestation(e.Store, agg.Data, agg.Proof.Participants, agg.Proof.ProofData)
+	metrics.ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
+	if err != nil {
+		metrics.IncPqSigAggregatedInvalid()
 		logger.Error(logger.Signature, "aggregated attestation verification failed: %v", err)
 		return
 	}
+	metrics.IncPqSigAggregatedValid()
 
 	dataRoot, err := agg.Data.HashTreeRoot()
 	if err != nil {

@@ -7,7 +7,11 @@ func IncForkChoiceReorgs()                   { metricForkChoiceReorgs.Inc() }
 func IncBlocksSkippedLag()                   { metricBlocksSkippedLag.Inc() }
 func IncAttestationsSkippedLag()             { metricAttestationsSkippedLag.Inc() }
 func IncPqSigAggregatedTotal()               { metricPqSigAggregatedSignaturesTotal.Inc() }
+func IncPqSigAggregatedValid()               { metricPqSigAggregatedValid.Inc() }
+func IncPqSigAggregatedInvalid()             { metricPqSigAggregatedInvalid.Inc() }
 func IncPqSigAttestationsInAggregated(n int) { addCount(metricPqSigAttestationsInAggregated, n) }
+func IncSTFSlotsProcessed(n uint64)          { addUint(metricSTFSlotsProcessed, n) }
+func IncSTFAttestationsProcessed(n int)      { addCount(metricSTFAttestationsProcessed, n) }
 func IncPqSigAttestationSigsTotal()          { metricPqSigAttestationSigsTotal.Inc() }
 func IncPqSigAttestationSigsValid()          { metricPqSigAttestationSigsValid.Inc() }
 func IncPqSigAttestationSigsInvalid()        { metricPqSigAttestationSigsInvalid.Inc() }

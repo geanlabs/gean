@@ -32,6 +32,8 @@ func (e *Engine) updateHead() {
 			metrics.SetHeadSlot(newHeader.Slot)
 			metrics.SetLatestJustifiedSlot(justified.Slot)
 			metrics.SetLatestFinalizedSlot(finalized.Slot)
+			metrics.SetJustifiedSlot(justified.Slot)
+			metrics.SetFinalizedSlot(finalized.Slot)
 			metrics.SetGossipSignatures(e.Store.AttestationSignatures.Len())
 			metrics.SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
 			metrics.SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())

@@ -23,6 +23,25 @@ var aggregatorSkipReasons = []string{
 	AggregatorSkipOther,
 }
 
+// Attestation-aggregate coverage label values, matching the leanSpec reference
+// node's section/subnet/direction taxonomy.
+const (
+	CoverageSectionTimely            = "timely"
+	CoverageSectionLate              = "late"
+	CoverageSectionBlock             = "block"
+	CoverageSectionCombined          = "combined"
+	CoverageSectionAggregateStartNew = "aggregate_start_new"
+	CoverageSectionProposalPayloads  = "proposal_payloads"
+	CoverageSectionProposalGossip    = "proposal_gossip"
+	CoverageSectionProposalCombined  = "proposal_combined"
+
+	// CoverageSubnetCombined is the all-subnet validator total for a section.
+	CoverageSubnetCombined = "combined"
+
+	CoverageDiffBlockOnly  = "block_only"
+	CoverageDiffTimelyOnly = "timely_only"
+)
+
 func syncStatusLabel(status string) string {
 	status = labelOrUnknown(status)
 	for _, label := range syncStatusLabels {
