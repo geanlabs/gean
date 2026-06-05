@@ -10,6 +10,12 @@ func ObservePqSigVerificationTime(seconds float64) {
 func ObservePqSigAggBuildingTime(seconds float64) {
 	observeNonNegative(metricPqSigAggBuildingTime, seconds)
 }
+func ObservePqSigAggVerificationTime(seconds float64) {
+	observeNonNegative(metricPqSigAggVerificationTime, seconds)
+}
+func ObserveCommitteeSignaturesAggregationTime(seconds float64) {
+	observeNonNegative(metricCommitteeSignaturesAggregationTime, seconds)
+}
 func ObserveAggregationPrepTime(seconds float64) {
 	observeNonNegative(metricAggregationPrepTime, seconds)
 }
@@ -19,8 +25,16 @@ func ObserveForkChoiceReorgDepth(depth float64) {
 func ObserveTickIntervalDuration(seconds float64) {
 	observeNonNegative(metricTickIntervalDuration, seconds)
 }
-func ObserveSTFTime(seconds float64)           { observeNonNegative(metricSTFTime, seconds) }
+func ObserveSTFTime(seconds float64)      { observeNonNegative(metricSTFTime, seconds) }
+func ObserveSTFSlotsTime(seconds float64) { observeNonNegative(metricSTFSlotsTime, seconds) }
+func ObserveSTFBlockTime(seconds float64) { observeNonNegative(metricSTFBlockTime, seconds) }
+func ObserveSTFAttestationsTime(seconds float64) {
+	observeNonNegative(metricSTFAttestationsTime, seconds)
+}
 func ObserveBlockBuildingTime(seconds float64) { observeNonNegative(metricBlockBuildingTime, seconds) }
+func ObserveBlockBuildingPayloadAggregationTime(seconds float64) {
+	observeNonNegative(metricBlockBuildingPayloadAggregationTime, seconds)
+}
 func ObserveBlockAggregatedPayloads(n int) {
 	observeNonNegative(metricBlockAggregatedPayloads, countValue(n))
 }

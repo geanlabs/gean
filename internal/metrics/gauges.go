@@ -21,6 +21,12 @@ var (
 	metricLatestFinalizedSlot = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_latest_finalized_slot", Help: "Latest finalized checkpoint slot",
 	})
+	metricJustifiedSlot = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_justified_slot", Help: "Current justified checkpoint slot",
+	})
+	metricFinalizedSlot = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_finalized_slot", Help: "Current finalized checkpoint slot",
+	})
 	metricValidatorsCount = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_validators_count", Help: "Number of validators managed by this node",
 	})
@@ -60,4 +66,16 @@ var (
 	metricNodeSyncStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lean_node_sync_status", Help: "Node sync status",
 	}, []string{"status"})
+	metricAttestationAggregateCoverageValidators = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lean_attestation_aggregate_coverage_validators",
+		Help: "Validator coverage in attestation aggregate reports, by section and subnet (subnet=combined is the section total)",
+	}, []string{"section", "subnet"})
+	metricAttestationAggregateCoverageSubnets = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lean_attestation_aggregate_coverage_subnets",
+		Help: "Number of covered subnets in attestation aggregate reports, by section",
+	}, []string{"section"})
+	metricAttestationAggregateCoverageDiffValidators = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lean_attestation_aggregate_coverage_diff_validators",
+		Help: "Validator coverage delta between block payloads and timely pre-merge payloads, by direction",
+	}, []string{"direction"})
 )

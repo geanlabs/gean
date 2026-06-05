@@ -14,6 +14,12 @@ func StateTransition(state *types.State, block *types.Block) error {
 		return err
 	}
 
+	return VerifyStateRoot(state, block)
+}
+
+// VerifyStateRoot checks that the post-transition state root matches the
+// block's committed state root.
+func VerifyStateRoot(state *types.State, block *types.Block) error {
 	computedRoot, err := state.HashTreeRoot()
 	if err != nil {
 		return err
@@ -24,6 +30,5 @@ func StateTransition(state *types.State, block *types.Block) error {
 			Computed: computedRoot,
 		}
 	}
-
 	return nil
 }

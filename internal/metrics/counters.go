@@ -28,6 +28,18 @@ var (
 	metricPqSigAggregatedSignaturesTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_pq_sig_aggregated_signatures_total", Help: "Total aggregated signature proofs produced",
 	})
+	metricPqSigAggregatedValid = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_pq_sig_aggregated_signatures_valid_total", Help: "Total valid aggregated signature verifications",
+	})
+	metricPqSigAggregatedInvalid = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_pq_sig_aggregated_signatures_invalid_total", Help: "Total invalid aggregated signature verifications",
+	})
+	metricSTFSlotsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_state_transition_slots_processed_total", Help: "Total number of processed slots",
+	})
+	metricSTFAttestationsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_state_transition_attestations_processed_total", Help: "Total number of processed attestations",
+	})
 	metricPqSigAttestationsInAggregated = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_pq_sig_attestations_in_aggregated_signatures_total", Help: "Total attestations included in aggregated proofs",
 	})

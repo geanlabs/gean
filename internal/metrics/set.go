@@ -9,6 +9,8 @@ func SetCurrentSlot(s uint64)         { metricCurrentSlot.Set(float64(s)) }
 func SetSafeTargetSlot(s uint64)      { metricSafeTargetSlot.Set(float64(s)) }
 func SetLatestJustifiedSlot(s uint64) { metricLatestJustifiedSlot.Set(float64(s)) }
 func SetLatestFinalizedSlot(s uint64) { metricLatestFinalizedSlot.Set(float64(s)) }
+func SetJustifiedSlot(s uint64)       { metricJustifiedSlot.Set(float64(s)) }
+func SetFinalizedSlot(s uint64)       { metricFinalizedSlot.Set(float64(s)) }
 func SetValidatorsCount(n int)        { metricValidatorsCount.Set(countValue(n)) }
 
 func SetIsAggregator(b bool) {
@@ -32,4 +34,18 @@ func SetSyncStatus(status string) {
 	for _, s := range syncStatusLabels {
 		metricNodeSyncStatus.WithLabelValues(s).Set(boolValue(s == active))
 	}
+}
+
+func SetAttestationAggregateCoverageValidators(section, subnet string, n int) {
+	metricAttestationAggregateCoverageValidators.
+		WithLabelValues(labelOrUnknown(section), labelOrUnknown(subnet)).Set(countValue(n))
+}
+
+func SetAttestationAggregateCoverageSubnets(section string, n int) {
+	metricAttestationAggregateCoverageSubnets.WithLabelValues(labelOrUnknown(section)).Set(countValue(n))
+}
+
+func SetAttestationAggregateCoverageDiffValidators(direction string, n int) {
+	metricAttestationAggregateCoverageDiffValidators.
+		WithLabelValues(labelOrUnknown(direction)).Set(countValue(n))
 }

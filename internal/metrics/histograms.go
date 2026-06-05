@@ -36,6 +36,16 @@ var (
 		Help:    "Time to build an aggregated signature proof",
 		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
 	})
+	metricPqSigAggVerificationTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_pq_sig_aggregated_signatures_verification_time_seconds",
+		Help:    "Time to verify an aggregated attestation signature",
+		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4},
+	})
+	metricCommitteeSignaturesAggregationTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_committee_signatures_aggregation_time_seconds",
+		Help:    "Time taken to aggregate committee signatures",
+		Buckets: []float64{0.05, 0.1, 0.25, 0.5, 0.75, 1, 2, 3, 4},
+	})
 	metricAggregationPrepTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_aggregation_prep_time_seconds",
 		Help:    "Per-aggregate prep time",
@@ -61,10 +71,30 @@ var (
 		Help:    "Time to process full state transition",
 		Buckets: []float64{0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4},
 	})
+	metricSTFSlotsTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_state_transition_slots_processing_time_seconds",
+		Help:    "Time taken to process slots",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+	})
+	metricSTFBlockTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_state_transition_block_processing_time_seconds",
+		Help:    "Time taken to process block",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+	})
+	metricSTFAttestationsTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_state_transition_attestations_processing_time_seconds",
+		Help:    "Time taken to process attestations",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
+	})
 	metricBlockBuildingTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_block_building_time_seconds",
 		Help:    "Time to build a block",
 		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1},
+	})
+	metricBlockBuildingPayloadAggregationTime = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_block_building_payload_aggregation_time_seconds",
+		Help:    "Time taken to build aggregated_payloads during block building",
+		Buckets: []float64{0.1, 0.25, 0.5, 0.75, 1, 2, 3, 4},
 	})
 	metricBlockAggregatedPayloads = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_block_aggregated_payloads",
