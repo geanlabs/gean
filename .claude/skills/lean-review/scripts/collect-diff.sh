@@ -80,7 +80,7 @@ echo ""
 echo "### Don't-touch matches (excluded from review)"
 echo ""
 # Mirror references/dont-touch.md hard-skip patterns.
-DONT_TOUCH_PATTERNS='(_encoding\.go$|^xmss/rust/|\.py$|^specfixtures/|^spectests/fixture\.go$|^vendor/|^third_party/|^external/)'
+DONT_TOUCH_PATTERNS='(_encoding\.go$|^xmss/rust/|\.py$|^internal/specfixtures/|^internal/spectests/fixture\.go$|^vendor/|^third_party/|^external/)'
 SKIPPED="$(git diff --name-only "$BASE...HEAD" | grep -E "$DONT_TOUCH_PATTERNS" || true)"
 if [ -n "$SKIPPED" ]; then
     while IFS= read -r f; do

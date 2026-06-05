@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`gean` is a Go module (`github.com/geanlabs/gean`) for a lean consensus client. Core node orchestration lives in `node/`; consensus state transitions in `statetransition/`; LMD-GHOST fork choice in `forkchoice/`; consensus types and generated SSZ encoders in `types/`; storage backends in `storage/`; libp2p networking in `p2p/`; HTTP/admin API code in `api/`; genesis and checkpoint helpers in `genesis/` and `checkpoint/`. CLI entry points are under `cmd/gean/` and `cmd/keygen/`. XMSS crypto uses Go bindings in `xmss/` plus Rust FFI crates in `xmss/rust/`. Package tests sit beside source files as `*_test.go`; broader spec fixture tests are in `spectests/`.
+`gean` is a Go module (`github.com/geanlabs/gean`) for a lean consensus client. Top-level Go code is limited to CLI entry points in `cmd/` and the XMSS crypto/FFI package in `xmss/`. All client and protocol implementation packages live under `internal/`: `types/`, `statetransition/`, `node/`, `store/`, `storage/`, `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`, `role/`, `dutygate/`, `metrics/`, `p2p/`, `syncer/`, `forkchoice/`, `api/`, `genesis/`, `checkpoint/`, `logger/`, and `specfixtures/`. XMSS crypto uses Go bindings in `xmss/` plus Rust FFI crates in `xmss/rust/`. Package tests sit beside source files as `*_test.go`; broader spec fixture tests are in `internal/spectests/`.
 
 ## Build, Test, and Development Commands
 
@@ -10,18 +10,19 @@
 - `make ffi`: builds XMSS Rust glue libraries under `xmss/rust/target/`.
 - `make test`: runs regular Go unit tests, excluding `xmss`, `spectests`, and `cmd`.
 - `make test-ffi`: builds FFI and runs `./xmss` tests.
-- `make test-spec`: runs `./spectests` with `-tags=spectests`; requires generated `leanSpec/fixtures`.
+- `make test-spec`: runs `./internal/spectests` with `-tags=spectests`; requires generated `leanSpec/fixtures`.
 - `make lint`: runs `go vet`, `cargo fmt --check`, and `cargo clippy`.
 - `make fmt`: runs `gofmt -w .` and Rust `cargo fmt`.
 - `make run-setup` then `make run`: generate a local testnet and start node0.
+- `go build -tags hive_testdriver ./cmd/gean`: build a binary that can expose Hive test-driver routes when `HIVE_LEAN_TEST_DRIVER=1`.
 
 ## Coding Style & Naming Conventions
 
-Use `gofmt` for all Go files and `cargo fmt` for Rust. Keep Go package names short and lowercase. Tests should use Go’s `TestName` style and remain package-local unless black-box behavior is required. Do not hand-edit `types/*_encoding.go`; update struct tags and run `make sszgen`.
+Use `gofmt` for all Go files and `cargo fmt` for Rust. Keep Go package names short and lowercase. Tests should use Go’s `TestName` style and remain package-local unless black-box behavior is required. Do not hand-edit `internal/types/*_encoding.go`; update struct tags and run `make sszgen`.
 
 ## Testing Guidelines
 
-Prefer targeted tests while iterating, for example `go test ./node/ -run TestSync -v -count=1`. Run `make test` before normal commits. Run `make test-ffi` when touching `xmss/` or Rust FFI, and `make test-spec` when changing consensus behavior or SSZ compatibility.
+Prefer targeted tests while iterating, for example `go test ./internal/node -run TestSync -v -count=1`. Run `make test` before normal commits. Run `make test-ffi` when touching `xmss/` or Rust FFI, and `make test-spec` when changing consensus behavior or SSZ compatibility.
 
 ## Commit & Pull Request Guidelines
 
