@@ -4,9 +4,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "chain/**"
-      - "spectests/**"
-      - "types/**"
+      - "internal/statetransition/**"
+      - "internal/forkchoice/**"
+      - "internal/spectests/**"
+      - "internal/types/**"
       - "Makefile"
 
 env:

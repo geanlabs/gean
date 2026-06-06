@@ -1,9 +1,5 @@
 package xmss
 
-// Key management for XMSS validators.
-// Devnet-4: dual keys — separate attestation and proposal keypairs per validator.
-// Spec: lean_spec/subspecs/containers/validator.py
-
 // #include <stdint.h>
 // #include <stdlib.h>
 // typedef struct KeyPair KeyPair;
@@ -27,36 +23,42 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unsafe"
 
-	"github.com/geanlabs/gean/types"
+	"github.com/geanlabs/gean/internal/types"
 	"gopkg.in/yaml.v3"
 )
 
-// ValidatorKeyPair holds a loaded XMSS keypair for a validator.
-// The opaque C pointer is owned by this struct and freed on Close.
 type ValidatorKeyPair struct {
 	handle *C.KeyPair
 	Index  uint64
 }
 
-// PublicKeyPtr returns a borrowed pointer to the embedded public key.
 func (kp *ValidatorKeyPair) PublicKeyPtr() *C.PublicKey {
+	if kp == nil || kp.handle == nil {
+		return nil
+	}
 	return C.hashsig_keypair_get_public_key(kp.handle)
 }
 
-// PrivateKeyPtr returns a borrowed pointer to the embedded private key.
 func (kp *ValidatorKeyPair) PrivateKeyPtr() *C.PrivateKey {
+	if kp == nil || kp.handle == nil {
+		return nil
+	}
 	return C.hashsig_keypair_get_private_key(kp.handle)
 }
 
-// Sign signs a 32-byte message at the given slot.
 func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([types.SignatureSize]byte, error) {
 	var result [types.SignatureSize]byte
+	privateKey := kp.PrivateKeyPtr()
+	if privateKey == nil {
+		return result, fmt.Errorf("%w: keypair is nil or closed", ErrSigningFailed)
+	}
 
 	sigPtr := C.hashsig_sign(
-		kp.PrivateKeyPtr(),
+		privateKey,
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
 		C.uint32_t(slot),
 	)
@@ -79,23 +81,18 @@ func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([types.Signatur
 	return result, nil
 }
 
-// Close frees the underlying C keypair.
 func (kp *ValidatorKeyPair) Close() {
-	if kp.handle != nil {
+	if kp != nil && kp.handle != nil {
 		C.hashsig_keypair_free(kp.handle)
 		kp.handle = nil
 	}
 }
 
-// KeyManager holds dual keypairs for each validator on this node.
-// Attestation and proposal keys are independent, allowing both to sign
-// in the same slot without violating XMSS one-time signature constraints.
 type KeyManager struct {
 	attestationKeys map[uint64]*ValidatorKeyPair
 	proposalKeys    map[uint64]*ValidatorKeyPair
 }
 
-// NewKeyManager creates a KeyManager from loaded dual keypairs.
 func NewKeyManager(attestationKeys, proposalKeys map[uint64]*ValidatorKeyPair) *KeyManager {
 	return &KeyManager{
 		attestationKeys: attestationKeys,
@@ -103,30 +100,44 @@ func NewKeyManager(attestationKeys, proposalKeys map[uint64]*ValidatorKeyPair) *
 	}
 }
 
-// ValidatorIDs returns all validator indices managed by this node.
 func (km *KeyManager) ValidatorIDs() []uint64 {
+	if km == nil {
+		return nil
+	}
 	ids := make([]uint64, 0, len(km.attestationKeys))
 	for id := range km.attestationKeys {
 		ids = append(ids, id)
 	}
+	sort.Slice(ids, func(i, j int) bool {
+		return ids[i] < ids[j]
+	})
 	return ids
 }
 
-// GetAttestationKey returns the attestation keypair for a validator.
 func (km *KeyManager) GetAttestationKey(validatorID uint64) *ValidatorKeyPair {
+	if km == nil {
+		return nil
+	}
 	return km.attestationKeys[validatorID]
 }
 
-// GetProposalKey returns the proposal keypair for a validator.
 func (km *KeyManager) GetProposalKey(validatorID uint64) *ValidatorKeyPair {
+	if km == nil {
+		return nil
+	}
 	return km.proposalKeys[validatorID]
 }
 
-// SignAttestation signs attestation data using the attestation key.
 func (km *KeyManager) SignAttestation(validatorID uint64, data *types.AttestationData) ([types.SignatureSize]byte, error) {
-	kp, ok := km.attestationKeys[validatorID]
-	if !ok {
+	if km == nil {
+		return [types.SignatureSize]byte{}, fmt.Errorf("key manager is nil")
+	}
+	kp := km.GetAttestationKey(validatorID)
+	if kp == nil || kp.handle == nil {
 		return [types.SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
+	}
+	if data == nil {
+		return [types.SignatureSize]byte{}, fmt.Errorf("attestation data is nil")
 	}
 
 	msgRoot, err := data.HashTreeRoot()
@@ -142,10 +153,12 @@ func (km *KeyManager) SignAttestation(validatorID uint64, data *types.Attestatio
 	return kp.Sign(slot, msgRoot)
 }
 
-// SignBlock signs a block root using the proposal key.
 func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]byte) ([types.SignatureSize]byte, error) {
-	kp, ok := km.proposalKeys[validatorID]
-	if !ok {
+	if km == nil {
+		return [types.SignatureSize]byte{}, fmt.Errorf("key manager is nil")
+	}
+	kp := km.GetProposalKey(validatorID)
+	if kp == nil || kp.handle == nil {
 		return [types.SignatureSize]byte{}, fmt.Errorf("proposal key for validator %d not found", validatorID)
 	}
 
@@ -157,8 +170,10 @@ func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]b
 	return kp.Sign(s, blockRoot)
 }
 
-// Close frees all keypairs.
 func (km *KeyManager) Close() {
+	if km == nil {
+		return
+	}
 	for _, kp := range km.attestationKeys {
 		kp.Close()
 	}
@@ -167,28 +182,16 @@ func (km *KeyManager) Close() {
 	}
 }
 
-// --- Key loading from YAML + files ---
-
-// annotatedValidator represents a validator entry from annotated_validators.yaml.
-// Supports both formats:
-//   - lean-quickstart: two entries per validator with pubkey_hex + privkey_file
-//     (attester vs proposer inferred from filename containing "attester" or "proposer")
-//   - gean keygen: one entry per validator with attestation/proposal specific fields
 type annotatedValidator struct {
-	Index uint64 `yaml:"index"`
-	// lean-quickstart format (shared by zeam, ethlambda, etc.)
-	PubkeyHex   string `yaml:"pubkey_hex"`
-	PrivkeyFile string `yaml:"privkey_file"`
-	// gean keygen format (dual keys in single entry)
+	Index             uint64 `yaml:"index"`
+	PubkeyHex         string `yaml:"pubkey_hex"`
+	PrivkeyFile       string `yaml:"privkey_file"`
 	AttestationPubkey string `yaml:"attestation_pubkey_hex"`
 	ProposalPubkey    string `yaml:"proposal_pubkey_hex"`
 	AttestationSkFile string `yaml:"attestation_sk_file"`
 	ProposalSkFile    string `yaml:"proposal_sk_file"`
 }
 
-// LoadValidatorKeys loads dual XMSS keypairs from annotated_validators.yaml + key files.
-// Supports lean-quickstart format (two entries per validator: attester + proposer)
-// and gean keygen format (one entry per validator with both keys).
 func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, error) {
 	data, err := os.ReadFile(annotatedPath)
 	if err != nil {
@@ -210,8 +213,6 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 
 	for _, v := range validators {
 		if v.PrivkeyFile != "" {
-			// lean-quickstart format: pubkey_hex + privkey_file per entry.
-			// Attester vs proposer determined by filename.
 			kp, err := loadKeypair(keysDir, v.PrivkeyFile, v.PubkeyHex, v.Index)
 			if err != nil {
 				return nil, fmt.Errorf("load key for validator %d (%s): %w", v.Index, v.PrivkeyFile, err)
@@ -221,7 +222,6 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 			} else if strings.Contains(v.PrivkeyFile, "proposer") || strings.Contains(v.PrivkeyFile, "proposal") {
 				proposalKeys[v.Index] = kp
 			} else {
-				// Unknown type — use as both (backward compat with single-key format).
 				if attestationKeys[v.Index] == nil {
 					attestationKeys[v.Index] = kp
 				}
@@ -229,8 +229,13 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 					proposalKeys[v.Index] = kp
 				}
 			}
-		} else if v.AttestationSkFile != "" {
-			// gean keygen format: one entry with both keys.
+		} else if v.AttestationSkFile != "" || v.ProposalSkFile != "" {
+			if v.AttestationSkFile == "" {
+				return nil, fmt.Errorf("attestation key file missing for validator %d", v.Index)
+			}
+			if v.ProposalSkFile == "" {
+				return nil, fmt.Errorf("proposal key file missing for validator %d", v.Index)
+			}
 			attKp, err := loadKeypair(keysDir, v.AttestationSkFile, v.AttestationPubkey, v.Index)
 			if err != nil {
 				return nil, fmt.Errorf("load attestation key for validator %d: %w", v.Index, err)
@@ -248,7 +253,6 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 	return NewKeyManager(attestationKeys, proposalKeys), nil
 }
 
-// loadKeypair loads a single XMSS keypair from an SK file and pubkey hex.
 func loadKeypair(keysDir, skFile, pubkeyHex string, index uint64) (*ValidatorKeyPair, error) {
 	skPath := skFile
 	if !filepath.IsAbs(skPath) {
@@ -259,8 +263,14 @@ func loadKeypair(keysDir, skFile, pubkeyHex string, index uint64) (*ValidatorKey
 	if err != nil {
 		return nil, fmt.Errorf("read secret key: %w", err)
 	}
+	if len(skBytes) == 0 {
+		return nil, fmt.Errorf("secret key is empty")
+	}
 
-	pkHex := strings.TrimPrefix(strings.TrimSpace(pubkeyHex), "0x")
+	pkHex := strings.TrimSpace(pubkeyHex)
+	if len(pkHex) >= 2 && pkHex[0] == '0' && (pkHex[1] == 'x' || pkHex[1] == 'X') {
+		pkHex = pkHex[2:]
+	}
 	pkBytes, err := hex.DecodeString(pkHex)
 	if err != nil {
 		return nil, fmt.Errorf("decode pubkey hex: %w", err)

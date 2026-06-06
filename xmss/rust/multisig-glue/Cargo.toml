@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rec_aggregation = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "2eb4b9d" }
-leansig_wrapper = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "2eb4b9d" }
-backend = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "2eb4b9d" }
+# Pinned to devnet4 f66d4a9. leanMultisig ships an experimental zk-alloc allocator,
+# but it is opt-in (a consumer must install #[global_allocator] itself). We deliberately
+# do NOT, so the staticlib stays on the system allocator — zk-alloc can corrupt memory.
+rec_aggregation = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "f66d4a9" }
+leansig_wrapper = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "f66d4a9" }
+backend = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "f66d4a9" }
 
 [lib]
-crate-type = ["staticlib"]
+# Built as an rlib so its `#[no_mangle] pub extern "C"` symbols can be
+# funnelled through the `cgo-glue` staticlib shim. See cgo-glue/Cargo.toml.
+crate-type = ["rlib"]
 name = "multisig_glue"

@@ -131,7 +131,7 @@ pub unsafe extern "C" fn xmss_aggregate(
                 return std::ptr::null();
             }
             let proof_bytes = slice::from_raw_parts(proof_ptrs[i], proof_lens[i]);
-            let proof = match AggregatedXMSS::deserialize(proof_bytes) {
+            let proof = match AggregatedXMSS::decompress(proof_bytes) {
                 Some(p) => p,
                 None => return std::ptr::null(),
             };
@@ -156,8 +156,10 @@ pub unsafe extern "C" fn xmss_aggregate(
             log_inv_rate,
         )
     })) {
-        Ok((_pub_keys, agg_sig)) => Box::into_raw(Box::new(agg_sig)),
-        Err(_) => std::ptr::null(), // panic caught
+        // xmss_aggregate is fallible: Result<(signers, sig), AggregationError>.
+        Ok(Ok((_pub_keys, agg_sig))) => Box::into_raw(Box::new(agg_sig)),
+        Ok(Err(_)) => std::ptr::null(), // aggregation rejected the inputs
+        Err(_) => std::ptr::null(),     // panic caught (unwinding across FFI is UB)
     }
 }
 
@@ -190,7 +192,7 @@ pub unsafe extern "C" fn xmss_verify_aggregated(
     }
 
     let proof_bytes = slice::from_raw_parts(agg_sig_bytes, agg_sig_len);
-    let agg_sig = match AggregatedXMSS::deserialize(proof_bytes) {
+    let agg_sig = match AggregatedXMSS::decompress(proof_bytes) {
         Some(sig) => sig,
         None => return false,
     };
@@ -218,7 +220,7 @@ pub unsafe extern "C" fn xmss_aggregate_signature_to_bytes(
         return 0;
     }
     let agg_sig_ref = &*agg_sig;
-    let ssz_bytes = agg_sig_ref.serialize();
+    let ssz_bytes = agg_sig_ref.compress();
     if ssz_bytes.len() > buffer_len {
         return 0;
     }
@@ -236,7 +238,7 @@ pub unsafe extern "C" fn xmss_aggregate_signature_from_bytes(
         return std::ptr::null_mut();
     }
     let input_slice = slice::from_raw_parts(bytes, bytes_len);
-    match AggregatedXMSS::deserialize(input_slice) {
+    match AggregatedXMSS::decompress(input_slice) {
         Some(agg_sig) => Box::into_raw(Box::new(agg_sig)),
         None => std::ptr::null_mut(),
     }
