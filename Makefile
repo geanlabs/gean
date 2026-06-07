@@ -116,7 +116,7 @@ leanSpec/fixtures: leanSpec ## Generate consensus test fixtures from leanSpec
 		mkdir -p $$KEYS_DIR && \
 		curl -sSL "$$KEYS_URL" -o /tmp/prod_scheme.tar.gz && \
 		tar -xzf /tmp/prod_scheme.tar.gz -C $$KEYS_DIR && \
-		uv run fill --fork Lstar -n auto --scheme prod -o fixtures
+		uv run fill --fork Lstar --scheme prod -o fixtures
 
 # --- Docker ---
 
