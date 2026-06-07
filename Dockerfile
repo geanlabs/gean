@@ -29,14 +29,14 @@ RUN cd xmss/rust && \
       cargo build --profile multisig-release --locked; \
     fi
 
-# Stage leanMultisig Python sources at the exact checkout path the binary expects.
+# Stage leanVM Python sources at the exact checkout path the binary expects.
 # The lean_compiler resolves .py files via CARGO_MANIFEST_DIR baked at compile time;
 # on arm64 the pre-committed bytecode cache misses and triggers a recompile from source.
-RUN CHECKOUT_DIR=$(ls -d /root/.cargo/git/checkouts/leanmultisig-*/*/crates/rec_aggregation | head -1 | sed 's|/crates/rec_aggregation||') && \
-    mkdir -p /leanmultisig-staged && \
-    echo "$CHECKOUT_DIR" > /leanmultisig-staged/.checkout_root && \
-    cp -r "$CHECKOUT_DIR/crates/rec_aggregation" /leanmultisig-staged/rec_aggregation && \
-    cp -r "$CHECKOUT_DIR/crates/lean_compiler" /leanmultisig-staged/lean_compiler
+RUN CHECKOUT_DIR=$(ls -d /root/.cargo/git/checkouts/leanvm-*/8fcbd77/crates/rec_aggregation | sed 's|/crates/rec_aggregation||') && \
+    mkdir -p /leanvm-staged && \
+    echo "$CHECKOUT_DIR" > /leanvm-staged/.checkout_root && \
+    cp -r "$CHECKOUT_DIR/crates/rec_aggregation" /leanvm-staged/rec_aggregation && \
+    cp -r "$CHECKOUT_DIR/crates/lean_compiler" /leanvm-staged/lean_compiler
 
 # Copy Go module files for dependency caching
 COPY go.mod go.sum ./
@@ -69,16 +69,16 @@ LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 COPY --from=builder /app/bin/gean /usr/local/bin/
 COPY --from=builder /app/bin/keygen /usr/local/bin/
 
-# leanMultisig's lean_compiler reads .py files at runtime when the embedded
+# leanVM's lean_compiler reads .py files at runtime when the embedded
 # cached_bytecode.bin fingerprint doesn't match the build target (arm64 builds
 # hit this because the repo's cache is x86-only). Restore the Python sources
 # at the exact CARGO_MANIFEST_DIR path baked into the binary at compile time.
-COPY --from=builder /leanmultisig-staged/ /tmp/leanmultisig-staged/
-RUN CHECKOUT_ROOT=$(cat /tmp/leanmultisig-staged/.checkout_root) && \
+COPY --from=builder /leanvm-staged/ /tmp/leanvm-staged/
+RUN CHECKOUT_ROOT=$(cat /tmp/leanvm-staged/.checkout_root) && \
     mkdir -p "$CHECKOUT_ROOT/crates" && \
-    cp -r /tmp/leanmultisig-staged/rec_aggregation "$CHECKOUT_ROOT/crates/" && \
-    cp -r /tmp/leanmultisig-staged/lean_compiler "$CHECKOUT_ROOT/crates/" && \
-    rm -rf /tmp/leanmultisig-staged
+    cp -r /tmp/leanvm-staged/rec_aggregation "$CHECKOUT_ROOT/crates/" && \
+    cp -r /tmp/leanvm-staged/lean_compiler "$CHECKOUT_ROOT/crates/" && \
+    rm -rf /tmp/leanvm-staged
 
 
 # 9000/udp - P2P QUIC

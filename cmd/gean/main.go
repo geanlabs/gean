@@ -67,7 +67,9 @@ func run(cfg config) error {
 	}
 	defer p2pHost.Close()
 
-	preinitializeXMSS(cfg.IsAggregator)
+	if err := preinitializeXMSS(); err != nil {
+		return err
+	}
 
 	aggCtl := role.NewWithHook(cfg.IsAggregator, metrics.SetIsAggregator)
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount)

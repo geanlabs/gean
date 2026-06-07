@@ -36,7 +36,10 @@ func (e *Engine) onTick() {
 	store.OnTick(e.Store, timestampMs, hasProposal)
 
 	if currentInterval == 2 {
-		e.dispatchAggregationCycle(currentSlot, isAgg)
+		_, proposesNext := e.getOurProposer(currentSlot + 1)
+		if !proposesNext {
+			e.dispatchAggregationCycle(currentSlot, isAgg)
+		}
 	}
 
 	if currentInterval == 0 || currentInterval == 4 {
@@ -86,6 +89,7 @@ func (e *Engine) dispatchAggregationCycle(currentSlot uint64, isAggregator bool)
 	}
 	select {
 	case e.AggregationDispatchCh <- aggregation.Dispatch{Snapshot: snap, Slot: currentSlot}:
+		metrics.SetProvingQueueDepth("aggregation", len(e.AggregationDispatchCh))
 	default:
 		metrics.IncAggregationDispatchDropped()
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipSpawnFailed)

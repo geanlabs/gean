@@ -27,11 +27,14 @@ func validateSignedBlock(signedBlock *types.SignedBlock, verify bool) (*types.Bl
 	if signedBlock.Block.Body == nil {
 		return nil, fmt.Errorf("malformed block: body is nil")
 	}
-	if verify && signedBlock.Signature == nil {
+	if verify && (signedBlock.Proof == nil || len(signedBlock.Proof.Proof) == 0) {
 		return nil, &store.StoreError{
 			Kind:    store.ErrAttestationSignatureMismatch,
-			Message: "block signatures missing",
+			Message: "block proof missing",
 		}
+	}
+	if signedBlock.Proof != nil && len(signedBlock.Proof.Proof) > types.ByteList512KiBMax {
+		return nil, fmt.Errorf("block proof exceeds %d bytes", types.ByteList512KiBMax)
 	}
 	return signedBlock.Block, nil
 }

@@ -10,14 +10,14 @@ const (
 	ValidatorRegistryLimit     = 1 << 12
 	AttestationCommitteeCount  = 1
 	JustificationLookbackSlots = 3
-	MaxAttestationsData        = 16
+	MaxAttestationsData        = 8
 
 	JustificationValidatorsLimit = HistoricalRootsLimit * ValidatorRegistryLimit
 
-	PubkeySize     = 52
-	SignatureSize  = 2536
-	RootSize       = 32
-	ByteListMiBMax = 1 << 20
+	PubkeySize        = 52
+	SignatureSize     = 2536
+	RootSize          = 32
+	ByteList512KiBMax = 1 << 19
 
 	SyncToleranceSlots = 2
 

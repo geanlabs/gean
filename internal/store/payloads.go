@@ -8,7 +8,7 @@ import (
 
 type PayloadEntry struct {
 	Data   *types.AttestationData
-	Proofs []*types.AggregatedSignatureProof
+	Proofs []*types.SingleMessageAggregate
 }
 
 type PayloadBuffer struct {
@@ -26,7 +26,20 @@ func NewPayloadBuffer(capacity int) *PayloadBuffer {
 	}
 }
 
-func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData, proof *types.AggregatedSignatureProof) {
+func (pb *PayloadBuffer) PushData(dataRoot [32]byte, attData *types.AttestationData) {
+	if pb == nil || attData == nil {
+		return
+	}
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+	if _, ok := pb.data[dataRoot]; ok {
+		return
+	}
+	pb.data[dataRoot] = &PayloadEntry{Data: copyAttestationData(attData)}
+	pb.order = append(pb.order, dataRoot)
+}
+
+func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData, proof *types.SingleMessageAggregate) {
 	if pb == nil {
 		return
 	}
@@ -53,7 +66,7 @@ func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData,
 	} else {
 		pb.data[dataRoot] = &PayloadEntry{
 			Data:   storedData,
-			Proofs: []*types.AggregatedSignatureProof{storedProof},
+			Proofs: []*types.SingleMessageAggregate{storedProof},
 		}
 		pb.order = append(pb.order, dataRoot)
 		pb.totalProofs++
@@ -78,6 +91,26 @@ func (pb *PayloadBuffer) PushBatch(entries []PayloadKV) {
 	for _, e := range entries {
 		pb.Push(e.DataRoot, e.Data, e.Proof)
 	}
+}
+
+func (pb *PayloadBuffer) Replace(dataRoot [32]byte, attData *types.AttestationData, proof *types.SingleMessageAggregate) {
+	if pb == nil || attData == nil || !validPayloadProof(proof) {
+		return
+	}
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+	if entry := pb.data[dataRoot]; entry != nil {
+		pb.totalProofs -= len(entry.Proofs)
+		entry.Data = copyAttestationData(attData)
+		entry.Proofs = []*types.SingleMessageAggregate{copyProof(proof)}
+	} else {
+		pb.data[dataRoot] = &PayloadEntry{
+			Data:   copyAttestationData(attData),
+			Proofs: []*types.SingleMessageAggregate{copyProof(proof)},
+		}
+		pb.order = append(pb.order, dataRoot)
+	}
+	pb.totalProofs++
 }
 
 func (pb *PayloadBuffer) Drain() []PayloadKV {
@@ -197,7 +230,7 @@ func (pb *PayloadBuffer) Entries() map[[32]byte]*PayloadEntry {
 		if !ok || !validPayloadEntry(entry) {
 			continue
 		}
-		proofs := make([]*types.AggregatedSignatureProof, 0, len(entry.Proofs))
+		proofs := make([]*types.SingleMessageAggregate, 0, len(entry.Proofs))
 		for _, proof := range entry.Proofs {
 			if validPayloadProof(proof) {
 				proofs = append(proofs, copyProof(proof))
@@ -214,7 +247,7 @@ func (pb *PayloadBuffer) Entries() map[[32]byte]*PayloadEntry {
 type PayloadKV struct {
 	DataRoot [32]byte
 	Data     *types.AttestationData
-	Proof    *types.AggregatedSignatureProof
+	Proof    *types.SingleMessageAggregate
 }
 
 func (s *ConsensusStore) PromoteNewToKnown() {
@@ -239,10 +272,10 @@ func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.Attest
 }
 
 func validPayloadEntry(entry *PayloadEntry) bool {
-	return entry != nil && entry.Data != nil && len(entry.Proofs) > 0
+	return entry != nil && entry.Data != nil
 }
 
-func validPayloadProof(proof *types.AggregatedSignatureProof) bool {
+func validPayloadProof(proof *types.SingleMessageAggregate) bool {
 	return proof != nil &&
 		types.BitlistCount(proof.Participants) > 0
 }

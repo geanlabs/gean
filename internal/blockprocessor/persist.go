@@ -79,7 +79,7 @@ func persistBlock(
 			return false, err
 		}
 	}
-	if err := putImportBatch(wb, storage.TableBlockSignatures, []storage.KV{{Key: blockRoot[:], Value: fullData}}, "signed block"); err != nil {
+	if err := putImportBatch(wb, storage.TableSignedBlocks, []storage.KV{{Key: blockRoot[:], Value: fullData}}, "signed block"); err != nil {
 		return false, err
 	}
 	if len(checkpoints.entries) > 0 {

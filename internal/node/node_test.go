@@ -103,7 +103,7 @@ func makeSafeTargetEngine(t *testing.T, numValidators int) (*Engine, [32]byte) {
 	return e, block2
 }
 
-func planAggregatedVoteForBlock(t *testing.T, targetRoot [32]byte, targetSlot, numValidators, numVoters uint64) ([32]byte, *types.AttestationData, *types.AggregatedSignatureProof) {
+func planAggregatedVoteForBlock(t *testing.T, targetRoot [32]byte, targetSlot, numValidators, numVoters uint64) ([32]byte, *types.AttestationData, *types.SingleMessageAggregate) {
 	t.Helper()
 
 	bits := types.NewBitlistSSZ(numValidators)
@@ -120,7 +120,7 @@ func planAggregatedVoteForBlock(t *testing.T, targetRoot [32]byte, targetSlot, n
 	if err != nil {
 		t.Fatalf("hash attestation data: %v", err)
 	}
-	return dataRoot, data, &types.AggregatedSignatureProof{Participants: bits}
+	return dataRoot, data, &types.SingleMessageAggregate{Participants: bits}
 }
 
 func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
@@ -228,7 +228,7 @@ func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
 			ParentRoot: parentRoot,
 			Body:       &types.BlockBody{},
 		},
-		Signature: &types.BlockSignatures{},
+		Proof: &types.MultiMessageAggregate{},
 	}
 
 	var queue []*types.SignedBlock
@@ -259,7 +259,7 @@ func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 			ParentRoot: parentRoot,
 			Body:       &types.BlockBody{},
 		},
-		Signature: &types.BlockSignatures{},
+		Proof: &types.MultiMessageAggregate{},
 	}
 
 	var queue []*types.SignedBlock
@@ -302,8 +302,8 @@ func TestEngineMessageHandler(t *testing.T) {
 	e := makeTestEngine()
 
 	block := &types.SignedBlock{
-		Block:     &types.Block{Slot: 1},
-		Signature: &types.BlockSignatures{},
+		Block: &types.Block{Slot: 1},
+		Proof: &types.MultiMessageAggregate{},
 	}
 
 	e.OnBlock(block)
@@ -423,7 +423,7 @@ func TestBufferMissingParentKeepsImmediateParentLink(t *testing.T) {
 			ParentRoot: parentRoot,
 			Body:       &types.BlockBody{},
 		},
-		Signature: &types.BlockSignatures{},
+		Proof: &types.MultiMessageAggregate{},
 	}
 
 	var queue []*types.SignedBlock

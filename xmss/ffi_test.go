@@ -185,7 +185,7 @@ func TestAggregateWithChildrenRejectsMalformedChildProof(t *testing.T) {
 
 	_, err := AggregateWithChildren(nil, nil, []ChildProof{
 		{Pubkeys: []CPubKey{pubkey}},
-		{Pubkeys: []CPubKey{pubkey}, ProofData: []byte{0x01}},
+		{Pubkeys: []CPubKey{pubkey}, Proof: []byte{0x01}},
 	}, message, 0)
 	if !errors.Is(err, ErrMalformedChildProof) {
 		t.Fatalf("error=%v, want ErrMalformedChildProof", err)

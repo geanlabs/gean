@@ -29,13 +29,13 @@ func setupP2P(ctx context.Context, cfg config, keyManager *xmss.KeyManager) (*p2
 	return p2pHost, nil
 }
 
-func preinitializeXMSS(isAggregator bool) {
-	if isAggregator {
-		logger.Info(logger.Node, "pre-initializing XMSS prover (this takes ~45s)...")
-		xmss.EnsureProverReady()
-		logger.Info(logger.Node, "XMSS prover ready")
+func preinitializeXMSS() error {
+	logger.Info(logger.Node, "pre-initializing XMSS prover (this takes ~45s)...")
+	if err := xmss.EnsureProverReady(); err != nil {
+		return err
 	}
-	xmss.EnsureVerifierReady()
+	logger.Info(logger.Node, "XMSS prover ready")
+	return xmss.EnsureVerifierReady()
 }
 
 func registerReqRespHandlers(p2pHost *p2p.Host, s *store.ConsensusStore) {

@@ -78,4 +78,7 @@ var (
 		Name: "lean_attestation_aggregate_coverage_diff_validators",
 		Help: "Validator coverage delta between block payloads and timely pre-merge payloads, by direction",
 	}, []string{"direction"})
+	metricProvingQueueDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lean_proving_queue_depth", Help: "Queued recursive proof work",
+	}, []string{"operation"})
 )

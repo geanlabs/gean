@@ -156,7 +156,7 @@ func TestBuildBlockRejectsPayloadsWithoutKnownRoots(t *testing.T) {
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
-			Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{0})},
+			Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 		}},
 	})
 
@@ -246,7 +246,7 @@ func TestBuildBlockReportsMismatchedPayloadRoot(t *testing.T) {
 		Payloads: []AttestationPayload{{
 			DataRoot: [32]byte{0xee},
 			Data:     data,
-			Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{0})},
+			Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 		}},
 	})
 	if err != nil {
@@ -283,9 +283,9 @@ func TestBuildBlockReportsSkippedPayloadIssues(t *testing.T) {
 		KnownBlockRoots:   map[[32]byte]bool{parentRoot: true},
 		RequiredJustified: headState.LatestJustified,
 		Payloads: []AttestationPayload{
-			{DataRoot: dataRoot, Data: data, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{0})}},
-			{DataRoot: invalidRoot, Data: &invalidVote, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{0})}},
-			{DataRoot: unknownRoot, Data: &unknownHead, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{0})}},
+			{DataRoot: dataRoot, Data: data, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: invalidRoot, Data: &invalidVote, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: unknownRoot, Data: &unknownHead, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 		},
 	})
 	if err != nil {
@@ -323,7 +323,7 @@ func TestBuildBlockRecordsProofMergeFallback(t *testing.T) {
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
-			Proofs: []*types.AggregatedSignatureProof{
+			Proofs: []*types.SingleMessageAggregate{
 				mockProof([]uint64{0}),
 				mockProof([]uint64{1}),
 			},
@@ -358,7 +358,7 @@ func TestPlanAttestationsUsesPostHeaderState(t *testing.T) {
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
-			Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{0})},
+			Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 		}},
 	})
 	if err != nil {
@@ -424,8 +424,8 @@ func TestPlanAttestationsCarriesTrialState(t *testing.T) {
 		ParentRoot:      parentRoot,
 		KnownBlockRoots: map[[32]byte]bool{root1: true, parentRoot: true},
 		Payloads: []AttestationPayload{
-			{DataRoot: firstRoot, Data: first, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{0})}},
-			{DataRoot: secondRoot, Data: second, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{0})}},
+			{DataRoot: firstRoot, Data: first, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: secondRoot, Data: second, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 		},
 	})
 	if err != nil {
@@ -492,8 +492,8 @@ func TestPlanAttestationsContinuesWhenJustifiedSlotsChange(t *testing.T) {
 		ParentRoot:      parentRoot,
 		KnownBlockRoots: map[[32]byte]bool{roots[2]: true, parentRoot: true},
 		Payloads: []AttestationPayload{
-			{DataRoot: firstRoot, Data: first, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{0})}},
-			{DataRoot: secondRoot, Data: second, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{0})}},
+			{DataRoot: firstRoot, Data: first, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: secondRoot, Data: second, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 		},
 	})
 	if err != nil {
@@ -546,7 +546,7 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 		payloads = append(payloads, AttestationPayload{
 			DataRoot: hashAttestationData(t, data),
 			Data:     data,
-			Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+			Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{1})},
 		})
 	}
 	unknownHead := &types.AttestationData{
@@ -558,7 +558,7 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 	payloads = append(payloads, AttestationPayload{
 		DataRoot: hashAttestationData(t, unknownHead),
 		Data:     unknownHead,
-		Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{1})},
 	})
 
 	plan, err := planAttestations(Input{

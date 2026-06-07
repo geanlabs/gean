@@ -75,4 +75,7 @@ var (
 		Name: "lean_node_attestations_skipped_lag_total",
 		Help: "Attestation batches skipped because the local view was too stale",
 	})
+	metricProofOperations = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_proof_operations_total", Help: "Recursive proof operations by result",
+	}, []string{"operation", "result"})
 )

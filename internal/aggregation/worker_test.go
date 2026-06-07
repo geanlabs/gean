@@ -25,7 +25,7 @@ func TestRunWorkerReturnsWhenDispatchChannelCloses(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RunWorker(context.Background(), dispatches, nil, nil, nil)
+		RunWorker(context.Background(), dispatches, nil, nil, nil, nil)
 		close(done)
 	}()
 
@@ -39,7 +39,7 @@ func TestRunWorkerSkipsNilSnapshot(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RunWorker(context.Background(), dispatches, nil, nil, nil)
+		RunWorker(context.Background(), dispatches, nil, nil, nil, nil)
 		close(done)
 	}()
 

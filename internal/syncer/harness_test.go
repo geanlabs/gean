@@ -113,7 +113,7 @@ func makeSyncBlock(slot uint64, parentRoot [32]byte) (*types.SignedBlock, [32]by
 			ParentRoot: parentRoot,
 			Body:       body,
 		},
-		Signature: &types.BlockSignatures{},
+		Proof: &types.MultiMessageAggregate{},
 	}, root
 }
 

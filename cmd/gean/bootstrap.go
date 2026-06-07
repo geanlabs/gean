@@ -112,9 +112,7 @@ func bootstrapFromGenesis(s *store.ConsensusStore, genesisConfig *genesis.Genesi
 			StateRoot:     genesisState.LatestBlockHeader.StateRoot,
 			Body:          &types.BlockBody{},
 		},
-		Signature: &types.BlockSignatures{
-			ProposerSignature: types.BlankXMSSSignature(),
-		},
+		Proof: &types.MultiMessageAggregate{},
 	}
 	if err := s.StorePendingBlock(canonicalRoot, genesisSignedBlock); err != nil {
 		return fmt.Errorf("store genesis block: %w", err)

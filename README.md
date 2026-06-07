@@ -9,7 +9,7 @@ An open-source Lean Ethereum consensus client, written in Go and maintained by G
 Gean is:
 
 - A consensus client for [Lean Ethereum](https://github.com/leanEthereum), designed for fast finality, quantum-resistant security, and a simpler core protocol.
-- Running on Lean Consensus devnet-4 alongside independent client implementations.
+- Implementing Lean Consensus devnet-5 alongside independent client implementations.
 - Built for clarity and auditability, with a deliberately small codebase.
 - Quantum-resistant by design, using XMSS signatures instead of BLS signatures.
 
@@ -56,7 +56,9 @@ At least one node must run as an aggregator for the network to finalize.
 
 ## Current status
 
-Gean tracks Lean Consensus devnet-4. Consensus fixtures are generated from `leanSpec@1589f871513dc44dfcb9c7db0ed367d5cec854e9` with leanMultisig `f66d4a974eced803574eb0ea43d812e523c8d7ad`.
+Gean tracks Lean Consensus devnet-5. Consensus fixtures are generated from
+`leanSpec@fd7dfd0e85bd83d43e0a6b1bc2bfafb1ea3049d5` with
+leanVM/leanMultisig `8fcbd77958a58666e828315de2d6ce7c93297117`.
 
 ## Philosophy
 

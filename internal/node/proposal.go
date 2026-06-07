@@ -12,7 +12,13 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/xmss"
 )
+
+type proposalDuty struct {
+	slot        uint64
+	validatorID uint64
+}
 
 func (e *Engine) maybePropose(slot, validatorID uint64) {
 	if e.Keys == nil {
@@ -25,7 +31,38 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		metrics.IncBlocksSkippedLag()
 		return
 	}
+	select {
+	case e.ProposalCh <- proposalDuty{slot: slot, validatorID: validatorID}:
+		metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
+	default:
+		logger.Warn(logger.Validator, "proposal worker busy slot=%d", slot)
+	}
+}
 
+func (e *Engine) runProposalWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case duty := <-e.ProposalCh:
+			metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
+			deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
+			if e.ProvingGate != nil && !e.ProvingGate.Acquire(deadline, true) {
+				cancel()
+				metrics.IncProofOperation("proposal", "canceled")
+				logger.Error(logger.Validator, "proposal prover unavailable slot=%d", duty.slot)
+				continue
+			}
+			e.propose(deadline, duty.slot, duty.validatorID)
+			if e.ProvingGate != nil {
+				e.ProvingGate.Release(true)
+			}
+			cancel()
+		}
+	}
+}
+
+func (e *Engine) propose(ctx context.Context, slot, validatorID uint64) {
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
 	e.Store.PromoteNewToKnown()
@@ -55,24 +92,37 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 
+	mergeStart := time.Now()
+	proof, err := e.mergeBlockProof(block, attSigProofs, propKey, blockSig)
+	metrics.ObserveProvingDuration("proposal", time.Since(mergeStart).Seconds())
+	if err != nil {
+		metrics.IncProofOperation("proposal", "error")
+		logger.Error(logger.Validator, "merge block proof failed: %v", err)
+		return
+	}
+	metrics.ObserveProofMergeComponents(len(attSigProofs) + 1)
+	metrics.ObserveProofSize("type2", len(proof))
+	if e.currentSlot(uint64(time.Now().UnixMilli())) > slot || e.Store.HeadSlot() >= slot {
+		metrics.IncProofOperation("proposal", "canceled")
+		return
+	}
+	metrics.IncProofOperation("proposal", "success")
 	signedBlock := &types.SignedBlock{
 		Block: block,
-		Signature: &types.BlockSignatures{
-			ProposerSignature:     blockSig,
-			AttestationSignatures: attSigProofs,
-		},
+		Proof: &types.MultiMessageAggregate{Proof: proof},
 	}
 
 	if err := blockprocessor.OnBlock(e.Store, signedBlock); err != nil {
 		logger.Error(logger.Chain, "local block processing failed: %v", err)
 		return
 	}
+	e.dispatchRecovery(signedBlock)
 
 	e.FC.OnBlock(slot, blockRoot, block.ParentRoot)
 	e.updateHead()
 
 	if e.P2P != nil {
-		if err := e.P2P.PublishBlock(context.Background(), signedBlock); err != nil {
+		if err := e.P2P.PublishBlock(ctx, signedBlock); err != nil {
 			logger.Error(logger.Network, "publish block failed: %v", err)
 		}
 	}
@@ -85,7 +135,65 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		slot, blockRoot, attestationCount)
 }
 
-func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types.Block, []*types.AggregatedSignatureProof, error) {
+func (e *Engine) mergeBlockProof(
+	block *types.Block,
+	attestationProofs []*types.SingleMessageAggregate,
+	proposerKey *xmss.ValidatorKeyPair,
+	proposerSignature [types.SignatureSize]byte,
+) ([]byte, error) {
+	if block == nil || block.Body == nil || len(block.Body.Attestations) != len(attestationProofs) {
+		return nil, fmt.Errorf("attestation proof count mismatch")
+	}
+	state := e.Store.GetState(block.ParentRoot)
+	if state == nil {
+		return nil, fmt.Errorf("parent state missing")
+	}
+
+	inputs := make([]xmss.Type1Input, 0, len(attestationProofs)+1)
+	for i, proof := range attestationProofs {
+		if proof == nil {
+			return nil, fmt.Errorf("attestation proof %d missing", i)
+		}
+		keys := make([]xmss.CPubKey, 0, types.BitlistCount(proof.Participants))
+		for _, index := range types.BitlistIndices(proof.Participants) {
+			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
+				return nil, fmt.Errorf("attestation proof %d validator %d out of range", i, index)
+			}
+			key, err := e.Store.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
+			if err != nil {
+				return nil, fmt.Errorf("attestation proof %d validator %d: %w", i, index, err)
+			}
+			keys = append(keys, key)
+		}
+		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof})
+	}
+
+	signature, err := xmss.ParseSignature(proposerSignature[:])
+	if err != nil {
+		return nil, err
+	}
+	defer xmss.FreeSignature(signature)
+	blockRoot, err := block.HashTreeRoot()
+	if err != nil {
+		return nil, err
+	}
+	proposerProof, err := xmss.AggregateSignatures(
+		[]xmss.CPubKey{proposerKey.PublicKey()},
+		[]xmss.CSig{signature},
+		blockRoot,
+		uint32(block.Slot),
+	)
+	if err != nil {
+		return nil, err
+	}
+	inputs = append(inputs, xmss.Type1Input{
+		Pubkeys: []xmss.CPubKey{proposerKey.PublicKey()},
+		Proof:   proposerProof,
+	})
+	return xmss.MergeType1Proofs(inputs)
+}
+
+func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types.Block, []*types.SingleMessageAggregate, error) {
 	buildStart := time.Now()
 	defer func() { metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds()) }()
 
@@ -142,7 +250,7 @@ func payloadsFromEntries(entries map[[32]byte]*store.PayloadEntry) []blockbuilde
 		payload := blockbuilder.AttestationPayload{DataRoot: dataRoot}
 		if entry != nil {
 			payload.Data = entry.Data
-			payload.Proofs = make([]*types.AggregatedSignatureProof, len(entry.Proofs))
+			payload.Proofs = make([]*types.SingleMessageAggregate, len(entry.Proofs))
 			copy(payload.Proofs, entry.Proofs)
 		}
 		payloads = append(payloads, payload)

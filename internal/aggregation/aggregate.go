@@ -122,9 +122,9 @@ func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache) ([]*types.Si
 				allIDs = append(allIDs, vid)
 			}
 
-			proof := &types.AggregatedSignatureProof{
+			proof := &types.SingleMessageAggregate{
 				Participants: types.BitlistFromIndices(allIDs),
-				ProofData:    proofBytes,
+				Proof:        proofBytes,
 			}
 
 			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",

@@ -107,7 +107,7 @@ type fcGossipAttestation struct {
 
 type fcProof struct {
 	Participants fcDataList  `json:"participants"`
-	ProofData    fcProofData `json:"proofData"`
+	Proof        fcProofData `json:"proof"`
 }
 
 type fcProofData struct {
@@ -389,8 +389,8 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 	// Store anchor as signed block.
 	anchorSigned := &types.SignedBlock{
-		Block:     anchorBlock,
-		Signature: nil,
+		Block: anchorBlock,
+		Proof: nil,
 	}
 	s.StorePendingBlock(anchorRoot, anchorSigned)
 
@@ -412,19 +412,9 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 			// Build signatures with participant bits from attestation aggregation_bits
 			// so processBlockAttestations stores correct per-validator votes.
-			var attSigs []*types.AggregatedSignatureProof
-			if block.Body != nil {
-				for _, att := range block.Body.Attestations {
-					attSigs = append(attSigs, &types.AggregatedSignatureProof{
-						Participants: att.AggregationBits,
-					})
-				}
-			}
 			signedBlock := &types.SignedBlock{
 				Block: block,
-				Signature: &types.BlockSignatures{
-					AttestationSignatures: attSigs,
-				},
+				Proof: &types.MultiMessageAggregate{},
 			}
 
 			// Advance store time to at least this block's slot so that
@@ -522,9 +512,9 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 			// Store in new payloads with dummy proof.
 			participants := types.BitlistFromIndices([]uint64{att.ValidatorID})
-			proof := &types.AggregatedSignatureProof{
+			proof := &types.SingleMessageAggregate{
 				Participants: participants,
-				ProofData:    nil,
+				Proof:        nil,
 			}
 			s.NewPayloads.Push(dataRoot, attData, proof)
 
@@ -570,7 +560,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			var proofData []byte
 			if att.Proof != nil {
 				participants = parseBoolBitlist(att.Proof.Participants.Data)
-				proofData = parseHexBytes(att.Proof.ProofData.Data)
+				proofData = parseHexBytes(att.Proof.Proof.Data)
 			}
 
 			// Run the full validation chain (data → bounds + aggregated sig
@@ -595,9 +585,9 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				continue
 			}
 
-			proof := &types.AggregatedSignatureProof{
+			proof := &types.SingleMessageAggregate{
 				Participants: participants,
-				ProofData:    proofData,
+				Proof:        proofData,
 			}
 			s.NewPayloads.Push(dataRoot, attData, proof)
 

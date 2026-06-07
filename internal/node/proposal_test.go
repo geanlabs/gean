@@ -51,9 +51,9 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash attestation data: %v", err)
 	}
-	s.NewPayloads.Push(dataRoot, data, &types.AggregatedSignatureProof{
+	s.NewPayloads.Push(dataRoot, data, &types.SingleMessageAggregate{
 		Participants: types.BitlistFromIndices([]uint64{0}),
-		ProofData:    []byte{0x01},
+		Proof:        []byte{0x01},
 	})
 
 	e := &Engine{Store: s}
@@ -76,7 +76,7 @@ func TestPayloadsFromEntriesCopiesMapAndProofSlice(t *testing.T) {
 	root := [32]byte{0x01}
 	entry := &store.PayloadEntry{
 		Data:   &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}, Target: &types.Checkpoint{}},
-		Proofs: []*types.AggregatedSignatureProof{{Participants: types.BitlistFromIndices([]uint64{1})}},
+		Proofs: []*types.SingleMessageAggregate{{Participants: types.BitlistFromIndices([]uint64{1})}},
 	}
 	original := map[[32]byte]*store.PayloadEntry{
 		root: entry,

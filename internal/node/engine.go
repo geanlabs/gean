@@ -10,6 +10,7 @@ import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/p2p"
 	"github.com/geanlabs/gean/internal/pending"
+	"github.com/geanlabs/gean/internal/proving"
 	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
@@ -46,6 +47,9 @@ type Engine struct {
 	FetchRootCh   chan [32]byte
 
 	AggregationDispatchCh chan aggregation.Dispatch
+	ProposalCh            chan proposalDuty
+	RecoveryCh            chan *types.SignedBlock
+	ProvingGate           *proving.Gate
 
 	lastTick time.Time
 }
@@ -75,6 +79,9 @@ func New(
 		FailedRootCh:          make(chan [32]byte, 64),
 		FetchRootCh:           make(chan [32]byte, 256),
 		AggregationDispatchCh: make(chan aggregation.Dispatch, 1),
+		ProposalCh:            make(chan proposalDuty, 1),
+		RecoveryCh:            make(chan *types.SignedBlock, 8),
+		ProvingGate:           proving.NewGate(),
 	}
 	e.configureP2PHooks()
 	return e

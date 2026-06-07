@@ -8,7 +8,7 @@ import (
 type AttestationPayload struct {
 	DataRoot [32]byte
 	Data     *types.AttestationData
-	Proofs   []*types.AggregatedSignatureProof
+	Proofs   []*types.SingleMessageAggregate
 }
 
 type KnownRoots map[[32]byte]bool
@@ -30,7 +30,7 @@ type Input struct {
 
 type Result struct {
 	Block             *types.Block
-	AttestationProofs []*types.AggregatedSignatureProof
+	AttestationProofs []*types.SingleMessageAggregate
 	PayloadErrors     []PayloadError
 }
 

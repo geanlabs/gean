@@ -38,7 +38,7 @@ func sortedPayloads(payloads []AttestationPayload) ([]AttestationPayload, []Payl
 			byRoot[payload.DataRoot] = existing
 			continue
 		}
-		payload.Proofs = append([]*types.AggregatedSignatureProof(nil), payload.Proofs...)
+		payload.Proofs = append([]*types.SingleMessageAggregate(nil), payload.Proofs...)
 		byRoot[payload.DataRoot] = payload
 	}
 
@@ -82,6 +82,10 @@ func payloadBuildIssue(state *types.State, knownRoots KnownRoots, payload Attest
 		return errPayloadHeadUnknown(data.Head.Root)
 	}
 	if reason := statetransition.VoteInvalidReason(state, data.Source, data.Target); reason != "" {
+		if data.Source.Slot == 0 && data.Target.Slot == 0 &&
+			reason == statetransition.VoteReasonTargetAlreadyJustified {
+			return nil
+		}
 		return errPayloadVoteInvalid(data, reason)
 	}
 	return nil

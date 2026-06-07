@@ -16,8 +16,8 @@ func TestSortedPayloadsSkipsMalformedEntries(t *testing.T) {
 	payloads := []AttestationPayload{
 		{DataRoot: [32]byte{0x01}},
 		{DataRoot: [32]byte{0x02}, Data: nil},
-		{DataRoot: [32]byte{0x03}, Data: &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}}, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
-		{DataRoot: validRoot, Data: validData, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
+		{DataRoot: [32]byte{0x03}, Data: &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}}, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})}},
+		{DataRoot: validRoot, Data: validData, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})}},
 	}
 
 	sorted, payloadErrors := sortedPayloads(payloads)
@@ -56,21 +56,21 @@ func TestValidatePayloadRejectsMalformedFields(t *testing.T) {
 			name: "nil head",
 			payload: AttestationPayload{
 				Data:   &types.AttestationData{Source: &types.Checkpoint{}, Target: &types.Checkpoint{}},
-				Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+				Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})},
 			},
 		},
 		{
 			name: "nil target",
 			payload: AttestationPayload{
 				Data:   &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}},
-				Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+				Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})},
 			},
 		},
 		{
 			name: "nil source",
 			payload: AttestationPayload{
 				Data:   &types.AttestationData{Head: &types.Checkpoint{}, Target: &types.Checkpoint{}},
-				Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+				Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})},
 			},
 		},
 	}
@@ -88,7 +88,7 @@ func TestSortedPayloadsReportsMismatchedDataRoot(t *testing.T) {
 	payloads := []AttestationPayload{{
 		DataRoot: [32]byte{0x04},
 		Data:     mockAttestationData(),
-		Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{1})},
+		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{1})},
 	}}
 
 	sorted, payloadErrors := sortedPayloads(payloads)
@@ -118,9 +118,9 @@ func TestSortedPayloadsOrdersByTargetSlotThenRoot(t *testing.T) {
 	rightRoot := hashAttestationData(t, highRight)
 
 	sorted, payloadErrors := sortedPayloads([]AttestationPayload{
-		{DataRoot: rightRoot, Data: highRight, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
-		{DataRoot: leftRoot, Data: highLeft, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
-		{DataRoot: lowRoot, Data: lowSlot, Proofs: []*types.AggregatedSignatureProof{mockProof([]uint64{1})}},
+		{DataRoot: rightRoot, Data: highRight, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})}},
+		{DataRoot: leftRoot, Data: highLeft, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})}},
+		{DataRoot: lowRoot, Data: lowSlot, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{1})}},
 	})
 
 	if len(payloadErrors) != 0 {
@@ -145,7 +145,7 @@ func TestSortedPayloadsMergesDuplicateRoots(t *testing.T) {
 	first := AttestationPayload{
 		DataRoot: root,
 		Data:     data,
-		Proofs:   []*types.AggregatedSignatureProof{firstProof},
+		Proofs:   []*types.SingleMessageAggregate{firstProof},
 	}
 
 	sorted, payloadErrors := sortedPayloads([]AttestationPayload{
@@ -153,7 +153,7 @@ func TestSortedPayloadsMergesDuplicateRoots(t *testing.T) {
 		{
 			DataRoot: root,
 			Data:     data,
-			Proofs:   []*types.AggregatedSignatureProof{secondProof},
+			Proofs:   []*types.SingleMessageAggregate{secondProof},
 		},
 	})
 
@@ -186,7 +186,7 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 	payload := AttestationPayload{
 		DataRoot: dataRoot,
 		Data:     data,
-		Proofs:   []*types.AggregatedSignatureProof{mockProof([]uint64{0})},
+		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 	}
 	knownRoots := map[[32]byte]bool{parentRoot: true}
 	if err := payloadBuildIssue(workingState, knownRoots, payload); err != nil {
@@ -242,5 +242,28 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 		t.Fatalf("payload build issue=%v, want ErrPayloadVoteInvalid", err)
 	} else if !IsExpectedSkip(err) {
 		t.Fatalf("not-justifiable vote was not marked expected: %v", err)
+	}
+}
+
+func TestPayloadBuildIssueAllowsGenesisSelfVote(t *testing.T) {
+	root := [32]byte{1}
+	state := &types.State{
+		LatestFinalized:       &types.Checkpoint{Root: root},
+		HistoricalBlockHashes: [][]byte{append([]byte(nil), root[:]...)},
+		JustifiedSlots:        types.NewBitlistSSZ(0),
+	}
+	data := &types.AttestationData{
+		Head:   &types.Checkpoint{Root: root},
+		Source: &types.Checkpoint{Root: root},
+		Target: &types.Checkpoint{Root: root},
+	}
+	dataRoot := hashAttestationData(t, data)
+	err := payloadBuildIssue(state, map[[32]byte]bool{root: true}, AttestationPayload{
+		DataRoot: dataRoot,
+		Data:     data,
+		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
+	})
+	if err != nil {
+		t.Fatalf("genesis self-vote rejected: %v", err)
 	}
 }

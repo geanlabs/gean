@@ -34,8 +34,8 @@ func TestOnBlockWithoutVerificationPersistsBlock(t *testing.T) {
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
 
 	if err := OnBlockWithoutVerification(s, &types.SignedBlock{
-		Block:     block,
-		Signature: &types.BlockSignatures{},
+		Block: block,
+		Proof: &types.MultiMessageAggregate{},
 	}); err != nil {
 		t.Fatalf("process block: %v", err)
 	}
@@ -65,8 +65,8 @@ func TestOnBlockWithoutVerificationReturnsPersistenceError(t *testing.T) {
 	s.Backend = failingProcessorWriteBackend{InMemoryBackend: s.Backend.(*storage.InMemoryBackend)}
 
 	err := OnBlockWithoutVerification(s, &types.SignedBlock{
-		Block:     block,
-		Signature: &types.BlockSignatures{},
+		Block: block,
+		Proof: &types.MultiMessageAggregate{},
 	})
 	if err == nil {
 		t.Fatal("expected persistence error")
@@ -87,8 +87,8 @@ func TestPersistBlockUsesSingleBatch(t *testing.T) {
 	}
 
 	_, err := persistBlock(s, blockRoot, &types.SignedBlock{
-		Block:     block,
-		Signature: &types.BlockSignatures{},
+		Block: block,
+		Proof: &types.MultiMessageAggregate{},
 	}, postState)
 	if err == nil {
 		t.Fatal("expected batch write error")
@@ -113,8 +113,8 @@ func TestPersistBlockWritesCheckpointMetadata(t *testing.T) {
 	postState.LatestFinalized = &types.Checkpoint{Slot: 1, Root: blockRoot}
 
 	finalizedAdvanced, err := persistBlock(s, blockRoot, &types.SignedBlock{
-		Block:     block,
-		Signature: &types.BlockSignatures{},
+		Block: block,
+		Proof: &types.MultiMessageAggregate{},
 	}, postState)
 	if err != nil {
 		t.Fatalf("persist block: %v", err)
