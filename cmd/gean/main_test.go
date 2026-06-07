@@ -127,6 +127,19 @@ func TestForkChoiceAnchorRejectsMissingHeader(t *testing.T) {
 	}
 }
 
+func TestBootstrapStoreRejectsPreDevnet5Database(t *testing.T) {
+	s := newTestStore()
+	root := [32]byte{0x01}
+	s.SetHead(root)
+	s.InsertBlockHeader(root, &types.BlockHeader{Slot: 1})
+	s.InsertState(root, &types.State{})
+
+	err := bootstrapStore(s, nil, "")
+	if err == nil {
+		t.Fatal("expected incompatible data directory error")
+	}
+}
+
 func TestInitStoreFromStateReturnsWriteError(t *testing.T) {
 	s := store.NewConsensusStore(failingWriteBackend{})
 	state := &types.State{

@@ -48,6 +48,7 @@ type Engine struct {
 
 	AggregationDispatchCh chan aggregation.Dispatch
 	ProposalCh            chan proposalDuty
+	ProposalResultCh      chan *proposalResult
 	RecoveryCh            chan *types.SignedBlock
 	ProvingGate           *proving.Gate
 
@@ -80,6 +81,7 @@ func New(
 		FetchRootCh:           make(chan [32]byte, 256),
 		AggregationDispatchCh: make(chan aggregation.Dispatch, 1),
 		ProposalCh:            make(chan proposalDuty, 1),
+		ProposalResultCh:      make(chan *proposalResult, 1),
 		RecoveryCh:            make(chan *types.SignedBlock, 8),
 		ProvingGate:           proving.NewGate(),
 	}

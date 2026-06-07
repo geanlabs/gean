@@ -59,6 +59,34 @@ func TestEngineCreation(t *testing.T) {
 	}
 }
 
+func TestAcceptProposalRejectsStaleResult(t *testing.T) {
+	e := makeTestEngine()
+	e.Store.SetConfig(&types.ChainConfig{GenesisTime: 1})
+	result := &proposalResult{
+		blockRoot: [32]byte{0x02},
+		signedBlock: &types.SignedBlock{
+			Block: &types.Block{Slot: 1, Body: &types.BlockBody{}},
+			Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
+		},
+	}
+
+	e.acceptProposal(context.Background(), result)
+
+	if e.Store.HasState(result.blockRoot) {
+		t.Fatal("stale proposal was imported")
+	}
+}
+
+func TestCoversParticipants(t *testing.T) {
+	proof := &types.SingleMessageAggregate{Participants: types.BitlistFromIndices([]uint64{1, 2, 3}), Proof: []byte{0x01}}
+	if !coversParticipants(proof, types.BitlistFromIndices([]uint64{1, 3})) {
+		t.Fatal("expected proof to cover requested participants")
+	}
+	if coversParticipants(proof, types.BitlistFromIndices([]uint64{1, 4})) {
+		t.Fatal("proof reported missing participant as covered")
+	}
+}
+
 func TestEngineUpdateHead(t *testing.T) {
 	e := makeTestEngine()
 	e.updateHead()
@@ -120,7 +148,7 @@ func planAggregatedVoteForBlock(t *testing.T, targetRoot [32]byte, targetSlot, n
 	if err != nil {
 		t.Fatalf("hash attestation data: %v", err)
 	}
-	return dataRoot, data, &types.SingleMessageAggregate{Participants: bits}
+	return dataRoot, data, &types.SingleMessageAggregate{Participants: bits, Proof: []byte{0x01}}
 }
 
 func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {

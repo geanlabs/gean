@@ -7,7 +7,6 @@ import (
 
 	"github.com/geanlabs/gean/internal/attestationproof"
 	"github.com/geanlabs/gean/internal/blockbuilder"
-	"github.com/geanlabs/gean/internal/blockprocessor"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/store"
@@ -18,6 +17,11 @@ import (
 type proposalDuty struct {
 	slot        uint64
 	validatorID uint64
+}
+
+type proposalResult struct {
+	blockRoot   [32]byte
+	signedBlock *types.SignedBlock
 }
 
 func (e *Engine) maybePropose(slot, validatorID uint64) {
@@ -53,43 +57,48 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 				logger.Error(logger.Validator, "proposal prover unavailable slot=%d", duty.slot)
 				continue
 			}
-			e.propose(deadline, duty.slot, duty.validatorID)
+			result := e.buildProposal(duty.slot, duty.validatorID)
 			if e.ProvingGate != nil {
 				e.ProvingGate.Release(true)
 			}
 			cancel()
+			if result == nil {
+				continue
+			}
+			select {
+			case e.ProposalResultCh <- result:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
 
-func (e *Engine) propose(ctx context.Context, slot, validatorID uint64) {
+func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
-
-	e.Store.PromoteNewToKnown()
-	e.updateHead()
 
 	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID)
 	if err != nil {
 		logger.Error(logger.Validator, "produce block failed: %v", err)
-		return
+		return nil
 	}
 
 	signStart := time.Now()
 	propKey := e.Keys.GetProposalKey(validatorID)
 	if propKey == nil {
 		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
-		return
+		return nil
 	}
 	blockRoot, err := block.HashTreeRoot()
 	if err != nil {
 		logger.Error(logger.Validator, "block root failed: %v", err)
-		return
+		return nil
 	}
 	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
 	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
 		logger.Error(logger.Validator, "sign block failed: %v", err)
-		return
+		return nil
 	}
 
 	mergeStart := time.Now()
@@ -98,31 +107,41 @@ func (e *Engine) propose(ctx context.Context, slot, validatorID uint64) {
 	if err != nil {
 		metrics.IncProofOperation("proposal", "error")
 		logger.Error(logger.Validator, "merge block proof failed: %v", err)
-		return
+		return nil
 	}
 	metrics.ObserveProofMergeComponents(len(attSigProofs) + 1)
 	metrics.ObserveProofSize("type2", len(proof))
-	if e.currentSlot(uint64(time.Now().UnixMilli())) > slot || e.Store.HeadSlot() >= slot {
+	return &proposalResult{
+		blockRoot: blockRoot,
+		signedBlock: &types.SignedBlock{
+			Block: block,
+			Proof: &types.MultiMessageAggregate{Proof: proof},
+		},
+	}
+}
+
+func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
+	if result == nil || result.signedBlock == nil || result.signedBlock.Block == nil {
+		return
+	}
+	block := result.signedBlock.Block
+	if e.currentSlot(uint64(time.Now().UnixMilli())) > block.Slot ||
+		e.Store.HeadSlot() >= block.Slot ||
+		e.Store.Head() != block.ParentRoot {
 		metrics.IncProofOperation("proposal", "canceled")
 		return
 	}
-	metrics.IncProofOperation("proposal", "success")
-	signedBlock := &types.SignedBlock{
-		Block: block,
-		Proof: &types.MultiMessageAggregate{Proof: proof},
-	}
-
-	if err := blockprocessor.OnBlock(e.Store, signedBlock); err != nil {
-		logger.Error(logger.Chain, "local block processing failed: %v", err)
+	e.onBlock(result.signedBlock)
+	if !e.Store.HasState(result.blockRoot) {
+		metrics.IncProofOperation("proposal", "error")
 		return
 	}
-	e.dispatchRecovery(signedBlock)
-
-	e.FC.OnBlock(slot, blockRoot, block.ParentRoot)
-	e.updateHead()
+	metrics.IncProofOperation("proposal", "success")
 
 	if e.P2P != nil {
-		if err := e.P2P.PublishBlock(ctx, signedBlock); err != nil {
+		publishCtx, cancel := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
+		defer cancel()
+		if err := e.P2P.PublishBlock(publishCtx, result.signedBlock); err != nil {
 			logger.Error(logger.Network, "publish block failed: %v", err)
 		}
 	}
@@ -132,7 +151,7 @@ func (e *Engine) propose(ctx context.Context, slot, validatorID uint64) {
 		attestationCount = len(block.Body.Attestations)
 	}
 	logger.Info(logger.Validator, "proposed block slot=%d block_root=0x%x attestations=%d",
-		slot, blockRoot, attestationCount)
+		block.Slot, result.blockRoot, attestationCount)
 }
 
 func (e *Engine) mergeBlockProof(

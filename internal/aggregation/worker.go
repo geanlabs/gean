@@ -41,27 +41,32 @@ func RunWorker(
 			if dispatch.Snapshot == nil {
 				continue
 			}
-			workCtx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
-			if gate != nil && !gate.Acquire(workCtx, false) {
-				cancel()
+			// The timeout bounds only how long we wait for the prover; once
+			// proving has run, completed results are kept as long as the slot
+			// is still current. Discarding finished, slot-valid aggregates
+			// (and their signature deletes) starves the network of proofs and
+			// regrows the next snapshot.
+			acquireCtx, cancelAcquire := context.WithTimeout(ctx, 750*time.Millisecond)
+			if gate != nil && !gate.Acquire(acquireCtx, false) {
+				cancelAcquire()
 				metrics.IncProofOperation("aggregation", "canceled")
 				continue
 			}
+			cancelAcquire()
 
 			workerStart := time.Now()
 			aggs, payloads, deletes := aggregateFromSnapshot(dispatch.Snapshot, cache)
 			if gate != nil {
 				gate.Release(false)
 			}
-			if workCtx.Err() != nil ||
-				consensusStore.Time()/types.IntervalsPerSlot > dispatch.Slot {
-				cancel()
+			if consensusStore.Time()/types.IntervalsPerSlot > dispatch.Slot {
 				metrics.IncProofOperation("aggregation", "canceled")
 				continue
 			}
 			applyAggregationMutations(consensusStore, payloads, deletes)
-			publishAggregates(workCtx, publisher, aggs)
-			cancel()
+			publishCtx, cancelPublish := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
+			publishAggregates(publishCtx, publisher, aggs)
+			cancelPublish()
 			metrics.IncProofOperation("aggregation", "success")
 			metrics.ObserveProvingDuration("aggregation", time.Since(workerStart).Seconds())
 			metrics.ObserveAggregationWorkerTotalTime(time.Since(workerStart).Seconds())

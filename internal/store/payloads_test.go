@@ -45,7 +45,7 @@ func TestPayloadBufferDataOnlyHasNoWeight(t *testing.T) {
 	}
 }
 
-func TestPayloadBufferReplaceDropsPartialProofs(t *testing.T) {
+func TestPayloadBufferPushPrunesSubsetProofs(t *testing.T) {
 	pb := store.NewPayloadBuffer(10)
 	root := [32]byte{1}
 	data := &types.AttestationData{Slot: 3}
@@ -59,11 +59,27 @@ func TestPayloadBufferReplaceDropsPartialProofs(t *testing.T) {
 		Participants: types.BitlistFromIndices([]uint64{0, 1}),
 		Proof:        []byte{3},
 	}
-	pb.Replace(root, data, combined)
+	pb.Push(root, data, combined)
 
 	entry := pb.Entries()[root]
 	if pb.TotalProofs() != 1 || entry == nil || len(entry.Proofs) != 1 {
 		t.Fatalf("proofs=%d entry=%v", pb.TotalProofs(), entry)
+	}
+}
+
+func TestPayloadBufferPushPreservesOverlappingProofs(t *testing.T) {
+	pb := store.NewPayloadBuffer(10)
+	root := [32]byte{1}
+	data := &types.AttestationData{Slot: 3}
+	for i, indices := range [][]uint64{{0, 1}, {1, 2}} {
+		pb.Push(root, data, &types.SingleMessageAggregate{
+			Participants: types.BitlistFromIndices(indices),
+			Proof:        []byte{byte(i + 1)},
+		})
+	}
+
+	if got := pb.TotalProofs(); got != 2 {
+		t.Fatalf("proofs=%d, want 2", got)
 	}
 }
 

@@ -57,11 +57,19 @@ func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData,
 	}
 	if entry, ok := pb.data[dataRoot]; ok {
 		for _, existing := range entry.Proofs {
-			if validPayloadProof(existing) && bitlistEqual(existing.Participants, proof.Participants) {
+			if validPayloadProof(existing) && bitlistContains(existing.Participants, proof.Participants) {
 				return
 			}
 		}
-		entry.Proofs = append(entry.Proofs, storedProof)
+		kept := entry.Proofs[:0]
+		for _, existing := range entry.Proofs {
+			if bitlistContains(proof.Participants, existing.Participants) {
+				pb.totalProofs--
+				continue
+			}
+			kept = append(kept, existing)
+		}
+		entry.Proofs = append(kept, storedProof)
 		pb.totalProofs++
 	} else {
 		pb.data[dataRoot] = &PayloadEntry{
@@ -91,26 +99,6 @@ func (pb *PayloadBuffer) PushBatch(entries []PayloadKV) {
 	for _, e := range entries {
 		pb.Push(e.DataRoot, e.Data, e.Proof)
 	}
-}
-
-func (pb *PayloadBuffer) Replace(dataRoot [32]byte, attData *types.AttestationData, proof *types.SingleMessageAggregate) {
-	if pb == nil || attData == nil || !validPayloadProof(proof) {
-		return
-	}
-	pb.mu.Lock()
-	defer pb.mu.Unlock()
-	if entry := pb.data[dataRoot]; entry != nil {
-		pb.totalProofs -= len(entry.Proofs)
-		entry.Data = copyAttestationData(attData)
-		entry.Proofs = []*types.SingleMessageAggregate{copyProof(proof)}
-	} else {
-		pb.data[dataRoot] = &PayloadEntry{
-			Data:   copyAttestationData(attData),
-			Proofs: []*types.SingleMessageAggregate{copyProof(proof)},
-		}
-		pb.order = append(pb.order, dataRoot)
-	}
-	pb.totalProofs++
 }
 
 func (pb *PayloadBuffer) Drain() []PayloadKV {
@@ -277,15 +265,13 @@ func validPayloadEntry(entry *PayloadEntry) bool {
 
 func validPayloadProof(proof *types.SingleMessageAggregate) bool {
 	return proof != nil &&
+		len(proof.Proof) > 0 &&
 		types.BitlistCount(proof.Participants) > 0
 }
 
-func bitlistEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
+func bitlistContains(superset, subset []byte) bool {
+	for _, index := range types.BitlistIndices(subset) {
+		if !types.BitlistGet(superset, index) {
 			return false
 		}
 	}

@@ -38,8 +38,11 @@ func (g *Gate) Acquire(ctx context.Context, proposal bool) bool {
 }
 
 func (g *Gate) Release(proposal bool) {
-	g.token <- struct{}{}
+	// Clear the priority flag before returning the token: a background waiter
+	// woken by the token send re-checks the flag, and the reverse order lets it
+	// observe a stale true and spuriously cancel its work.
 	if proposal {
 		g.proposalPending.Store(false)
 	}
+	g.token <- struct{}{}
 }

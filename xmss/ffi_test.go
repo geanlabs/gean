@@ -23,7 +23,7 @@ func decodeHex(t *testing.T, s string) []byte {
 }
 
 func TestVerifySignatureSSZValid(t *testing.T) {
-	t.Skip("Hardcoded signature is from old Dim64Base8 scheme; devnet-4 uses Dim46Base8. Regenerate fixture after Phase 8.")
+	t.Skip("hardcoded signature uses the retired Dim64Base8 scheme")
 	pkBytes := decodeHex(t, reamPublicKeyHex)
 	sigBytes := decodeHex(t, reamSignatureHex)
 

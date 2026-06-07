@@ -36,10 +36,11 @@ func (e *Engine) onTick() {
 	store.OnTick(e.Store, timestampMs, hasProposal)
 
 	if currentInterval == 2 {
-		_, proposesNext := e.getOurProposer(currentSlot + 1)
-		if !proposesNext {
-			e.dispatchAggregationCycle(currentSlot, isAgg)
-		}
+		// Dispatch unconditionally, matching leanSpec's interval-2 aggregation.
+		// Contention with an upcoming proposal duty is handled by the proving
+		// gate's proposal priority, not by skipping the cycle: a sole aggregator
+		// that also proposes next would otherwise never aggregate at all.
+		e.dispatchAggregationCycle(currentSlot, isAgg)
 	}
 
 	if currentInterval == 0 || currentInterval == 4 {

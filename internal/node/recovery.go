@@ -55,7 +55,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 	}
 	now := uint64(time.Now().UnixMilli())
 	currentSlot := e.currentSlot(now)
-	if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext && e.currentInterval(now) >= 2 {
+	if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext {
 		return
 	}
 
@@ -100,6 +100,14 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 	}
 
 	for _, candidate := range candidates {
+		if ctx.Err() != nil {
+			return
+		}
+		now = uint64(time.Now().UnixMilli())
+		currentSlot = e.currentSlot(now)
+		if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext {
+			return
+		}
 		if e.ProvingGate != nil && !e.ProvingGate.Acquire(ctx, false) {
 			metrics.IncProofOperation("recovery", "canceled")
 			return
@@ -120,7 +128,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 					state,
 					attestationproof.NewMerger(e.Store.PubKeyCache),
 				)
-				if mergeErr == nil {
+				if mergeErr == nil && coversParticipants(combined, candidate.att.AggregationBits) {
 					recovered = combined
 				}
 			}
@@ -134,7 +142,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		} else {
 			metrics.IncProofOperation("recovery", "success")
 			metrics.ObserveProofSize("type1", len(proof))
-			e.Store.NewPayloads.Replace(candidate.root, candidate.att.Data, recovered)
+			e.Store.NewPayloads.Push(candidate.root, candidate.att.Data, recovered)
 			if e.AggCtl != nil && e.AggCtl.Get() && e.P2P != nil {
 				_ = e.P2P.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
 					Data:  candidate.att.Data,
@@ -143,6 +151,18 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 			}
 		}
 	}
+}
+
+func coversParticipants(proof *types.SingleMessageAggregate, participants []byte) bool {
+	if proof == nil {
+		return false
+	}
+	for _, index := range types.BitlistIndices(participants) {
+		if !types.BitlistGet(proof.Participants, index) {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Engine) blockProofPubkeys(block *types.Block, state *types.State) ([][]xmss.CPubKey, error) {
