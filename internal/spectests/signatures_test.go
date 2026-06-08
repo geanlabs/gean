@@ -49,11 +49,7 @@ type sigSBA struct {
 // MultiMessageAggregate serializes as {"proof": {"data": "0x..."}} — its proof
 // field is a ByteList nested one level deeper than a bare ByteList.
 type sigProof struct {
-	Proof sigByteList `json:"proof"`
-}
-
-type sigByteList struct {
-	Data string `json:"data"`
+	Proof fcProofData `json:"proof"`
 }
 
 // toState converts fixture anchor state to types.State.

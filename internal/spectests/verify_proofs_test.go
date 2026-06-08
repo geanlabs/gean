@@ -11,26 +11,22 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-type vpByteList struct {
-	Data string `json:"data"`
-}
-
 // Single-message (Type-1) proof fixtures.
 type verifyProofsSingleCase struct {
-	PublicKeys      []string   `json:"publicKeys"`
-	Message         string     `json:"message"`
-	Slot            uint32     `json:"slot"`
-	Proof           vpByteList `json:"proof"`
-	RejectionReason *string    `json:"rejectionReason"`
+	PublicKeys      []string    `json:"publicKeys"`
+	Message         string      `json:"message"`
+	Slot            uint32      `json:"slot"`
+	Proof           fcProofData `json:"proof"`
+	RejectionReason *string     `json:"rejectionReason"`
 }
 
 // Multi-message (Type-2) proof fixtures.
 type verifyProofsMultiCase struct {
-	PublicKeysPerMessage [][]string `json:"publicKeysPerMessage"`
-	Messages             []string   `json:"messages"`
-	Slots                []uint32   `json:"slots"`
-	Proof                vpByteList `json:"proof"`
-	RejectionReason      *string    `json:"rejectionReason"`
+	PublicKeysPerMessage [][]string  `json:"publicKeysPerMessage"`
+	Messages             []string    `json:"messages"`
+	Slots                []uint32    `json:"slots"`
+	Proof                fcProofData `json:"proof"`
+	RejectionReason      *string     `json:"rejectionReason"`
 }
 
 func parsePubkeyHandles(t *testing.T, hexKeys []string) []xmss.CPubKey {
