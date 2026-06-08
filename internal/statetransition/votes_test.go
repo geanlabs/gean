@@ -119,3 +119,42 @@ func TestVoteInvalidReason(t *testing.T) {
 		}
 	})
 }
+
+func TestHeadMatchesChain(t *testing.T) {
+	var onChain, offChain [types.RootSize]byte
+	onChain[0] = 0x11
+	offChain[0] = 0x22
+
+	hashes := make([][]byte, 3)
+	for i := range hashes {
+		hashes[i] = make([]byte, types.RootSize)
+	}
+	copy(hashes[2], onChain[:])
+
+	state := makeGenesisState(1)
+	state.HistoricalBlockHashes = hashes
+
+	cp := func(slot uint64, root [types.RootSize]byte) *types.Checkpoint {
+		return &types.Checkpoint{Slot: slot, Root: root}
+	}
+
+	cases := []struct {
+		name string
+		head *types.Checkpoint
+		want bool
+	}{
+		{"on_chain", cp(2, onChain), true},
+		{"zero_root", cp(2, [types.RootSize]byte{}), false},
+		{"off_chain", cp(2, offChain), false},
+		{"beyond_chain", cp(5, onChain), false},
+		{"nil", nil, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := headMatchesChain(state, tc.head); got != tc.want {
+				t.Fatalf("headMatchesChain(%s) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}

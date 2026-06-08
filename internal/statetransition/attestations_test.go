@@ -211,3 +211,58 @@ func TestSerializeJustificationsSortsAndCopiesRoots(t *testing.T) {
 		t.Fatal("serialized root alias mutated source root")
 	}
 }
+
+func TestProcessAttestationsRequiresHeadOnChain(t *testing.T) {
+	const numValidators = 4
+	var r0, r2 [types.RootSize]byte
+	r0[0] = 0xa0
+	r2[0] = 0xa2
+
+	mkState := func() *types.State {
+		hashes := make([][]byte, 3)
+		for i := range hashes {
+			hashes[i] = make([]byte, types.RootSize)
+		}
+		copy(hashes[0], r0[:])
+		copy(hashes[2], r2[:])
+		s := makeGenesisState(numValidators)
+		s.LatestJustified = &types.Checkpoint{Slot: 0, Root: r0}
+		s.LatestFinalized = &types.Checkpoint{Slot: 0, Root: r0}
+		s.HistoricalBlockHashes = hashes
+		s.JustifiedSlots = types.NewBitlistSSZ(0)
+		return s
+	}
+	mkAtt := func(head *types.Checkpoint) *types.AggregatedAttestation {
+		return &types.AggregatedAttestation{
+			AggregationBits: types.BitlistFromIndices([]uint64{0, 1, 2}),
+			Data: &types.AttestationData{
+				Slot:   2,
+				Head:   head,
+				Source: &types.Checkpoint{Slot: 0, Root: r0},
+				Target: &types.Checkpoint{Slot: 2, Root: r2},
+			},
+		}
+	}
+
+	t.Run("on_chain_head_justifies", func(t *testing.T) {
+		s := mkState()
+		if err := ProcessAttestations(s, []*types.AggregatedAttestation{mkAtt(&types.Checkpoint{Slot: 2, Root: r2})}); err != nil {
+			t.Fatalf("ProcessAttestations: %v", err)
+		}
+		if s.LatestJustified.Slot != 2 {
+			t.Fatalf("LatestJustified.Slot = %d, want 2", s.LatestJustified.Slot)
+		}
+	})
+
+	t.Run("off_chain_head_skipped", func(t *testing.T) {
+		var bogus [types.RootSize]byte
+		bogus[0] = 0xee
+		s := mkState()
+		if err := ProcessAttestations(s, []*types.AggregatedAttestation{mkAtt(&types.Checkpoint{Slot: 2, Root: bogus})}); err != nil {
+			t.Fatalf("ProcessAttestations: %v", err)
+		}
+		if s.LatestJustified.Slot != 0 {
+			t.Fatalf("LatestJustified.Slot = %d, want 0 (off-chain head must be skipped)", s.LatestJustified.Slot)
+		}
+	})
+}
