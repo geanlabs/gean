@@ -63,8 +63,8 @@ type fcDataList struct {
 }
 
 type fcValidator struct {
-	AttestationPubkey string `json:"attestationPubkey"`
-	ProposalPubkey    string `json:"proposalPubkey"`
+	AttestationPubkey string `json:"attestationPublicKey"`
+	ProposalPubkey    string `json:"proposalPublicKey"`
 	Pubkey            string `json:"pubkey"` // legacy fallback
 	Index             uint64 `json:"index"`
 }
