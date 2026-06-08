@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/geanlabs/gean/internal/blockbuilder"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 	"github.com/geanlabs/gean/xmss"
@@ -50,6 +52,12 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 			return
 		case duty := <-e.ProposalCh:
 			metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
+			// Duty may have gone stale while the worker proved an earlier slot.
+			if head := e.Store.HeadSlot(); head >= duty.slot {
+				logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", duty.slot, head)
+				metrics.IncProofOperation("proposal", "skipped_stale")
+				continue
+			}
 			deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
 			if e.ProvingGate != nil && !e.ProvingGate.Acquire(deadline, true) {
 				cancel()
@@ -79,6 +87,13 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 
 	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID)
 	if err != nil {
+		// Head advanced past the target slot; skip as a slot-boundary miss (matches spec).
+		var stale *statetransition.StateSlotIsNewerError
+		if errors.As(err, &stale) {
+			logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", slot, e.Store.HeadSlot())
+			metrics.IncProofOperation("proposal", "skipped_stale")
+			return nil
+		}
 		logger.Error(logger.Validator, "produce block failed: %v", err)
 		return nil
 	}
