@@ -20,13 +20,6 @@ var sszFixtureRoots = []string{
 	"../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_consensus_containers",
 	"../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_networking_containers",
 	"../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_xmss_containers",
-	// Basic/parameterized-type suites: gean exposes these only inline (not as
-	// standalone SSZ codecs), so the runner consumes them and skips per
-	// unregistered typeName rather than silently leaving the dirs unwalked.
-	"../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_basic_types",
-	"../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_decode_rejections",
-	"../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_merkleization_boundaries",
-	"../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_decode_failure_smoke",
 }
 
 type sszFixtureOuter map[string]sszFixture
