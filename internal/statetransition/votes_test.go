@@ -152,8 +152,8 @@ func TestHeadMatchesChain(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := headMatchesChain(state, tc.head); got != tc.want {
-				t.Fatalf("headMatchesChain(%s) = %v, want %v", tc.name, got, tc.want)
+			if got := HeadMatchesChain(state, tc.head); got != tc.want {
+				t.Fatalf("HeadMatchesChain(%s) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
 	}

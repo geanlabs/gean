@@ -41,7 +41,7 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 		if !IsValidVote(state, source, target) {
 			continue
 		}
-		if !headMatchesChain(state, agg.Data.Head) {
+		if !HeadMatchesChain(state, agg.Data.Head) {
 			continue
 		}
 
