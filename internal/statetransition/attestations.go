@@ -41,6 +41,9 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 		if !IsValidVote(state, source, target) {
 			continue
 		}
+		if !HeadMatchesChain(state, agg.Data.Head) {
+			continue
+		}
 
 		votes, exists := justifications[target.Root]
 		if !exists {

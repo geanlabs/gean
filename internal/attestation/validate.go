@@ -48,6 +48,14 @@ func errAttestationTooFarInFuture(attSlot, storeTime uint64) error {
 	return &store.StoreError{Kind: store.ErrAttestationTooFarInFuture, Message: fmt.Sprintf("attestation slot %d too far in future (store time %d intervals)", attSlot, storeTime)}
 }
 
+func errSourceNotAncestorOfTarget() error {
+	return &store.StoreError{Kind: store.ErrSourceNotAncestorOfTarget, Message: "source checkpoint is not an ancestor of target"}
+}
+
+func errTargetNotAncestorOfHead() error {
+	return &store.StoreError{Kind: store.ErrTargetNotAncestorOfHead, Message: "target checkpoint is not an ancestor of head"}
+}
+
 func ValidateAttestationData(s *store.ConsensusStore, data *types.AttestationData) error {
 	if err := validateDataShape(data); err != nil {
 		return err
@@ -81,12 +89,42 @@ func ValidateAttestationData(s *store.ConsensusStore, data *types.AttestationDat
 	if headHeader.Slot != data.Head.Slot {
 		return errHeadSlotMismatch(data.Head.Slot, headHeader.Slot)
 	}
+	if !checkpointIsAncestor(s, data.Source, data.Target) {
+		return errSourceNotAncestorOfTarget()
+	}
+	if !checkpointIsAncestor(s, data.Target, data.Head) {
+		return errTargetNotAncestorOfHead()
+	}
 	if data.Slot > math.MaxUint64/types.IntervalsPerSlot ||
 		data.Slot*types.IntervalsPerSlot > s.Time()+types.GossipDisparityIntervals {
 		return errAttestationTooFarInFuture(data.Slot, s.Time())
 	}
 
 	return nil
+}
+
+// checkpointIsAncestor reports whether ancestor lies on descendant's parent
+// chain. Mirrors leanSpec _checkpoint_is_ancestor: climb parent links from the
+// descendant; the ancestor's slot must carry its exact root, otherwise the two
+// checkpoints sit on forked branches.
+func checkpointIsAncestor(s *store.ConsensusStore, ancestor, descendant *types.Checkpoint) bool {
+	if ancestor.Slot > descendant.Slot {
+		return false
+	}
+	current := descendant.Root
+	for {
+		header := s.GetBlockHeader(current)
+		if header == nil {
+			return false
+		}
+		if header.Slot == ancestor.Slot {
+			return current == ancestor.Root
+		}
+		if header.Slot < ancestor.Slot {
+			return false
+		}
+		current = header.ParentRoot
+	}
 }
 
 func validateDataShape(data *types.AttestationData) error {

@@ -1,3 +1,7 @@
+use backend::symmetric::Permutation;
+use backend::{
+    default_koalabear_poseidon1_16, default_koalabear_poseidon1_24, KoalaBear, PrimeField32,
+};
 use lean_multisig::{
     aggregate_single_message_signatures, merge_single_message_aggregates, setup_prover,
     setup_verifier, verify_multi_message_aggregate, verify_single_message_aggregate,
@@ -361,5 +365,45 @@ pub unsafe extern "C" fn xmss_verify_type_2(
             }
         }
         verify_multi_message_aggregate(&proof).is_ok()
+    })
+}
+
+// Poseidon permutation over KoalaBear, exposed for spec test vectors. The state
+// is the canonical u32 field representation, permuted in place. This is the same
+// instance the XMSS stack hashes with, so it matches the spec. Returns -1 on a
+// null pointer or wrong width.
+#[no_mangle]
+pub unsafe extern "C" fn poseidon_permute_kb16(state: *mut u32, len: usize) -> i32 {
+    ffi_guard!(-1, {
+        if state.is_null() || len != 16 {
+            return -1;
+        }
+        let raw = slice::from_raw_parts_mut(state, 16);
+        let mut input = [0u32; 16];
+        input.copy_from_slice(raw);
+        let mut fe = KoalaBear::new_array(input);
+        default_koalabear_poseidon1_16().permute_mut(&mut fe);
+        for (dst, x) in raw.iter_mut().zip(fe.iter()) {
+            *dst = x.as_canonical_u32();
+        }
+        0
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn poseidon_permute_kb24(state: *mut u32, len: usize) -> i32 {
+    ffi_guard!(-1, {
+        if state.is_null() || len != 24 {
+            return -1;
+        }
+        let raw = slice::from_raw_parts_mut(state, 24);
+        let mut input = [0u32; 24];
+        input.copy_from_slice(raw);
+        let mut fe = KoalaBear::new_array(input);
+        default_koalabear_poseidon1_24().permute_mut(&mut fe);
+        for (dst, x) in raw.iter_mut().zip(fe.iter()) {
+            *dst = x.as_canonical_u32();
+        }
+        0
     })
 }

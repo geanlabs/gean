@@ -80,6 +80,9 @@ package xmss
 //     const uint8_t* proof, size_t proof_len,
 //     const PublicKey* const* pubkeys, const size_t* pubkey_counts,
 //     size_t count, const uint8_t* message_hashes, const uint32_t* message_slots);
+//
+// int32_t poseidon_permute_kb16(uint32_t* state, size_t len);
+// int32_t poseidon_permute_kb24(uint32_t* state, size_t len);
 import "C"
 
 import (
@@ -116,7 +119,29 @@ var (
 	ErrMalformedChildProof = errors.New("malformed child proof")
 	ErrMalformedRawInput   = errors.New("malformed raw signature input")
 	ErrSetupFailed         = errors.New("XMSS setup failed")
+	ErrPoseidonWidth       = errors.New("poseidon permutation width must be 16 or 24")
+	ErrPoseidonPermute     = errors.New("poseidon permutation failed")
 )
+
+// Poseidon2Permute applies the KoalaBear Poseidon permutation in place. The
+// state holds canonical field-element values; width must be 16 or 24.
+func Poseidon2Permute(state []uint32) error {
+	if len(state) != 16 && len(state) != 24 {
+		return ErrPoseidonWidth
+	}
+	ptr := (*C.uint32_t)(unsafe.Pointer(&state[0]))
+	n := C.size_t(len(state))
+	var status C.int32_t
+	if len(state) == 16 {
+		status = C.poseidon_permute_kb16(ptr, n)
+	} else {
+		status = C.poseidon_permute_kb24(ptr, n)
+	}
+	if status != 0 {
+		return ErrPoseidonPermute
+	}
+	return nil
+}
 
 var (
 	proverOnce   sync.Once

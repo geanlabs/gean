@@ -1619,6 +1619,7 @@ dependencies = [
 name = "multisig-glue"
 version = "0.1.0"
 dependencies = [
+ "backend",
  "lean-multisig",
  "rec_aggregation",
 ]
