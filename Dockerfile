@@ -32,7 +32,9 @@ RUN cd xmss/rust && \
 # Stage leanVM Python sources at the exact checkout path the binary expects.
 # The lean_compiler resolves .py files via CARGO_MANIFEST_DIR baked at compile time;
 # on arm64 the pre-committed bytecode cache misses and triggers a recompile from source.
-RUN CHECKOUT_DIR=$(ls -d /root/.cargo/git/checkouts/leanvm-*/8fcbd77/crates/rec_aggregation | sed 's|/crates/rec_aggregation||') && \
+# Match the checkout by crate, not by pinned rev: cargo names the rev subdir after
+# the leanVM commit, so a hardcoded short hash breaks on every dependency bump.
+RUN CHECKOUT_DIR=$(ls -d /root/.cargo/git/checkouts/leanvm-*/*/crates/rec_aggregation | head -1 | sed 's|/crates/rec_aggregation||') && \
     mkdir -p /leanvm-staged && \
     echo "$CHECKOUT_DIR" > /leanvm-staged/.checkout_root && \
     cp -r "$CHECKOUT_DIR/crates/rec_aggregation" /leanvm-staged/rec_aggregation && \
