@@ -18,7 +18,7 @@ Gean is:
 ### Prerequisites
 
 - [Go](https://go.dev/doc/install) 1.25+
-- [Rust](https://www.rust-lang.org/tools/install) 1.90.0
+- [Rust](https://www.rust-lang.org/tools/install) 1.92.0
 - [uv](https://docs.astral.sh/uv/)
 - [Docker](https://www.docker.com/get-started/)
 

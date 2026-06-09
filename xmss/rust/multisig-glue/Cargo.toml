@@ -4,10 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Matches leanSpec fd7dfd0 through lean-multisig-py v0.0.6.
-rec_aggregation = { git = "https://github.com/leanEthereum/leanVM.git", rev = "8fcbd77958a58666e828315de2d6ce7c93297117" }
-leansig_wrapper = { git = "https://github.com/leanEthereum/leanVM.git", rev = "8fcbd77958a58666e828315de2d6ce7c93297117" }
-backend = { git = "https://github.com/leanEthereum/leanVM.git", rev = "8fcbd77958a58666e828315de2d6ce7c93297117" }
+# leanVM devnet5 HEAD. The root crate re-exports the aggregation API,
+# Xmss key/signature types, and setup_prover/setup_verifier (which now own
+# the internal arena allocator; no global_allocator override). Proofs stay
+# verify-compatible with the leanSpec fixture rev (8fcbd779), so this is a
+# non-snark-breaking bump.
+lean-multisig = { git = "https://github.com/leanEthereum/leanVM.git", rev = "e2592df4e30fdddbbf8ae26a333116c68cec7026" }
+# split-by-message is not re-exported by the root crate; pull it from the
+# aggregation crate directly (same git rev, identical re-exported types).
+rec_aggregation = { git = "https://github.com/leanEthereum/leanVM.git", rev = "e2592df4e30fdddbbf8ae26a333116c68cec7026" }
+# Poseidon permutation primitives for the spec test-vector FFI (poseidon_permute_*).
+backend = { git = "https://github.com/leanEthereum/leanVM.git", rev = "e2592df4e30fdddbbf8ae26a333116c68cec7026" }
 
 [lib]
 # Built as an rlib so its `#[no_mangle] pub extern "C"` symbols can be
