@@ -199,6 +199,18 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 		t.Fatalf("head unknown skip was not marked expected: %v", err)
 	}
 
+	// Head known but off the canonical chain (a forked block) must be dropped,
+	// matching the spec proposer; expected skip, not a hard error.
+	offHead := *data
+	forkHead := [32]byte{0xfe}
+	offHead.Head = &types.Checkpoint{Slot: data.Head.Slot, Root: forkHead}
+	if err := payloadBuildIssue(workingState, map[[32]byte]bool{parentRoot: true, forkHead: true},
+		AttestationPayload{DataRoot: dataRoot, Data: &offHead, Proofs: payload.Proofs}); !errors.Is(err, ErrPayloadHeadOffChain) {
+		t.Fatalf("payload build issue=%v, want ErrPayloadHeadOffChain", err)
+	} else if !IsExpectedSkip(err) {
+		t.Fatalf("off-chain head skip was not marked expected: %v", err)
+	}
+
 	sameSlot := *data
 	sameSlot.Target = &types.Checkpoint{Slot: data.Source.Slot, Root: data.Source.Root}
 	payload.Data = &sameSlot

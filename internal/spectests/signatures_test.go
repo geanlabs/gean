@@ -46,8 +46,10 @@ type sigSBA struct {
 	Proof sigProof `json:"proof"`
 }
 
+// MultiMessageAggregate serializes as {"proof": {"data": "0x..."}} — its proof
+// field is a ByteList nested one level deeper than a bare ByteList.
 type sigProof struct {
-	Data string `json:"data"`
+	Proof fcProofData `json:"proof"`
 }
 
 // toState converts fixture anchor state to types.State.
@@ -124,7 +126,7 @@ func (fs *sigState) toState() *types.State {
 func (sba *sigSBA) toSignedBlock() *types.SignedBlock {
 	return &types.SignedBlock{
 		Block: sba.Block.toBlock(),
-		Proof: &types.MultiMessageAggregate{Proof: parseHexBytes(sba.Proof.Data)},
+		Proof: &types.MultiMessageAggregate{Proof: parseHexBytes(sba.Proof.Proof.Data)},
 	}
 }
 

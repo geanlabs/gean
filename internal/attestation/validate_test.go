@@ -27,8 +27,8 @@ func makeValidAttestationData() *types.AttestationData {
 
 func insertValidationHeaders(s *store.ConsensusStore) {
 	s.InsertBlockHeader([32]byte{1}, &types.BlockHeader{Slot: 3})
-	s.InsertBlockHeader([32]byte{2}, &types.BlockHeader{Slot: 4})
-	s.InsertBlockHeader([32]byte{3}, &types.BlockHeader{Slot: 5})
+	s.InsertBlockHeader([32]byte{2}, &types.BlockHeader{Slot: 4, ParentRoot: [32]byte{1}})
+	s.InsertBlockHeader([32]byte{3}, &types.BlockHeader{Slot: 5, ParentRoot: [32]byte{2}})
 }
 
 func TestValidateAttestationDataAvailability(t *testing.T) {
@@ -130,5 +130,49 @@ func TestValidateAttestationDataFutureSlot(t *testing.T) {
 	se, ok := err.(*store.StoreError)
 	if !ok || se.Kind != store.ErrAttestationTooFarInFuture {
 		t.Fatalf("error=%v, want ErrAttestationTooFarInFuture", err)
+	}
+}
+
+func TestValidateAttestationDataAncestry(t *testing.T) {
+	// Chain root1(3) <- root2(4) <- root3(5), plus a fork root4(4) off root1.
+	newStore := func() *store.ConsensusStore {
+		s := makeValidationStore()
+		s.SetTime(30)
+		insertValidationHeaders(s)
+		s.InsertBlockHeader([32]byte{4}, &types.BlockHeader{Slot: 4, ParentRoot: [32]byte{1}})
+		return s
+	}
+	cp := func(root byte, slot uint64) *types.Checkpoint {
+		return &types.Checkpoint{Root: [32]byte{root}, Slot: slot}
+	}
+
+	tests := []struct {
+		name           string
+		source, target *types.Checkpoint
+		head           *types.Checkpoint
+		want           store.StoreErrorKind
+	}{
+		{
+			name:   "source_not_ancestor_of_target",
+			source: cp(4, 4), target: cp(3, 5), head: cp(3, 5),
+			want: store.ErrSourceNotAncestorOfTarget,
+		},
+		{
+			name:   "target_not_ancestor_of_head",
+			source: cp(1, 3), target: cp(4, 4), head: cp(3, 5),
+			want: store.ErrTargetNotAncestorOfHead,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newStore()
+			data := &types.AttestationData{Slot: 5, Source: tc.source, Target: tc.target, Head: tc.head}
+			err := attestation.ValidateAttestationData(s, data)
+			se, ok := err.(*store.StoreError)
+			if !ok || se.Kind != tc.want {
+				t.Fatalf("error=%v, want kind %d", err, tc.want)
+			}
+		})
 	}
 }
