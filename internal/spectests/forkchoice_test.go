@@ -94,6 +94,10 @@ type fcStep struct {
 	Checks      *fcChecks            `json:"checks,omitempty"`
 	Time        *uint64              `json:"time,omitempty"`
 	Interval    *uint64              `json:"interval,omitempty"`
+	// TickToSlot reports whether the store clock advances to the block's slot
+	// before import. Absent means the default (advance); false delivers the
+	// block ahead of the store clock.
+	TickToSlot *bool `json:"tickToSlot,omitempty"`
 }
 
 // fcGossipAttestation represents an individual gossip attestation step.
@@ -417,11 +421,15 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				Proof: &types.MultiMessageAggregate{},
 			}
 
-			// Advance store time to at least this block's slot so that
-			// subsequent attestation validation doesn't reject as "too far in future".
-			minTime := block.Slot * types.IntervalsPerSlot
-			if s.Time() < minTime {
-				s.SetTime(minTime)
+			// Advance the store clock to this block's slot unless the fixture
+			// delivers the block ahead of the clock (tickToSlot=false). The clock
+			// gates attestation future-validation, so it must reach the slot
+			// before subsequent attestations validate.
+			if step.TickToSlot == nil || *step.TickToSlot {
+				minTime := block.Slot * types.IntervalsPerSlot
+				if s.Time() < minTime {
+					s.SetTime(minTime)
+				}
 			}
 
 			// Process block through store (no signature verification).
@@ -440,6 +448,27 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 			// Register block in fork choice.
 			fc.OnBlock(block.Slot, blockRoot, block.ParentRoot)
+
+			// Seed the block's on-chain aggregated attestations into the known
+			// pool with their participant sets so the votes carry fork-choice
+			// weight. The spec test framework merges a block's aggregated proofs
+			// into latest_known_aggregated_payloads when building it; block
+			// import alone (data, empty proof set) leaves them weightless, which
+			// would mis-resolve weight-driven reorgs. Only participants are read
+			// during head computation, so a non-empty placeholder proof suffices.
+			for _, att := range block.Body.Attestations {
+				if att == nil || att.Data == nil || types.BitlistCount(att.AggregationBits) == 0 {
+					continue
+				}
+				dataRoot, err := att.Data.HashTreeRoot()
+				if err != nil {
+					continue
+				}
+				s.KnownPayloads.Push(dataRoot, att.Data, &types.SingleMessageAggregate{
+					Participants: att.AggregationBits,
+					Proof:        []byte{0x01},
+				})
+			}
 
 			// Update head: extract known attestations, feed to fork choice, compute head.
 			attestations := s.ExtractLatestKnownAttestations()
