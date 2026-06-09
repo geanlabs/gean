@@ -1,8 +1,9 @@
-use leansig_wrapper::{XmssPublicKey, XmssSignature};
-use rec_aggregation::{
-    aggregate_type_1, init_aggregation_bytecode, merge_many_type_1, split_type_2_by_msg,
-    verify_type_1, verify_type_2, TypeOneMultiSignature, TypeTwoMultiSignature,
+use lean_multisig::{
+    aggregate_single_message_signatures, merge_single_message_aggregates, setup_prover,
+    setup_verifier, verify_multi_message_aggregate, verify_single_message_aggregate,
+    MultiMessageAggregateSignature, SingleMessageAggregateSignature, XmssPublicKey, XmssSignature,
 };
+use rec_aggregation::split_multi_message_aggregate_by_message;
 use std::panic::AssertUnwindSafe;
 use std::slice;
 use std::sync::OnceLock;
@@ -28,15 +29,14 @@ macro_rules! ffi_guard {
     };
 }
 
+// setup_prover enables a process-wide arena allocator and warms the prover.
+// Its single shared region means two proofs must never be generated
+// concurrently; the Go-side proving.Gate serializes all aggregate/merge/split
+// work to one at a time, so that invariant holds. Verification does not use the
+// arena and stays safe to run concurrently.
 #[no_mangle]
 pub extern "C" fn xmss_setup_prover() -> i32 {
-    let ready = PROVER_READY.get_or_init(|| {
-        std::panic::catch_unwind(|| {
-            init_aggregation_bytecode();
-            backend::precompute_dft_twiddles::<backend::KoalaBear>(1 << 24);
-        })
-        .is_ok()
-    });
+    let ready = PROVER_READY.get_or_init(|| std::panic::catch_unwind(setup_prover).is_ok());
     if *ready {
         0
     } else {
@@ -46,8 +46,7 @@ pub extern "C" fn xmss_setup_prover() -> i32 {
 
 #[no_mangle]
 pub extern "C" fn xmss_setup_verifier() -> i32 {
-    let ready =
-        VERIFIER_READY.get_or_init(|| std::panic::catch_unwind(init_aggregation_bytecode).is_ok());
+    let ready = VERIFIER_READY.get_or_init(|| std::panic::catch_unwind(setup_verifier).is_ok());
     if *ready {
         0
     } else {
@@ -173,7 +172,7 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
                     return -1;
                 }
                 let proof = slice::from_raw_parts(proofs[i], lengths[i]);
-                match TypeOneMultiSignature::decompress_without_pubkeys(proof, keys) {
+                match SingleMessageAggregateSignature::decompress_without_pubkeys(proof, keys) {
                     Some(proof) => children.push(proof),
                     None => return -1,
                 }
@@ -181,7 +180,7 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
         }
 
         let proof = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-            aggregate_type_1(&children, raw, message, slot, log_inv_rate)
+            aggregate_single_message_signatures(&children, raw, message, slot, log_inv_rate)
         })) {
             Ok(Ok(proof)) => proof,
             _ => return -1,
@@ -212,7 +211,7 @@ pub unsafe extern "C" fn xmss_verify_type_1(
             Some(keys) => keys,
             None => return false,
         };
-        let proof = match TypeOneMultiSignature::decompress_without_pubkeys(
+        let proof = match SingleMessageAggregateSignature::decompress_without_pubkeys(
             slice::from_raw_parts(proof, proof_len),
             keys,
         ) {
@@ -223,7 +222,7 @@ pub unsafe extern "C" fn xmss_verify_type_1(
         {
             return false;
         }
-        verify_type_1(&proof).is_ok()
+        verify_single_message_aggregate(&proof).is_ok()
     })
 }
 
@@ -260,7 +259,7 @@ pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
             if proof_ptrs[i].is_null() || proof_lens[i] == 0 {
                 return -1;
             }
-            match TypeOneMultiSignature::decompress_without_pubkeys(
+            match SingleMessageAggregateSignature::decompress_without_pubkeys(
                 slice::from_raw_parts(proof_ptrs[i], proof_lens[i]),
                 groups[i].clone(),
             ) {
@@ -269,7 +268,7 @@ pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
             }
         }
         let proof = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-            merge_many_type_1(proofs, log_inv_rate)
+            merge_single_message_aggregates(proofs, log_inv_rate)
         })) {
             Ok(Ok(proof)) => proof,
             _ => return -1,
@@ -299,7 +298,7 @@ pub unsafe extern "C" fn xmss_split_type_2_by_message(
             Some(groups) => groups,
             None => return -1,
         };
-        let proof = match TypeTwoMultiSignature::decompress_without_pubkeys(
+        let proof = match MultiMessageAggregateSignature::decompress_without_pubkeys(
             slice::from_raw_parts(proof, proof_len),
             groups,
         ) {
@@ -312,7 +311,7 @@ pub unsafe extern "C" fn xmss_split_type_2_by_message(
                 Err(_) => return -1,
             };
         let proof = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-            split_type_2_by_msg(proof, target, log_inv_rate)
+            split_multi_message_aggregate_by_message(proof, target, log_inv_rate)
         })) {
             Ok(Ok(proof)) => proof,
             _ => return -1,
@@ -340,7 +339,7 @@ pub unsafe extern "C" fn xmss_verify_type_2(
             Some(groups) => groups,
             None => return false,
         };
-        let proof = match TypeTwoMultiSignature::decompress_without_pubkeys(
+        let proof = match MultiMessageAggregateSignature::decompress_without_pubkeys(
             slice::from_raw_parts(proof, proof_len),
             groups,
         ) {
@@ -361,6 +360,6 @@ pub unsafe extern "C" fn xmss_verify_type_2(
                 return false;
             }
         }
-        verify_type_2(&proof).is_ok()
+        verify_multi_message_aggregate(&proof).is_ok()
     })
 }

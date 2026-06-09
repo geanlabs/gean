@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & test
 
-The build has a hard ordering: **Rust FFI must be built before any Go code that touches `xmss`**. `make build` does this for you (`ffi` is a prerequisite). The toolchain is pinned — Rust 1.90.0, Go 1.25.
+The build has a hard ordering: **Rust FFI must be built before any Go code that touches `xmss`**. `make build` does this for you (`ffi` is a prerequisite). The toolchain is pinned — Rust 1.92.0, Go 1.25.
 
 ```
 make build        # builds Rust FFI glue, then bin/gean and bin/keygen
