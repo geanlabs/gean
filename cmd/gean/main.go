@@ -50,7 +50,7 @@ func run(cfg config) error {
 		return err
 	}
 
-	fc, err := forkChoiceFromStore(s)
+	fc, err := node.ForkChoiceFromStore(s)
 	if err != nil {
 		return err
 	}

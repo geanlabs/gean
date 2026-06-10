@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
-	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
@@ -107,48 +105,4 @@ func recoverStoreTime(s *store.ConsensusStore, genesisTimeSec uint64) error {
 	logger.Info(logger.Node, "store time rehydrated: intervals=%d genesis_time=%d now_ms=%d",
 		intervals, genesisTimeSec, nowMs)
 	return nil
-}
-
-// forkChoiceFromStore anchors fork choice at the latest justified block and
-// replays every stored block above it. FindHead descends from the justified
-// root, so after a restart that root must be present in the array — anchoring
-// at the bare DB head leaves justified as an unknown ancestor and pins the
-// head there permanently. All branches are replayed, not just the head chain:
-// the network may have built on a sibling the previous run never chose as
-// head, and a missing fork point leaves that subtree dangling and weightless.
-func forkChoiceFromStore(s *store.ConsensusStore) (*forkchoice.ForkChoice, error) {
-	if s == nil {
-		return nil, fmt.Errorf("fork choice anchor: store is nil")
-	}
-	anchorRoot := s.Head()
-	if justified := s.LatestJustified(); justified != nil && s.GetBlockHeader(justified.Root) != nil {
-		anchorRoot = justified.Root
-	}
-	anchorHeader := s.GetBlockHeader(anchorRoot)
-	if anchorHeader == nil {
-		return nil, fmt.Errorf("fork choice anchor: missing header for root 0x%x", anchorRoot)
-	}
-	fc := forkchoice.New(anchorHeader.Slot, anchorRoot, anchorHeader.ParentRoot)
-
-	roots, err := s.BlockRoots()
-	if err != nil {
-		return nil, fmt.Errorf("fork choice anchor: %w", err)
-	}
-	type replayEntry struct {
-		slot         uint64
-		root, parent [32]byte
-	}
-	replay := make([]replayEntry, 0, len(roots))
-	for root := range roots {
-		header := s.GetBlockHeader(root)
-		if header == nil || header.Slot <= anchorHeader.Slot {
-			continue
-		}
-		replay = append(replay, replayEntry{header.Slot, root, header.ParentRoot})
-	}
-	sort.Slice(replay, func(i, j int) bool { return replay[i].slot < replay[j].slot })
-	for _, e := range replay {
-		fc.OnBlock(e.slot, e.root, e.parent)
-	}
-	return fc, nil
 }
