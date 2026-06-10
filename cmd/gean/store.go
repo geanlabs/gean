@@ -134,20 +134,17 @@ func forkChoiceFromStore(s *store.ConsensusStore) (*forkchoice.ForkChoice, error
 	if err != nil {
 		return nil, fmt.Errorf("fork choice anchor: %w", err)
 	}
-	type chainEntry struct {
+	type replayEntry struct {
 		slot         uint64
 		root, parent [32]byte
 	}
-	replay := make([]chainEntry, 0, len(roots))
+	replay := make([]replayEntry, 0, len(roots))
 	for root := range roots {
-		if root == anchorRoot {
-			continue
-		}
 		header := s.GetBlockHeader(root)
 		if header == nil || header.Slot <= anchorHeader.Slot {
 			continue
 		}
-		replay = append(replay, chainEntry{header.Slot, root, header.ParentRoot})
+		replay = append(replay, replayEntry{header.Slot, root, header.ParentRoot})
 	}
 	sort.Slice(replay, func(i, j int) bool { return replay[i].slot < replay[j].slot })
 	for _, e := range replay {
