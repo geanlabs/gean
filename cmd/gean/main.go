@@ -6,7 +6,6 @@ import (
 	"flag"
 	"os"
 
-	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/node"
@@ -51,11 +50,10 @@ func run(cfg config) error {
 		return err
 	}
 
-	headSlot, headRoot, parentRoot, err := forkChoiceAnchor(s)
+	fc, err := forkChoiceFromStore(s)
 	if err != nil {
 		return err
 	}
-	fc := forkchoice.New(headSlot, headRoot, parentRoot)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

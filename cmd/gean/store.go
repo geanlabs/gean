@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
@@ -107,14 +108,45 @@ func recoverStoreTime(s *store.ConsensusStore, genesisTimeSec uint64) error {
 	return nil
 }
 
-func forkChoiceAnchor(s *store.ConsensusStore) (uint64, [32]byte, [32]byte, error) {
+// forkChoiceFromStore anchors fork choice at the latest justified block and
+// replays the stored head chain into it. FindHead descends from the justified
+// root, so after a restart that root must be present in the array — anchoring
+// at the bare DB head leaves justified as an unknown ancestor and pins the
+// head there permanently.
+func forkChoiceFromStore(s *store.ConsensusStore) (*forkchoice.ForkChoice, error) {
 	if s == nil {
-		return 0, types.ZeroRoot, types.ZeroRoot, fmt.Errorf("fork choice anchor: store is nil")
+		return nil, fmt.Errorf("fork choice anchor: store is nil")
 	}
 	headRoot := s.Head()
 	headHeader := s.GetBlockHeader(headRoot)
 	if headHeader == nil {
-		return 0, types.ZeroRoot, types.ZeroRoot, fmt.Errorf("fork choice anchor: missing head header for root 0x%x", headRoot)
+		return nil, fmt.Errorf("fork choice anchor: missing head header for root 0x%x", headRoot)
 	}
-	return headHeader.Slot, headRoot, headHeader.ParentRoot, nil
+
+	anchorRoot := headRoot
+	if justified := s.LatestJustified(); justified != nil {
+		anchorRoot = justified.Root
+	}
+
+	type chainEntry struct {
+		slot         uint64
+		root, parent [32]byte
+	}
+	var chain []chainEntry
+	root, header := headRoot, headHeader
+	for root != anchorRoot {
+		chain = append(chain, chainEntry{header.Slot, root, header.ParentRoot})
+		parentHeader := s.GetBlockHeader(header.ParentRoot)
+		if parentHeader == nil || parentHeader.Slot >= header.Slot {
+			logger.Warn(logger.Forkchoice, "head chain does not reach justified root 0x%x; anchoring fork choice at head 0x%x", anchorRoot, headRoot)
+			return forkchoice.New(headHeader.Slot, headRoot, headHeader.ParentRoot), nil
+		}
+		root, header = header.ParentRoot, parentHeader
+	}
+
+	fc := forkchoice.New(header.Slot, root, header.ParentRoot)
+	for i := len(chain) - 1; i >= 0; i-- {
+		fc.OnBlock(chain[i].slot, chain[i].root, chain[i].parent)
+	}
+	return fc, nil
 }

@@ -10,6 +10,13 @@ func (e *Engine) updateHead() {
 	attestations := e.Store.ExtractLatestKnownAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
+	// FindHead echoes back a justified root it doesn't know, freezing the
+	// head there — surface that state instead of stalling silently.
+	if e.FC.NodeIndex(justifiedRoot) < 0 && e.warnedMissingJustified != justifiedRoot {
+		e.warnedMissingJustified = justifiedRoot
+		logger.Warn(logger.Forkchoice, "justified root 0x%x unknown to fork choice; head cannot advance past it", justifiedRoot)
+	}
+
 	for vid, data := range attestations {
 		e.FC.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 	}

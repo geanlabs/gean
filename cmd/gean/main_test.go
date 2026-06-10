@@ -107,23 +107,64 @@ func TestInitStoreFromStatePersistsAnchor(t *testing.T) {
 		t.Fatal("expected persisted state")
 	}
 
-	slot, headRoot, parentRoot, err := forkChoiceAnchor(s)
+	fc, err := forkChoiceFromStore(s)
 	if err != nil {
-		t.Fatalf("fork choice anchor: %v", err)
+		t.Fatalf("fork choice from store: %v", err)
 	}
-	if slot != state.Slot || headRoot != root || parentRoot != state.LatestBlockHeader.ParentRoot {
-		t.Fatalf("anchor slot=%d root=%x parent=%x, want slot=%d root=%x parent=%x",
-			slot, headRoot, parentRoot, state.Slot, root, state.LatestBlockHeader.ParentRoot)
+	if fc.Len() != 1 || fc.NodeIndex(root) != 0 {
+		t.Fatalf("fresh store should anchor fork choice at head only: len=%d idx=%d", fc.Len(), fc.NodeIndex(root))
 	}
 }
 
-func TestForkChoiceAnchorRejectsMissingHeader(t *testing.T) {
+func TestForkChoiceFromStoreRejectsMissingHeader(t *testing.T) {
 	s := newTestStore()
 	s.SetHead([32]byte{0x01})
 
-	_, _, _, err := forkChoiceAnchor(s)
+	_, err := forkChoiceFromStore(s)
 	if err == nil {
 		t.Fatal("expected missing head header error")
+	}
+}
+
+func TestForkChoiceFromStoreReplaysChainToJustified(t *testing.T) {
+	s := newTestStore()
+	genesis := [32]byte{0xaa}
+	blockA := [32]byte{0xbb}
+	blockB := [32]byte{0xcc}
+	blockC := [32]byte{0xdd}
+
+	s.InsertBlockHeader(genesis, &types.BlockHeader{Slot: 0})
+	s.InsertBlockHeader(blockA, &types.BlockHeader{Slot: 2, ParentRoot: genesis})
+	s.InsertBlockHeader(blockB, &types.BlockHeader{Slot: 4, ParentRoot: blockA})
+	s.InsertBlockHeader(blockC, &types.BlockHeader{Slot: 6, ParentRoot: blockB})
+	s.SetHead(blockC)
+	s.SetLatestJustified(&types.Checkpoint{Root: blockA, Slot: 2})
+
+	fc, err := forkChoiceFromStore(s)
+	if err != nil {
+		t.Fatalf("fork choice from store: %v", err)
+	}
+	if fc.NodeIndex(blockA) < 0 {
+		t.Fatal("justified root missing from restored fork choice")
+	}
+	if head := fc.UpdateHead(blockA); head != blockC {
+		t.Fatalf("head=%x, want stored leaf %x", head, blockC)
+	}
+}
+
+func TestForkChoiceFromStoreFallsBackWhenJustifiedUnreachable(t *testing.T) {
+	s := newTestStore()
+	head := [32]byte{0x02}
+	s.InsertBlockHeader(head, &types.BlockHeader{Slot: 6, ParentRoot: [32]byte{0x03}})
+	s.SetHead(head)
+	s.SetLatestJustified(&types.Checkpoint{Root: [32]byte{0x09}, Slot: 2})
+
+	fc, err := forkChoiceFromStore(s)
+	if err != nil {
+		t.Fatalf("fork choice from store: %v", err)
+	}
+	if fc.Len() != 1 || fc.NodeIndex(head) != 0 {
+		t.Fatalf("expected fallback anchor at head: len=%d idx=%d", fc.Len(), fc.NodeIndex(head))
 	}
 }
 
