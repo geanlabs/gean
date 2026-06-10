@@ -1,6 +1,7 @@
 package aggregation
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"time"
@@ -12,15 +13,16 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey) {
-	if snap == nil || cache == nil {
-		return nil, nil, nil
-	}
+type aggregationGroup struct {
+	dataRoot [32]byte
+	slot     uint64
+}
 
-	var newAggregates []*types.SignedAggregatedAttestation
-	var payloadEntries []store.PayloadKV
-	var keysToDelete []store.AttestationDeleteKey
-
+// orderedGroups lists the snapshot's aggregation work newest-slot-first.
+// Fresh attestations are the only ones that can still influence
+// justification, so they must be proven inside the session budget; older
+// backlog only gets prover time the current slot doesn't need.
+func orderedGroups(snap *Snapshot) []aggregationGroup {
 	dataRoots := make(map[[32]byte]bool)
 	for dr := range snap.attSigs {
 		dataRoots[dr] = true
@@ -29,7 +31,39 @@ func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache) ([]*types.Si
 		dataRoots[dr] = true
 	}
 
-	for dataRoot := range dataRoots {
+	groups := make([]aggregationGroup, 0, len(dataRoots))
+	for dr := range dataRoots {
+		attData := attestationDataForRoot(snap, dr)
+		if attData == nil {
+			continue
+		}
+		groups = append(groups, aggregationGroup{dataRoot: dr, slot: attData.Slot})
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].slot != groups[j].slot {
+			return groups[i].slot > groups[j].slot
+		}
+		return bytes.Compare(groups[i].dataRoot[:], groups[j].dataRoot[:]) > 0
+	})
+	return groups
+}
+
+func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool) {
+	if snap == nil || cache == nil {
+		return nil, nil, nil, false
+	}
+
+	var newAggregates []*types.SignedAggregatedAttestation
+	var payloadEntries []store.PayloadKV
+	var keysToDelete []store.AttestationDeleteKey
+	truncated := false
+
+	for _, group := range orderedGroups(snap) {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			truncated = true
+			break
+		}
+		dataRoot := group.dataRoot
 		func() {
 			childProofsBuf := getChildProofsBuf()
 			defer putChildProofsBuf(childProofsBuf)
@@ -157,7 +191,7 @@ func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache) ([]*types.Si
 		}()
 	}
 
-	return newAggregates, payloadEntries, keysToDelete
+	return newAggregates, payloadEntries, keysToDelete, truncated
 }
 
 func aggregationMessage(attData *types.AttestationData) ([32]byte, uint32, error) {
