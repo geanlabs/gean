@@ -81,4 +81,7 @@ var (
 	metricProvingQueueDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lean_proving_queue_depth", Help: "Queued recursive proof work",
 	}, []string{"operation"})
+	metricProcessRSSBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_node_rss_bytes", Help: "Process resident set size in bytes (includes prover memory outside the Go heap)",
+	})
 )

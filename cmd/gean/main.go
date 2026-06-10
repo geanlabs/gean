@@ -65,7 +65,9 @@ func run(cfg config) error {
 	}
 	defer p2pHost.Close()
 
-	if err := preinitializeXMSS(); err != nil {
+	proving := len(inputs.keyManager.ValidatorIDs()) > 0 || cfg.IsAggregator
+	warnIfMemoryLimited(proving)
+	if err := preinitializeXMSS(proving); err != nil {
 		return err
 	}
 
