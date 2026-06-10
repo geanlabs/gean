@@ -79,11 +79,8 @@ func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache, deadline tim
 			newEntry := snap.newEntries[dataRoot]
 			knownEntry := snap.knownEntries[dataRoot]
 
+			// Non-nil: orderedGroups already dropped roots without data.
 			attData := attestationDataForRoot(snap, dataRoot)
-			if attData == nil {
-				return
-			}
-
 			targetState := snap.targetStates[attData.Target.Root]
 			if targetState == nil {
 				return
