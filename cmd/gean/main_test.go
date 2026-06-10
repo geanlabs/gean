@@ -168,6 +168,41 @@ func TestForkChoiceFromStoreFallsBackWhenJustifiedUnreachable(t *testing.T) {
 	}
 }
 
+func TestForkChoiceFromStoreReplaysSiblingForks(t *testing.T) {
+	s := newTestStore()
+	justified := [32]byte{0xaa}
+	staleB := [32]byte{0xbb}
+	staleHead := [32]byte{0xcc}
+	forkB := [32]byte{0xdd}
+	forkTip := [32]byte{0xee}
+
+	s.InsertBlockHeader(justified, &types.BlockHeader{Slot: 2})
+	s.InsertBlockHeader(staleB, &types.BlockHeader{Slot: 4, ParentRoot: justified})
+	s.InsertBlockHeader(staleHead, &types.BlockHeader{Slot: 6, ParentRoot: staleB})
+	s.InsertBlockHeader(forkB, &types.BlockHeader{Slot: 3, ParentRoot: justified})
+	s.InsertBlockHeader(forkTip, &types.BlockHeader{Slot: 5, ParentRoot: forkB})
+	s.SetHead(staleHead)
+	s.SetLatestJustified(&types.Checkpoint{Root: justified, Slot: 2})
+
+	fc, err := forkChoiceFromStore(s)
+	if err != nil {
+		t.Fatalf("fork choice from store: %v", err)
+	}
+	if fc.NodeIndex(forkTip) < 0 {
+		t.Fatal("sibling fork missing from restored fork choice")
+	}
+
+	att := &types.AttestationData{Slot: 5, Head: &types.Checkpoint{Root: forkTip, Slot: 5}}
+	for vid := uint64(0); vid < 3; vid++ {
+		if !fc.SetKnownVote(vid, forkTip, 5, att) {
+			t.Fatalf("vote for fork tip rejected for validator %d", vid)
+		}
+	}
+	if head := fc.UpdateHead(justified); head != forkTip {
+		t.Fatalf("head=%x, want weighted fork tip %x", head, forkTip)
+	}
+}
+
 func TestBootstrapStoreRejectsPreDevnet5Database(t *testing.T) {
 	s := newTestStore()
 	root := [32]byte{0x01}

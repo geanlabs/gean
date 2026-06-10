@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/geanlabs/gean/internal/forkchoice"
@@ -109,44 +110,48 @@ func recoverStoreTime(s *store.ConsensusStore, genesisTimeSec uint64) error {
 }
 
 // forkChoiceFromStore anchors fork choice at the latest justified block and
-// replays the stored head chain into it. FindHead descends from the justified
+// replays every stored block above it. FindHead descends from the justified
 // root, so after a restart that root must be present in the array — anchoring
 // at the bare DB head leaves justified as an unknown ancestor and pins the
-// head there permanently.
+// head there permanently. All branches are replayed, not just the head chain:
+// the network may have built on a sibling the previous run never chose as
+// head, and a missing fork point leaves that subtree dangling and weightless.
 func forkChoiceFromStore(s *store.ConsensusStore) (*forkchoice.ForkChoice, error) {
 	if s == nil {
 		return nil, fmt.Errorf("fork choice anchor: store is nil")
 	}
-	headRoot := s.Head()
-	headHeader := s.GetBlockHeader(headRoot)
-	if headHeader == nil {
-		return nil, fmt.Errorf("fork choice anchor: missing head header for root 0x%x", headRoot)
-	}
-
-	anchorRoot := headRoot
-	if justified := s.LatestJustified(); justified != nil {
+	anchorRoot := s.Head()
+	if justified := s.LatestJustified(); justified != nil && s.GetBlockHeader(justified.Root) != nil {
 		anchorRoot = justified.Root
 	}
+	anchorHeader := s.GetBlockHeader(anchorRoot)
+	if anchorHeader == nil {
+		return nil, fmt.Errorf("fork choice anchor: missing header for root 0x%x", anchorRoot)
+	}
+	fc := forkchoice.New(anchorHeader.Slot, anchorRoot, anchorHeader.ParentRoot)
 
+	roots, err := s.BlockRoots()
+	if err != nil {
+		return nil, fmt.Errorf("fork choice anchor: %w", err)
+	}
 	type chainEntry struct {
 		slot         uint64
 		root, parent [32]byte
 	}
-	var chain []chainEntry
-	root, header := headRoot, headHeader
-	for root != anchorRoot {
-		chain = append(chain, chainEntry{header.Slot, root, header.ParentRoot})
-		parentHeader := s.GetBlockHeader(header.ParentRoot)
-		if parentHeader == nil || parentHeader.Slot >= header.Slot {
-			logger.Warn(logger.Forkchoice, "head chain does not reach justified root 0x%x; anchoring fork choice at head 0x%x", anchorRoot, headRoot)
-			return forkchoice.New(headHeader.Slot, headRoot, headHeader.ParentRoot), nil
+	replay := make([]chainEntry, 0, len(roots))
+	for root := range roots {
+		if root == anchorRoot {
+			continue
 		}
-		root, header = header.ParentRoot, parentHeader
+		header := s.GetBlockHeader(root)
+		if header == nil || header.Slot <= anchorHeader.Slot {
+			continue
+		}
+		replay = append(replay, chainEntry{header.Slot, root, header.ParentRoot})
 	}
-
-	fc := forkchoice.New(header.Slot, root, header.ParentRoot)
-	for i := len(chain) - 1; i >= 0; i-- {
-		fc.OnBlock(chain[i].slot, chain[i].root, chain[i].parent)
+	sort.Slice(replay, func(i, j int) bool { return replay[i].slot < replay[j].slot })
+	for _, e := range replay {
+		fc.OnBlock(e.slot, e.root, e.parent)
 	}
 	return fc, nil
 }
