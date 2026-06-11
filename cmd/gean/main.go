@@ -65,6 +65,11 @@ func run(cfg config) error {
 	}
 	defer p2pHost.Close()
 
+	// Handlers must be live before the prover pre-init: the listener is
+	// already accepting connections, and peers that dial during the
+	// multi-second init would fail req/resp protocol negotiation.
+	registerReqRespHandlers(p2pHost, s)
+
 	proving := len(inputs.keyManager.ValidatorIDs()) > 0 || cfg.IsAggregator
 	warnIfMemoryLimited(proving)
 	if err := preinitializeXMSS(proving); err != nil {
@@ -73,8 +78,6 @@ func run(cfg config) error {
 
 	aggCtl := role.NewWithHook(cfg.IsAggregator, metrics.SetIsAggregator)
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount)
-
-	registerReqRespHandlers(p2pHost, s)
 	startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes)
 
 	apiAddr, metricsAddr := startHTTPServers(cfg, s, fc, aggCtl)
