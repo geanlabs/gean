@@ -140,10 +140,13 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		return
 	}
 	block := result.signedBlock.Block
-	if e.currentSlot(uint64(time.Now().UnixMilli())) > block.Slot ||
-		e.Store.HeadSlot() >= block.Slot ||
-		e.Store.Head() != block.ParentRoot {
+	// A proposal that outlived its slot is still the chain's best extension
+	// unless the head moved past it; fork choice accepts late blocks, while
+	// discarding one here can permanently halt a stalled chain.
+	if e.Store.HeadSlot() >= block.Slot || e.Store.Head() != block.ParentRoot {
 		metrics.IncProofOperation("proposal", "canceled")
+		logger.Warn(logger.Validator, "discarding proposal slot=%d: head moved head_slot=%d head=0x%x parent=0x%x",
+			block.Slot, e.Store.HeadSlot(), e.Store.Head(), block.ParentRoot)
 		return
 	}
 	e.onBlock(result.signedBlock)

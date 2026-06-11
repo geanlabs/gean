@@ -29,7 +29,15 @@ func setupP2P(ctx context.Context, cfg config, keyManager *xmss.KeyManager) (*p2
 	return p2pHost, nil
 }
 
-func preinitializeXMSS() error {
+// The prover owns a multi-GB resident arena; nodes that never prove (no
+// validator keys, not aggregating) skip it and keep only the verifier. The
+// proving FFI entry points lazily self-initialize, so an unexpected proving
+// need still works — it just pays the init off the tick loop on first use.
+func preinitializeXMSS(proving bool) error {
+	if !proving {
+		logger.Info(logger.Node, "no validator keys and not an aggregator; deferring XMSS prover init")
+		return xmss.EnsureVerifierReady()
+	}
 	logger.Info(logger.Node, "pre-initializing XMSS prover (this takes ~45s)...")
 	if err := xmss.EnsureProverReady(); err != nil {
 		return err

@@ -53,6 +53,8 @@ type Engine struct {
 	ProvingGate           *proving.Gate
 
 	lastTick time.Time
+
+	warnedMissingJustified [32]byte
 }
 
 func New(

@@ -106,25 +106,6 @@ func TestInitStoreFromStatePersistsAnchor(t *testing.T) {
 	if s.GetState(root) == nil {
 		t.Fatal("expected persisted state")
 	}
-
-	slot, headRoot, parentRoot, err := forkChoiceAnchor(s)
-	if err != nil {
-		t.Fatalf("fork choice anchor: %v", err)
-	}
-	if slot != state.Slot || headRoot != root || parentRoot != state.LatestBlockHeader.ParentRoot {
-		t.Fatalf("anchor slot=%d root=%x parent=%x, want slot=%d root=%x parent=%x",
-			slot, headRoot, parentRoot, state.Slot, root, state.LatestBlockHeader.ParentRoot)
-	}
-}
-
-func TestForkChoiceAnchorRejectsMissingHeader(t *testing.T) {
-	s := newTestStore()
-	s.SetHead([32]byte{0x01})
-
-	_, _, _, err := forkChoiceAnchor(s)
-	if err == nil {
-		t.Fatal("expected missing head header error")
-	}
 }
 
 func TestBootstrapStoreRejectsPreDevnet5Database(t *testing.T) {

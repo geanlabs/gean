@@ -83,6 +83,11 @@ RUN CHECKOUT_ROOT=$(cat /tmp/leanvm-staged/.checkout_root) && \
     rm -rf /tmp/leanvm-staged
 
 
+# Keep the Go heap tight so the XMSS prover's transient multi-GB proving
+# peaks (allocated by the Rust arena, invisible to the Go GC) land on free
+# memory instead of an uncollected heap. Operators can override.
+ENV GOMEMLIMIT=2GiB
+
 # 9000/udp - P2P QUIC
 # 5052 - API
 # 5054 - Prometheus metrics
