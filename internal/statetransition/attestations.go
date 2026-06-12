@@ -45,21 +45,29 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 			continue
 		}
 
+		// An attestation that reaches the tally must name at least one
+		// in-range voter; empty bits or a set bit outside the registry
+		// reject the whole block. Unset padding past the registry is
+		// harmless. This guards the unsigned path, which has no signature
+		// stage to reject such bits first.
+		voterIndices := types.BitlistIndices(agg.AggregationBits)
+		if len(voterIndices) == 0 {
+			return ErrEmptyAggregationBits
+		}
+		for _, voter := range voterIndices {
+			if voter >= uint64(validatorCount) {
+				return &AttesterIndexOutOfRangeError{Index: voter, Validators: uint64(validatorCount)}
+			}
+		}
+
 		votes, exists := justifications[target.Root]
 		if !exists {
 			votes = make([]bool, validatorCount)
 			justifications[target.Root] = votes
 		}
 
-		bitsLen := types.BitlistLen(agg.AggregationBits)
-		if bitsLen > uint64(validatorCount) {
-			continue
-		}
-
-		for i := range bitsLen {
-			if types.BitlistGet(agg.AggregationBits, i) {
-				votes[i] = true
-			}
+		for _, voter := range voterIndices {
+			votes[voter] = true
 		}
 
 		voteCount := countTrue(votes)

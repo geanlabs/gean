@@ -66,6 +66,17 @@ func (e *SlotGapTooLargeError) Error() string {
 	return fmt.Sprintf("slot gap %d at slot %d exceeds max %d", e.Gap, e.Current, e.Max)
 }
 
+type AttesterIndexOutOfRangeError struct {
+	Index      uint64
+	Validators uint64
+}
+
+func (e *AttesterIndexOutOfRangeError) Error() string {
+	return fmt.Sprintf("attestation aggregation bit %d outside validator registry of %d", e.Index, e.Validators)
+}
+
+var ErrEmptyAggregationBits = fmt.Errorf("attestation aggregation bits have no set bits")
+
 var ErrNoValidators = fmt.Errorf("state has no validators")
 var ErrZeroHashInJustificationRoots = fmt.Errorf("zero hash found in justifications_roots")
 var ErrMalformedState = fmt.Errorf("malformed state")
