@@ -266,3 +266,74 @@ func TestProcessAttestationsRequiresHeadOnChain(t *testing.T) {
 		}
 	})
 }
+
+func bitsBoundsHarness() (*types.State, func(bits []byte) *types.AggregatedAttestation) {
+	var r3, r4 [types.RootSize]byte
+	r3[0] = 3
+	r4[0] = 4
+	hashes := make([][]byte, 10)
+	for i := range hashes {
+		hashes[i] = make([]byte, types.RootSize)
+	}
+	copy(hashes[3], r3[:])
+	copy(hashes[4], r4[:])
+
+	state := makeGenesisState(4)
+	state.LatestJustified = &types.Checkpoint{Slot: 3, Root: r3}
+	state.LatestFinalized = &types.Checkpoint{}
+	state.HistoricalBlockHashes = hashes
+	setSlotJustified(state, 0, 3)
+
+	mkAtt := func(bits []byte) *types.AggregatedAttestation {
+		return &types.AggregatedAttestation{
+			AggregationBits: bits,
+			Data: &types.AttestationData{
+				Slot:   4,
+				Head:   &types.Checkpoint{Slot: 4, Root: r4},
+				Target: &types.Checkpoint{Slot: 4, Root: r4},
+				Source: &types.Checkpoint{Slot: 3, Root: r3},
+			},
+		}
+	}
+	return state, mkAtt
+}
+
+func TestProcessAttestationsRejectsEmptyAggregationBits(t *testing.T) {
+	state, mkAtt := bitsBoundsHarness()
+
+	err := ProcessAttestations(state, []*types.AggregatedAttestation{mkAtt(types.NewBitlistSSZ(4))})
+	if !errors.Is(err, ErrEmptyAggregationBits) {
+		t.Fatalf("err = %v, want ErrEmptyAggregationBits", err)
+	}
+}
+
+func TestProcessAttestationsRejectsOutOfRangeSetBit(t *testing.T) {
+	state, mkAtt := bitsBoundsHarness()
+
+	err := ProcessAttestations(state, []*types.AggregatedAttestation{mkAtt(types.BitlistFromIndices([]uint64{0, 7}))})
+	var oor *AttesterIndexOutOfRangeError
+	if !errors.As(err, &oor) {
+		t.Fatalf("err = %v, want AttesterIndexOutOfRangeError", err)
+	}
+	if oor.Index != 7 || oor.Validators != 4 {
+		t.Fatalf("index=%d validators=%d, want 7 and 4", oor.Index, oor.Validators)
+	}
+}
+
+func TestProcessAttestationsToleratesUnsetPaddingBits(t *testing.T) {
+	state, mkAtt := bitsBoundsHarness()
+
+	// Bitlist longer than the registry, set bits all in range: a valid
+	// supermajority whose votes must count despite the padding.
+	bits := types.NewBitlistSSZ(8)
+	for _, i := range []uint64{0, 1, 2} {
+		types.BitlistSet(bits, i)
+	}
+
+	if err := ProcessAttestations(state, []*types.AggregatedAttestation{mkAtt(bits)}); err != nil {
+		t.Fatalf("ProcessAttestations: %v", err)
+	}
+	if state.LatestJustified.Slot != 4 {
+		t.Fatalf("LatestJustified.Slot = %d, want 4 (padded votes must be tallied)", state.LatestJustified.Slot)
+	}
+}

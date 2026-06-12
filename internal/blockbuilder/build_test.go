@@ -546,7 +546,7 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 		payloads = append(payloads, AttestationPayload{
 			DataRoot: hashAttestationData(t, data),
 			Data:     data,
-			Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{1})},
+			Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 		})
 	}
 	unknownHead := &types.AttestationData{
@@ -558,7 +558,7 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 	payloads = append(payloads, AttestationPayload{
 		DataRoot: hashAttestationData(t, unknownHead),
 		Data:     unknownHead,
-		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{1})},
+		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 	})
 
 	plan, err := planAttestations(Input{
