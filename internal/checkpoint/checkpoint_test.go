@@ -393,7 +393,7 @@ func makeAnchorPair(t *testing.T) (*types.State, *types.SignedBlock) {
 			StateRoot:     stateRoot,
 			Body:          body,
 		},
-		Signature: &types.BlockSignatures{},
+		Proof: &types.MultiMessageAggregate{},
 	}
 	return state, signed
 }

@@ -75,6 +75,7 @@ func (e *Engine) importKnownParentBlock(
 		logger.Error(logger.Chain, "block processing failed slot=%d block_root=0x%x: %v", block.Slot, blockRoot, err)
 		return
 	}
+	e.dispatchRecovery(signedBlock)
 
 	e.FC.OnBlock(block.Slot, blockRoot, parentRoot)
 

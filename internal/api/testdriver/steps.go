@@ -41,13 +41,7 @@ func (sess *Session) applyBlock(step *specfixtures.ForkChoiceStep) error {
 		return err
 	}
 
-	var attSigs []*types.AggregatedSignatureProof
-	if block.Body != nil {
-		for _, att := range block.Body.Attestations {
-			attSigs = append(attSigs, &types.AggregatedSignatureProof{Participants: att.AggregationBits})
-		}
-	}
-	signedBlock := &types.SignedBlock{Block: block, Signature: &types.BlockSignatures{AttestationSignatures: attSigs}}
+	signedBlock := &types.SignedBlock{Block: block, Proof: &types.MultiMessageAggregate{}}
 
 	minTime := block.Slot * types.IntervalsPerSlot
 	if sess.store.Time() < minTime {
@@ -105,7 +99,7 @@ func (sess *Session) applyAttestation(step *specfixtures.ForkChoiceStep) error {
 	}
 
 	participants := types.BitlistFromIndices([]uint64{step.Attestation.ValidatorID})
-	proof := &types.AggregatedSignatureProof{Participants: participants}
+	proof := &types.SingleMessageAggregate{Participants: participants}
 	sess.store.NewPayloads.Push(dataRoot, attData, proof)
 
 	sess.fc.SetNewVote(step.Attestation.ValidatorID, attData.Head.Root, attData.Slot, attData)
@@ -139,7 +133,7 @@ func (sess *Session) applyAggregatedAttestation(step *specfixtures.ForkChoiceSte
 		if participants, err = specfixtures.ParseBoolBitlist(step.Attestation.Proof.Participants.Data); err != nil {
 			return fmt.Errorf("proof.participants: %w", err)
 		}
-		if proofData, err = specfixtures.ParseHexBytes(step.Attestation.Proof.ProofData.Data); err != nil {
+		if proofData, err = specfixtures.ParseHexBytes(step.Attestation.Proof.Proof.Data); err != nil {
 			return fmt.Errorf("proof.proofData: %w", err)
 		}
 	}
@@ -151,7 +145,7 @@ func (sess *Session) applyAggregatedAttestation(step *specfixtures.ForkChoiceSte
 		return err
 	}
 
-	proof := &types.AggregatedSignatureProof{Participants: participants, ProofData: proofData}
+	proof := &types.SingleMessageAggregate{Participants: participants, Proof: proofData}
 	sess.store.NewPayloads.Push(dataRoot, attData, proof)
 
 	for _, vid := range types.BitlistIndices(participants) {

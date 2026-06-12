@@ -128,7 +128,7 @@ type FCGossipAttestation struct {
 
 type FCProof struct {
 	Participants TestDataList `json:"participants"`
-	ProofData    FCProofData  `json:"proofData"`
+	Proof        FCProofData  `json:"proof"`
 }
 
 type FCProofData struct {
@@ -164,29 +164,14 @@ type FCAttestationCheck struct {
 }
 
 type VerifySignaturesFixture struct {
-	Network                    string             `json:"network"`
-	LeanEnv                    string             `json:"leanEnv"`
-	AnchorState                TestState          `json:"anchorState"`
-	SignedBlock                FixtureSignedBlock `json:"signedBlock"`
-	SignedBlockWithAttestation FixtureSignedBlock `json:"signedBlockWithAttestation"`
-	ExpectException            *string            `json:"expectException"`
+	Network         string             `json:"network"`
+	LeanEnv         string             `json:"leanEnv"`
+	AnchorState     TestState          `json:"anchorState"`
+	SignedBlock     FixtureSignedBlock `json:"signedBlock"`
+	RejectionReason *string            `json:"rejectionReason"`
 }
 
 type FixtureSignedBlock struct {
-	Block     TestBlock          `json:"block"`
-	Signature FixtureBlockSigPL  `json:"signature"`
-	Message   *FixtureSBAMessage `json:"message,omitempty"`
-}
-
-type FixtureSBAMessage struct {
-	Block TestBlock `json:"block"`
-}
-
-type FixtureBlockSigPL struct {
-	ProposerSignature     string             `json:"proposerSignature"`
-	AttestationSignatures FixtureAttSigsList `json:"attestationSignatures"`
-}
-
-type FixtureAttSigsList struct {
-	Data []FCProof `json:"data"`
+	Block TestBlock   `json:"block"`
+	Proof FCProofData `json:"proof"`
 }

@@ -56,6 +56,9 @@ func bootstrapStore(s *store.ConsensusStore, genesisConfig *genesis.GenesisConfi
 	existingState := s.GetState(existingHead)
 
 	if existingHeader != nil && existingState != nil && existingHeader.Slot > 0 {
+		if s.GetSignedBlock(existingHead) == nil {
+			return fmt.Errorf("incompatible pre-devnet-5 data directory: signed head block missing; reset the data directory")
+		}
 		logger.Info(logger.Node, "restoring from database: slot=%d head=%x justified=%d finalized=%d",
 			existingHeader.Slot, existingHead,
 			s.LatestJustified().Slot, s.LatestFinalized().Slot)
@@ -112,9 +115,7 @@ func bootstrapFromGenesis(s *store.ConsensusStore, genesisConfig *genesis.Genesi
 			StateRoot:     genesisState.LatestBlockHeader.StateRoot,
 			Body:          &types.BlockBody{},
 		},
-		Signature: &types.BlockSignatures{
-			ProposerSignature: types.BlankXMSSSignature(),
-		},
+		Proof: &types.MultiMessageAggregate{},
 	}
 	if err := s.StorePendingBlock(canonicalRoot, genesisSignedBlock); err != nil {
 		return fmt.Errorf("store genesis block: %w", err)

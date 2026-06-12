@@ -11,8 +11,8 @@ on:
       - "Makefile"
 
 env:
-  GO_VERSION: "1.25.9"
-  RUST_VERSION: "1.88"
+  GO_VERSION: "1.25.11"
+  RUST_VERSION: "1.92"
 
 jobs:
   spec-tests:

@@ -74,11 +74,11 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 		return
 	}
 
-	if agg.Proof == nil || len(agg.Proof.ProofData) == 0 {
+	if agg.Proof == nil || len(agg.Proof.Proof) == 0 {
 		return
 	}
 	verifyStart := time.Now()
-	err := attestation.VerifyAggregatedGossipAttestation(e.Store, agg.Data, agg.Proof.Participants, agg.Proof.ProofData)
+	err := attestation.VerifyAggregatedGossipAttestation(e.Store, agg.Data, agg.Proof.Participants, agg.Proof.Proof)
 	metrics.ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
 	if err != nil {
 		metrics.IncPqSigAggregatedInvalid()

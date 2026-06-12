@@ -36,6 +36,10 @@ func (e *Engine) onTick() {
 	store.OnTick(e.Store, timestampMs, hasProposal)
 
 	if currentInterval == 2 {
+		// Dispatch unconditionally, matching leanSpec's interval-2 aggregation.
+		// Contention with an upcoming proposal duty is handled by the proving
+		// gate's proposal priority, not by skipping the cycle: a sole aggregator
+		// that also proposes next would otherwise never aggregate at all.
 		e.dispatchAggregationCycle(currentSlot, isAgg)
 	}
 
@@ -86,6 +90,7 @@ func (e *Engine) dispatchAggregationCycle(currentSlot uint64, isAggregator bool)
 	}
 	select {
 	case e.AggregationDispatchCh <- aggregation.Dispatch{Snapshot: snap, Slot: currentSlot}:
+		metrics.SetProvingQueueDepth("aggregation", len(e.AggregationDispatchCh))
 	default:
 		metrics.IncAggregationDispatchDropped()
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipSpawnFailed)

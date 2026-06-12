@@ -10,9 +10,9 @@ import (
 
 func TestSelectChildProofsSkipsOutOfRangeParticipant(t *testing.T) {
 	entry := &store.PayloadEntry{
-		Proofs: []*types.AggregatedSignatureProof{{
+		Proofs: []*types.SingleMessageAggregate{{
 			Participants: types.BitlistFromIndices([]uint64{2}),
-			ProofData:    []byte{1},
+			Proof:        []byte{1},
 		}},
 	}
 	state := &types.State{

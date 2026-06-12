@@ -12,6 +12,7 @@ var ErrJustifiedDivergenceNotClosed = errors.New("justified divergence not close
 var ErrMalformedInput = errors.New("malformed blockbuilder input")
 var ErrMalformedPayload = errors.New("malformed payload")
 var ErrPayloadHeadUnknown = errors.New("payload head root unknown")
+var ErrPayloadHeadOffChain = errors.New("payload head off canonical chain")
 var ErrPayloadRootMismatch = errors.New("payload root mismatch")
 var ErrPayloadVoteInvalid = errors.New("payload vote invalid")
 
@@ -69,6 +70,10 @@ func errPayloadRootMismatch(dataRoot, computed [32]byte) error {
 
 func errPayloadHeadUnknown(root [32]byte) error {
 	return fmt.Errorf("%w: head root=0x%x [%w]", ErrPayloadHeadUnknown, root, errExpectedSkip)
+}
+
+func errPayloadHeadOffChain(root [32]byte) error {
+	return fmt.Errorf("%w: head root=0x%x [%w]", ErrPayloadHeadOffChain, root, errExpectedSkip)
 }
 
 func errPayloadVoteInvalid(data *types.AttestationData, reason string) error {

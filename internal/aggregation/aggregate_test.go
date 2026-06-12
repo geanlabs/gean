@@ -2,8 +2,11 @@ package aggregation
 
 import (
 	"testing"
+	"time"
 
+	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 func TestAggregationMessageRejectsNilData(t *testing.T) {
@@ -43,5 +46,68 @@ func TestAggregationMessageBuildsRootAndSlot(t *testing.T) {
 	}
 	if root != wantRoot || slot != 12 {
 		t.Fatalf("root=%x slot=%d, want %x/12", root, slot, wantRoot)
+	}
+}
+
+func aggregateTestSnapshot(slots ...uint64) *Snapshot {
+	snap := &Snapshot{
+		attSigs:      make(map[[32]byte]*store.AttestationDataEntry),
+		newEntries:   make(map[[32]byte]*store.PayloadEntry),
+		knownEntries: make(map[[32]byte]*store.PayloadEntry),
+		targetStates: make(map[[32]byte]*types.State),
+	}
+	for i, slot := range slots {
+		var dr [32]byte
+		dr[0] = byte(i + 1)
+		snap.attSigs[dr] = &store.AttestationDataEntry{
+			Data: &types.AttestationData{
+				Slot:   slot,
+				Head:   &types.Checkpoint{},
+				Target: &types.Checkpoint{},
+				Source: &types.Checkpoint{},
+			},
+		}
+	}
+	return snap
+}
+
+func TestOrderedGroupsNewestFirst(t *testing.T) {
+	snap := aggregateTestSnapshot(3, 9, 1, 9)
+
+	groups := orderedGroups(snap)
+	if len(groups) != 4 {
+		t.Fatalf("groups=%d, want 4", len(groups))
+	}
+	for i := 1; i < len(groups); i++ {
+		if groups[i].slot > groups[i-1].slot {
+			t.Fatalf("groups not newest-first at %d: %d after %d", i, groups[i].slot, groups[i-1].slot)
+		}
+	}
+	if groups[0].slot != 9 || groups[len(groups)-1].slot != 1 {
+		t.Fatalf("order=%v", groups)
+	}
+}
+
+func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
+	snap := aggregateTestSnapshot(5)
+	cache := xmss.NewPubKeyCache()
+
+	aggs, payloads, deletes, truncated := aggregateFromSnapshot(snap, cache, time.Now().Add(-time.Second))
+
+	if !truncated {
+		t.Fatal("expected truncation with expired deadline")
+	}
+	if len(aggs) != 0 || len(payloads) != 0 || len(deletes) != 0 {
+		t.Fatalf("expected no results, got aggs=%d payloads=%d deletes=%d", len(aggs), len(payloads), len(deletes))
+	}
+}
+
+func TestAggregateFromSnapshotZeroDeadlineProcessesAll(t *testing.T) {
+	snap := aggregateTestSnapshot(5)
+
+	_, _, _, truncated := aggregateFromSnapshot(snap, xmss.NewPubKeyCache(), time.Time{})
+
+	if truncated {
+		t.Fatal("zero deadline must never truncate")
 	}
 }

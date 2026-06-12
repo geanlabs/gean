@@ -36,4 +36,6 @@ const (
 	ErrDuplicateAttestationData
 	ErrTooManyAttestationData
 	ErrJustifiedDivergenceNotClosed
+	ErrSourceNotAncestorOfTarget
+	ErrTargetNotAncestorOfHead
 )

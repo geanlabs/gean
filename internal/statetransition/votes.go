@@ -47,6 +47,13 @@ func IsValidVote(state *types.State, source, target *types.Checkpoint) bool {
 	return VoteInvalidReason(state, source, target) == ""
 }
 
+// HeadMatchesChain reports whether the attestation head sits on the canonical
+// chain at its slot. Mirrors the head clause of leanSpec attestation_data_matches_chain;
+// applied both in process_attestations and in block production.
+func HeadMatchesChain(state *types.State, head *types.Checkpoint) bool {
+	return head != nil && !types.IsZeroRoot(head.Root) && checkpointExists(state, head)
+}
+
 func IsSlotJustified(state *types.State, finalizedSlot, slot uint64) bool {
 	if slot <= finalizedSlot {
 		return true

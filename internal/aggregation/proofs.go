@@ -51,8 +51,8 @@ func selectChildProofs(
 			covered[vid] = true
 		}
 		*children = append(*children, xmss.ChildProof{
-			Pubkeys:   pubkeys,
-			ProofData: proof.ProofData,
+			Pubkeys: pubkeys,
+			Proof:   proof.Proof,
 		})
 	}
 }

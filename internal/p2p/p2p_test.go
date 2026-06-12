@@ -88,9 +88,7 @@ func TestPublishBlockLogsCanonicalBlockRoot(t *testing.T) {
 			ProposerIndex: 3,
 			Body:          &types.BlockBody{},
 		},
-		Signature: &types.BlockSignatures{
-			ProposerSignature: [types.SignatureSize]byte{0x42},
-		},
+		Proof: &types.MultiMessageAggregate{Proof: []byte{0x42}},
 	}
 	blockRoot, err := signed.Block.HashTreeRoot()
 	if err != nil {
@@ -326,8 +324,8 @@ func TestDispatchMessageRequiresHandler(t *testing.T) {
 
 func TestDispatchMessageUsesHostHooks(t *testing.T) {
 	block := &types.SignedBlock{
-		Block:     &types.Block{Body: &types.BlockBody{}},
-		Signature: &types.BlockSignatures{},
+		Block: &types.Block{Body: &types.BlockBody{}},
+		Proof: &types.MultiMessageAggregate{},
 	}
 	data, err := block.MarshalSSZ()
 	if err != nil {
@@ -590,8 +588,8 @@ func signedBlockForP2PTest(t *testing.T, slot uint64) (*types.SignedBlock, [32]b
 		t.Fatalf("hash test block: %v", err)
 	}
 	return &types.SignedBlock{
-		Block:     block,
-		Signature: &types.BlockSignatures{},
+		Block: block,
+		Proof: &types.MultiMessageAggregate{},
 	}, root
 }
 
