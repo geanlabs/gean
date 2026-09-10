@@ -13,13 +13,14 @@ func VerifyGossipAttestation(s *store.ConsensusStore, validatorID uint64, attDat
 		return err
 	}
 
-	targetState := s.GetState(attData.Target.Root)
-	if targetState == nil {
+	targetKeys := s.ValidatorKeys(attData.Target.Root)
+	if targetKeys == nil {
 		return fmt.Errorf("target state not found in store: 0x%x", attData.Target.Root)
 	}
-	if validatorID >= uint64(len(targetState.Validators)) {
+	pubkey, ok := targetKeys.AttestationPubkey(validatorID)
+	if !ok {
 		return fmt.Errorf("validator %d not found in state (registry size %d)",
-			validatorID, len(targetState.Validators))
+			validatorID, targetKeys.Len())
 	}
 	if len(signature) != types.SignatureSize {
 		return fmt.Errorf("signature length %d != expected %d", len(signature), types.SignatureSize)
@@ -27,7 +28,7 @@ func VerifyGossipAttestation(s *store.ConsensusStore, validatorID uint64, attDat
 	var sig [types.SignatureSize]byte
 	copy(sig[:], signature)
 	valid, err := xmss.VerifySignatureSSZ(
-		targetState.Validators[validatorID].AttestationPubkey,
+		pubkey,
 		uint32(attData.Slot),
 		dataRoot,
 		sig,
@@ -46,27 +47,27 @@ func VerifyAggregatedGossipAttestation(s *store.ConsensusStore, attData *types.A
 		return err
 	}
 
-	targetState := s.GetState(attData.Target.Root)
-	if targetState == nil {
+	targetKeys := s.ValidatorKeys(attData.Target.Root)
+	if targetKeys == nil {
 		return fmt.Errorf("target state not found in store: 0x%x", attData.Target.Root)
 	}
 	participantIDs := types.BitlistIndices(participants)
-	return verifyAggregatedProof(targetState, participantIDs, attData, proofData)
+	return verifyAggregatedProof(targetKeys, participantIDs, attData, proofData)
 }
 
 func verifyAggregatedProof(
-	state *types.State,
+	keys *store.ValidatorKeys,
 	participantIDs []uint64,
 	data *types.AttestationData,
 	proofData []byte,
 ) error {
-	numValidators := uint64(len(state.Validators))
 	parsedPubkeys := make([]xmss.CPubKey, len(participantIDs))
 	for i, vid := range participantIDs {
-		if vid >= numValidators {
-			return fmt.Errorf("validator %d out of range (%d)", vid, numValidators)
+		pubkey, ok := keys.AttestationPubkey(vid)
+		if !ok {
+			return fmt.Errorf("validator %d out of range (%d)", vid, keys.Len())
 		}
-		pk, err := xmss.ParsePublicKey(state.Validators[vid].AttestationPubkey)
+		pk, err := xmss.ParsePublicKey(pubkey)
 		if err != nil {
 			for j := range i {
 				xmss.FreePublicKey(parsedPubkeys[j])

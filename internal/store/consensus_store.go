@@ -71,6 +71,14 @@ type ConsensusStore struct {
 	// resume duties on a stale head.
 	maxBlockSlotSeeded atomic.Bool
 	maxBlockSlotSeedMu sync.Mutex
+
+	// validatorKeys caches each state's attestation public keys by state root so
+	// signature verification does not decode a whole state to read one key. See
+	// ValidatorKeys. validatorKeysOrder records insertion order and is the
+	// eviction queue; both are guarded by validatorKeysMu.
+	validatorKeysMu    sync.Mutex
+	validatorKeys      map[[32]byte]*ValidatorKeys
+	validatorKeysOrder [][32]byte
 }
 
 // ObserveStoredBlockSlot raises the stored-block high-water mark. Safe from any
