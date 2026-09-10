@@ -90,9 +90,6 @@ func (s *ConsensusStore) ValidatorKeys(root [32]byte) *ValidatorKeys {
 	if existing, ok := s.validatorKeys[root]; ok {
 		return existing
 	}
-	if s.validatorKeys == nil {
-		s.validatorKeys = make(map[[32]byte]*ValidatorKeys, validatorKeysCacheSize)
-	}
 	if len(s.validatorKeysOrder) >= validatorKeysCacheSize {
 		delete(s.validatorKeys, s.validatorKeysOrder[0])
 		s.validatorKeysOrder = s.validatorKeysOrder[1:]

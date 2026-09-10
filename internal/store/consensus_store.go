@@ -106,5 +106,6 @@ func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 		KnownPayloads:         NewPayloadBuffer(aggregatedPayloadCap),
 		AttestationSignatures: NewAttestationSignatureMap(gossipSignatureCap),
 		PubKeyCache:           xmss.NewPubKeyCache(),
+		validatorKeys:         make(map[[32]byte]*ValidatorKeys, validatorKeysCacheSize),
 	}
 }
