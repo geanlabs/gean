@@ -83,6 +83,20 @@ RUN CHECKOUT_ROOT=$(cat /tmp/leanvm-staged/.checkout_root) && \
     rm -rf /tmp/leanvm-staged
 
 
+# Prove on jemalloc, not glibc malloc. The prover frees its scratch after every
+# proof, but glibc keeps it: most lands in the main heap, which only shrinks from
+# the top, so one live allocation pins everything below it. jemalloc uses mmap and
+# returns pages on a decay timer. Devnet, same slot: 448 MB against 1,126-1,150 MB
+# on glibc nodes. See #424.
+#
+# Unqualified soname so ld.so resolves it per architecture (this image builds
+# arm64 too). The ldconfig check fails the build rather than letting a missing
+# library become a silent runtime warning.
+RUN apt-get update && apt-get install -y --no-install-recommends libjemalloc2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ldconfig -p | grep -q 'libjemalloc\.so\.2'
+ENV LD_PRELOAD=libjemalloc.so.2
+
 # Keep the Go heap tight so the XMSS prover's transient multi-GB proving
 # peaks (allocated by the Rust arena, invisible to the Go GC) land on free
 # memory instead of an uncollected heap. Operators can override.
