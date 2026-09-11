@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -32,13 +33,20 @@ const (
 )
 
 type Engine struct {
-	Store               *store.ConsensusStore
-	FC                  *forkchoice.ForkChoice
-	P2P                 *p2p.Host
-	Keys                *xmss.KeyManager
-	AggCtl              *role.Controller
-	DutyGate            *dutygate.Gate
-	CommitteeCount      uint64
+	Store          *store.ConsensusStore
+	FC             *forkchoice.ForkChoice
+	P2P            *p2p.Host
+	Keys           *xmss.KeyManager
+	AggCtl         *role.Controller
+	DutyGate       *dutygate.Gate
+	CommitteeCount uint64
+	// AggregateSubnetIDs are the attestation subnets this node subscribes to as
+	// an aggregator. Empty means every subnet. Set by the caller after New.
+	AggregateSubnetIDs []uint64
+	// expectedVoters caches how many validators this node can hear from in a
+	// slot. Its inputs are fixed once the registry is known, and it is read on
+	// every attestation arrival.
+	expectedVoters      uint64
 	Shadow              shadow.Rates
 	Pending             *pending.BlockBuffer
 	PendingAttestations *pending.AttestationBuffer
@@ -61,7 +69,23 @@ type Engine struct {
 	RecoveryCh            chan *types.SignedBlock
 	ProvingGate           *proving.Gate
 
+	// storageWorkers tracks the storage-size sampler so shutdown can join it
+	// before the database is closed: a sampler still running after Close calls
+	// into a closed Pebble instance, which panics rather than erroring.
+	//
+	// Scope is deliberately narrow. Other workers read storage too — the
+	// aggregation, proposal, recovery and attestation workers, and the fetch
+	// batcher — and none of them is joined either. That is a pre-existing
+	// shutdown weakness, not one this sampler introduced, and closing it means
+	// deciding how long shutdown may block on in-flight proving work. Tracked
+	// separately; do not read this WaitGroup as covering them.
+	storageWorkers sync.WaitGroup
+
 	lastTick time.Time
+
+	// lastTickMs mirrors lastTick for the stall sampler, which runs on its own
+	// goroutine precisely so it still reports while the dispatch loop is blocked.
+	lastTickMs atomic.Int64
 
 	warnedMissingJustified [32]byte
 
@@ -75,6 +99,11 @@ type Engine struct {
 	// on the dispatch loop (queue on onBlock, clear on receive/exhaustion), so no lock.
 	fetchInFlight  map[[32]byte]bool
 	topicMeshSizes atomic.Pointer[map[string]int]
+
+	// coveragePreMerge holds the new-payload participants captured before the
+	// tick promoted them, keyed by the slot each vote is for. Read only on the
+	// dispatch loop, which is also the only writer.
+	coveragePreMerge map[uint64][][]byte
 
 	// aggregatedSlot is the last slot for which an aggregation session was
 	// dispatched, so the early (attestation-arrival) path and the interval-2
@@ -128,6 +157,16 @@ func New(
 	}
 	e.configureP2PHooks()
 	return e
+}
+
+// WaitForStorageWorkers blocks until the storage-size sampler has returned.
+// Callers must invoke it after cancelling the context and before closing the
+// backend.
+//
+// It does not cover every storage-reading goroutine — see the storageWorkers
+// field for what is and is not tracked.
+func (e *Engine) WaitForStorageWorkers() {
+	e.storageWorkers.Wait()
 }
 
 func (e *Engine) Run(ctx context.Context) {

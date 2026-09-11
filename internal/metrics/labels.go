@@ -9,7 +9,6 @@ var syncStatusLabels = []string{"idle", "syncing", "synced", unknownLabel}
 
 const (
 	AggregatorSkipNotAggregator = "not_aggregator"
-	AggregatorSkipNotSynced     = "not_synced"
 	AggregatorSkipMissingState  = "missing_state"
 	AggregatorSkipSpawnFailed   = "spawn_failed"
 	AggregatorSkipOther         = "other"
@@ -17,10 +16,28 @@ const (
 
 var aggregatorSkipReasons = []string{
 	AggregatorSkipNotAggregator,
-	AggregatorSkipNotSynced,
 	AggregatorSkipMissingState,
 	AggregatorSkipSpawnFailed,
 	AggregatorSkipOther,
+}
+
+// Reasons an individual aggregation group is dropped inside a session. A
+// session that drops every group reports produced=0, which is otherwise
+// indistinguishable from having nothing to aggregate.
+const (
+	AggGroupSkipTargetJustified = "target_justified"
+	AggGroupSkipTooFewSigners   = "too_few_signers"
+	AggGroupSkipBudget          = "budget"
+	AggGroupSkipSessionCap      = "session_cap"
+	AggGroupSkipError           = "error"
+)
+
+var aggregationGroupSkipReasons = []string{
+	AggGroupSkipTargetJustified,
+	AggGroupSkipTooFewSigners,
+	AggGroupSkipBudget,
+	AggGroupSkipSessionCap,
+	AggGroupSkipError,
 }
 
 // Attestation-aggregate coverage label values, matching the leanSpec reference
@@ -60,6 +77,16 @@ func aggregatorSkipReason(reason string) string {
 		}
 	}
 	return AggregatorSkipOther
+}
+
+func aggregationGroupSkipReason(reason string) string {
+	reason = labelOrUnknown(reason)
+	for _, allowed := range aggregationGroupSkipReasons {
+		if reason == allowed {
+			return reason
+		}
+	}
+	return AggGroupSkipError
 }
 
 func labelOrUnknown(label string) string {
