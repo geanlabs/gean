@@ -169,11 +169,11 @@ func entryTargetSlot(entry *AttestationDataEntry) uint64 {
 // slot does not move, so a finalization-keyed prune never fires and the pool
 // grows for as long as the stall lasts.
 //
-// ream and grandine exempt roots that carry an aggregated payload from their
-// equivalent sweeps, to keep the coverage a live aggregate was built from. That
-// exemption cannot apply here: a root's signature entry and its payload entry
-// hold the same AttestationData, so they share a target slot and go stale in the
-// same sweep. Nothing would ever be exempt.
+// An equivalent sweep might exempt roots that carry an aggregated payload, to
+// keep the coverage a live aggregate was built from. That exemption cannot apply
+// here: a root's signature entry and its payload entry hold the same
+// AttestationData, so they share a target slot and go stale in the same sweep.
+// Nothing would ever be exempt.
 func (m *AttestationSignatureMap) PruneStaleBelow(cutoff uint64) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()

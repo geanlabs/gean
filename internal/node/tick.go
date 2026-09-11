@@ -104,9 +104,8 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 	// justification 1,520 slots in five minutes.
 	//
 	// The spec agrees: leanSpec timeline.py gates interval 2 on `is_aggregator`
-	// alone. So does ethlambda, which has a duty gate and applies it to
-	// attestation and proposal but not to aggregation. lantern has no gate. Only
-	// ream gates aggregation.
+	// alone. Gating it on anything else is gean's own addition, and the paragraph
+	// above is why it has to go.
 	//
 	// The work is bounded without the gate: a session has a slot-anchored
 	// deadline and MaxGroupsPerSession, so an aggregate built on a stale view

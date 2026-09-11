@@ -63,7 +63,7 @@ func TestPruneStaleAttestationPools(t *testing.T) {
 		// Signature entry and payload entry share one AttestationData, so they
 		// share a target slot and go stale together. Neither can outlive the
 		// other, which is why the sweep needs no exemption for payload-bearing
-		// roots the way ream's and grandine's do.
+		// roots.
 		if _, ok := s.AttestationSignatures.Snapshot()[stale]; ok {
 			t.Fatal("stale signatures survived")
 		}
