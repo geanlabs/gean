@@ -159,7 +159,7 @@ const seedPerGroupSeconds = 0.3
 // aggregators covering four subnets saturated a 16-core host and left the node
 // 129 slots behind. A count is a cruder bound than the wall-clock deadline, but
 // it is the one that holds before any proof has started, so the gate token is
-// never held for an unbounded stretch. ethlambda uses the same value.
+// never held for an unbounded stretch.
 const MaxGroupsPerSession = 2
 
 // MaxGroupsWhenProposing applies in the slot before this node proposes. The

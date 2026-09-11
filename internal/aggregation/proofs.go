@@ -13,8 +13,7 @@ import (
 // A child is a recursive input: measured on a 16-core host, a group carrying one
 // costs 1.68-2.96s against 0.31-0.91s for raw signatures alone, with no overlap
 // between the ranges. The cap bounds the worst case a single group can spend
-// once raw-first selection has already removed most recursion. ethlambda and
-// lantern both settled on the same value.
+// once raw-first selection has already removed most recursion.
 const maxChildProofsPerGroup = 2
 
 // selectChildProofs folds coverage-adding child proofs into the aggregation
