@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+system-info = { git = "https://github.com/leanEthereum/leanVM.git", rev = "a5909d18647de6aed38640c098d9177fab2bf36a" }
 # leanVM main HEAD. The root crate re-exports the aggregation API, Xmss
 # key/signature types, and setup_prover/setup_verifier (which own the internal
 # arena allocator; no global_allocator override). XMSS is now internalized here

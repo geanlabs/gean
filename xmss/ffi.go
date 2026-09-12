@@ -41,6 +41,7 @@ package xmss
 // KeyPair* hashsig_keypair_generate(const char* seed_phrase,
 //     size_t activation_epoch, size_t num_active_epochs);
 //
+// size_t xmss_configure_prover_threads(size_t requested);
 // int32_t xmss_setup_prover();
 // int32_t xmss_setup_prover_without_arena();
 // int32_t xmss_setup_verifier();
@@ -165,6 +166,20 @@ var proverArena atomic.Bool
 // been initialized, since the allocator is fixed at that point.
 func SetProverArena(enabled bool) {
 	proverArena.Store(enabled)
+}
+
+// ConfigureProverThreads resolves the shared Rust backend pool size, including
+// its calling thread. Call before any XMSS operation. Zero selects available CPUs;
+// a positive value must not exceed them. The count cannot change once resolved.
+func ConfigureProverThreads(requested int) (int, error) {
+	if requested < 0 {
+		return 0, errors.New("prover threads must not be negative")
+	}
+	actual := int(C.xmss_configure_prover_threads(C.size_t(requested)))
+	if actual == 0 {
+		return 0, fmt.Errorf("cannot configure prover threads to %d: count exceeds available CPUs, CPU detection failed, or backend already initialized with a different count", requested)
+	}
+	return actual, nil
 }
 
 func EnsureProverReady() error {

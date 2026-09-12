@@ -32,6 +32,14 @@ macro_rules! ffi_guard {
     };
 }
 
+// Resolve the shared backend count before setup or verification can initialize it.
+#[no_mangle]
+pub extern "C" fn xmss_configure_prover_threads(requested: usize) -> usize {
+    ffi_guard!(0, {
+        system_info::configure_num_threads(requested).unwrap_or(0)
+    })
+}
+
 // setup_prover enables a process-wide arena allocator and warms the prover.
 // Its single shared region means two proofs must never be generated
 // concurrently; the Go-side proving.Gate serializes all aggregate/merge/split

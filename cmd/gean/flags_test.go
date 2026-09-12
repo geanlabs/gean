@@ -28,7 +28,7 @@ func TestParseConfig_ValidDefaults(t *testing.T) {
 	if cfg.GossipPort != 9000 || cfg.HTTPAddr != "127.0.0.1" || cfg.APIPort != 5052 || cfg.MetricsPort != 5054 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.IsAggregator || cfg.CommitteeCount != 1 || cfg.DataDir != "./data" || len(cfg.AggregateSubnetIDs) != 0 {
+	if cfg.ProverThreads != 0 || cfg.IsAggregator || cfg.CommitteeCount != 1 || cfg.DataDir != "./data" || len(cfg.AggregateSubnetIDs) != 0 {
 		t.Fatalf("unexpected role/storage defaults: %+v", cfg)
 	}
 	if cfg.ShadowAggregateSignaturesRate != 0 || cfg.ShadowVerifySignatureRate != 0 || cfg.ShadowVerifyAggregatedSignaturesRate != 0 {
@@ -267,5 +267,26 @@ func TestConfigAddressesUseJoinHostPort(t *testing.T) {
 	}
 	if got := cfg.metricsAddress(); got != "[::1]:5054" {
 		t.Fatalf("metricsAddress=%q, want [::1]:5054", got)
+	}
+}
+
+func TestParseConfig_ProverThreads(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		want    int
+		invalid bool
+	}{
+		{"0", 0, false}, {"8", 8, false}, {"1", 1, false}, {"-1", 0, true}, {"many", 0, true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			var stderr bytes.Buffer
+			cfg, err := parseConfig(append(validFlagArgs(), "--prover-threads", tc.value), &stderr)
+			if (err != nil) != tc.invalid {
+				t.Fatalf("error = %v, stderr = %s", err, &stderr)
+			}
+			if !tc.invalid && cfg.ProverThreads != tc.want {
+				t.Fatalf("threads = %d, want %d", cfg.ProverThreads, tc.want)
+			}
+		})
 	}
 }

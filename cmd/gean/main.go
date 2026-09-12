@@ -31,6 +31,12 @@ func main() {
 func run(cfg config) error {
 	logger.Info(logger.Node, "gean consensus client starting")
 
+	threads, err := xmss.ConfigureProverThreads(cfg.ProverThreads)
+	if err != nil {
+		return err
+	}
+	logger.Info(logger.Node, "prover pool threads: %d (including caller)", threads)
+
 	inputs, err := loadStartupInputs(cfg)
 	if err != nil {
 		return err

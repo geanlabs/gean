@@ -1671,6 +1671,7 @@ dependencies = [
  "backend",
  "lean-multisig",
  "rec_aggregation",
+ "system-info",
 ]
 
 [[package]]
@@ -2580,7 +2581,6 @@ dependencies = [
 [[package]]
 name = "system-info"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanVM.git?rev=a5909d18647de6aed38640c098d9177fab2bf36a#a5909d18647de6aed38640c098d9177fab2bf36a"
 dependencies = [
  "libc",
 ]

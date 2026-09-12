@@ -4,6 +4,7 @@ members = [
   "cgo-glue",
   "hashsig-glue",
   "multisig-glue",
+  "vendor/system-info",
 ]
 default-members = ["cgo-glue"]
 
@@ -29,3 +30,6 @@ codegen-units = 16
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+[patch."https://github.com/leanEthereum/leanVM.git"]
+system-info = { path = "vendor/system-info" }
