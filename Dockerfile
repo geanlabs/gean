@@ -17,13 +17,10 @@ WORKDIR /app
 # Copy Rust FFI dependencies first for better caching
 COPY xmss/rust/ xmss/rust/
 
-# Build Rust FFI libraries
-# On amd64: -Ctarget-cpu=haswell enables AVX2 SIMD in leanMultisig's backend
-# for ~6x prover speedup. Haswell (2013+) is the portable x86 baseline.
-# On arm64: build without x86 flags; native NEON is used automatically.
-ARG TARGETARCH
+# Detect the build-stage architecture: legacy builders do not populate TARGETARCH.
+# Match make ffi's Haswell/AVX2 baseline on x86_64; leave arm64 flags unchanged.
 RUN cd xmss/rust && \
-    if [ "$TARGETARCH" = "amd64" ]; then \
+    if [ "$(uname -m)" = "x86_64" ]; then \
       CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked; \
     else \
       cargo build --profile multisig-release --locked; \
