@@ -82,6 +82,9 @@ Pluggable `Backend` interface (`BeginRead`/`BeginWrite` with table-scoped batche
 ### Networking (`internal/p2p/`)
 libp2p over QUIC. Gossipsub topics (`topics.go`, `gossip.go`), req/resp protocols incl. BlocksByRange (`reqresp.go`), ENR/discovery (`enr.go`, `bootnode.go`). Wire encoding in `encoding.go`.
 
+### Execution layer (`internal/execution/` + `internal/node/execution.go`)
+A network with `EXECUTION_GENESIS_BLOCK_HASH` in `config.yaml` carries a Cancun `ExecutionPayload` in every `BlockBody` and caches its header in `State`; `statetransition.ProcessExecutionPayload` chains `parent_hash`, pins the timestamp to the slot, and requires the zero payload on networks without the key. `internal/execution/` is the Engine API client (JWT, JSON-RPC, V3 methods) behind an `Engine` interface with a `Mock`. `ExecutionDriver` on the `Engine` owns every call off the dispatch loop: build request at interval 4, `getPayload` in the proposal worker, `newPayload` on a serial ingress worker in front of `BlockCh` (INVALID drops the block; an unreachable client is backed off from, not waited on), and forkchoice updates on head change and once per slot. Genesis seeds the header and body from the config key, and startup refuses an execution client whose block 0 differs.
+
 ### Other packages
 `internal/api/` — HTTP API + admin handlers; `internal/blockprocessor/` — received block import; `internal/blockbuilder/` — proposal block building; `internal/attestation/` — attestation production/validation; `internal/aggregation/` — aggregated attestation building; `internal/role/` — local role state; `internal/dutygate/` — stale-view duty gating; `internal/metrics/` — Prometheus metrics; `internal/syncer/` — backfill/status polling; `internal/genesis/` — parses `config.yaml`; `internal/checkpoint/` — checkpoint sync; `internal/logger/` — structured logging; `internal/specfixtures/` — hive/spec-test fixture shapes; `cmd/keygen/` — testnet config + XMSS key generation.
 
