@@ -66,8 +66,8 @@ network is consensus-only and blocks carry an empty payload.
 To run one gean validator paired with geth:
 
 ```sh
-make run-el-demo         # pulls ethereum/client-go:latest; logs in data/el-demo/
-make run-el-demo-stop
+make node         # pulls ethereum/client-go:latest; logs in data/el-demo/
+make node-stop
 ```
 
 The script generates a fresh JWT secret, starts geth in Docker from the

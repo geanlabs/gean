@@ -219,4 +219,4 @@ else
   echo $! >> "$PIDS"
   log "running; gean log: $DATA_DIR/gean.log, geth log: $geth_log_cmd"
 fi
-log "stop: make run-el-demo-stop"
+log "stop: make node-stop"

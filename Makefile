@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 run-el-demo run-el-demo-stop
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 node node-stop
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -107,10 +107,10 @@ run-node2: build ## Run node2 on port 9002
 		--api-port 5054 \
 		--metrics-port 8082
 
-run-el-demo: build ## Run one gean validator paired with the latest geth Docker image over the Engine API
+node: build ## Run one gean validator paired with the latest geth Docker image over the Engine API
 	@./scripts/el-demo/run.sh
 
-run-el-demo-stop: ## Stop the geth container and gean started by run-el-demo
+node-stop: ## Stop the geth container and gean started by make node
 	@./scripts/el-demo/run.sh stop
 
 # --- leanSpec fixtures --- (LEAN_SPEC_COMMIT_HASH is defined near the top, before test-spec)
