@@ -102,6 +102,10 @@ func run(cfg config) error {
 	}
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
+	if err := setupExecution(ctx, cfg, inputs.genesisConfig, s, n, len(inputs.keyManager.ValidatorIDs())); err != nil {
+		logger.Error(logger.Execution, "%v", err)
+		return err
+	}
 	startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes)
 
 	apiAddr, metricsAddr := startHTTPServers(cfg, s, fc, aggCtl)
