@@ -66,14 +66,17 @@ network is consensus-only and blocks carry an empty payload.
 To run one gean validator paired with geth:
 
 ```sh
-make run-el-demo         # needs geth on PATH; logs in data/el-demo/
-scripts/el-demo/run.sh stop
+make run-el-demo         # pulls ethereum/client-go:latest; logs in data/el-demo/
+make run-el-demo-stop
 ```
 
-The script initialises geth from `scripts/el-demo/genesis.json`, reads its
-genesis hash, generates a lean testnet that declares it, and starts gean
-with `--execution-endpoint`, `--execution-jwt-secret`, and
-`--suggested-fee-recipient`. On an execution network a node holding
+The script generates a fresh JWT secret, starts geth in Docker from the
+latest image (set `GETH_BIN` to use a local binary instead), initialises it
+from `scripts/el-demo/genesis.json`, reads its genesis hash, generates a
+lean testnet that declares it, and starts gean with `--execution-endpoint`,
+`--execution-jwt-secret`, and `--suggested-fee-recipient`. On a desktop,
+geth's log and gean open in two terminal windows; `POPUP=0` keeps both in
+the background with logs under `data/el-demo/`. On an execution network a node holding
 validator keys must be given an endpoint; at startup gean checks that the
 client's genesis is the network's and refuses to run otherwise.
 
