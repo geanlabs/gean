@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-func writeConfigYAML(outputDir string, genesisTime uint64, validators []validatorInfo) error {
-	return writeOutput(outputDir, "config.yaml", renderConfigYAML(genesisTime, validators))
+func writeConfigYAML(outputDir string, genesisTime uint64, validators []validatorInfo, executionGenesisHash string) error {
+	return writeOutput(outputDir, "config.yaml", renderConfigYAML(genesisTime, validators, executionGenesisHash))
 }
 
 func writeAnnotatedValidatorsYAML(outputDir string, validators []validatorInfo, numNodes int) error {
@@ -19,9 +19,13 @@ func writeNodesYAML(outputDir string, nodes []nodeInfo, basePort int) error {
 	return writeOutput(outputDir, "nodes.yaml", renderNodesYAML(nodes, basePort))
 }
 
-func renderConfigYAML(genesisTime uint64, validators []validatorInfo) string {
+func renderConfigYAML(genesisTime uint64, validators []validatorInfo, executionGenesisHash string) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "GENESIS_TIME: %d\nGENESIS_VALIDATORS:\n", genesisTime)
+	fmt.Fprintf(&out, "GENESIS_TIME: %d\n", genesisTime)
+	if executionGenesisHash != "" {
+		fmt.Fprintf(&out, "EXECUTION_GENESIS_BLOCK_HASH: \"%s\"\n", executionGenesisHash)
+	}
+	out.WriteString("GENESIS_VALIDATORS:\n")
 	for _, v := range validators {
 		fmt.Fprintf(&out, "  - attestation_pubkey: \"%s\"\n    proposal_pubkey: \"%s\"\n",
 			v.AttestationPubkeyHex, v.ProposalPubkeyHex)

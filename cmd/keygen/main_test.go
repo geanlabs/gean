@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,7 +161,7 @@ func TestRenderOutputs(t *testing.T) {
 		AttestationSkFile:    "att.ssz",
 		ProposalSkFile:       "prop.ssz",
 	}}
-	config := renderConfigYAML(123, validators)
+	config := renderConfigYAML(123, validators, "")
 	if !strings.Contains(config, "GENESIS_TIME: 123") || !strings.Contains(config, "attestation_pubkey: \"att\"") {
 		t.Fatalf("config yaml missing fields:\n%s", config)
 	}
@@ -192,4 +193,31 @@ func withValidatorIndex(v validatorInfo, index int) validatorInfo {
 func withAttestationPubkey(v validatorInfo, pubkey string) validatorInfo {
 	v.AttestationPubkeyHex = pubkey
 	return v
+}
+
+func TestRenderConfigYAMLDeclaresExecutionLayer(t *testing.T) {
+	validators := []validatorInfo{{AttestationPubkeyHex: "att", ProposalPubkeyHex: "prop"}}
+	hash := "0x" + strings.Repeat("ab", 32)
+	config := renderConfigYAML(123, validators, hash)
+	if !strings.Contains(config, "EXECUTION_GENESIS_BLOCK_HASH: \""+hash+"\"\n") {
+		t.Fatalf("config yaml missing execution genesis hash:\n%s", config)
+	}
+	if strings.Contains(renderConfigYAML(123, validators, ""), "EXECUTION_GENESIS_BLOCK_HASH") {
+		t.Fatal("config yaml must not declare an execution layer by default")
+	}
+}
+
+func TestParseOptionsExecutionGenesisHash(t *testing.T) {
+	opts, err := parseOptions([]string{"--execution-genesis-block-hash", strings.Repeat("AB", 32)}, io.Discard)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if opts.ExecutionGenesisHash != "0x"+strings.Repeat("ab", 32) {
+		t.Fatalf("hash not normalised: %s", opts.ExecutionGenesisHash)
+	}
+	for _, bad := range []string{"0x1234", "zz"} {
+		if _, err := parseOptions([]string{"--execution-genesis-block-hash", bad}, io.Discard); err == nil {
+			t.Fatalf("%q should be rejected", bad)
+		}
+	}
 }
