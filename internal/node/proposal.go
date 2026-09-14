@@ -73,6 +73,10 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 			if result == nil {
 				continue
 			}
+			if e.Execution != nil {
+				block := result.signedBlock.Block
+				e.Execution.submit(ctx, &block.Body.ExecutionPayload, block.ParentRoot)
+			}
 			select {
 			case e.ProposalResultCh <- result:
 			case <-ctx.Done():
@@ -182,10 +186,6 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		return
 	}
 	metrics.IncProofOperation("proposal", "success")
-
-	if e.Execution != nil {
-		e.Execution.announce(&block.Body.ExecutionPayload, block.ParentRoot, e.Execution.forkchoiceState())
-	}
 
 	if e.P2P != nil {
 		publishCtx, cancel := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)

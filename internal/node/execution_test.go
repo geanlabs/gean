@@ -3,7 +3,6 @@ package node
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -276,29 +275,13 @@ func TestExecutionGossipIngressDropsWhenFull(t *testing.T) {
 	}
 }
 
-func TestExecutionAnnounceOrdersNewPayloadBeforeForkchoice(t *testing.T) {
+func TestExecutionSubmitHandsOwnPayloadToClient(t *testing.T) {
 	mock := &execution.Mock{}
 	e := executionTestEngine(mock)
-	var mu sync.Mutex
-	var order []string
-	record := func(call string) {
-		mu.Lock()
-		defer mu.Unlock()
-		order = append(order, call)
-	}
-	mock.OnNewPayload = func(*types.ExecutionPayload, [32]byte) (execution.PayloadStatus, error) {
-		record("newPayload")
-		return execution.PayloadStatus{Status: execution.StatusValid}, nil
-	}
-	mock.OnForkchoiceUpdated = func(execution.ForkchoiceState, *execution.PayloadAttributes) (execution.ForkchoiceUpdatedResult, error) {
-		record("forkchoiceUpdated")
-		return execution.ForkchoiceUpdatedResult{PayloadStatus: execution.PayloadStatus{Status: execution.StatusValid}}, nil
-	}
-	e.Execution.announce(&types.ExecutionPayload{BlockHash: [32]byte{1}}, [32]byte{2}, execution.ForkchoiceState{})
-	waitFor(t, "announce", func() bool { fcu, _, _ := mock.Calls(); return len(fcu) == 1 })
-	mu.Lock()
-	defer mu.Unlock()
-	if len(order) != 2 || order[0] != "newPayload" || order[1] != "forkchoiceUpdated" {
-		t.Fatalf("announce order: %v", order)
+	payload := &types.ExecutionPayload{BlockHash: [32]byte{1}}
+	e.Execution.submit(context.Background(), payload, [32]byte{2})
+	_, calls, _ := mock.Calls()
+	if len(calls) != 1 || calls[0].Payload.BlockHash != payload.BlockHash || calls[0].ParentBeaconBlockRoot != [32]byte{2} {
+		t.Fatalf("submit must hand the payload and parent root to the client: %+v", calls)
 	}
 }

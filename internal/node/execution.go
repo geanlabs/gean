@@ -179,17 +179,23 @@ func (d *ExecutionDriver) takePayload(ctx context.Context, slot uint64, parentRo
 	return payload, ""
 }
 
-// announce hands a locally built block's payload to the execution client and
-// then moves its head onto it, in that order so the head is one it has
-// executed. Nothing gossips our own block back to us, so this is the only
-// path by which the client learns of it.
-func (d *ExecutionDriver) announce(payload *types.ExecutionPayload, parentRoot [32]byte, state execution.ForkchoiceState) {
-	go func() {
-		if _, err := d.newPayload(context.Background(), payload, parentRoot); err != nil {
-			return
-		}
-		_, _ = d.forkchoiceUpdated(context.Background(), state, nil)
-	}()
+// submit hands a locally built block's payload to the execution client.
+// Nothing gossips our own block back to us, so this is the only path by
+// which the client learns of it. It runs on the proposal worker before the
+// block is handed to the dispatch loop, so by the time import moves the head
+// the client already holds the execution block and the forkchoice update
+// that follows lands on a block it has executed rather than one it must
+// fetch from peers it does not have.
+func (d *ExecutionDriver) submit(ctx context.Context, payload *types.ExecutionPayload, parentRoot [32]byte) {
+	status, err := d.newPayload(ctx, payload, parentRoot)
+	if err != nil {
+		logger.Warn(logger.Execution, "own payload not accepted by the execution client: %v", err)
+		return
+	}
+	metrics.IncExecutionNewPayload(strings.ToLower(status.Status))
+	if status.Status != execution.StatusValid {
+		logger.Warn(logger.Execution, "own payload status=%s", status.Status)
+	}
 }
 
 // enqueue offers a gossiped block for verification without blocking; a full
