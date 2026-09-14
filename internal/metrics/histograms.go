@@ -6,6 +6,11 @@ import (
 )
 
 var (
+	metricExecutionCallDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "lean_execution_call_duration_seconds",
+		Help:    "Engine API round-trip time by method",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8},
+	}, []string{"method"})
 	metricBlockProcessingTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_fork_choice_block_processing_time_seconds",
 		Help:    "Time to process a block",

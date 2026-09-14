@@ -3,6 +3,10 @@ package metrics
 import "strings"
 
 const unknownLabel = "unknown"
+
+// ExecutionResultUnreachable labels an Engine API call that got no verdict
+// because the execution client could not be reached.
+const ExecutionResultUnreachable = "unreachable"
 const maxLabelRunes = 64
 
 var syncStatusLabels = []string{"idle", "syncing", "synced", unknownLabel}

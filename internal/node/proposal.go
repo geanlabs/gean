@@ -85,7 +85,24 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
-	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID)
+	// On an execution-layer network the block must carry the payload the
+	// client built on the parent we asked for. Without one there is nothing
+	// valid to propose: a block every peer's execution client rejects is
+	// worse than a missed slot.
+	var payload *types.ExecutionPayload
+	var payloadParent [32]byte
+	if e.Execution != nil {
+		payloadParent = e.Store.Head()
+		var reason string
+		payload, reason = e.Execution.takePayload(context.Background(), slot, payloadParent)
+		if payload == nil {
+			logger.Warn(logger.Validator, "skipping proposal slot=%d: %s", slot, reason)
+			metrics.IncProofOperation("proposal", proposalSkipNoPayload)
+			return nil
+		}
+	}
+
+	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID, payload)
 	if err != nil {
 		// Head advanced past the target slot; skip as a slot-boundary miss (matches spec).
 		var stale *statetransition.StateSlotIsNewerError
@@ -95,6 +112,16 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 			return nil
 		}
 		logger.Error(logger.Validator, "produce block failed: %v", err)
+		return nil
+	}
+
+	// The payload's parent_beacon_block_root is the head it was built on. If
+	// the head moved between collecting the payload and building the block,
+	// the two disagree and every execution client would fail the block-hash
+	// check, so skip rather than sign.
+	if e.Execution != nil && block.ParentRoot != payloadParent {
+		logger.Warn(logger.Validator, "skipping proposal slot=%d: head moved after the payload was built", slot)
+		metrics.IncProofOperation("proposal", proposalSkipPayloadStale)
 		return nil
 	}
 
@@ -155,6 +182,10 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		return
 	}
 	metrics.IncProofOperation("proposal", "success")
+
+	if e.Execution != nil {
+		e.Execution.announce(&block.Body.ExecutionPayload, block.ParentRoot, e.Execution.forkchoiceState())
+	}
 
 	if e.P2P != nil {
 		publishCtx, cancel := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
@@ -231,7 +262,7 @@ func (e *Engine) mergeBlockProof(
 	return xmss.MergeType1Proofs(inputs)
 }
 
-func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types.Block, []*types.SingleMessageAggregate, error) {
+func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64, payload *types.ExecutionPayload) (*types.Block, []*types.SingleMessageAggregate, error) {
 	buildStart := time.Now()
 	defer func() { metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds()) }()
 
@@ -249,13 +280,14 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 	}
 
 	result, err := blockbuilder.Build(blockbuilder.Input{
-		HeadState:       headState,
-		Slot:            slot,
-		ProposerIndex:   validatorIndex,
-		ParentRoot:      headRoot,
-		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
-		Payloads:        payloadsFromEntries(e.Store.KnownPayloads.Entries()),
-		ProofMerger:     attestationproof.NewMerger(e.Store.PubKeyCache),
+		HeadState:        headState,
+		Slot:             slot,
+		ProposerIndex:    validatorIndex,
+		ParentRoot:       headRoot,
+		KnownBlockRoots:  blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
+		Payloads:         payloadsFromEntries(e.Store.KnownPayloads.Entries()),
+		ProofMerger:      attestationproof.NewMerger(e.Store.PubKeyCache),
+		ExecutionPayload: payload,
 	})
 	if err != nil {
 		metrics.IncBlockBuildingFailures()

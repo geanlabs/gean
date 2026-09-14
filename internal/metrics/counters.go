@@ -29,6 +29,21 @@ var (
 	metricForkChoiceReorgs = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_fork_choice_reorgs_total", Help: "Total fork choice reorgs",
 	})
+	metricExecutionForkchoiceUpdated = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_execution_forkchoice_updated_total",
+		Help: "engine_forkchoiceUpdated calls by payload status, or unreachable",
+	}, []string{"status"})
+	metricExecutionNewPayload = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_execution_new_payload_total",
+		Help: "engine_newPayload calls by payload status, or unreachable",
+	}, []string{"status"})
+	metricExecutionGetPayload = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_execution_get_payload_total",
+		Help: "Proposal-time payload collection by result",
+	}, []string{"result"})
+	metricExecutionBlocksRejected = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_execution_blocks_rejected_total", Help: "Blocks dropped before import because the execution client judged the payload invalid",
+	})
 	metricPqSigAggregatedSignaturesTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_pq_sig_aggregated_signatures_total", Help: "Total aggregated signature proofs produced",
 	})

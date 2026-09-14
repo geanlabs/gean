@@ -13,6 +13,7 @@ func (e *Engine) startWorkers(ctx context.Context) {
 	go e.runRecoveryWorker(ctx)
 	go e.runAttestationWorker(ctx)
 	go e.runAggregationWorker(ctx)
+	go e.runExecutionVerifier(ctx)
 	go e.runGossipMeshGauge(ctx)
 	go e.runTickAgeGauge(ctx)
 

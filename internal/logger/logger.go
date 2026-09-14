@@ -33,6 +33,7 @@ const (
 	Forkchoice = "forkchoice"
 	Sync       = "sync"
 	Node       = "node"
+	Execution  = "execution"
 	State      = "state"
 	Store      = "store"
 )

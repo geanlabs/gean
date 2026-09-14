@@ -57,3 +57,5 @@ func SetAttestationAggregateCoverageDiffValidators(direction string, n int) {
 func SetTableBytes(table string, bytes uint64) {
 	metricTableBytes.WithLabelValues(labelOrUnknown(table)).Set(float64(bytes))
 }
+
+func SetExecutionReachable(reachable bool) { metricExecutionReachable.Set(boolValue(reachable)) }
