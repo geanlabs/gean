@@ -122,7 +122,7 @@ func bootstrapFromGenesis(s *store.ConsensusStore, genesisConfig *genesis.Genesi
 			ProposerIndex: genesisState.LatestBlockHeader.ProposerIndex,
 			ParentRoot:    genesisState.LatestBlockHeader.ParentRoot,
 			StateRoot:     genesisState.LatestBlockHeader.StateRoot,
-			Body:          &types.BlockBody{},
+			Body:          genesisConfig.GenesisBody(),
 		},
 		Proof: &types.MultiMessageAggregate{},
 	}

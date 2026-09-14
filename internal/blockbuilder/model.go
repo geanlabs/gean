@@ -46,6 +46,9 @@ type Input struct {
 	KnownBlockRoots KnownRoots
 	Payloads        []AttestationPayload
 	ProofMerger     attestationproof.MergeProvider
+	// ExecutionPayload is the execution block to embed. Nil on a network
+	// without an execution layer, where the transition requires it to be zero.
+	ExecutionPayload *types.ExecutionPayload
 }
 
 type Result struct {

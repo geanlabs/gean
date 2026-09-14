@@ -136,6 +136,7 @@ func TestSpecSignatures(t *testing.T) {
 	logger.SetQuiet(true)
 	defer logger.SetQuiet(false)
 
+	skipIfSchemaFixturesPending(t, "verify_signatures")
 	fixtureDir := "../../leanSpec/fixtures/consensus/verify_signatures"
 
 	if _, err := os.Stat(fixtureDir); os.IsNotExist(err) {

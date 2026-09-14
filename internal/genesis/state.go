@@ -12,10 +12,9 @@ func (gc *GenesisConfig) GenesisState() (*types.State, error) {
 		return nil, fmt.Errorf("build genesis validators: %w", err)
 	}
 
-	emptyBody := &types.BlockBody{}
-	bodyRoot, err := emptyBody.HashTreeRoot()
+	bodyRoot, err := gc.GenesisBody().HashTreeRoot()
 	if err != nil {
-		return nil, fmt.Errorf("hash empty genesis body: %w", err)
+		return nil, fmt.Errorf("hash genesis body: %w", err)
 	}
 
 	return &types.State{
@@ -28,10 +27,11 @@ func (gc *GenesisConfig) GenesisState() (*types.State, error) {
 			StateRoot:     types.ZeroRoot,
 			BodyRoot:      bodyRoot,
 		},
-		LatestJustified:          &types.Checkpoint{Root: types.ZeroRoot, Slot: 0},
-		LatestFinalized:          &types.Checkpoint{Root: types.ZeroRoot, Slot: 0},
-		Validators:               validators,
-		JustifiedSlots:           types.NewBitlistSSZ(0),
-		JustificationsValidators: types.NewBitlistSSZ(0),
+		LatestJustified:              &types.Checkpoint{Root: types.ZeroRoot, Slot: 0},
+		LatestFinalized:              &types.Checkpoint{Root: types.ZeroRoot, Slot: 0},
+		Validators:                   validators,
+		JustifiedSlots:               types.NewBitlistSSZ(0),
+		JustificationsValidators:     types.NewBitlistSSZ(0),
+		LatestExecutionPayloadHeader: gc.genesisExecutionHeader(),
 	}, nil
 }

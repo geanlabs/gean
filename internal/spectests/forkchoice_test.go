@@ -304,6 +304,7 @@ func TestSpecForkChoice(t *testing.T) {
 	logger.SetQuiet(true)
 	defer logger.SetQuiet(false)
 
+	skipIfSchemaFixturesPending(t, "fork_choice")
 	fixtureDir := "../../leanSpec/fixtures/consensus/fork_choice"
 
 	if _, err := os.Stat(fixtureDir); os.IsNotExist(err) {

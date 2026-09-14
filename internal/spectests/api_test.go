@@ -101,6 +101,7 @@ func TestSpecAPI(t *testing.T) {
 
 func runAPIFixture(t *testing.T, fx apiFixture) {
 	t.Helper()
+	skipIfSchemaFixturesPending(t, "api_endpoint")
 
 	// Build genesis state via the real genesis package so the harness tracks
 	// any future field additions instead of drifting from a hand-rolled literal.

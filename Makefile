@@ -56,8 +56,9 @@ sszgen: ## Regenerate SSZ encoding files from struct tags
 	sszgen --path internal/types --objs Checkpoint --output internal/types/checkpoint_encoding.go
 	sszgen --path internal/types --objs Validator --output internal/types/validator_encoding.go
 	sszgen --path internal/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/types/attestation_encoding.go
-	sszgen --path internal/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/types/block_encoding.go
-	sszgen --path internal/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/types/state_encoding.go
+	sszgen --path internal/types --objs Withdrawal,ExecutionPayload,ExecutionPayloadHeader --output internal/types/execution_payload_encoding.go
+	sszgen --path internal/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation,ExecutionPayload,Withdrawal --output internal/types/block_encoding.go
+	sszgen --path internal/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader,ExecutionPayloadHeader --output internal/types/state_encoding.go
 	sszgen --path internal/types --objs BlocksByRangeRequest --output internal/types/blocks_by_range_encoding.go
 
 clean: ## Remove build artifacts and generated files

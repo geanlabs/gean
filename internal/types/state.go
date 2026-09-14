@@ -13,6 +13,10 @@ type State struct {
 	Validators               []*Validator `json:"validators" ssz-max:"4096"`
 	JustificationsRoots      [][]byte     `json:"justifications_roots" ssz-max:"262144" ssz-size:"?,32"`
 	JustificationsValidators []byte       `json:"justifications_validators" ssz:"bitlist" ssz-max:"1073741824"`
+	// LatestExecutionPayloadHeader is the last execution payload the transition
+	// applied. Its BlockHash is what the next payload must chain from; a zero
+	// BlockHash means the chain has no execution layer.
+	LatestExecutionPayloadHeader ExecutionPayloadHeader `json:"latest_execution_payload_header"`
 }
 
 func (s *State) NumValidators() uint64 {

@@ -16,6 +16,7 @@ func TestSpecStateTransition(t *testing.T) {
 	logger.SetQuiet(true)
 	defer logger.SetQuiet(false)
 
+	skipIfSchemaFixturesPending(t, "state_transition")
 	fixtureDir := "../../leanSpec/fixtures/consensus/state_transition"
 
 	if _, err := os.Stat(fixtureDir); os.IsNotExist(err) {

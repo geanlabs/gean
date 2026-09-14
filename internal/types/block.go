@@ -10,6 +10,10 @@ type BlockHeader struct {
 
 type BlockBody struct {
 	Attestations []*AggregatedAttestation `json:"attestations" ssz-max:"4096"`
+	// ExecutionPayload is the execution block this consensus block carries. It
+	// is a value, not a pointer, so a body built without one is the zero
+	// payload a network without an execution layer expects, with no nil case.
+	ExecutionPayload ExecutionPayload `json:"execution_payload"`
 }
 
 type Block struct {
