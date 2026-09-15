@@ -70,15 +70,11 @@ make node         # pulls ethereum/client-go:latest; logs in data/el-demo/
 make node-stop
 ```
 
-The script generates a fresh JWT secret, starts geth in Docker from the
-latest image (set `GETH_BIN` to use a local binary instead), initialises it
-from `scripts/el-demo/genesis.json`, reads its genesis hash, generates a
-lean testnet that declares it, and starts gean with `--execution-endpoint`,
-`--execution-jwt-secret`, and `--suggested-fee-recipient`. On a desktop,
-geth's log and gean open in two terminal windows; `POPUP=0` keeps both in
-the background with logs under `data/el-demo/`. On an execution network a node holding
-validator keys must be given an endpoint; at startup gean checks that the
-client's genesis is the network's and refuses to run otherwise.
+The script pairs a Docker geth instance with a fresh one-validator testnet,
+using a shared JWT secret and geth's genesis hash. Set `GETH_IMAGE` to override
+`ethereum/client-go:latest`; both processes run in the background with logs in
+`data/el-demo/`. On execution networks, validators require an execution endpoint,
+and startup checks that the execution client's genesis matches the network.
 
 Execution networks currently support ordinary transactions, empty withdrawals,
 and no blob transactions. Configure geth's Cancun blob schedule with `target: 0`
