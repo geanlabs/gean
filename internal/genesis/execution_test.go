@@ -1,6 +1,7 @@
 package genesis
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -52,7 +53,7 @@ func TestGenesisWithExecutionLayer(t *testing.T) {
 	if !ok {
 		t.Fatal("execution genesis hash expected")
 	}
-	if got := "0x" + hexOf(hash); got != testExecutionGenesisHash {
+	if got := fmt.Sprintf("0x%x", hash); got != testExecutionGenesisHash {
 		t.Fatalf("hash: got %s want %s", got, testExecutionGenesisHash)
 	}
 
@@ -109,14 +110,4 @@ func TestExecutionGenesisBlockHashValidation(t *testing.T) {
 			}
 		})
 	}
-}
-
-func hexOf(hash [32]byte) string {
-	const digits = "0123456789abcdef"
-	out := make([]byte, 64)
-	for i, b := range hash {
-		out[i*2] = digits[b>>4]
-		out[i*2+1] = digits[b&0x0f]
-	}
-	return string(out)
 }

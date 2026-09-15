@@ -15,9 +15,7 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// Per-call deadlines, sized to the slot phase each call serves. Forkchoice
-// updates and validation probes are serialized. getPayload runs in interval 0
-// ahead of proving and signing; newPayload gates block import.
+// Per-call deadlines for serialized FCU/probes, proposal building, and import.
 const (
 	executionForkchoiceTimeout  = time.Second
 	executionGetPayloadTimeout  = 600 * time.Millisecond
@@ -29,8 +27,7 @@ const (
 	executionRetryBatchSize     = 8
 )
 
-// Reasons the proposal path skips a slot for want of a payload, reported under
-// the proposal proof-operation counter next to the existing skip reasons.
+// Proposal skip reasons, reported in the proof-operation counter.
 const (
 	proposalSkipNoPayload    = "no_payload"
 	proposalSkipPayloadStale = "payload_stale"
@@ -102,8 +99,7 @@ func (d *ExecutionDriver) headValidated() bool {
 	return d.payloadValidated(d.blockHash(d.store.Head()))
 }
 
-// remember caches the execution block hash a consensus root carries. Called on
-// import so forkchoice updates never read storage on the dispatch loop.
+// remember caches imported hashes to avoid storage reads on the dispatch loop.
 func (d *ExecutionDriver) remember(root, hash [32]byte) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -113,10 +109,7 @@ func (d *ExecutionDriver) remember(root, hash [32]byte) {
 	d.hashes[root] = hash
 }
 
-// blockHash resolves a consensus root to the execution block hash its body
-// carries, falling back to storage for roots imported before this process
-// started. An unknown root resolves to zero, which the execution client
-// reads as "no opinion".
+// blockHash falls back to storage for restored roots, or zero ("no opinion").
 func (d *ExecutionDriver) blockHash(root [32]byte) [32]byte {
 	if types.IsZeroRoot(root) {
 		return types.ZeroRoot
@@ -157,10 +150,7 @@ func (d *ExecutionDriver) notifyForkchoice() {
 	}
 }
 
-// prepare asks the execution client to start building the payload for slot on
-// top of parentRoot's execution block. The id comes back on a goroutine and
-// is stashed for takePayload; a client that is syncing returns no id and the
-// slot is simply not proposed.
+// prepare asynchronously builds on parentRoot and stashes the ID for takePayload.
 func (d *ExecutionDriver) prepare(slot uint64, parentRoot [32]byte, state execution.ForkchoiceState, genesisTime uint64) {
 	attrs := &execution.PayloadAttributes{
 		Timestamp:             execution.Quantity(statetransition.ComputeTimeAtSlot(genesisTime, slot)),
@@ -224,9 +214,7 @@ func (d *ExecutionDriver) takePayload(ctx context.Context, slot uint64, parentRo
 	return payload, ""
 }
 
-// submit hands a locally built block's payload to the execution client.
-// It runs on the proposal worker before signing. Only a VALID response permits
-// the proposal to proceed; getPayload alone does not establish validity.
+// submit requires VALID before signing; getPayload alone cannot establish validity.
 func (d *ExecutionDriver) submit(ctx context.Context, payload *types.ExecutionPayload, parentRoot [32]byte) bool {
 	status, err := d.newPayload(ctx, payload, parentRoot)
 	if err != nil {
@@ -271,12 +259,6 @@ const (
 	executionDeferred
 	executionValid
 )
-
-// verify permits only fully executed blocks to enter consensus. Unresolved
-// payloads are retried by the ingress worker, outside fork choice and voting.
-func (d *ExecutionDriver) verify(ctx context.Context, block *types.SignedBlock) bool {
-	return d.checkPayload(ctx, block) == executionValid
-}
 
 func (d *ExecutionDriver) checkPayload(ctx context.Context, block *types.SignedBlock) executionVerdict {
 	if block == nil || block.Block == nil || block.Block.Body == nil {
@@ -416,10 +398,7 @@ func (d *ExecutionDriver) observe(method string, start time.Time, err error) {
 	d.mu.Unlock()
 }
 
-// unreachable reports whether a recent transport failure means the next call
-// should be skipped rather than waited on. Without this a down client costs
-// every queued block a full timeout, and a node catching up falls further
-// behind for as long as the client is away.
+// unreachable backs off after transport failures to avoid a timeout per queued block.
 func (d *ExecutionDriver) unreachable() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()

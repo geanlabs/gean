@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -11,21 +10,6 @@ import (
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/types"
 )
-
-func TestExecutionUnresolvedPayloadDoesNotImport(t *testing.T) {
-	for _, status := range []string{execution.StatusSyncing, execution.StatusAccepted, "UNKNOWN"} {
-		t.Run(status, func(t *testing.T) {
-			mock := &execution.Mock{OnNewPayload: func(*types.ExecutionPayload, [32]byte) (execution.PayloadStatus, error) {
-				return execution.PayloadStatus{Status: status}, nil
-			}}
-			e := executionTestEngine(mock)
-			block := &types.SignedBlock{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}}
-			if e.Execution.verify(context.Background(), block) {
-				t.Fatal("unresolved payload was admitted to consensus")
-			}
-		})
-	}
-}
 
 func TestExecutionRetriesUnresolvedPayload(t *testing.T) {
 	for _, terminal := range []string{execution.StatusValid, execution.StatusInvalid} {
@@ -40,10 +24,7 @@ func TestExecutionRetriesUnresolvedPayload(t *testing.T) {
 				return execution.PayloadStatus{Status: terminal}, nil
 			}}
 			e := executionTestEngine(mock)
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan struct{})
-			go func() { defer close(done); e.runExecutionVerifier(ctx) }()
-			t.Cleanup(func() { cancel(); <-done })
+			ctx := startExecutionVerifier(t, e)
 			block := &types.SignedBlock{Block: &types.Block{Slot: 1, Body: &types.BlockBody{ExecutionPayload: types.ExecutionPayload{BlockHash: [32]byte{1}}}}}
 			if !e.OnSyncBlock(ctx, block) {
 				t.Fatal("delivery failed")
@@ -89,10 +70,7 @@ func TestExecutionTransportRecovery(t *testing.T) {
 		return execution.PayloadStatus{Status: execution.StatusValid}, nil
 	}}
 	e := executionTestEngine(mock)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); e.runExecutionVerifier(ctx) }()
-	defer func() { cancel(); <-done }()
+	ctx := startExecutionVerifier(t, e)
 	block := &types.SignedBlock{Block: &types.Block{Slot: 1, Body: &types.BlockBody{}}}
 	e.OnSyncBlock(ctx, block)
 	waitFor(t, "backoff", e.Execution.unreachable)
@@ -114,41 +92,6 @@ func TestExecutionTransportRecovery(t *testing.T) {
 	}
 }
 
-func TestExecutionSubmissionRequiresValid(t *testing.T) {
-	for _, status := range []string{execution.StatusValid, execution.StatusInvalid, execution.StatusInvalidBlockHash, execution.StatusSyncing, execution.StatusAccepted, "UNKNOWN", "rpc error", "transport error"} {
-		t.Run(status, func(t *testing.T) {
-			mock := &execution.Mock{OnNewPayload: func(*types.ExecutionPayload, [32]byte) (execution.PayloadStatus, error) {
-				if status == "rpc error" {
-					return execution.PayloadStatus{}, errors.New("engine RPC error")
-				}
-				if status == "transport error" {
-					return execution.PayloadStatus{}, &execution.TransportError{Err: errors.New("offline")}
-				}
-				return execution.PayloadStatus{Status: status}, nil
-			}}
-			e := executionTestEngine(mock)
-			payload := &types.ExecutionPayload{BlockHash: [32]byte{1}}
-			want := status == execution.StatusValid
-			if got := e.Execution.submit(context.Background(), payload, [32]byte{2}); got != want {
-				t.Fatalf("submit=%v, want %v", got, want)
-			}
-			if e.Execution.payloadValidated(payload.BlockHash) != want {
-				t.Fatal("incorrect cached validity")
-			}
-		})
-	}
-}
-
-func TestExecutionRejectsRPCError(t *testing.T) {
-	e := executionTestEngine(&execution.Mock{OnNewPayload: func(*types.ExecutionPayload, [32]byte) (execution.PayloadStatus, error) {
-		return execution.PayloadStatus{}, errors.New("engine RPC error")
-	}})
-	block := &types.SignedBlock{Block: &types.Block{Body: &types.BlockBody{}}}
-	if got := e.Execution.checkPayload(context.Background(), block); got != executionRejected {
-		t.Fatalf("verdict=%v", got)
-	}
-}
-
 func TestExecutionRestoredHeadRequiresConfirmation(t *testing.T) {
 	status := execution.StatusSyncing
 	e := executionTestEngine(&execution.Mock{OnForkchoiceUpdated: func(execution.ForkchoiceState, *execution.PayloadAttributes) (execution.ForkchoiceUpdatedResult, error) {
@@ -161,7 +104,7 @@ func TestExecutionRestoredHeadRequiresConfirmation(t *testing.T) {
 	}
 	for _, next := range []string{execution.StatusSyncing, execution.StatusValid, execution.StatusInvalid} {
 		status = next
-		e.Execution.forkchoiceUpdated(context.Background(), e.Execution.forkchoiceState(), nil)
+		e.Execution.forkchoiceUpdated(t.Context(), e.Execution.forkchoiceState(), nil)
 		if got := e.Execution.headValidated(); got != (next == execution.StatusValid) {
 			t.Fatalf("status=%s, head validated=%v", next, got)
 		}
@@ -217,7 +160,7 @@ func TestExecutionProbeRestoresConsensusHead(t *testing.T) {
 			}}
 			e := executionTestEngine(mock)
 			e.Execution.remember(e.Store.Head(), headHash)
-			got := e.Execution.probePayload(context.Background(), candidateHash)
+			got := e.Execution.probePayload(t.Context(), candidateHash)
 			want := map[string]executionVerdict{execution.StatusValid: executionValid, execution.StatusInvalid: executionRejected, execution.StatusSyncing: executionDeferred}[status]
 			if got != want {
 				t.Fatalf("verdict=%v, want %v", got, want)
@@ -239,7 +182,7 @@ func TestExecutionDoesNotProbeConsensusInvalidBlock(t *testing.T) {
 	}}
 	e := executionTestEngine(mock)
 	block := &types.SignedBlock{Block: &types.Block{Slot: 1, ParentRoot: e.Store.Head(), Body: &types.BlockBody{}}}
-	if got := e.Execution.checkPayload(context.Background(), block); got != executionRejected {
+	if got := e.Execution.checkPayload(t.Context(), block); got != executionRejected {
 		t.Fatalf("missing proof should reject before probe, got %v", got)
 	}
 	if calls, _, _ := mock.Calls(); len(calls) != 0 {
@@ -252,10 +195,7 @@ func TestExecutionQuarantineRequestsMissingParent(t *testing.T) {
 		return execution.PayloadStatus{Status: execution.StatusSyncing}, nil
 	}}
 	e := executionTestEngine(mock)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); e.runExecutionVerifier(ctx) }()
-	defer func() { cancel(); <-done }()
+	ctx := startExecutionVerifier(t, e)
 	parent := [32]byte{0x77}
 	e.OnSyncBlock(ctx, &types.SignedBlock{Block: &types.Block{Slot: 2, ParentRoot: parent, Body: &types.BlockBody{}}})
 	select {
@@ -283,10 +223,7 @@ func TestExecutionForkchoiceNotificationsCoalesce(t *testing.T) {
 		t.Fatal("forkchoice notifications did not coalesce")
 	}
 	e.Execution.remember(e.Store.Head(), [32]byte{9})
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); e.runExecutionVerifier(ctx) }()
-	defer func() { cancel(); <-done }()
+	startExecutionVerifier(t, e)
 	waitFor(t, "forkchoice update", func() bool { calls, _, _ := mock.Calls(); return len(calls) == 1 })
 	calls, _, _ := mock.Calls()
 	if calls[0].State.HeadBlockHash != (execution.Hash{9}) {
@@ -307,10 +244,7 @@ func TestExecutionFullQuarantineProcessesMissingParent(t *testing.T) {
 		return execution.PayloadStatus{Status: execution.StatusSyncing}, nil
 	}}
 	e := executionTestEngine(mock)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); e.runExecutionVerifier(ctx) }()
-	defer func() { cancel(); <-done }()
+	ctx := startExecutionVerifier(t, e)
 	parent := &types.SignedBlock{Block: &types.Block{Slot: 1, Body: &types.BlockBody{ExecutionPayload: types.ExecutionPayload{BlockNumber: 1}}}}
 	parentRoot, err := parent.Block.HashTreeRoot()
 	if err != nil {
@@ -348,10 +282,7 @@ func TestExecutionQuarantineOverflowKeepsEarlierBlocks(t *testing.T) {
 		return execution.PayloadStatus{Status: execution.StatusSyncing}, nil
 	}}
 	e := executionTestEngine(mock)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); e.runExecutionVerifier(ctx) }()
-	defer func() { cancel(); <-done }()
+	ctx := startExecutionVerifier(t, e)
 	blockAt := func(slot uint64) *types.SignedBlock {
 		return &types.SignedBlock{Block: &types.Block{Slot: slot, Body: &types.BlockBody{}}}
 	}

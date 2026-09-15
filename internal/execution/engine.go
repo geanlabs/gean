@@ -18,24 +18,13 @@ var Capabilities = []string{
 	"engine_newPayloadV3",
 }
 
-// Engine is what the node depends on. Client implements it against a real
-// execution client; Mock implements it for tests.
+// Engine is implemented by Client and the test Mock.
 type Engine interface {
-	// ForkchoiceUpdated tells the execution client where the chain's head,
-	// safe, and finalized blocks are. With attributes it also starts building
-	// the next payload and returns the id to fetch it by.
+	// With attrs, ForkchoiceUpdated also starts a payload build.
 	ForkchoiceUpdated(ctx context.Context, state ForkchoiceState, attrs *PayloadAttributes) (ForkchoiceUpdatedResult, error)
-	// GetPayload fetches the payload built under a previously returned id.
 	GetPayload(ctx context.Context, id PayloadID) (*types.ExecutionPayload, error)
-	// NewPayload asks the execution client to execute and validate a payload.
-	// parentBeaconBlockRoot is part of the execution block hash, so every
-	// node must pass the same value: the consensus parent root of the block
-	// carrying the payload.
+	// parentBeaconBlockRoot must be the consensus parent root of the carrying block.
 	NewPayload(ctx context.Context, payload *types.ExecutionPayload, parentBeaconBlockRoot [32]byte) (PayloadStatus, error)
-	// GenesisBlockHash reads the execution client's block 0 hash, which the
-	// network config must match.
 	GenesisBlockHash(ctx context.Context) ([32]byte, error)
-	// ExchangeCapabilities returns the engine methods the execution client
-	// supports out of the ones offered.
 	ExchangeCapabilities(ctx context.Context, offered []string) ([]string, error)
 }

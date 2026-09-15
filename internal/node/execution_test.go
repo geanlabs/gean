@@ -17,6 +17,15 @@ func executionTestEngine(mock *execution.Mock) *Engine {
 	return e
 }
 
+func startExecutionVerifier(t *testing.T, e *Engine) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); e.runExecutionVerifier(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	return ctx
+}
+
 func storeBlockWithPayloadHash(e *Engine, root [32]byte, slot uint64, parent, hash [32]byte) {
 	signed := &types.SignedBlock{
 		Block: &types.Block{
@@ -156,40 +165,55 @@ func TestExecutionTakePayloadGuards(t *testing.T) {
 
 	e.Execution.prepared = &preparedPayload{slot: 5, parentRoot: parent, id: execution.PayloadID{9}}
 	mock.OnGetPayload = func(execution.PayloadID) (*types.ExecutionPayload, error) {
-		return nil, errors.New("engine RPC error")
+		return nil, errors.New("unknown payload")
 	}
 	if payload, reason := e.Execution.takePayload(ctx, 5, parent); payload != nil || reason == "" {
 		t.Fatal("a failed getPayload must yield no payload")
 	}
 }
 
-func TestExecutionVerifyPolicy(t *testing.T) {
-	block := &types.SignedBlock{Block: &types.Block{Slot: 3, ParentRoot: [32]byte{0x77}, Body: &types.BlockBody{}}}
-	validationError := "bad state root"
-	for _, tt := range []struct {
-		status string
-		accept bool
+func TestExecutionPayloadPolicy(t *testing.T) {
+	block := &types.SignedBlock{Block: &types.Block{Slot: 3, ParentRoot: [32]byte{0x77}, Body: &types.BlockBody{
+		ExecutionPayload: types.ExecutionPayload{BlockHash: [32]byte{1}},
+	}}}
+	for _, tc := range []struct {
+		status  string
+		err     error
+		verdict executionVerdict
 	}{
-		{execution.StatusValid, true},
-		{execution.StatusSyncing, false},
-		{execution.StatusAccepted, false},
-		{execution.StatusInvalid, false},
-		{execution.StatusInvalidBlockHash, false},
-		{"SOMETHING_NEW", false},
+		{execution.StatusValid, nil, executionValid},
+		{execution.StatusSyncing, nil, executionDeferred},
+		{execution.StatusAccepted, nil, executionDeferred},
+		{execution.StatusInvalid, nil, executionRejected},
+		{execution.StatusInvalidBlockHash, nil, executionRejected},
+		{"UNKNOWN", nil, executionDeferred},
+		{"RPC error", errors.New("invalid payload"), executionRejected},
+		{"transport error", &execution.TransportError{Err: errors.New("offline")}, executionDeferred},
 	} {
-		t.Run(tt.status, func(t *testing.T) {
-			mock := &execution.Mock{}
-			e := executionTestEngine(mock)
-			mock.OnNewPayload = func(_ *types.ExecutionPayload, parentBeaconBlockRoot [32]byte) (execution.PayloadStatus, error) {
-				if parentBeaconBlockRoot != block.Block.ParentRoot {
-					t.Errorf("parent beacon root must be the block's parent root")
+		for _, operation := range []string{"import", "submit"} {
+			t.Run(tc.status+"/"+operation, func(t *testing.T) {
+				mock := &execution.Mock{OnNewPayload: func(payload *types.ExecutionPayload, parent [32]byte) (execution.PayloadStatus, error) {
+					if payload.BlockHash != block.Block.Body.ExecutionPayload.BlockHash || parent != block.Block.ParentRoot {
+						t.Error("incorrect payload or parent beacon root")
+					}
+					return execution.PayloadStatus{Status: tc.status}, tc.err
+				}}
+				e := executionTestEngine(mock)
+				if operation == "import" {
+					if got := e.Execution.checkPayload(t.Context(), block); got != tc.verdict {
+						t.Fatalf("verdict=%v, want %v", got, tc.verdict)
+					}
+				} else if got := e.Execution.submit(t.Context(), &block.Block.Body.ExecutionPayload, block.Block.ParentRoot); got != (tc.verdict == executionValid) {
+					t.Fatalf("submit=%v, verdict=%v", got, tc.verdict)
 				}
-				return execution.PayloadStatus{Status: tt.status, ValidationError: &validationError}, nil
-			}
-			if got := e.Execution.verify(context.Background(), block); got != tt.accept {
-				t.Fatalf("status %s: accept=%v, want %v", tt.status, got, tt.accept)
-			}
-		})
+				if e.Execution.payloadValidated(block.Block.Body.ExecutionPayload.BlockHash) != (tc.verdict == executionValid) {
+					t.Fatal("incorrect cached validity")
+				}
+				if _, calls, _ := mock.Calls(); len(calls) != 1 {
+					t.Fatalf("expected one newPayload call, got %d", len(calls))
+				}
+			})
+		}
 	}
 }
 
@@ -201,10 +225,10 @@ func TestExecutionVerifyBacksOffWhenUnreachable(t *testing.T) {
 	}
 	block := &types.SignedBlock{Block: &types.Block{Slot: 3, Body: &types.BlockBody{}}}
 
-	if e.Execution.verify(context.Background(), block) {
+	if e.Execution.checkPayload(t.Context(), block) != executionDeferred {
 		t.Fatal("an unreachable client must not allow import")
 	}
-	if e.Execution.verify(context.Background(), block) {
+	if e.Execution.checkPayload(t.Context(), block) != executionDeferred {
 		t.Fatal("backoff must not allow import")
 	}
 	if _, calls, _ := mock.Calls(); len(calls) != 1 {
@@ -229,9 +253,7 @@ func TestExecutionIngressKeepsOrderAndDropsInvalid(t *testing.T) {
 		}
 		return execution.PayloadStatus{Status: execution.StatusValid}, nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go e.runExecutionVerifier(ctx)
+	ctx := startExecutionVerifier(t, e)
 
 	for slot := uint64(1); slot <= 3; slot++ {
 		block := &types.SignedBlock{Block: &types.Block{Slot: slot, Body: &types.BlockBody{ExecutionPayload: types.ExecutionPayload{BlockNumber: slot}}}}
@@ -272,16 +294,5 @@ func TestExecutionGossipIngressDropsWhenFull(t *testing.T) {
 	case <-e.BlockCh:
 		t.Fatal("gossip must not bypass verification")
 	default:
-	}
-}
-
-func TestExecutionSubmitHandsOwnPayloadToClient(t *testing.T) {
-	mock := &execution.Mock{}
-	e := executionTestEngine(mock)
-	payload := &types.ExecutionPayload{BlockHash: [32]byte{1}}
-	e.Execution.submit(context.Background(), payload, [32]byte{2})
-	_, calls, _ := mock.Calls()
-	if len(calls) != 1 || calls[0].Payload.BlockHash != payload.BlockHash || calls[0].ParentBeaconBlockRoot != [32]byte{2} {
-		t.Fatalf("submit must hand the payload and parent root to the client: %+v", calls)
 	}
 }
