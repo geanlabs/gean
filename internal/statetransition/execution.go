@@ -60,6 +60,9 @@ func ProcessExecutionPayload(state *types.State, block *types.Block) error {
 	if types.IsZeroRoot(payload.BlockHash) {
 		return ErrZeroExecutionBlockHash
 	}
+	if err := payload.ValidateExecutionFeatures(); err != nil {
+		return err
+	}
 
 	newHeader, err := payload.ToHeader()
 	if err != nil {

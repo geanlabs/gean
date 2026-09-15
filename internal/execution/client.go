@@ -51,12 +51,19 @@ func (c *Client) GetPayload(ctx context.Context, id PayloadID) (*types.Execution
 	if envelope.ExecutionPayload == nil {
 		return nil, &TransportError{Method: "engine_getPayloadV3", Err: fmt.Errorf("reply carries no executionPayload")}
 	}
-	return PayloadFromWire(envelope.ExecutionPayload), nil
+	payload := PayloadFromWire(envelope.ExecutionPayload)
+	if err := payload.ValidateExecutionFeatures(); err != nil {
+		return nil, err
+	}
+	return payload, nil
 }
 
 func (c *Client) NewPayload(ctx context.Context, payload *types.ExecutionPayload, parentBeaconBlockRoot [32]byte) (PayloadStatus, error) {
+	if err := payload.ValidateExecutionFeatures(); err != nil {
+		return PayloadStatus{}, err
+	}
 	var status PayloadStatus
-	// No blob transactions, so the expected versioned hashes are empty.
+	// The feature check above guarantees there are no blob versioned hashes.
 	params := []any{PayloadToWire(payload), []Hash{}, Hash(parentBeaconBlockRoot)}
 	if err := c.rpc.call(ctx, "engine_newPayloadV3", params, &status); err != nil {
 		return PayloadStatus{}, err

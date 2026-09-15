@@ -17,7 +17,7 @@
     "terminalTotalDifficulty": 0,
     "terminalTotalDifficultyPassed": true,
     "blobSchedule": {
-      "cancun": { "target": 3, "max": 6, "baseFeeUpdateFraction": 3338477 }
+      "cancun": { "target": 0, "max": 0, "baseFeeUpdateFraction": 3338477 }
     }
   },
   "nonce": "0x0",

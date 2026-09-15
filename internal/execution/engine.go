@@ -10,9 +10,8 @@ import (
 )
 
 // Capabilities are the engine methods gean calls, advertised in the startup
-// handshake. They are the Cancun set: gean carries no blob transactions and no
-// execution-layer requests, so the Prague methods, which need both to round
-// trip through the block, are not used.
+// handshake. They are the Cancun set. Gean enforces empty withdrawals and no
+// blob transactions; execution requests and Prague methods are not supported.
 var Capabilities = []string{
 	"engine_forkchoiceUpdatedV3",
 	"engine_getPayloadV3",
