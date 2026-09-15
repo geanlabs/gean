@@ -10,6 +10,12 @@ import (
 
 func (e *Engine) OnBlock(block *types.SignedBlock) {
 	e.noteGossipSlot(block)
+	if e.Execution != nil {
+		if !e.Execution.enqueue(block) {
+			logger.Warn(logger.Chain, "execution verify queue full, dropping")
+		}
+		return
+	}
 	select {
 	case e.BlockCh <- block:
 	default:
@@ -44,6 +50,9 @@ func (e *Engine) noteGossipSlot(block *types.SignedBlock) {
 // requester believes it already covered, so it is never re-requested and the
 // chain can no longer connect. Returns false only if ctx ends first.
 func (e *Engine) OnSyncBlock(ctx context.Context, block *types.SignedBlock) bool {
+	if e.Execution != nil {
+		return e.Execution.enqueueSync(ctx, block)
+	}
 	select {
 	case e.BlockCh <- block:
 		return true

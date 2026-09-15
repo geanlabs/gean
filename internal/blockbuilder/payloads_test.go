@@ -178,7 +178,7 @@ func TestSortedPayloadsMergesDuplicateRoots(t *testing.T) {
 
 func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
-	workingState, err := transitionBlock(headState, 3, newBlock(3, 0, parentRoot, nil))
+	workingState, err := transitionBlock(headState, 3, newBlock(3, 0, parentRoot, nil, nil))
 	if err != nil {
 		t.Fatalf("transition header: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 
 func TestPayloadBuildIssueSkipsStaleSource(t *testing.T) {
 	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
-	workingState, err := transitionBlock(headState, 3, newBlock(3, 0, parentRoot, nil))
+	workingState, err := transitionBlock(headState, 3, newBlock(3, 0, parentRoot, nil, nil))
 	if err != nil {
 		t.Fatalf("transition header: %v", err)
 	}

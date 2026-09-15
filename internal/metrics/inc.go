@@ -47,3 +47,17 @@ func IncReqRespTimeout(protocol, direction string) {
 }
 
 func IncBlockProposalAttestationBuilds() { metricBlockProposalAttestationBuilds.Inc() }
+
+func IncExecutionForkchoiceUpdated(status string) {
+	metricExecutionForkchoiceUpdated.WithLabelValues(labelOrUnknown(status)).Inc()
+}
+
+func IncExecutionNewPayload(status string) {
+	metricExecutionNewPayload.WithLabelValues(labelOrUnknown(status)).Inc()
+}
+
+func IncExecutionGetPayload(result string) {
+	metricExecutionGetPayload.WithLabelValues(labelOrUnknown(result)).Inc()
+}
+
+func IncExecutionBlocksRejected() { metricExecutionBlocksRejected.Inc() }

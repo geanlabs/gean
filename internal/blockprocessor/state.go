@@ -34,6 +34,9 @@ func transitionState(parentState *types.State, block *types.Block) (*types.State
 	if err := statetransition.ProcessBlockHeader(state, block); err != nil {
 		return nil, err
 	}
+	if err := statetransition.ProcessExecutionPayload(state, block); err != nil {
+		return nil, err
+	}
 	attestations := block.Body.Attestations
 	attStart := time.Now()
 	if err := statetransition.ProcessAttestations(state, attestations); err != nil {

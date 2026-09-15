@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -47,7 +49,7 @@ func run(args []string, stderr io.Writer) error {
 	if genesisTime == 0 {
 		genesisTime = uint64(time.Now().Unix()) + uint64(opts.GenesisDelay)
 	}
-	if err := writeConfigYAML(opts.OutputDir, genesisTime, m.Validators); err != nil {
+	if err := writeConfigYAML(opts.OutputDir, genesisTime, m.Validators, opts.ExecutionGenesisHash); err != nil {
 		return err
 	}
 	if err := writeAnnotatedValidatorsYAML(opts.OutputDir, m.Validators, opts.Nodes); err != nil {
@@ -71,6 +73,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	fs.IntVar(&opts.BasePort, "base-port", 9000, "Base P2P port (incremented per node)")
 	fs.Uint64Var(&opts.GenesisTime, "genesis-time", 0, "Absolute genesis Unix time; 0 uses now + --genesis-delay")
 	fs.IntVar(&opts.GenesisDelay, "genesis-delay", 30, "Seconds from now until genesis when --genesis-time is unset")
+	fs.StringVar(&opts.ExecutionGenesisHash, "execution-genesis-block-hash", "", "Execution client block 0 hash; declares an execution layer in config.yaml")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, err
@@ -89,6 +92,13 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	}
 	if opts.GenesisDelay < 0 {
 		return opts, fmt.Errorf("%w: genesis delay must be >= 0", errInvalidOptions)
+	}
+	if opts.ExecutionGenesisHash != "" {
+		normalized := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(opts.ExecutionGenesisHash), "0x"), "0X")
+		if raw, err := hex.DecodeString(normalized); err != nil || len(raw) != 32 {
+			return opts, fmt.Errorf("%w: execution genesis block hash must be 32 bytes of hex", errInvalidOptions)
+		}
+		opts.ExecutionGenesisHash = "0x" + strings.ToLower(normalized)
 	}
 	return opts, nil
 }

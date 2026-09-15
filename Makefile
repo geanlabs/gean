@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 node node-stop
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -56,8 +56,9 @@ sszgen: ## Regenerate SSZ encoding files from struct tags
 	sszgen --path internal/types --objs Checkpoint --output internal/types/checkpoint_encoding.go
 	sszgen --path internal/types --objs Validator --output internal/types/validator_encoding.go
 	sszgen --path internal/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/types/attestation_encoding.go
-	sszgen --path internal/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/types/block_encoding.go
-	sszgen --path internal/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/types/state_encoding.go
+	sszgen --path internal/types --objs Withdrawal,ExecutionPayload,ExecutionPayloadHeader --output internal/types/execution_payload_encoding.go
+	sszgen --path internal/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation,ExecutionPayload,Withdrawal --output internal/types/block_encoding.go
+	sszgen --path internal/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader,ExecutionPayloadHeader --output internal/types/state_encoding.go
 	sszgen --path internal/types --objs BlocksByRangeRequest --output internal/types/blocks_by_range_encoding.go
 
 clean: ## Remove build artifacts and generated files
@@ -105,6 +106,12 @@ run-node2: build ## Run node2 on port 9002
 		--gossipsub-port 9002 \
 		--api-port 5054 \
 		--metrics-port 8082
+
+node: build ## Run one gean validator paired with the latest geth Docker image over the Engine API
+	@./scripts/el-demo/run.sh
+
+node-stop: ## Stop the geth container and gean started by make node
+	@./scripts/el-demo/run.sh stop
 
 # --- leanSpec fixtures --- (LEAN_SPEC_COMMIT_HASH is defined near the top, before test-spec)
 

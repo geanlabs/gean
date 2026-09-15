@@ -68,6 +68,21 @@ func (e *Engine) onTick() {
 		e.maybePropose(currentSlot, proposerValidatorID)
 	}
 
+	if e.Execution != nil {
+		switch currentInterval {
+		case 0:
+			// Once per slot regardless of head movement, so the execution
+			// client's view cannot go stale through a run of empty slots.
+			e.Execution.notifyForkchoice()
+		case 4:
+			// Ask for next slot's payload now so the client has an interval to
+			// build before the proposal worker collects it at interval 0.
+			if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext {
+				e.Execution.prepare(currentSlot+1, e.Store.Head(), e.Execution.forkchoiceState(), e.Store.Config().GenesisTime)
+			}
+		}
+	}
+
 	if currentInterval == 1 {
 		e.runAttestationInterval(currentSlot)
 	}

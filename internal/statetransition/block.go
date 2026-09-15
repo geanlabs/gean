@@ -10,6 +10,9 @@ func ProcessBlock(state *types.State, block *types.Block) error {
 	if err := ProcessBlockHeader(state, block); err != nil {
 		return err
 	}
+	if err := ProcessExecutionPayload(state, block); err != nil {
+		return err
+	}
 	return ProcessAttestations(state, block.Body.Attestations)
 }
 

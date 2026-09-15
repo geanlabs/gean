@@ -38,6 +38,9 @@ var (
 	metricValidatorsCount = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_validators_count", Help: "Number of validators managed by this node",
 	})
+	metricExecutionReachable = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_execution_reachable", Help: "1 while the last Engine API call reached the execution client, 0 after a transport failure",
+	})
 	metricIsAggregator = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_is_aggregator", Help: "Whether this node is an aggregator (0 or 1)",
 	})

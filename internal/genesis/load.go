@@ -65,6 +65,9 @@ func (gc *GenesisConfig) validate() error {
 	if gc.AttestationCommitteeCount != nil && *gc.AttestationCommitteeCount == 0 {
 		return fmt.Errorf("ATTESTATION_COMMITTEE_COUNT must be >= 1")
 	}
+	if _, _, err := gc.executionGenesisBlockHash(); err != nil {
+		return err
+	}
 
 	attestationPubkeys := make(map[[types.PubkeySize]byte]int, len(gc.GenesisValidators))
 	proposalPubkeys := make(map[[types.PubkeySize]byte]int, len(gc.GenesisValidators))

@@ -69,6 +69,11 @@ type Engine struct {
 	RecoveryCh            chan *types.SignedBlock
 	ProvingGate           *proving.Gate
 
+	// Execution drives the execution client on a network that has one. Nil
+	// otherwise; every hook checks before touching it. Set by the caller
+	// after New and before Run.
+	Execution *ExecutionDriver
+
 	// storageWorkers tracks the storage-size sampler so shutdown can join it
 	// before the database is closed: a sampler still running after Close calls
 	// into a closed Pebble instance, which panics rather than erroring.

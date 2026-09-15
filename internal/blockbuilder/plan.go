@@ -21,6 +21,7 @@ type planner struct {
 	parentRoot    [32]byte
 	knownRoots    KnownRoots
 	proofMerger   proofMerger
+	payload       *types.ExecutionPayload
 	payloads      []AttestationPayload
 	processed     map[[32]byte]bool
 	attestations  []*types.AggregatedAttestation
@@ -35,7 +36,7 @@ func planAttestations(input Input) (planResult, error) {
 	workingState, err := transitionBlock(
 		input.HeadState,
 		input.Slot,
-		newBlock(input.Slot, input.ProposerIndex, input.ParentRoot, nil),
+		newBlock(input.Slot, input.ProposerIndex, input.ParentRoot, nil, input.ExecutionPayload),
 	)
 	if err != nil {
 		return planResult{}, err
@@ -52,6 +53,7 @@ func planAttestations(input Input) (planResult, error) {
 		parentRoot:    input.ParentRoot,
 		knownRoots:    input.KnownBlockRoots,
 		proofMerger:   input.ProofMerger,
+		payload:       input.ExecutionPayload,
 		payloads:      sorted,
 		processed:     make(map[[32]byte]bool),
 		state:         workingState,
@@ -122,7 +124,7 @@ func (p *planner) tryPayload(payload AttestationPayload) bool {
 }
 
 func (p *planner) transition() (bool, error) {
-	candidate := newBlock(p.slot, p.proposerIndex, p.parentRoot, p.attestations)
+	candidate := newBlock(p.slot, p.proposerIndex, p.parentRoot, p.attestations, p.payload)
 	trialState, err := transitionBlock(p.headState, p.slot, candidate)
 	if err != nil {
 		return false, fmt.Errorf("trial transition: %w", err)

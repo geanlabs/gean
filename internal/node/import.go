@@ -76,6 +76,9 @@ func (e *Engine) importKnownParentBlock(
 		return
 	}
 	e.dispatchRecovery(signedBlock)
+	if e.Execution != nil {
+		e.Execution.remember(blockRoot, block.Body.ExecutionPayload.BlockHash)
+	}
 
 	e.FC.OnBlock(block.Slot, blockRoot, parentRoot)
 

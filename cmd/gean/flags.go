@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,6 +33,14 @@ type config struct {
 	AggregateSubnetIDs []uint64
 	DataDir            string
 
+	// Execution-layer pairing. Endpoint and secret go together; both are
+	// required on a network whose config declares an execution layer and
+	// rejected on one that does not. FeeRecipient is the address the
+	// execution client is asked to pay block rewards to.
+	ExecutionEndpoint  string
+	ExecutionJWTSecret string
+	FeeRecipient       [types.AddressSize]byte
+
 	// Shadow*Rate model XMSS prover cost for the Shadow network simulator, which
 	// does not charge CPU time. Each is in signature-units per second; a
 	// non-positive rate (the default) disables the delay, so real deployments are
@@ -54,6 +63,7 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.SetOutput(stderr)
 
 	aggregateSubnetIDs := ""
+	feeRecipient := ""
 	fs.StringVar(&cfg.ConfigDir, "custom-network-config-dir", "", "Config directory (required)")
 	fs.IntVar(&cfg.GossipPort, "gossipsub-port", 9000, "P2P listen port (QUIC/UDP)")
 	fs.StringVar(&cfg.HTTPAddr, "http-address", "127.0.0.1", "Bind address for API + metrics")
@@ -67,6 +77,9 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.Uint64Var(&cfg.CommitteeCount, "attestation-committee-count", uint64(types.AttestationCommitteeCount), "Number of attestation subnets (overrides config.yaml ATTESTATION_COMMITTEE_COUNT)")
 	fs.StringVar(&aggregateSubnetIDs, "aggregate-subnet-ids", "", "Comma-separated subnet IDs (requires --is-aggregator)")
 	fs.StringVar(&cfg.DataDir, "data-dir", "./data", "Pebble database directory")
+	fs.StringVar(&cfg.ExecutionEndpoint, "execution-endpoint", "", "Execution client Engine API endpoint, e.g. http://127.0.0.1:8551 (requires --execution-jwt-secret)")
+	fs.StringVar(&cfg.ExecutionJWTSecret, "execution-jwt-secret", "", "Path to the hex JWT secret shared with the execution client")
+	fs.StringVar(&feeRecipient, "suggested-fee-recipient", "", "20-byte hex address the execution client pays block rewards to")
 	fs.Float64Var(&cfg.ShadowAggregateSignaturesRate, "shadow-xmss-aggregate-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregation cost; n-signature op sleeps n/rate sec (0 disables; env GEAN_SHADOW_XMSS_AGGREGATE_SIGNATURES_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifySignatureRate, "shadow-xmss-verify-signature-rate", 0, "Shadow simulator: signatures/sec rate for gossip-attestation verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_SIGNATURE_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifyAggregatedSignaturesRate, "shadow-xmss-verify-aggregated-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregated-signature verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_AGGREGATED_SIGNATURES_RATE)")
@@ -104,6 +117,18 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	}
 	if err := resolveShadowRates(fs, &cfg, stderr); err != nil {
 		return cfg, err
+	}
+	if (cfg.ExecutionEndpoint == "") != (cfg.ExecutionJWTSecret == "") {
+		fmt.Fprintln(stderr, "--execution-endpoint and --execution-jwt-secret must be given together")
+		return cfg, errInvalidConfig
+	}
+	if feeRecipient != "" {
+		recipient, err := parseAddress(feeRecipient)
+		if err != nil {
+			fmt.Fprintf(stderr, "invalid --suggested-fee-recipient: %v\n", err)
+			return cfg, errInvalidConfig
+		}
+		cfg.FeeRecipient = recipient
 	}
 
 	subnetIDs, err := parseAggregateSubnetIDs(aggregateSubnetIDs, stderr)
@@ -228,4 +253,19 @@ func (c config) apiAddress() string {
 
 func (c config) metricsAddress() string {
 	return net.JoinHostPort(c.HTTPAddr, strconv.Itoa(c.MetricsPort))
+}
+
+// parseAddress decodes a 20-byte hex address, with or without a 0x prefix.
+func parseAddress(raw string) ([types.AddressSize]byte, error) {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(raw), "0x"), "0X")
+	decoded, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return [types.AddressSize]byte{}, fmt.Errorf("%q is not hex", raw)
+	}
+	if len(decoded) != types.AddressSize {
+		return [types.AddressSize]byte{}, fmt.Errorf("%q is %d bytes, want %d", raw, len(decoded), types.AddressSize)
+	}
+	var address [types.AddressSize]byte
+	copy(address[:], decoded)
+	return address, nil
 }

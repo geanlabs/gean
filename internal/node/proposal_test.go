@@ -59,7 +59,7 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	})
 
 	e := &Engine{Store: s}
-	block, sigs, err := e.produceBlockWithSignatures(1, 0)
+	block, sigs, err := e.produceBlockWithSignatures(1, 0, nil)
 	if err != nil {
 		t.Fatalf("produce block: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestProduceBlockWithSignaturesStaleHeadReturnsSlotError(t *testing.T) {
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
 	e := &Engine{Store: s}
-	_, _, err := e.produceBlockWithSignatures(1, 0)
+	_, _, err := e.produceBlockWithSignatures(1, 0, nil)
 	var stale *statetransition.StateSlotIsNewerError
 	if !errors.As(err, &stale) {
 		t.Fatalf("err=%v, want StateSlotIsNewerError", err)
@@ -139,7 +139,7 @@ func TestProduceBlockWithSignaturesRejectsNonProposer(t *testing.T) {
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
 	e := &Engine{Store: s}
-	block, sigs, err := e.produceBlockWithSignatures(1, 0)
+	block, sigs, err := e.produceBlockWithSignatures(1, 0, nil)
 	if err == nil {
 		t.Fatal("expected non-proposer error")
 	}

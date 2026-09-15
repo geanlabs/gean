@@ -22,7 +22,7 @@ func Build(input Input) (*Result, error) {
 	metrics.ObserveBlockProposalAttestationDataSelected(len(plan.attestations))
 	metrics.ObserveBlockProposalAggregatesSelected(len(plan.proofs))
 
-	finalBlock := newBlock(input.Slot, input.ProposerIndex, input.ParentRoot, plan.attestations)
+	finalBlock := newBlock(input.Slot, input.ProposerIndex, input.ParentRoot, plan.attestations, input.ExecutionPayload)
 	stateRoot, err := plan.postState.HashTreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("post-state root: %w", err)
@@ -46,11 +46,15 @@ func validateInput(input Input) error {
 	return nil
 }
 
-func newBlock(slot, proposerIndex uint64, parentRoot [32]byte, attestations []*types.AggregatedAttestation) *types.Block {
+func newBlock(slot, proposerIndex uint64, parentRoot [32]byte, attestations []*types.AggregatedAttestation, payload *types.ExecutionPayload) *types.Block {
+	body := &types.BlockBody{Attestations: attestations}
+	if payload != nil {
+		body.ExecutionPayload = *payload
+	}
 	return &types.Block{
 		Slot:          slot,
 		ProposerIndex: proposerIndex,
 		ParentRoot:    parentRoot,
-		Body:          &types.BlockBody{Attestations: attestations},
+		Body:          body,
 	}
 }

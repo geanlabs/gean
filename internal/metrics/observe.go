@@ -98,3 +98,7 @@ func ObserveBlockProposalAttestationDataSelected(n int) {
 func ObserveBlockProposalAggregatesSelected(n int) {
 	observeNonNegative(metricBlockProposalAggregatesSelected, countValue(n))
 }
+
+func ObserveExecutionCall(method string, seconds float64) {
+	observeNonNegative(metricExecutionCallDuration.WithLabelValues(labelOrUnknown(method)), seconds)
+}

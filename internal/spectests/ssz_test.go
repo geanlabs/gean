@@ -73,6 +73,9 @@ var sszFactories = map[string]func() sszCodec{
 	"SignedAggregatedAttestation": func() sszCodec { return new(types.SignedAggregatedAttestation) },
 	"SingleMessageAggregate":      func() sszCodec { return new(types.SingleMessageAggregate) },
 	"MultiMessageAggregate":       func() sszCodec { return new(types.MultiMessageAggregate) },
+	"Withdrawal":                  func() sszCodec { return new(types.Withdrawal) },
+	"ExecutionPayload":            func() sszCodec { return new(types.ExecutionPayload) },
+	"ExecutionPayloadHeader":      func() sszCodec { return new(types.ExecutionPayloadHeader) },
 	"State":                       func() sszCodec { return new(types.State) },
 	"Status":                      func() sszCodec { return new(sszStatusAdapter) },
 	"BlocksByRootRequest":         func() sszCodec { return new(sszBlocksByRootRequestAdapter) },
@@ -154,6 +157,9 @@ func runSSZFixture(t *testing.T, fx sszFixture) {
 		return
 	}
 
+	if schemaBoundSSZTypes[fx.TypeName] {
+		skipIfSchemaFixturesPending(t, "ssz "+fx.TypeName)
+	}
 	factory, ok := sszFactories[fx.TypeName]
 	if !ok {
 		t.Skipf("type %q not wired into ssz harness", fx.TypeName)

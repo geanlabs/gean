@@ -7,6 +7,9 @@ type options struct {
 	BasePort     int
 	GenesisTime  uint64
 	GenesisDelay int
+	// ExecutionGenesisHash, when set, declares an execution layer in the
+	// generated config.yaml; it is the execution client's block 0 hash.
+	ExecutionGenesisHash string
 }
 
 type manifest struct {
