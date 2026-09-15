@@ -171,11 +171,11 @@ func TestExecutionVerifyPolicy(t *testing.T) {
 		accept bool
 	}{
 		{execution.StatusValid, true},
-		{execution.StatusSyncing, true},
-		{execution.StatusAccepted, true},
+		{execution.StatusSyncing, false},
+		{execution.StatusAccepted, false},
 		{execution.StatusInvalid, false},
 		{execution.StatusInvalidBlockHash, false},
-		{"SOMETHING_NEW", true},
+		{"SOMETHING_NEW", false},
 	} {
 		t.Run(tt.status, func(t *testing.T) {
 			mock := &execution.Mock{}
@@ -201,11 +201,11 @@ func TestExecutionVerifyBacksOffWhenUnreachable(t *testing.T) {
 	}
 	block := &types.SignedBlock{Block: &types.Block{Slot: 3, Body: &types.BlockBody{}}}
 
-	if !e.Execution.verify(context.Background(), block) {
-		t.Fatal("an unreachable client must not block import")
+	if e.Execution.verify(context.Background(), block) {
+		t.Fatal("an unreachable client must not allow import")
 	}
-	if !e.Execution.verify(context.Background(), block) {
-		t.Fatal("an unreachable client must not block import")
+	if e.Execution.verify(context.Background(), block) {
+		t.Fatal("backoff must not allow import")
 	}
 	if _, calls, _ := mock.Calls(); len(calls) != 1 {
 		t.Fatalf("second verify inside the back-off window must not call the client, got %d calls", len(calls))

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/geanlabs/gean/internal/blockprocessor"
 	"github.com/geanlabs/gean/internal/execution"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
@@ -14,10 +15,9 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// Per-call deadlines, sized to the slot phase each call serves. A forkchoice
-// update is informational and must not queue behind a slow client; getPayload
-// runs inside interval 0 ahead of proving and signing; newPayload gates block
-// import and is the only call allowed a full execution of the payload.
+// Per-call deadlines, sized to the slot phase each call serves. Forkchoice
+// updates and validation probes are serialized. getPayload runs in interval 0
+// ahead of proving and signing; newPayload gates block import.
 const (
 	executionForkchoiceTimeout  = time.Second
 	executionGetPayloadTimeout  = 600 * time.Millisecond
@@ -25,6 +25,8 @@ const (
 	executionHashCacheLimit     = 4096
 	executionVerifyQueueSize    = 256
 	executionUnreachableBackoff = 2 * time.Second
+	executionRetryInterval      = 500 * time.Millisecond
+	executionRetryBatchSize     = 8
 )
 
 // Reasons the proposal path skips a slot for want of a payload, reported under
@@ -38,21 +40,23 @@ const (
 // loop never waits on the execution client. It is nil on a node without one.
 //
 // Ownership: prepare runs on its own goroutine and hands a payload id to the
-// proposal worker through the mutex; verify runs on the ingress worker;
-// forkchoice notifications are fire-and-forget goroutines. The root-to-hash
-// cache is what lets a forkchoice update be assembled without decoding
-// blocks on the dispatch loop.
+// proposal worker through the mutex. Verification and coalesced forkchoice
+// notifications run on the ingress worker. The root-to-hash cache avoids
+// repeatedly decoding stored blocks when assembling forkchoice updates.
 type ExecutionDriver struct {
 	engine       execution.Engine
 	store        *store.ConsensusStore
 	feeRecipient [types.AddressSize]byte
 
 	mu        sync.Mutex
+	fcuMu     sync.Mutex
 	prepared  *preparedPayload
 	hashes    map[[32]byte][32]byte
+	validated map[[32]byte]bool
 	downUntil time.Time
 
-	verifyCh chan *types.SignedBlock
+	verifyCh     chan *types.SignedBlock
+	forkchoiceCh chan struct{}
 }
 
 type preparedPayload struct {
@@ -67,8 +71,35 @@ func NewExecutionDriver(engine execution.Engine, s *store.ConsensusStore, feeRec
 		store:        s,
 		feeRecipient: feeRecipient,
 		hashes:       make(map[[32]byte][32]byte),
+		validated:    make(map[[32]byte]bool),
 		verifyCh:     make(chan *types.SignedBlock, executionVerifyQueueSize),
+		forkchoiceCh: make(chan struct{}, 1),
 	}
+}
+
+func (d *ExecutionDriver) setValidated(hash [32]byte, valid bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !valid {
+		delete(d.validated, hash)
+		return
+	}
+	if len(d.validated) >= executionHashCacheLimit {
+		d.validated = make(map[[32]byte]bool)
+	}
+	d.validated[hash] = valid
+}
+
+func (d *ExecutionDriver) payloadValidated(hash [32]byte) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.validated[hash]
+}
+
+// Restored/checkpoint heads must be confirmed by this execution client before
+// signing. Live heads only enter consensus after a VALID newPayload response.
+func (d *ExecutionDriver) headValidated() bool {
+	return d.payloadValidated(d.blockHash(d.store.Head()))
 }
 
 // remember caches the execution block hash a consensus root carries. Called on
@@ -107,18 +138,23 @@ func (d *ExecutionDriver) blockHash(root [32]byte) [32]byte {
 
 // forkchoiceState is the execution client's view of head, safe, and finalized.
 func (d *ExecutionDriver) forkchoiceState() execution.ForkchoiceState {
+	finalized := d.blockHash(d.store.LatestFinalized().Root)
 	return execution.ForkchoiceState{
-		HeadBlockHash:      d.blockHash(d.store.Head()),
-		SafeBlockHash:      d.blockHash(d.store.SafeTarget()),
-		FinalizedBlockHash: d.blockHash(d.store.LatestFinalized().Root),
+		HeadBlockHash: d.blockHash(d.store.Head()),
+		// Lean's SafeTarget uses a different vote view and need not be an
+		// ancestor of Head. The EL requires an ancestor, so use finalized.
+		SafeBlockHash:      finalized,
+		FinalizedBlockHash: finalized,
 	}
 }
 
-// notifyForkchoice sends the current view without waiting for the reply.
-func (d *ExecutionDriver) notifyForkchoice(state execution.ForkchoiceState) {
-	go func() {
-		_, _ = d.forkchoiceUpdated(context.Background(), state, nil)
-	}()
+// notifyForkchoice coalesces updates. The worker reads the latest store view,
+// avoiding an unbounded goroutine backlog that could replay obsolete heads.
+func (d *ExecutionDriver) notifyForkchoice() {
+	select {
+	case d.forkchoiceCh <- struct{}{}:
+	default:
+	}
 }
 
 // prepare asks the execution client to start building the payload for slot on
@@ -133,11 +169,16 @@ func (d *ExecutionDriver) prepare(slot uint64, parentRoot [32]byte, state execut
 		ParentBeaconBlockRoot: parentRoot,
 	}
 	go func() {
-		result, err := d.forkchoiceUpdated(context.Background(), state, attrs)
+		d.fcuMu.Lock()
+		defer d.fcuMu.Unlock()
+		if d.store.Head() != parentRoot || d.store.Time()/types.IntervalsPerSlot >= slot {
+			return
+		}
+		result, err := d.forkchoiceUpdatedLocked(context.Background(), state, attrs)
 		if err != nil {
 			return
 		}
-		if result.PayloadID == nil {
+		if result.PayloadStatus.Status != execution.StatusValid || result.PayloadID == nil {
 			logger.Warn(logger.Execution, "execution client declined to build slot=%d status=%s", slot, result.PayloadStatus.Status)
 			return
 		}
@@ -175,27 +216,30 @@ func (d *ExecutionDriver) takePayload(ctx context.Context, slot uint64, parentRo
 		logger.Warn(logger.Execution, "getPayload failed slot=%d payload_id=%s: %v", slot, prepared.id, err)
 		return nil, "getPayload failed"
 	}
+	if err := payload.ValidateExecutionFeatures(); err != nil {
+		logger.Warn(logger.Execution, "unsupported payload slot=%d: %v", slot, err)
+		return nil, "unsupported execution payload"
+	}
 	metrics.IncExecutionGetPayload("success")
 	return payload, ""
 }
 
 // submit hands a locally built block's payload to the execution client.
-// Nothing gossips our own block back to us, so this is the only path by
-// which the client learns of it. It runs on the proposal worker before the
-// block is handed to the dispatch loop, so by the time import moves the head
-// the client already holds the execution block and the forkchoice update
-// that follows lands on a block it has executed rather than one it must
-// fetch from peers it does not have.
-func (d *ExecutionDriver) submit(ctx context.Context, payload *types.ExecutionPayload, parentRoot [32]byte) {
+// It runs on the proposal worker before signing. Only a VALID response permits
+// the proposal to proceed; getPayload alone does not establish validity.
+func (d *ExecutionDriver) submit(ctx context.Context, payload *types.ExecutionPayload, parentRoot [32]byte) bool {
 	status, err := d.newPayload(ctx, payload, parentRoot)
 	if err != nil {
 		logger.Warn(logger.Execution, "own payload not accepted by the execution client: %v", err)
-		return
+		return false
 	}
 	metrics.IncExecutionNewPayload(strings.ToLower(status.Status))
 	if status.Status != execution.StatusValid {
 		logger.Warn(logger.Execution, "own payload status=%s", status.Status)
+		return false
 	}
+	d.setValidated(payload.BlockHash, true)
+	return true
 }
 
 // enqueue offers a gossiped block for verification without blocking; a full
@@ -220,30 +264,44 @@ func (d *ExecutionDriver) enqueueSync(ctx context.Context, block *types.SignedBl
 	}
 }
 
-// verify asks the execution client to execute the block's payload and decides
-// whether import proceeds. VALID, SYNCING, and ACCEPTED all import: the latter
-// two are the client's own optimistic answers while it lacks the parent.
-// INVALID and INVALID_BLOCK_HASH reject. A client that cannot be reached is
-// treated as syncing and backed off from, so consensus keeps moving while the
-// reachability gauge shows the gap.
+type executionVerdict uint8
+
+const (
+	executionRejected executionVerdict = iota
+	executionDeferred
+	executionValid
+)
+
+// verify permits only fully executed blocks to enter consensus. Unresolved
+// payloads are retried by the ingress worker, outside fork choice and voting.
 func (d *ExecutionDriver) verify(ctx context.Context, block *types.SignedBlock) bool {
+	return d.checkPayload(ctx, block) == executionValid
+}
+
+func (d *ExecutionDriver) checkPayload(ctx context.Context, block *types.SignedBlock) executionVerdict {
 	if block == nil || block.Block == nil || block.Block.Body == nil {
-		return false
+		return executionRejected
 	}
 	payload := &block.Block.Body.ExecutionPayload
 	parentRoot := block.Block.ParentRoot
 
 	status, err := d.newPayload(ctx, payload, parentRoot)
 	if err != nil {
-		metrics.IncExecutionNewPayload(metrics.ExecutionResultUnreachable)
-		logger.Warn(logger.Execution, "newPayload unavailable slot=%d, importing optimistically: %v", block.Block.Slot, err)
-		return true
+		if execution.IsTransport(err) {
+			metrics.IncExecutionNewPayload(metrics.ExecutionResultUnreachable)
+			return executionDeferred
+		}
+		logger.Warn(logger.Execution, "newPayload rejected slot=%d: %v", block.Block.Slot, err)
+		return executionRejected
 	}
 
 	metrics.IncExecutionNewPayload(strings.ToLower(status.Status))
 	switch status.Status {
-	case execution.StatusValid, execution.StatusSyncing, execution.StatusAccepted:
-		return true
+	case execution.StatusValid:
+		d.setValidated(payload.BlockHash, true)
+		return executionValid
+	case execution.StatusSyncing, execution.StatusAccepted:
+		return d.resolveDeferred(ctx, block)
 	case execution.StatusInvalid, execution.StatusInvalidBlockHash:
 		metrics.IncExecutionBlocksRejected()
 		reason := ""
@@ -251,14 +309,54 @@ func (d *ExecutionDriver) verify(ctx context.Context, block *types.SignedBlock) 
 			reason = *status.ValidationError
 		}
 		logger.Warn(logger.Execution, "execution client rejected block slot=%d status=%s %s", block.Block.Slot, status.Status, reason)
-		return false
+		d.setValidated(payload.BlockHash, false)
+		return executionRejected
 	default:
-		logger.Warn(logger.Execution, "unknown newPayload status %q slot=%d, importing", status.Status, block.Block.Slot)
-		return true
+		logger.Warn(logger.Execution, "unknown newPayload status %q slot=%d, deferring", status.Status, block.Block.Slot)
+		return executionDeferred
+	}
+}
+
+// Some engines defer side-branch execution until forkchoiceUpdated selects the
+// candidate. Check CL validity first, then probe without finalizing it and restore
+// the actual CL head. No unresolved candidate enters the consensus store.
+func (d *ExecutionDriver) resolveDeferred(ctx context.Context, block *types.SignedBlock) executionVerdict {
+	if !d.store.HasState(block.Block.ParentRoot) {
+		return executionDeferred
+	}
+	if err := blockprocessor.ValidateBlock(d.store, block); err != nil {
+		logger.Warn(logger.Execution, "rejecting consensus-invalid execution candidate slot=%d: %v", block.Block.Slot, err)
+		return executionRejected
+	}
+	return d.probePayload(ctx, block.Block.Body.ExecutionPayload.BlockHash)
+}
+
+func (d *ExecutionDriver) probePayload(ctx context.Context, hash [32]byte) executionVerdict {
+	d.fcuMu.Lock()
+	defer d.fcuMu.Unlock()
+	state := d.forkchoiceState()
+	state.HeadBlockHash = hash
+	result, err := d.forkchoiceUpdatedLocked(ctx, state, nil)
+	// Resolve the restore state after the probe: the dispatch loop may have
+	// advanced meanwhile. Serialize both calls with normal FCU/build requests.
+	_, _ = d.forkchoiceUpdatedLocked(ctx, d.forkchoiceState(), nil)
+	if err != nil {
+		return executionDeferred
+	}
+	switch result.PayloadStatus.Status {
+	case execution.StatusValid:
+		return executionValid
+	case execution.StatusInvalid, execution.StatusInvalidBlockHash:
+		return executionRejected
+	default:
+		return executionDeferred
 	}
 }
 
 func (d *ExecutionDriver) newPayload(ctx context.Context, payload *types.ExecutionPayload, parentRoot [32]byte) (execution.PayloadStatus, error) {
+	if err := payload.ValidateExecutionFeatures(); err != nil {
+		return execution.PayloadStatus{}, err
+	}
 	if d.unreachable() {
 		return execution.PayloadStatus{}, &execution.TransportError{Method: "engine_newPayloadV3", Err: errUnreachableBackoff}
 	}
@@ -271,6 +369,12 @@ func (d *ExecutionDriver) newPayload(ctx context.Context, payload *types.Executi
 }
 
 func (d *ExecutionDriver) forkchoiceUpdated(ctx context.Context, state execution.ForkchoiceState, attrs *execution.PayloadAttributes) (execution.ForkchoiceUpdatedResult, error) {
+	d.fcuMu.Lock()
+	defer d.fcuMu.Unlock()
+	return d.forkchoiceUpdatedLocked(ctx, state, attrs)
+}
+
+func (d *ExecutionDriver) forkchoiceUpdatedLocked(ctx context.Context, state execution.ForkchoiceState, attrs *execution.PayloadAttributes) (execution.ForkchoiceUpdatedResult, error) {
 	if d.unreachable() {
 		return execution.ForkchoiceUpdatedResult{}, &execution.TransportError{Method: "engine_forkchoiceUpdatedV3", Err: errUnreachableBackoff}
 	}
@@ -285,6 +389,13 @@ func (d *ExecutionDriver) forkchoiceUpdated(ctx context.Context, state execution
 		return result, err
 	}
 	metrics.IncExecutionForkchoiceUpdated(strings.ToLower(result.PayloadStatus.Status))
+	switch result.PayloadStatus.Status {
+	case execution.StatusValid:
+		d.setValidated(state.HeadBlockHash, true)
+	case execution.StatusInvalid, execution.StatusInvalidBlockHash:
+		d.setValidated(state.HeadBlockHash, false)
+		logger.Error(logger.Execution, "execution forkchoice rejected head=%x", state.HeadBlockHash)
+	}
 	return result, nil
 }
 
@@ -321,25 +432,123 @@ func (unreachableError) Error() string { return "execution client unreachable, b
 
 var errUnreachableBackoff = unreachableError{}
 
-// runExecutionVerifier is the ingress worker: it serialises newPayload calls,
-// which bounds the execution client's load and keeps requested blocks in the
-// order they were delivered.
+// runExecutionVerifier quarantines unresolved blocks in a bounded queue. Only
+// VALID results reach BlockCh; invalid results are removed without ever entering
+// fork choice. At capacity, prefer earlier blocks so missing ancestors can still
+// unblock the queue. Discarded tails can be fetched again from the unchanged CL head.
 func (e *Engine) runExecutionVerifier(ctx context.Context) {
 	if e.Execution == nil {
 		return
+	}
+	d := e.Execution
+	ticker := time.NewTicker(executionRetryInterval)
+	defer ticker.Stop()
+	pending := make([]*types.SignedBlock, 0, MaxPendingBlocks)
+	roots := make(map[[32]byte]bool)
+	parentRequests := make(map[[32]byte]time.Time)
+	discard := func(block *types.SignedBlock, root [32]byte) {
+		delete(parentRequests, block.Block.ParentRoot)
+		logger.Warn(logger.Execution, "execution quarantine full, discarding slot=%d root=%x for later retrieval", block.Block.Slot, root)
+		// A by-root fetch must not remain marked in flight after eviction.
+		// Range sync restarts from the imported head on its next peer poll.
+		select {
+		case e.FailedRootCh <- root:
+		case <-ctx.Done():
+		}
+	}
+	process := func(block *types.SignedBlock) bool {
+		switch d.checkPayload(ctx, block) {
+		case executionDeferred:
+			// A head-by-root response may arrive before its ancestors. Since
+			// quarantine does not enter the CL import path, request its parent
+			// here; otherwise both CL and EL can wait forever for that parent.
+			parent := block.Block.ParentRoot
+			if !types.IsZeroRoot(parent) && !e.Store.HasState(parent) && !roots[parent] && time.Since(parentRequests[parent]) >= executionUnreachableBackoff {
+				if stored := e.Store.GetSignedBlock(parent); stored != nil {
+					if d.enqueue(stored) {
+						parentRequests[parent] = time.Now()
+					}
+				} else {
+					select {
+					case e.FetchRootCh <- parent:
+						parentRequests[parent] = time.Now()
+					default:
+					}
+				}
+			}
+			return false
+		case executionValid:
+			select {
+			case e.BlockCh <- block:
+			case <-ctx.Done():
+			}
+		}
+		delete(parentRequests, block.Block.ParentRoot)
+		return true
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case block := <-e.Execution.verifyCh:
-			if !e.Execution.verify(ctx, block) {
+		case <-d.forkchoiceCh:
+			_, _ = d.forkchoiceUpdated(ctx, d.forkchoiceState(), nil)
+		case block := <-d.verifyCh:
+			if block == nil || block.Block == nil || block.Block.Body == nil {
 				continue
 			}
-			select {
-			case e.BlockCh <- block:
-			case <-ctx.Done():
-				return
+			root, err := block.Block.HashTreeRoot()
+			if err != nil || roots[root] {
+				continue
+			}
+			if !process(block) {
+				if len(pending) == MaxPendingBlocks {
+					// Keep receiving even when full: an arriving parent may
+					// resolve every queued child. Match the CL pending buffer's
+					// policy of preserving the blocks nearest the known chain.
+					farthest := 0
+					for i := range pending {
+						if pending[i].Block.Slot > pending[farthest].Block.Slot {
+							farthest = i
+						}
+					}
+					if block.Block.Slot >= pending[farthest].Block.Slot {
+						discard(block, root)
+						continue
+					}
+					evicted := pending[farthest]
+					evictedRoot, _ := evicted.Block.HashTreeRoot()
+					delete(roots, evictedRoot)
+					// Retry the newly admitted ancestor first, preserving the
+					// order of the other retained blocks.
+					copy(pending[1:farthest+1], pending[:farthest])
+					pending[0] = block
+					roots[root] = true
+					discard(evicted, evictedRoot)
+					continue
+				}
+				pending = append(pending, block)
+				roots[root] = true
+			}
+		case <-ticker.C:
+			if d.unreachable() {
+				continue
+			}
+			// Round-robin retries allow a later-arriving parent to unblock a
+			// child, and cap work between reads of ingress and cancellation.
+			count := min(len(pending), executionRetryBatchSize)
+			for i := 0; i < count && ctx.Err() == nil; i++ {
+				block := pending[0]
+				pending[0] = nil
+				pending = pending[1:]
+				if process(block) {
+					root, _ := block.Block.HashTreeRoot()
+					delete(roots, root)
+				} else {
+					pending = append(pending, block)
+				}
+				if d.unreachable() {
+					break
+				}
 			}
 		}
 	}

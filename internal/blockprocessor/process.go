@@ -37,9 +37,40 @@ func onBlockCore(s *store.ConsensusStore, signedBlock *types.SignedBlock, verify
 		return nil
 	}
 
+	postState, err := validateBlockState(s, signedBlock, block, verify)
+	if err != nil {
+		return err
+	}
+
+	postState.LatestBlockHeader.StateRoot = block.StateRoot
+	if err := persistBlock(s, blockRoot, signedBlock, postState); err != nil {
+		return err
+	}
+	importBlockAttestations(s, signedBlock)
+
+	logBlockProcessed(s, block, blockRoot, time.Since(start))
+	return nil
+}
+
+// ValidateBlock runs consensus verification without storing a state, importing
+// votes, or changing fork choice. Execution validation can use it before asking
+// the EL to resolve an optimistic candidate with forkchoiceUpdated.
+func ValidateBlock(s *store.ConsensusStore, signedBlock *types.SignedBlock) error {
+	if err := validateStore(s); err != nil {
+		return err
+	}
+	block, err := validateSignedBlock(signedBlock, true)
+	if err != nil {
+		return err
+	}
+	_, err = validateBlockState(s, signedBlock, block, true)
+	return err
+}
+
+func validateBlockState(s *store.ConsensusStore, signedBlock *types.SignedBlock, block *types.Block, verify bool) (*types.State, error) {
 	parentState := s.GetState(block.ParentRoot)
 	if parentState == nil {
-		return &store.StoreError{
+		return nil, &store.StoreError{
 			Kind:    store.ErrMissingParentState,
 			Message: fmt.Sprintf("parent state not found for slot %d, missing block %x", block.Slot, block.ParentRoot),
 		}
@@ -51,14 +82,14 @@ func onBlockCore(s *store.ConsensusStore, signedBlock *types.SignedBlock, verify
 	// admits an intended early block. Time() is in intervals.
 	currentSlot := s.Time() / types.IntervalsPerSlot
 	if block.Slot > currentSlot+1 {
-		return &store.StoreError{
+		return nil, &store.StoreError{
 			Kind:    store.ErrBlockTooFarInFuture,
 			Message: fmt.Sprintf("block slot %d beyond future horizon (current slot %d)", block.Slot, currentSlot),
 		}
 	}
 
 	if err := validateBlockAttestations(block); err != nil {
-		return err
+		return nil, err
 	}
 
 	if verify {
@@ -66,25 +97,18 @@ func onBlockCore(s *store.ConsensusStore, signedBlock *types.SignedBlock, verify
 		err := verifyBlockSignatures(s, signedBlock, parentState)
 		metrics.ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	stfStart := time.Now()
 	postState, err := transitionState(parentState, block)
 	if err != nil {
-		return &store.StoreError{Kind: store.ErrStateTransitionFailed, Message: fmt.Sprintf("state transition: %v", err)}
+		return nil, &store.StoreError{Kind: store.ErrStateTransitionFailed, Message: fmt.Sprintf("state transition: %v", err)}
 	}
 	metrics.ObserveSTFTime(time.Since(stfStart).Seconds())
 
-	postState.LatestBlockHeader.StateRoot = block.StateRoot
-	if err := persistBlock(s, blockRoot, signedBlock, postState); err != nil {
-		return err
-	}
-	importBlockAttestations(s, signedBlock)
-
-	logBlockProcessed(s, block, blockRoot, time.Since(start))
-	return nil
+	return postState, nil
 }
 
 func logBlockProcessed(s *store.ConsensusStore, block *types.Block, blockRoot [32]byte, elapsed time.Duration) {

@@ -80,6 +80,26 @@ the background with logs under `data/el-demo/`. On an execution network a node h
 validator keys must be given an endpoint; at startup gean checks that the
 client's genesis is the network's and refuses to run otherwise.
 
+Execution networks currently support ordinary transactions, empty withdrawals,
+and no blob transactions. Configure geth's Cancun blob schedule with `target: 0`
+and `max: 0`, as in the demo genesis. Gean rejects unsupported payloads both on
+import and before signing a proposal. Use fresh demo data when changing the
+execution chain configuration.
+
+Only execution-validated blocks enter consensus. When the execution client is
+unreachable or still validating, blocks wait in a bounded retry queue; network
+and slot processing continue, but consensus import waits for `VALID`. Requested
+blocks apply backpressure at ingress; a full retry queue retains earlier blocks
+and discards farther-ahead blocks for later retrieval, allowing missing ancestors
+to make progress. Validator duties on a restored head wait for execution
+confirmation, and a local proposal is skipped unless its payload validates before
+signing.
+
+The optional `TestGethExecutionFeaturePolicy` integration test requires a
+disposable geth initialized with the demo genesis. Set `GEAN_TEST_ENGINE_URL` to
+its Engine API URL and `GEAN_TEST_ENGINE_JWT` to its JWT-secret file path, then run
+`go test ./internal/execution -run TestGethExecutionFeaturePolicy -v`.
+
 Spec fixtures whose bytes encode the block body and state shapes from before
 the payload was added are skipped by `make test-spec` until fixtures for the
 new schema exist; the fixture families that do not touch those containers

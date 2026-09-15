@@ -14,6 +14,10 @@ func (e *Engine) produceAttestations(slot uint64) {
 	if e.Keys == nil {
 		return
 	}
+	if e.Execution != nil && !e.Execution.headValidated() {
+		logger.Warn(logger.Validator, "skipping attestation slot=%d: execution head is unvalidated", slot)
+		return
+	}
 
 	if e.DutyGate != nil && !e.DutyGate.Decide("attestation", slot, e.Store.HeadSlot(), e.networkSeenSlot()) {
 		metrics.IncAttestationsSkippedLag()

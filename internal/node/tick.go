@@ -73,7 +73,7 @@ func (e *Engine) onTick() {
 		case 0:
 			// Once per slot regardless of head movement, so the execution
 			// client's view cannot go stale through a run of empty slots.
-			e.Execution.notifyForkchoice(e.Execution.forkchoiceState())
+			e.Execution.notifyForkchoice()
 		case 4:
 			// Ask for next slot's payload now so the client has an interval to
 			// build before the proposal worker collects it at interval 0.

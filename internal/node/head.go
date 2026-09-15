@@ -30,7 +30,7 @@ func (e *Engine) updateHead() {
 	if newHead != oldHead {
 		e.Store.SetHead(newHead)
 		if e.Execution != nil {
-			e.Execution.notifyForkchoice(e.Execution.forkchoiceState())
+			e.Execution.notifyForkchoice()
 		}
 		if !types.IsZeroRoot(oldHead) {
 			newHeader := e.Store.GetBlockHeader(newHead)

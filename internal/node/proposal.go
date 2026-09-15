@@ -73,10 +73,6 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 			if result == nil {
 				continue
 			}
-			if e.Execution != nil {
-				block := result.signedBlock.Block
-				e.Execution.submit(ctx, &block.Body.ExecutionPayload, block.ParentRoot)
-			}
 			select {
 			case e.ProposalResultCh <- result:
 			case <-ctx.Done():
@@ -96,6 +92,10 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	var payload *types.ExecutionPayload
 	var payloadParent [32]byte
 	if e.Execution != nil {
+		if !e.Execution.headValidated() {
+			logger.Warn(logger.Validator, "skipping proposal slot=%d: execution head is unvalidated", slot)
+			return nil
+		}
 		payloadParent = e.Store.Head()
 		var reason string
 		payload, reason = e.Execution.takePayload(context.Background(), slot, payloadParent)
@@ -126,6 +126,12 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	if e.Execution != nil && block.ParentRoot != payloadParent {
 		logger.Warn(logger.Validator, "skipping proposal slot=%d: head moved after the payload was built", slot)
 		metrics.IncProofOperation("proposal", proposalSkipPayloadStale)
+		return nil
+	}
+	// Validation must succeed before using the one-time proposal signing key.
+	// getPayload is a builder response, not an execution-validity verdict.
+	if e.Execution != nil && !e.Execution.submit(context.Background(), &block.Body.ExecutionPayload, block.ParentRoot) {
+		metrics.IncProofOperation("proposal", "execution_unvalidated")
 		return nil
 	}
 
@@ -171,6 +177,10 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		return
 	}
 	block := result.signedBlock.Block
+	if e.Execution != nil && (block.Body == nil || !e.Execution.payloadValidated(block.Body.ExecutionPayload.BlockHash)) {
+		logger.Warn(logger.Validator, "discarding proposal slot=%d: execution payload is unvalidated", block.Slot)
+		return
+	}
 	// A proposal that outlived its slot is still the chain's best extension
 	// unless the head moved past it; fork choice accepts late blocks, while
 	// discarding one here can permanently halt a stalled chain.
