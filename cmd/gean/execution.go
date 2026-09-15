@@ -14,15 +14,10 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// executionStartupTimeout bounds the handshake and genesis check together. A
-// client that is up answers both in milliseconds; one that is still starting
-// gets a few seconds before the mismatch is reported.
+// executionStartupTimeout bounds the handshake and genesis check.
 const executionStartupTimeout = 10 * time.Second
 
-// setupExecution pairs the node with an execution client when the network
-// declares one. It refuses configurations that cannot work: an endpoint on a
-// network without an execution layer, validator keys on an execution network
-// without an endpoint, or a client whose genesis is not the network's.
+// setupExecution checks the endpoint, capabilities, and genesis before enabling execution.
 func setupExecution(ctx context.Context, cfg config, genesisConfig *genesis.GenesisConfig, s *store.ConsensusStore, n *node.Engine, validatorCount int) error {
 	expectedGenesis, hasExecutionLayer := genesisConfig.ExecutionGenesisBlockHash()
 
@@ -43,7 +38,10 @@ func setupExecution(ctx context.Context, cfg config, genesisConfig *genesis.Gene
 	if err != nil {
 		return err
 	}
-	client := execution.NewClient(cfg.ExecutionEndpoint, secret)
+	client, err := execution.NewClient(cfg.ExecutionEndpoint, secret)
+	if err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, executionStartupTimeout)
 	defer cancel()

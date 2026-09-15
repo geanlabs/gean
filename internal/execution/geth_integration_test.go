@@ -21,7 +21,10 @@ func TestGethExecutionFeaturePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := NewClient(endpoint, secret)
+	client, err := NewClient(endpoint, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	genesis, err := client.GenesisBlockHash(ctx)

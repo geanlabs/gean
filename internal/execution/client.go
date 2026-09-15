@@ -21,17 +21,17 @@ var _ Engine = (*Client)(nil)
 
 // NewClient targets the authenticated engine endpoint, for example
 // http://127.0.0.1:8551.
-func NewClient(endpoint string, secret JWTSecret) *Client {
-	return &Client{rpc: newRPCClient(endpoint, secret, DefaultTimeout)}
+func NewClient(endpoint string, secret JWTSecret) (*Client, error) {
+	rpc, err := newRPCClient(endpoint, secret, DefaultTimeout)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{rpc: rpc}, nil
 }
 
 func (c *Client) ForkchoiceUpdated(ctx context.Context, state ForkchoiceState, attrs *PayloadAttributes) (ForkchoiceUpdatedResult, error) {
 	var result ForkchoiceUpdatedResult
-	params := []any{state, nil}
-	if attrs != nil {
-		params[1] = attrs
-	}
-	if err := c.rpc.call(ctx, "engine_forkchoiceUpdatedV3", params, &result); err != nil {
+	if err := c.rpc.call(ctx, "engine_forkchoiceUpdatedV3", []any{state, attrs}, &result); err != nil {
 		return ForkchoiceUpdatedResult{}, err
 	}
 	return result, nil

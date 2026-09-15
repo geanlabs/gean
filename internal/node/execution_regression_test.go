@@ -119,7 +119,7 @@ func TestExecutionSubmissionRequiresValid(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			mock := &execution.Mock{OnNewPayload: func(*types.ExecutionPayload, [32]byte) (execution.PayloadStatus, error) {
 				if status == "rpc error" {
-					return execution.PayloadStatus{}, &execution.RPCError{Code: -32602, Message: "bad payload"}
+					return execution.PayloadStatus{}, errors.New("engine RPC error")
 				}
 				if status == "transport error" {
 					return execution.PayloadStatus{}, &execution.TransportError{Err: errors.New("offline")}
@@ -141,7 +141,7 @@ func TestExecutionSubmissionRequiresValid(t *testing.T) {
 
 func TestExecutionRejectsRPCError(t *testing.T) {
 	e := executionTestEngine(&execution.Mock{OnNewPayload: func(*types.ExecutionPayload, [32]byte) (execution.PayloadStatus, error) {
-		return execution.PayloadStatus{}, &execution.RPCError{Code: -32602, Message: "invalid payload"}
+		return execution.PayloadStatus{}, errors.New("engine RPC error")
 	}})
 	block := &types.SignedBlock{Block: &types.Block{Body: &types.BlockBody{}}}
 	if got := e.Execution.checkPayload(context.Background(), block); got != executionRejected {

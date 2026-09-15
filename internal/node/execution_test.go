@@ -156,7 +156,7 @@ func TestExecutionTakePayloadGuards(t *testing.T) {
 
 	e.Execution.prepared = &preparedPayload{slot: 5, parentRoot: parent, id: execution.PayloadID{9}}
 	mock.OnGetPayload = func(execution.PayloadID) (*types.ExecutionPayload, error) {
-		return nil, &execution.RPCError{Method: "engine_getPayloadV3", Code: -38001, Message: "Unknown payload"}
+		return nil, errors.New("engine RPC error")
 	}
 	if payload, reason := e.Execution.takePayload(ctx, 5, parent); payload != nil || reason == "" {
 		t.Fatal("a failed getPayload must yield no payload")

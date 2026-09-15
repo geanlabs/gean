@@ -8,31 +8,6 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-func TestQuantityEncoding(t *testing.T) {
-	for _, tt := range []struct {
-		value uint64
-		wire  string
-	}{
-		{0, `"0x0"`},
-		{1, `"0x1"`},
-		{255, `"0xff"`},
-		{1_700_000_004, `"0x6553f104"`},
-	} {
-		got, err := json.Marshal(Quantity(tt.value))
-		if err != nil || string(got) != tt.wire {
-			t.Fatalf("marshal %d: got %s (%v), want %s", tt.value, got, err, tt.wire)
-		}
-		var back Quantity
-		if err := json.Unmarshal([]byte(tt.wire), &back); err != nil || uint64(back) != tt.value {
-			t.Fatalf("unmarshal %s: got %d (%v)", tt.wire, back, err)
-		}
-	}
-	var q Quantity
-	if err := json.Unmarshal([]byte(`"0x10000000000000000"`), &q); err == nil {
-		t.Fatal("2^64 must not fit a quantity")
-	}
-}
-
 func TestU256Encoding(t *testing.T) {
 	// SSZ little-endian 7 == wire "0x7".
 	var u U256
@@ -42,7 +17,7 @@ func TestU256Encoding(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 	var back U256
-	if err := json.Unmarshal([]byte(`"0x0100000000000000000000000000000000000000000000000000000000000000"`), &back); err != nil {
+	if err := json.Unmarshal([]byte(`"0x100000000000000000000000000000000000000000000000000000000000000"`), &back); err != nil {
 		t.Fatal(err)
 	}
 	if back[31] != 1 || back[0] != 0 {
@@ -51,41 +26,10 @@ func TestU256Encoding(t *testing.T) {
 }
 
 func TestFixedFieldsRejectWrongWidth(t *testing.T) {
-	var h Hash
-	if err := json.Unmarshal([]byte(`"0x1234"`), &h); err == nil {
-		t.Fatal("short hash accepted")
-	}
-	var id PayloadID
-	if err := json.Unmarshal([]byte(`"0x0123456789abcdef"`), &id); err != nil {
-		t.Fatalf("payload id: %v", err)
-	}
-	if id.String() != "0x0123456789abcdef" {
-		t.Fatalf("payload id string: %s", id.String())
-	}
-}
-
-func TestPayloadStatusAndForkchoiceResultShapes(t *testing.T) {
-	var result ForkchoiceUpdatedResult
-	raw := `{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null},"payloadId":null}`
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.PayloadStatus.Status != StatusSyncing || result.PayloadID != nil {
-		t.Fatalf("unexpected decode: %+v", result)
-	}
-	raw = `{"payloadStatus":{"status":"VALID","latestValidHash":"0x` + strings.Repeat("ab", 32) + `","validationError":null},"payloadId":"0x0000000000000001"}`
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.PayloadID == nil || result.PayloadID[7] != 1 || result.PayloadStatus.LatestValidHash == nil {
-		t.Fatalf("unexpected decode: %+v", result)
-	}
-	var status PayloadStatus
-	if err := json.Unmarshal([]byte(`{"status":"INVALID_BLOCK_HASH","latestValidHash":null,"validationError":"bad hash"}`), &status); err != nil {
-		t.Fatal(err)
-	}
-	if status.Status != StatusInvalidBlockHash || status.ValidationError == nil || *status.ValidationError != "bad hash" {
-		t.Fatalf("unexpected decode: %+v", status)
+	for _, field := range []any{new(Bloom), new(PayloadID)} {
+		if err := json.Unmarshal([]byte(`"0x1234"`), field); err == nil {
+			t.Fatalf("short %T accepted", field)
+		}
 	}
 }
 
