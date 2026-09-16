@@ -46,3 +46,8 @@ func (g *Gate) Release(proposal bool) {
 	}
 	g.token <- struct{}{}
 }
+
+// ProposalPending lets a background owner yield between non-interruptible proofs.
+func (g *Gate) ProposalPending() bool {
+	return g != nil && g.proposalPending.Load()
+}
