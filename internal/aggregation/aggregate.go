@@ -163,9 +163,9 @@ const seedPerGroupSeconds = 0.3
 const MaxGroupsPerSession = 2
 
 // MaxGroupsWhenProposing applies in the slot before this node proposes. The
-// proving gate gives a proposal priority, but priority only defers the next
-// background acquire: a session already holding the token runs to completion,
-// so the proposal waits for it. One group bounds that wait.
+// session yields between proofs when a proposal waits, but cannot interrupt
+// the current proof. The smaller cap also limits work started before the
+// proposal becomes pending.
 const MaxGroupsWhenProposing = 1
 
 // unitCostEstimator tracks observed aggregation-proving time so each pass can be
@@ -251,11 +251,11 @@ func (e *unitCostEstimator) childDuration() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
-func aggregateFromSnapshot(snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
-	return aggregateFromSnapshotWithProver(snap, cache, deadline, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
+func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+	return aggregateFromSnapshotWithProver(shouldYield, snap, cache, deadline, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
 }
 
-func aggregateFromSnapshotWithProver(snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
 	if snap == nil || cache == nil || snap.headState == nil {
 		return nil, nil, nil, false, skips
@@ -276,6 +276,11 @@ func aggregateFromSnapshotWithProver(snap *Snapshot, cache *xmss.PubKeyCache, de
 
 	groups := orderedGroups(snap, skips)
 	for i, group := range groups {
+		if shouldYield != nil && shouldYield() {
+			truncated = true
+			skips.addN(metrics.AggGroupSkipProposalPending, len(groups)-i)
+			break
+		}
 		// Groups that never reached the prover cost nothing, so the cap counts
 		// proof attempts rather than loop iterations.
 		if attempts >= maxGroups {
@@ -427,6 +432,11 @@ func aggregateFromSnapshotWithProver(snap *Snapshot, cache *xmss.PubKeyCache, de
 			if !deadline.IsZero() && time.Until(deadline) <= 0 {
 				truncated = true
 				skips.add(metrics.AggGroupSkipBudget)
+				return
+			}
+			if shouldYield != nil && shouldYield() {
+				truncated = true
+				skips.addN(metrics.AggGroupSkipProposalPending, len(groups)-i)
 				return
 			}
 			attempted = true
