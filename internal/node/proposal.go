@@ -22,11 +22,16 @@ type proposalDuty struct {
 }
 
 type proposalResult struct {
+	duty        proposalDuty
+	retryable   bool // Only failures before a signing attempt may release the duty.
 	blockRoot   [32]byte
 	signedBlock *types.SignedBlock
 }
 
 func (e *Engine) maybePropose(slot, validatorID uint64) {
+	if slot < e.lastProposalDuty.slot || (slot == e.lastProposalDuty.slot && e.proposalReserved) {
+		return
+	}
 	if e.Keys == nil {
 		return
 	}
@@ -39,6 +44,8 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	}
 	select {
 	case e.ProposalCh <- proposalDuty{slot: slot, validatorID: validatorID}:
+		e.lastProposalDuty = proposalDuty{slot: slot, validatorID: validatorID}
+		e.proposalReserved = true
 		metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
 	default:
 		logger.Warn(logger.Validator, "proposal worker busy slot=%d", slot)
@@ -52,27 +59,7 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 			return
 		case duty := <-e.ProposalCh:
 			metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
-			// Duty may have gone stale while the worker proved an earlier slot.
-			if head := e.Store.HeadSlot(); head >= duty.slot {
-				logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", duty.slot, head)
-				metrics.IncProofOperation("proposal", "skipped_stale")
-				continue
-			}
-			deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
-			if e.ProvingGate != nil && !e.ProvingGate.Acquire(deadline, true) {
-				cancel()
-				metrics.IncProofOperation("proposal", "canceled")
-				logger.Error(logger.Validator, "proposal prover unavailable slot=%d", duty.slot)
-				continue
-			}
-			result := e.buildProposal(duty.slot, duty.validatorID)
-			if e.ProvingGate != nil {
-				e.ProvingGate.Release(true)
-			}
-			cancel()
-			if result == nil {
-				continue
-			}
+			result := e.proveProposal(ctx, duty)
 			select {
 			case e.ProposalResultCh <- result:
 			case <-ctx.Done():
@@ -82,7 +69,28 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 	}
 }
 
+func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposalResult {
+	failed := &proposalResult{duty: duty, retryable: true}
+	if head := e.Store.HeadSlot(); head >= duty.slot {
+		logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", duty.slot, head)
+		metrics.IncProofOperation("proposal", "skipped_stale")
+		return failed
+	}
+	deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
+	defer cancel()
+	if e.ProvingGate != nil {
+		if !e.ProvingGate.Acquire(deadline, true) {
+			metrics.IncProofOperation("proposal", "canceled")
+			logger.Error(logger.Validator, "proposal prover unavailable slot=%d", duty.slot)
+			return failed
+		}
+		defer e.ProvingGate.Release(true)
+	}
+	return e.buildProposal(duty.slot, duty.validatorID)
+}
+
 func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
+	result := &proposalResult{duty: proposalDuty{slot: slot, validatorID: validatorID}, retryable: true}
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
 	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID)
@@ -92,28 +100,30 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 		if errors.As(err, &stale) {
 			logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", slot, e.Store.HeadSlot())
 			metrics.IncProofOperation("proposal", "skipped_stale")
-			return nil
+			return result
 		}
 		logger.Error(logger.Validator, "produce block failed: %v", err)
-		return nil
+		return result
 	}
 
 	signStart := time.Now()
 	propKey := e.Keys.GetProposalKey(validatorID)
 	if propKey == nil {
 		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
-		return nil
+		return result
 	}
 	blockRoot, err := block.HashTreeRoot()
 	if err != nil {
 		logger.Error(logger.Validator, "block root failed: %v", err)
-		return nil
+		return result
 	}
+	// A signing error must not permit another candidate to use this duty.
+	result.retryable = false
 	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
 	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
 		logger.Error(logger.Validator, "sign block failed: %v", err)
-		return nil
+		return result
 	}
 
 	mergeStart := time.Now()
@@ -122,11 +132,12 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	if err != nil {
 		metrics.IncProofOperation("proposal", "error")
 		logger.Error(logger.Validator, "merge block proof failed: %v", err)
-		return nil
+		return result
 	}
 	metrics.ObserveProofMergeComponents(len(attSigProofs) + 1)
 	metrics.ObserveProofSize("type2", len(proof))
 	return &proposalResult{
+		duty:      result.duty,
 		blockRoot: blockRoot,
 		signedBlock: &types.SignedBlock{
 			Block: block,
@@ -136,6 +147,9 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 }
 
 func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
+	if result != nil && result.retryable && result.duty == e.lastProposalDuty {
+		e.proposalReserved = false
+	}
 	if result == nil || result.signedBlock == nil || result.signedBlock.Block == nil {
 		return
 	}

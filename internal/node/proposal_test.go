@@ -1,12 +1,16 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/geanlabs/gean/internal/proving"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/xmss"
 )
 
 func proposalHeadState(t *testing.T) (*types.State, [32]byte) {
@@ -125,8 +129,8 @@ func TestBuildProposalSkipsStaleSlot(t *testing.T) {
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
 	e := &Engine{Store: s}
-	if result := e.buildProposal(1, 0); result != nil {
-		t.Fatalf("buildProposal result=%v, want nil (skipped)", result)
+	if result := e.buildProposal(1, 0); result.signedBlock != nil || !result.retryable {
+		t.Fatalf("buildProposal result=%v, want retryable failure before signing", result)
 	}
 }
 
@@ -145,5 +149,156 @@ func TestProduceBlockWithSignaturesRejectsNonProposer(t *testing.T) {
 	}
 	if block != nil || sigs != nil {
 		t.Fatalf("expected nil block and signatures, got block=%v sigs=%v", block, sigs)
+	}
+}
+
+func proposalTestEngine(t *testing.T) *Engine {
+	t.Helper()
+	s := makeTestStore()
+	state, root := proposalHeadState(t)
+	s.SetHead(root)
+	s.InsertState(root, state)
+	s.InsertBlockHeader(root, state.LatestBlockHeader)
+	return &Engine{Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan proposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
+}
+
+func TestProposalDutyReservedThroughCompletion(t *testing.T) {
+	for _, phase := range []string{"queued", "in_flight", "awaiting_acceptance", "completed"} {
+		t.Run(phase, func(t *testing.T) {
+			e := proposalTestEngine(t)
+			e.maybePropose(1, 0)
+			if phase != "queued" {
+				<-e.ProposalCh
+			}
+			if phase == "awaiting_acceptance" {
+				e.ProposalResultCh <- &proposalResult{duty: proposalDuty{slot: 1}}
+			}
+			if phase == "completed" {
+				// A post-sign failure must also retain the reservation.
+				e.acceptProposal(context.Background(), &proposalResult{duty: proposalDuty{slot: 1}})
+			}
+			e.maybePropose(1, 0)
+			want := 0
+			if phase == "queued" {
+				want = 1
+			}
+			if len(e.ProposalCh) != want {
+				t.Fatal("duplicate duty enqueued")
+			}
+			if phase == "queued" {
+				<-e.ProposalCh
+			}
+			// Advancing duties must not be suppressed by the old reservation.
+			e.maybePropose(2, 0)
+			if len(e.ProposalCh) != 1 {
+				t.Fatal("next slot suppressed")
+			}
+		})
+	}
+}
+
+func TestProposalQueueFullDoesNotReserveDuty(t *testing.T) {
+	e := proposalTestEngine(t)
+	e.maybePropose(1, 0)
+	e.maybePropose(2, 0)
+	<-e.ProposalCh
+	e.maybePropose(2, 0)
+	select {
+	case duty := <-e.ProposalCh:
+		if duty.slot != 2 {
+			t.Fatalf("slot=%d", duty.slot)
+		}
+	default:
+		t.Fatal("queue-full attempt prevented retry")
+	}
+}
+
+func TestProposalPreSignFailureReleasesOnlyMatchingDuty(t *testing.T) {
+	e := proposalTestEngine(t)
+	e.maybePropose(1, 0)
+	first := <-e.ProposalCh
+	e.acceptProposal(context.Background(), &proposalResult{duty: first, retryable: true})
+	e.maybePropose(1, 0)
+	if len(e.ProposalCh) != 1 {
+		t.Fatal("pre-sign retry suppressed")
+	}
+	<-e.ProposalCh
+	e.maybePropose(2, 0)
+	second := <-e.ProposalCh
+	e.acceptProposal(context.Background(), &proposalResult{duty: first, retryable: true})
+	e.maybePropose(2, 0)
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("old completion released newer reservation")
+	}
+	e.acceptProposal(context.Background(), &proposalResult{duty: second, retryable: true})
+	e.maybePropose(1, 0)
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("old slot admitted after newer duty")
+	}
+	e.maybePropose(2, 0)
+	if len(e.ProposalCh) != 1 {
+		t.Fatal("matching retry suppressed")
+	}
+}
+
+func TestProposalWorkerReportsPreSignFailure(t *testing.T) {
+	e := proposalTestEngine(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); e.runProposalWorker(ctx) }()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("worker did not exit")
+		}
+	}()
+	e.maybePropose(1, 0)
+	select {
+	case result := <-e.ProposalResultCh:
+		// Empty key manager fails before signing; no real key material needed.
+		if !result.retryable || result.signedBlock != nil || result.duty.slot != 1 {
+			t.Fatalf("unexpected result: %+v", result)
+		}
+		e.acceptProposal(ctx, result)
+		if e.proposalReserved {
+			t.Fatal("pre-sign failure retained reservation")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker failed to report completion")
+	}
+}
+
+func TestProposalGateCancellationReportsRetryableFailure(t *testing.T) {
+	e := proposalTestEngine(t)
+	e.ProvingGate = proving.NewGate()
+	if !e.ProvingGate.Acquire(context.Background(), false) {
+		t.Fatal("could not occupy prover")
+	}
+	defer e.ProvingGate.Release(false)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	duty := proposalDuty{slot: 1}
+	result := e.proveProposal(ctx, duty)
+	if !result.retryable || result.duty != duty || result.signedBlock != nil {
+		t.Fatalf("unexpected cancellation result: %+v", result)
+	}
+}
+
+func TestProposalSigningErrorRetainsDuty(t *testing.T) {
+	e := proposalTestEngine(t)
+	// A closed key reaches Sign and fails without native signing or real keys.
+	e.Keys = xmss.NewKeyManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
+	e.maybePropose(1, 0)
+	duty := <-e.ProposalCh
+	result := e.buildProposal(duty.slot, duty.validatorID)
+	if result.retryable || result.signedBlock != nil {
+		t.Fatalf("unexpected signing failure: %+v", result)
+	}
+	e.acceptProposal(context.Background(), result)
+	e.maybePropose(1, 0)
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("signing error permitted another signing attempt")
 	}
 }
