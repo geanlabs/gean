@@ -135,6 +135,11 @@ var (
 		Help:    "Recursive proof operation duration",
 		Buckets: []float64{0.1, 0.25, 0.5, 1, 2, 4, 8},
 	}, []string{"operation"})
+	metricProposalStageDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "lean_proposal_stage_duration_seconds",
+		Help:    "Proposal gate wait and native proof stage wall time, including failed attempts",
+		Buckets: []float64{0.001, 0.01, 0.1, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64},
+	}, []string{"stage"})
 	metricProofSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "lean_proof_size_bytes",
 		Help:    "Serialized aggregate proof size",

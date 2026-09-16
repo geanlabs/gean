@@ -16,6 +16,8 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
+var errStaleProposal = errors.New("proposal parent changed")
+
 type proposalDuty struct {
 	slot        uint64
 	validatorID uint64
@@ -79,7 +81,10 @@ func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposal
 	deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
 	defer cancel()
 	if e.ProvingGate != nil {
-		if !e.ProvingGate.Acquire(deadline, true) {
+		waitStart := time.Now()
+		acquired := e.ProvingGate.Acquire(deadline, true)
+		metrics.ObserveProposalStageDuration("gate", time.Since(waitStart).Seconds())
+		if !acquired {
 			metrics.IncProofOperation("proposal", "canceled")
 			logger.Error(logger.Validator, "proposal prover unavailable slot=%d", duty.slot)
 			return failed
@@ -117,6 +122,11 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 		logger.Error(logger.Validator, "block root failed: %v", err)
 		return result
 	}
+	if e.Store.Head() != block.ParentRoot {
+		metrics.IncProofOperation("proposal", "skipped_stale")
+		logger.Info(logger.Validator, "skipping stale proposal before signing slot=%d", slot)
+		return result
+	}
 	// A signing error must not permit another candidate to use this duty.
 	result.retryable = false
 	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
@@ -130,6 +140,11 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	proof, err := e.mergeBlockProof(block, attSigProofs, propKey, blockSig)
 	metrics.ObserveProvingDuration("proposal", time.Since(mergeStart).Seconds())
 	if err != nil {
+		if errors.Is(err, errStaleProposal) {
+			metrics.IncProofOperation("proposal", "skipped_stale")
+			logger.Info(logger.Validator, "stopped stale proposal before next proof stage slot=%d", slot)
+			return result
+		}
 		metrics.IncProofOperation("proposal", "error")
 		logger.Error(logger.Validator, "merge block proof failed: %v", err)
 		return result
@@ -193,8 +208,22 @@ func (e *Engine) mergeBlockProof(
 	proposerKey *xmss.ValidatorKeyPair,
 	proposerSignature [types.SignatureSize]byte,
 ) ([]byte, error) {
+	return e.mergeBlockProofWithProvers(block, attestationProofs, proposerKey, proposerSignature, xmss.AggregateSignatures, xmss.MergeType1Proofs)
+}
+
+func (e *Engine) mergeBlockProofWithProvers(
+	block *types.Block,
+	attestationProofs []*types.SingleMessageAggregate,
+	proposerKey *xmss.ValidatorKeyPair,
+	proposerSignature [types.SignatureSize]byte,
+	wrap func([]xmss.CPubKey, []xmss.CSig, [32]byte, uint32) ([]byte, error),
+	merge func([]xmss.Type1Input) ([]byte, error),
+) ([]byte, error) {
 	if block == nil || block.Body == nil || len(block.Body.Attestations) != len(attestationProofs) {
 		return nil, fmt.Errorf("attestation proof count mismatch")
+	}
+	if e.Store.Head() != block.ParentRoot {
+		return nil, errStaleProposal
 	}
 	state := e.Store.GetState(block.ParentRoot)
 	if state == nil {
@@ -229,12 +258,17 @@ func (e *Engine) mergeBlockProof(
 	if err != nil {
 		return nil, err
 	}
-	proposerProof, err := xmss.AggregateSignatures(
+	if e.Store.Head() != block.ParentRoot {
+		return nil, errStaleProposal
+	}
+	wrapStart := time.Now()
+	proposerProof, err := wrap(
 		[]xmss.CPubKey{proposerKey.PublicKey()},
 		[]xmss.CSig{signature},
 		blockRoot,
 		uint32(block.Slot),
 	)
+	metrics.ObserveProposalStageDuration("signature_proof", time.Since(wrapStart).Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +276,13 @@ func (e *Engine) mergeBlockProof(
 		Pubkeys: []xmss.CPubKey{proposerKey.PublicKey()},
 		Proof:   proposerProof,
 	})
-	return xmss.MergeType1Proofs(inputs)
+	if e.Store.Head() != block.ParentRoot {
+		return nil, errStaleProposal
+	}
+	mergeStart := time.Now()
+	proof, err := merge(inputs)
+	metrics.ObserveProposalStageDuration("merge", time.Since(mergeStart).Seconds())
+	return proof, err
 }
 
 func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types.Block, []*types.SingleMessageAggregate, error) {

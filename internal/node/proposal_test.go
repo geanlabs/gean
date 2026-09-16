@@ -302,3 +302,72 @@ func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 		t.Fatal("signing error permitted another signing attempt")
 	}
 }
+
+func TestBlockProofStopsBetweenStagesWhenParentChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name                                               string
+		staleBefore, staleAfterWrap, wrapFails, mergeFails bool
+		wantWrap, wantMerge                                int
+	}{
+		{name: "already_stale", staleBefore: true},
+		{name: "stale_during_signature_proof", staleAfterWrap: true, wantWrap: 1},
+		{name: "unchanged_parent", wantWrap: 1, wantMerge: 1},
+		{name: "signature_proof_error", wrapFails: true, wantWrap: 1},
+		{name: "merge_error", mergeFails: true, wantWrap: 1, wantMerge: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := proposalTestEngine(t)
+			block := &types.Block{Slot: 1, ParentRoot: e.Store.Head(), Body: &types.BlockBody{}}
+			root, err := block.HashTreeRoot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.staleBefore {
+				e.Store.SetHead([32]byte{99})
+			}
+			wrapCalls, mergeCalls := 0, 0
+			proofErr := errors.New("test prover failure")
+			wrap := func(pks []xmss.CPubKey, sigs []xmss.CSig, message [32]byte, slot uint32) ([]byte, error) {
+				wrapCalls++
+				if len(pks) != 1 || len(sigs) != 1 || message != root || slot != 1 {
+					t.Fatal("proposer binding changed")
+				}
+				if tc.staleAfterWrap {
+					e.Store.SetHead([32]byte{99})
+				}
+				if tc.wrapFails {
+					return nil, proofErr
+				}
+				return []byte{7}, nil
+			}
+			merge := func(inputs []xmss.Type1Input) ([]byte, error) {
+				mergeCalls++
+				if len(inputs) != 1 || len(inputs[0].Proof) != 1 || inputs[0].Proof[0] != 7 {
+					t.Fatal("proposer proof missing from final merge")
+				}
+				if tc.mergeFails {
+					return nil, proofErr
+				}
+				return []byte{8}, nil
+			}
+			proof, err := e.mergeBlockProofWithProvers(block, nil, nil, [types.SignatureSize]byte{}, wrap, merge)
+			if wrapCalls != tc.wantWrap || mergeCalls != tc.wantMerge {
+				t.Fatalf("wrap=%d merge=%d", wrapCalls, mergeCalls)
+			}
+			switch {
+			case tc.staleBefore || tc.staleAfterWrap:
+				if !errors.Is(err, errStaleProposal) || proof != nil {
+					t.Fatalf("expected stale failure: %v", err)
+				}
+			case tc.wrapFails || tc.mergeFails:
+				if !errors.Is(err, proofErr) {
+					t.Fatalf("lost proof error: %v", err)
+				}
+			default:
+				if err != nil || len(proof) != 1 || proof[0] != 8 {
+					t.Fatalf("valid parent failed: %v", err)
+				}
+			}
+		})
+	}
+}
