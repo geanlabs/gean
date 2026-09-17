@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/geanlabs/gean/internal/execution/embedded"
 )
 
 var errInvalidOptions = errors.New("invalid keygen options")
@@ -73,7 +75,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	fs.IntVar(&opts.BasePort, "base-port", 9000, "Base P2P port (incremented per node)")
 	fs.Uint64Var(&opts.GenesisTime, "genesis-time", 0, "Absolute genesis Unix time; 0 uses now + --genesis-delay")
 	fs.IntVar(&opts.GenesisDelay, "genesis-delay", 30, "Seconds from now until genesis when --genesis-time is unset")
-	fs.StringVar(&opts.ExecutionGenesisHash, "execution-genesis-block-hash", "", "Execution client block 0 hash; declares an execution layer in config.yaml")
+	fs.StringVar(&opts.ExecutionGenesisHash, "execution-genesis-block-hash", "", "Execution block 0 hash as hex, or the path of a geth genesis JSON to compute it from; declares an execution layer in config.yaml")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, err
@@ -94,11 +96,11 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 		return opts, fmt.Errorf("%w: genesis delay must be >= 0", errInvalidOptions)
 	}
 	if opts.ExecutionGenesisHash != "" {
-		normalized := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(opts.ExecutionGenesisHash), "0x"), "0X")
-		if raw, err := hex.DecodeString(normalized); err != nil || len(raw) != 32 {
-			return opts, fmt.Errorf("%w: execution genesis block hash must be 32 bytes of hex", errInvalidOptions)
+		hash, err := resolveExecutionGenesisHash(opts.ExecutionGenesisHash)
+		if err != nil {
+			return opts, fmt.Errorf("%w: %v", errInvalidOptions, err)
 		}
-		opts.ExecutionGenesisHash = "0x" + strings.ToLower(normalized)
+		opts.ExecutionGenesisHash = hash
 	}
 	return opts, nil
 }
@@ -113,4 +115,23 @@ func logSummary(opts options, genesisTime uint64, m manifest) {
 	log.Println("run immediately:")
 	log.Printf("  bin/gean --custom-network-config-dir %s --node-key %s/node0.key --node-id node0 --is-aggregator --data-dir data/node0",
 		opts.OutputDir, opts.OutputDir)
+}
+
+// resolveExecutionGenesisHash accepts either the hash itself or a geth
+// genesis file, from which the hash is computed the way geth's init would.
+// The embedded execution mode has no running client to ask, so the file is
+// the only source of truth it has.
+func resolveExecutionGenesisHash(value string) (string, error) {
+	if _, err := os.Stat(value); err == nil {
+		genesis, err := embedded.LoadGenesis(value)
+		if err != nil {
+			return "", err
+		}
+		return genesis.ToBlock().Hash().Hex(), nil
+	}
+	normalized := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(value), "0x"), "0X")
+	if raw, err := hex.DecodeString(normalized); err != nil || len(raw) != 32 {
+		return "", fmt.Errorf("execution genesis block hash must be 32 bytes of hex or a genesis file")
+	}
+	return "0x" + strings.ToLower(normalized), nil
 }

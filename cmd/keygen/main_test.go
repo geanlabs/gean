@@ -221,3 +221,13 @@ func TestParseOptionsExecutionGenesisHash(t *testing.T) {
 		}
 	}
 }
+
+func TestParseOptionsExecutionGenesisFile(t *testing.T) {
+	opts, err := parseOptions([]string{"--execution-genesis-block-hash", "../../scripts/el-demo/genesis.json"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(opts.ExecutionGenesisHash) != 66 || !strings.HasPrefix(opts.ExecutionGenesisHash, "0x") {
+		t.Fatalf("hash not computed from the genesis file: %q", opts.ExecutionGenesisHash)
+	}
+}

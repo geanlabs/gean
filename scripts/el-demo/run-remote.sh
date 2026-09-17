@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# One gean validator and Docker geth; logs under DATA_DIR. Requires make build.
-# Usage: scripts/el-demo/run.sh [stop]
+# One gean validator paired with geth in Docker over the Engine API; logs under
+# DATA_DIR. Requires make build. Usage: scripts/el-demo/run-remote.sh [stop]
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$REPO/scripts/el-demo"
 GETH_IMAGE="${GETH_IMAGE:-ethereum/client-go:latest}"
-DATA_DIR="${DATA_DIR:-$REPO/data/el-demo}"
-TESTNET_DIR="${TESTNET_DIR:-$REPO/testnet-el-demo}"
+DATA_DIR="${DATA_DIR:-$REPO/data/el-demo-remote}"
+TESTNET_DIR="${TESTNET_DIR:-$REPO/testnet-el-demo-remote}"
 GENESIS_DELAY="${GENESIS_DELAY:-20}"
 AUTHRPC_PORT="${AUTHRPC_PORT:-8551}"
 HTTP_PORT="${HTTP_PORT:-8545}"
