@@ -7,6 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/beacon/engine"
+	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -32,24 +36,27 @@ func TestGethExecutionFeaturePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := ForkchoiceState{HeadBlockHash: genesis, SafeBlockHash: genesis, FinalizedBlockHash: genesis}
-	parentRoot := Hash{1}
+	parentRoot := [32]byte{1}
 	for _, unauthorized := range []bool{true, false} {
-		attrs := &PayloadAttributes{Timestamp: Quantity(time.Now().Unix()), ParentBeaconBlockRoot: parentRoot, Withdrawals: []Withdrawal{}}
+		attrs := NewPayloadAttributes(uint64(time.Now().Unix()), [types.AddressSize]byte{}, parentRoot)
 		if unauthorized {
-			attrs.Withdrawals = []Withdrawal{{Address: Address{0x42}, Amount: 1_000_000_000}}
+			attrs.Withdrawals = []*gethtypes.Withdrawal{{Address: common.Address{0x42}, Amount: 1_000_000_000}}
 		}
 		result, err := client.ForkchoiceUpdated(ctx, state, attrs)
 		if err != nil || result.PayloadID == nil {
 			t.Fatalf("prepare: %+v, %v", result, err)
 		}
-		var envelope getPayloadEnvelope
+		var envelope engine.ExecutionPayloadEnvelope
 		if err := client.rpc.call(ctx, "engine_getPayloadV3", []any{*result.PayloadID}, &envelope); err != nil {
 			t.Fatal(err)
 		}
-		payload := PayloadFromWire(envelope.ExecutionPayload)
+		payload, err := FromExecutableData(envelope.ExecutionPayload)
+		if err != nil {
+			t.Fatal(err)
+		}
 		// Bypass gean's feature policy to show what the EL itself validates.
 		var status PayloadStatus
-		if err := client.rpc.call(ctx, "engine_newPayloadV3", []any{PayloadToWire(payload), []Hash{}, parentRoot}, &status); err != nil {
+		if err := client.rpc.call(ctx, "engine_newPayloadV3", []any{ToExecutableData(payload), []common.Hash{}, common.Hash(parentRoot)}, &status); err != nil {
 			t.Fatal(err)
 		}
 		if status.Status != StatusValid {

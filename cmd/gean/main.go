@@ -102,10 +102,15 @@ func run(cfg config) error {
 	}
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
-	if err := setupExecution(ctx, cfg, inputs.genesisConfig, s, n, len(inputs.keyManager.ValidatorIDs())); err != nil {
+	// An embedded execution client closes after the engine loop has stopped
+	// and before the deferred storage close, so no engine call lands on a
+	// closing database.
+	closeExecution, err := setupExecution(ctx, cfg, inputs.genesisConfig, s, n, len(inputs.keyManager.ValidatorIDs()))
+	if err != nil {
 		logger.Error(logger.Execution, "%v", err)
 		return err
 	}
+	defer closeExecution()
 	startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes)
 
 	apiAddr, metricsAddr := startHTTPServers(cfg, s, fc, aggCtl)

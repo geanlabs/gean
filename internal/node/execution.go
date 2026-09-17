@@ -152,12 +152,7 @@ func (d *ExecutionDriver) notifyForkchoice() {
 
 // prepare asynchronously builds on parentRoot and stashes the ID for takePayload.
 func (d *ExecutionDriver) prepare(slot uint64, parentRoot [32]byte, state execution.ForkchoiceState, genesisTime uint64) {
-	attrs := &execution.PayloadAttributes{
-		Timestamp:             execution.Quantity(statetransition.ComputeTimeAtSlot(genesisTime, slot)),
-		SuggestedFeeRecipient: d.feeRecipient,
-		Withdrawals:           []execution.Withdrawal{},
-		ParentBeaconBlockRoot: parentRoot,
-	}
+	attrs := execution.NewPayloadAttributes(statetransition.ComputeTimeAtSlot(genesisTime, slot), d.feeRecipient, parentRoot)
 	go func() {
 		d.fcuMu.Lock()
 		defer d.fcuMu.Unlock()

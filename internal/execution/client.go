@@ -2,8 +2,10 @@ package execution
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/ethereum/go-ethereum/beacon/engine"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/geanlabs/gean/internal/types"
 )
@@ -12,7 +14,8 @@ import (
 // deadline of its own. Slot-phase callers set tighter ones.
 const DefaultTimeout = 8 * time.Second
 
-// Client is the Engine implementation over a real execution client.
+// Client is the Engine implementation over an execution client's
+// authenticated JSON-RPC port.
 type Client struct {
 	rpc *rpcClient
 }
@@ -37,21 +40,17 @@ func (c *Client) ForkchoiceUpdated(ctx context.Context, state ForkchoiceState, a
 	return result, nil
 }
 
-// getPayloadEnvelope is the engine_getPayloadV3 reply. Only the payload is
-// used; the block value, blobs bundle, and builder override flag are dropped.
-type getPayloadEnvelope struct {
-	ExecutionPayload *Payload `json:"executionPayload"`
-}
-
+// GetPayload keeps only the payload from the reply envelope; the block value,
+// blobs bundle, and builder override flag have no consensus meaning here.
 func (c *Client) GetPayload(ctx context.Context, id PayloadID) (*types.ExecutionPayload, error) {
-	var envelope getPayloadEnvelope
+	var envelope engine.ExecutionPayloadEnvelope
 	if err := c.rpc.call(ctx, "engine_getPayloadV3", []any{id}, &envelope); err != nil {
 		return nil, err
 	}
-	if envelope.ExecutionPayload == nil {
-		return nil, &TransportError{Method: "engine_getPayloadV3", Err: fmt.Errorf("reply carries no executionPayload")}
+	payload, err := FromExecutableData(envelope.ExecutionPayload)
+	if err != nil {
+		return nil, &TransportError{Method: "engine_getPayloadV3", Err: err}
 	}
-	payload := PayloadFromWire(envelope.ExecutionPayload)
 	if err := payload.ValidateExecutionFeatures(); err != nil {
 		return nil, err
 	}
@@ -64,7 +63,7 @@ func (c *Client) NewPayload(ctx context.Context, payload *types.ExecutionPayload
 	}
 	var status PayloadStatus
 	// The feature check above guarantees there are no blob versioned hashes.
-	params := []any{PayloadToWire(payload), []Hash{}, Hash(parentBeaconBlockRoot)}
+	params := []any{ToExecutableData(payload), []common.Hash{}, common.Hash(parentBeaconBlockRoot)}
 	if err := c.rpc.call(ctx, "engine_newPayloadV3", params, &status); err != nil {
 		return PayloadStatus{}, err
 	}
@@ -73,7 +72,7 @@ func (c *Client) NewPayload(ctx context.Context, payload *types.ExecutionPayload
 
 // blockHashOnly reads just the hash of an eth_getBlockByNumber reply.
 type blockHashOnly struct {
-	Hash Hash `json:"hash"`
+	Hash common.Hash `json:"hash"`
 }
 
 func (c *Client) GenesisBlockHash(ctx context.Context) ([32]byte, error) {

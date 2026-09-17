@@ -113,7 +113,7 @@ func TestForkchoiceUpdatedWire(t *testing.T) {
 	fake.replies["engine_forkchoiceUpdatedV3"] = `{"jsonrpc":"2.0","id":1,"result":{"payloadStatus":{"status":"VALID","latestValidHash":"0xabababababababababababababababababababababababababababababababab","validationError":null},"payloadId":"0x0102030405060708"}}`
 
 	state := ForkchoiceState{HeadBlockHash: Hash{1}, SafeBlockHash: Hash{2}, FinalizedBlockHash: Hash{3}}
-	attrs := &PayloadAttributes{Timestamp: 4, Withdrawals: []Withdrawal{}, ParentBeaconBlockRoot: Hash{5}}
+	attrs := NewPayloadAttributes(4, [types.AddressSize]byte{}, [32]byte{5})
 	result, err := client.ForkchoiceUpdated(t.Context(), state, attrs)
 	if err != nil {
 		t.Fatal(err)

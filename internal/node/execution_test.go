@@ -92,7 +92,7 @@ func TestExecutionPrepareStashesPayloadID(t *testing.T) {
 		if uint64(attrs.Timestamp) != statetransition.ComputeTimeAtSlot(genesisTime, 7) {
 			t.Errorf("timestamp %d is not slot 7's", attrs.Timestamp)
 		}
-		if attrs.ParentBeaconBlockRoot != execution.Hash(parent) {
+		if attrs.BeaconRoot == nil || *attrs.BeaconRoot != execution.Hash(parent) {
 			t.Errorf("parent beacon root must be the parent root")
 		}
 		if attrs.Withdrawals == nil {
