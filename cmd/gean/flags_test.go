@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
@@ -267,5 +268,24 @@ func TestConfigAddressesUseJoinHostPort(t *testing.T) {
 	}
 	if got := cfg.metricsAddress(); got != "[::1]:5054" {
 		t.Fatalf("metricsAddress=%q, want [::1]:5054", got)
+	}
+}
+
+func TestParseConfig_EmbeddedLogLevel(t *testing.T) {
+	var stderr bytes.Buffer
+	cfg, err := parseConfig(append(validFlagArgs(), "--el-genesis", "/genesis.json", "--el-log-level", "info"), &stderr)
+	if err != nil {
+		t.Fatalf("parseConfig returned error: %v\nstderr:\n%s", err, stderr.String())
+	}
+	if cfg.ELLogLevel != slog.LevelInfo {
+		t.Fatalf("log level not parsed: %v", cfg.ELLogLevel)
+	}
+	for name, args := range map[string][]string{
+		"bad level":       {"--el-genesis", "/genesis.json", "--el-log-level", "loud"},
+		"without genesis": {"--el-log-level", "info"},
+	} {
+		if _, err := parseConfig(append(validFlagArgs(), args...), &stderr); err == nil {
+			t.Fatalf("%s: expected an error", name)
+		}
 	}
 }

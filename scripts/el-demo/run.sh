@@ -5,6 +5,8 @@
 # NODES=n runs n validators as n gean processes, each with its own embedded
 # geth, the geths peered through node 0. Keys are generated once per
 # TESTNET_DIR and reused; genesis time is refreshed on every start.
+# geth's own log is data/el-demo/nodeN/el/geth.log; EL_LOG_LEVEL=info shows
+# its block building and imports.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -18,6 +20,7 @@ API_PORT="${API_PORT:-5052}"
 METRICS_PORT="${METRICS_PORT:-8080}"
 EL_HTTP_PORT="${EL_HTTP_PORT:-8545}"
 EL_P2P_PORT="${EL_P2P_PORT:-30303}"
+EL_LOG_LEVEL="${EL_LOG_LEVEL:-warn}"
 FEE_RECIPIENT="${FEE_RECIPIENT:-0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266}"
 PIDS="$DATA_DIR/pids"
 
@@ -50,6 +53,7 @@ for ((i=0; i<NODES; i++)); do
     --node-id "node$i" --data-dir "$DATA_DIR/node$i"
     --gossipsub-port $((GOSSIP_PORT + i)) --api-port $((API_PORT + i)) --metrics-port $((METRICS_PORT + i))
     --el-genesis "$GENESIS" --el-http-port $((EL_HTTP_PORT + i)) --el-p2p-port $((EL_P2P_PORT + i))
+    --el-log-level "$EL_LOG_LEVEL"
     --suggested-fee-recipient "$FEE_RECIPIENT"
   )
   [ "$i" -eq 0 ] && args+=(--is-aggregator)
@@ -67,4 +71,4 @@ for ((i=0; i<NODES; i++)); do
     [ -n "$bootnodes" ] || die "node0 did not announce its execution enode; see $DATA_DIR/node0.log"
   fi
 done
-log "running; logs: $DATA_DIR/node*.log; stop: make node-stop"
+log "running; gean logs: $DATA_DIR/node*.log; geth logs: $DATA_DIR/node*/el/geth.log; stop: make node-stop"

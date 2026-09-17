@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -47,6 +48,7 @@ type config struct {
 	ELHTTPPort  int
 	ELP2PPort   int
 	ELBootnodes []string
+	ELLogLevel  slog.Level
 
 	// Shadow*Rate model XMSS prover cost for the Shadow network simulator, which
 	// does not charge CPU time. Each is in signature-units per second; a
@@ -72,6 +74,7 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	aggregateSubnetIDs := ""
 	feeRecipient := ""
 	elBootnodes := ""
+	elLogLevel := ""
 	fs.StringVar(&cfg.ConfigDir, "custom-network-config-dir", "", "Config directory (required)")
 	fs.IntVar(&cfg.GossipPort, "gossipsub-port", 9000, "P2P listen port (QUIC/UDP)")
 	fs.StringVar(&cfg.HTTPAddr, "http-address", "127.0.0.1", "Bind address for API + metrics")
@@ -92,6 +95,7 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.IntVar(&cfg.ELHTTPPort, "el-http-port", 0, "Embedded geth: expose the eth/net/web3 HTTP RPC on this loopback port (0 disables)")
 	fs.IntVar(&cfg.ELP2PPort, "el-p2p-port", 0, "Embedded geth: listen for execution p2p peers on this port (0 disables)")
 	fs.StringVar(&elBootnodes, "el-bootnodes", "", "Embedded geth: comma-separated enode URLs to peer with")
+	fs.StringVar(&elLogLevel, "el-log-level", "warn", "Embedded geth: lowest log level written to <data-dir>/el/geth.log (error, warn, info, debug)")
 	fs.Float64Var(&cfg.ShadowAggregateSignaturesRate, "shadow-xmss-aggregate-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregation cost; n-signature op sleeps n/rate sec (0 disables; env GEAN_SHADOW_XMSS_AGGREGATE_SIGNATURES_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifySignatureRate, "shadow-xmss-verify-signature-rate", 0, "Shadow simulator: signatures/sec rate for gossip-attestation verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_SIGNATURE_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifyAggregatedSignaturesRate, "shadow-xmss-verify-aggregated-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregated-signature verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_AGGREGATED_SIGNATURES_RATE)")
@@ -138,8 +142,12 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 		fmt.Fprintln(stderr, "--el-genesis and --execution-endpoint are alternatives; give one")
 		return cfg, errInvalidConfig
 	}
-	if cfg.ELGenesis == "" && (cfg.ELHTTPPort != 0 || cfg.ELP2PPort != 0 || elBootnodes != "") {
-		fmt.Fprintln(stderr, "--el-http-port, --el-p2p-port, and --el-bootnodes require --el-genesis")
+	if cfg.ELGenesis == "" && (cfg.ELHTTPPort != 0 || cfg.ELP2PPort != 0 || elBootnodes != "" || elLogLevel != "warn") {
+		fmt.Fprintln(stderr, "--el-http-port, --el-p2p-port, --el-bootnodes, and --el-log-level require --el-genesis")
+		return cfg, errInvalidConfig
+	}
+	if err := cfg.ELLogLevel.UnmarshalText([]byte(elLogLevel)); err != nil {
+		fmt.Fprintf(stderr, "--el-log-level: %v\n", err)
 		return cfg, errInvalidConfig
 	}
 	for _, port := range []struct {

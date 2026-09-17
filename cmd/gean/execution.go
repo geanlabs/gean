@@ -96,6 +96,7 @@ func startEngine(cfg config) (execution.Engine, func(), string, error) {
 			HTTPPort:  cfg.ELHTTPPort,
 			P2PPort:   cfg.ELP2PPort,
 			Bootnodes: cfg.ELBootnodes,
+			LogLevel:  cfg.ELLogLevel,
 		})
 		if err != nil {
 			return nil, nil, "", err
@@ -103,6 +104,7 @@ func startEngine(cfg config) (execution.Engine, func(), string, error) {
 		if cfg.ELP2PPort > 0 {
 			logger.Info(logger.Execution, "execution p2p enode=%s", engine.Enode())
 		}
+		logger.Info(logger.Execution, "geth log=%s", filepath.Join(cfg.DataDir, "el", embedded.LogFile))
 		return engine, func() { _ = engine.Close() }, "embedded geth from " + cfg.ELGenesis, nil
 	}
 

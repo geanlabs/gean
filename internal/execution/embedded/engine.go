@@ -7,7 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -26,13 +29,17 @@ import (
 // Config describes the embedded client. An empty DataDir keeps the chain in
 // memory, which tests use. HTTPPort exposes the eth, net, and web3 RPC on
 // loopback for wallets and tools; P2PPort joins the execution p2p mesh so
-// transactions propagate between nodes. Both are off when zero.
+// transactions propagate between nodes. Both are off when zero. geth's own
+// log lines go to geth.log under DataDir, or to stderr when in memory, at
+// LogLevel and above; the zero value is info, so callers wanting a quiet
+// run pass slog.LevelWarn.
 type Config struct {
 	Genesis   *core.Genesis
 	DataDir   string
 	HTTPPort  int
 	P2PPort   int
 	Bootnodes []string
+	LogLevel  slog.Level
 }
 
 // Cache sizes in MiB. geth's defaults reserve gigabytes; the XMSS prover
@@ -61,23 +68,38 @@ func LoadGenesis(path string) (*core.Genesis, error) {
 	return genesis, nil
 }
 
+// LogFile is the name of geth's log under the execution data directory.
+const LogFile = "geth.log"
+
 // Engine is the execution.Engine over an in-process geth.
 type Engine struct {
 	stack   *node.Node
 	backend *eth.Ethereum
 	api     *catalyst.ConsensusAPI
+	logFile io.Closer
 }
 
 var _ execution.Engine = (*Engine)(nil)
 
 // Start brings geth up from the genesis and returns once its chain is
-// readable. geth logs at warn level and above on stderr, so a healthy run
-// is silent.
+// readable.
 func Start(cfg Config) (*Engine, error) {
 	if cfg.Genesis == nil {
 		return nil, fmt.Errorf("embedded execution: genesis is required")
 	}
-	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelWarn, false)))
+	e := &Engine{}
+	logOut := io.Writer(os.Stderr)
+	if cfg.DataDir != "" {
+		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+			return nil, fmt.Errorf("embedded execution: %w", err)
+		}
+		f, err := os.OpenFile(filepath.Join(cfg.DataDir, LogFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("embedded execution: %w", err)
+		}
+		logOut, e.logFile = f, f
+	}
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(logOut, cfg.LogLevel, false)))
 
 	peers := make([]*enode.Node, 0, len(cfg.Bootnodes))
 	for _, url := range cfg.Bootnodes {
@@ -110,8 +132,10 @@ func Start(cfg Config) (*Engine, error) {
 	}
 	stack, err := node.New(nodeCfg)
 	if err != nil {
+		e.Close()
 		return nil, fmt.Errorf("embedded execution: %w", err)
 	}
+	e.stack = stack
 
 	ethCfg := ethconfig.Defaults
 	ethCfg.Genesis = cfg.Genesis
@@ -123,19 +147,30 @@ func Start(cfg Config) (*Engine, error) {
 	ethCfg.DatabaseCache = databaseCacheMiB
 	backend, err := eth.New(stack, &ethCfg)
 	if err != nil {
-		stack.Close()
+		e.Close()
 		return nil, fmt.Errorf("embedded execution: %w", err)
 	}
 	if err := stack.Start(); err != nil {
-		stack.Close()
+		e.Close()
 		return nil, fmt.Errorf("embedded execution: %w", err)
 	}
-	return &Engine{stack: stack, backend: backend, api: catalyst.NewConsensusAPI(backend)}, nil
+	e.backend, e.api = backend, catalyst.NewConsensusAPI(backend)
+	return e, nil
 }
 
-// Close stops geth and flushes its database.
+// Close stops geth, flushes its database, and closes its log.
 func (e *Engine) Close() error {
-	return e.stack.Close()
+	var err error
+	if e.stack != nil {
+		err = e.stack.Close()
+	}
+	if e.logFile != nil {
+		log.SetDefault(log.NewLogger(log.DiscardHandler()))
+		if cerr := e.logFile.Close(); err == nil {
+			err = cerr
+		}
+	}
+	return err
 }
 
 // Enode is this client's execution p2p address, for other nodes' bootnode

@@ -71,6 +71,8 @@ gean can run the execution client two ways:
   exposes the standard `eth` RPC on loopback so wallets and tools can
   submit transactions; `--el-p2p-port` and `--el-bootnodes` join embedded
   clients into an execution p2p mesh so those transactions propagate.
+  geth's own log is `<data-dir>/el/geth.log`, warn and above by default;
+  `--el-log-level info` shows its block building and imports.
 - **Remote.** `--execution-endpoint` and `--execution-jwt-secret` pair with
   any execution client over the Engine API on its authenticated port.
 
