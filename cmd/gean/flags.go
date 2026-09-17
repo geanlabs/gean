@@ -41,6 +41,13 @@ type config struct {
 	ExecutionJWTSecret string
 	FeeRecipient       [types.AddressSize]byte
 
+	// Embedded execution: geth runs inside this process from ELGenesis. The
+	// HTTP RPC and execution p2p ports are optional and off when zero.
+	ELGenesis   string
+	ELHTTPPort  int
+	ELP2PPort   int
+	ELBootnodes []string
+
 	// Shadow*Rate model XMSS prover cost for the Shadow network simulator, which
 	// does not charge CPU time. Each is in signature-units per second; a
 	// non-positive rate (the default) disables the delay, so real deployments are
@@ -64,6 +71,7 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 
 	aggregateSubnetIDs := ""
 	feeRecipient := ""
+	elBootnodes := ""
 	fs.StringVar(&cfg.ConfigDir, "custom-network-config-dir", "", "Config directory (required)")
 	fs.IntVar(&cfg.GossipPort, "gossipsub-port", 9000, "P2P listen port (QUIC/UDP)")
 	fs.StringVar(&cfg.HTTPAddr, "http-address", "127.0.0.1", "Bind address for API + metrics")
@@ -80,6 +88,10 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&cfg.ExecutionEndpoint, "execution-endpoint", "", "Execution client Engine API endpoint, e.g. http://127.0.0.1:8551 (requires --execution-jwt-secret)")
 	fs.StringVar(&cfg.ExecutionJWTSecret, "execution-jwt-secret", "", "Path to the hex JWT secret shared with the execution client")
 	fs.StringVar(&feeRecipient, "suggested-fee-recipient", "", "20-byte hex address the execution client pays block rewards to")
+	fs.StringVar(&cfg.ELGenesis, "el-genesis", "", "Run geth inside this process from this genesis JSON (instead of --execution-endpoint)")
+	fs.IntVar(&cfg.ELHTTPPort, "el-http-port", 0, "Embedded geth: expose the eth/net/web3 HTTP RPC on this loopback port (0 disables)")
+	fs.IntVar(&cfg.ELP2PPort, "el-p2p-port", 0, "Embedded geth: listen for execution p2p peers on this port (0 disables)")
+	fs.StringVar(&elBootnodes, "el-bootnodes", "", "Embedded geth: comma-separated enode URLs to peer with")
 	fs.Float64Var(&cfg.ShadowAggregateSignaturesRate, "shadow-xmss-aggregate-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregation cost; n-signature op sleeps n/rate sec (0 disables; env GEAN_SHADOW_XMSS_AGGREGATE_SIGNATURES_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifySignatureRate, "shadow-xmss-verify-signature-rate", 0, "Shadow simulator: signatures/sec rate for gossip-attestation verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_SIGNATURE_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifyAggregatedSignaturesRate, "shadow-xmss-verify-aggregated-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregated-signature verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_AGGREGATED_SIGNATURES_RATE)")
@@ -121,6 +133,27 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	if (cfg.ExecutionEndpoint == "") != (cfg.ExecutionJWTSecret == "") {
 		fmt.Fprintln(stderr, "--execution-endpoint and --execution-jwt-secret must be given together")
 		return cfg, errInvalidConfig
+	}
+	if cfg.ELGenesis != "" && cfg.ExecutionEndpoint != "" {
+		fmt.Fprintln(stderr, "--el-genesis and --execution-endpoint are alternatives; give one")
+		return cfg, errInvalidConfig
+	}
+	if cfg.ELGenesis == "" && (cfg.ELHTTPPort != 0 || cfg.ELP2PPort != 0 || elBootnodes != "") {
+		fmt.Fprintln(stderr, "--el-http-port, --el-p2p-port, and --el-bootnodes require --el-genesis")
+		return cfg, errInvalidConfig
+	}
+	for _, port := range []struct {
+		name  string
+		value int
+	}{{"el-http-port", cfg.ELHTTPPort}, {"el-p2p-port", cfg.ELP2PPort}} {
+		if err := validatePort(port.name, port.value, stderr); err != nil {
+			return cfg, err
+		}
+	}
+	for _, url := range strings.Split(elBootnodes, ",") {
+		if url = strings.TrimSpace(url); url != "" {
+			cfg.ELBootnodes = append(cfg.ELBootnodes, url)
+		}
 	}
 	if feeRecipient != "" {
 		recipient, err := parseAddress(feeRecipient)
