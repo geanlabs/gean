@@ -79,23 +79,25 @@ func Start(cfg Config) (*Engine, error) {
 	}
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelWarn, false)))
 
-	bootnodes := make([]*enode.Node, 0, len(cfg.Bootnodes))
+	peers := make([]*enode.Node, 0, len(cfg.Bootnodes))
 	for _, url := range cfg.Bootnodes {
 		n, err := enode.Parse(enode.ValidSchemes, url)
 		if err != nil {
 			return nil, fmt.Errorf("embedded execution: bootnode %q: %w", url, err)
 		}
-		bootnodes = append(bootnodes, n)
+		peers = append(peers, n)
 	}
 
 	nodeCfg := &node.Config{
 		DataDir: cfg.DataDir,
 		P2P: p2p.Config{
-			// Peers are the bootnodes given explicitly; discovery stays off.
-			NoDiscovery:    true,
-			NoDial:         cfg.P2PPort == 0,
-			MaxPeers:       maxPeers,
-			BootstrapNodes: bootnodes,
+			// Discovery stays off, and geth only reaches bootstrap nodes
+			// through discovery, so the peers given are dialed as static
+			// nodes: connected directly and redialed if they drop.
+			NoDiscovery: true,
+			NoDial:      cfg.P2PPort == 0,
+			MaxPeers:    maxPeers,
+			StaticNodes: peers,
 		},
 	}
 	if cfg.P2PPort > 0 {
