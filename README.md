@@ -63,18 +63,30 @@ its execution client over the Engine API, and importers have their own
 client execute it before the block enters fork choice. Without the key the
 network is consensus-only and blocks carry an empty payload.
 
-To run one gean validator paired with geth:
+gean can run the execution client two ways:
+
+- **Embedded.** `--el-genesis <geth genesis JSON>` links geth into the gean
+  process and drives it through its consensus API: one binary, no second
+  process, no JWT. The chain lives under `<data-dir>/el`. `--el-http-port`
+  exposes the standard `eth` RPC on loopback so wallets and tools can
+  submit transactions; `--el-p2p-port` and `--el-bootnodes` join embedded
+  clients into an execution p2p mesh so those transactions propagate.
+- **Remote.** `--execution-endpoint` and `--execution-jwt-secret` pair with
+  any execution client over the Engine API on its authenticated port.
+
+On execution networks validators need one of the two, and startup checks
+that the client's genesis is the network's.
 
 ```sh
-make node         # pulls ethereum/client-go:latest; logs in data/el-demo/
+make node               # gean with geth embedded, no Docker; logs in data/el-demo/
+NODES=2 make node       # two validators, each with its own embedded geth, peered
+make node-remote        # one validator paired with ethereum/client-go:latest in Docker
 make node-stop
 ```
 
-The script pairs a Docker geth instance with a fresh one-validator testnet,
-using a shared JWT secret and geth's genesis hash. Set `GETH_IMAGE` to override
-`ethereum/client-go:latest`; both processes run in the background with logs in
-`data/el-demo/`. On execution networks, validators require an execution endpoint,
-and startup checks that the execution client's genesis matches the network.
+`keygen --execution-genesis-block-hash` takes either the hash or a geth
+genesis file and computes the hash from it, so a testnet can be generated
+before any execution client runs.
 
 Execution networks currently support ordinary transactions, empty withdrawals,
 and no blob transactions. Configure geth's Cancun blob schedule with `target: 0`
