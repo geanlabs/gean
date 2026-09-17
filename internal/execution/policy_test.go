@@ -3,7 +3,10 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/beacon/engine"
 
 	"github.com/geanlabs/gean/internal/types"
 )
@@ -22,7 +25,7 @@ func TestClientRejectsUnsupportedPayloads(t *testing.T) {
 			if len(fake.seen) != 0 {
 				t.Fatal("unsupported payload reached Engine API")
 			}
-			encoded, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "result": getPayloadEnvelope{ExecutionPayload: PayloadToWire(payload)}})
+			encoded, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "result": engine.ExecutionPayloadEnvelope{ExecutionPayload: ToExecutableData(payload), BlockValue: big.NewInt(0)}})
 			if err != nil {
 				t.Fatal(err)
 			}

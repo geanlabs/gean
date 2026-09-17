@@ -1,20 +1,32 @@
 package execution
 
 import (
-	"encoding/json"
+	"fmt"
 	"math/big"
-	"reflect"
 	"slices"
 
+	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// Engine API hex encodings stay at this boundary; consensus uses SSZ types.
+// The Engine API types are go-ethereum's own. They carry the wire encodings
+// for the remote client and are what an in-process geth consumes directly,
+// so gean adds only the conversion between its SSZ payload and geth's
+// executable data.
+type (
+	Hash                    = common.Hash
+	PayloadID               = engine.PayloadID
+	ForkchoiceState         = engine.ForkchoiceStateV1
+	PayloadAttributes       = engine.PayloadAttributes
+	PayloadStatus           = engine.PayloadStatusV1
+	ForkchoiceUpdatedResult = engine.ForkChoiceResponse
+)
 
-// Payload verdicts an execution client returns.
+// Payload verdicts, as the specification spells them. geth no longer returns
+// INVALID_BLOCK_HASH, but other execution clients still send it.
 const (
 	StatusValid            = "VALID"
 	StatusInvalid          = "INVALID"
@@ -23,184 +35,115 @@ const (
 	StatusInvalidBlockHash = "INVALID_BLOCK_HASH"
 )
 
-type Hash = common.Hash
-type Address = common.Address
-type Bytes = hexutil.Bytes
-type Quantity = hexutil.Uint64
-
-// Bloom is the 256-byte logs bloom DATA field.
-type Bloom [256]byte
-
-func (b Bloom) MarshalText() ([]byte, error) { return hexutil.Bytes(b[:]).MarshalText() }
-
-func (b *Bloom) UnmarshalJSON(data []byte) error {
-	return hexutil.UnmarshalFixedJSON(reflect.TypeOf(*b), data, b[:])
-}
-
-// PayloadID is the 8-byte build handle returned by a forkchoice update.
-type PayloadID [8]byte
-
-func (p PayloadID) MarshalText() ([]byte, error) { return hexutil.Bytes(p[:]).MarshalText() }
-
-func (p *PayloadID) UnmarshalJSON(data []byte) error {
-	return hexutil.UnmarshalFixedJSON(reflect.TypeOf(*p), data, p[:])
-}
-
-func (p PayloadID) String() string { return hexutil.Encode(p[:]) }
-
-// U256 is a 256-bit QUANTITY. SSZ stores it little-endian in 32 bytes; the
-// wire carries it as a big-endian hex number.
-type U256 [32]byte
-
-func (u U256) MarshalText() ([]byte, error) {
-	slices.Reverse(u[:])
-	return (*hexutil.Big)(new(big.Int).SetBytes(u[:])).MarshalText()
-}
-
-func (u *U256) UnmarshalJSON(data []byte) error {
-	var n hexutil.Big
-	if err := json.Unmarshal(data, &n); err != nil {
-		return err
+// NewPayloadAttributes describes the build gean asks for: no withdrawals, no
+// RANDAO mix, and the consensus parent root as the beacon root. Cancun-era
+// clients require the withdrawals list and the beacon root to be present
+// rather than null, so both are set even though one is empty.
+func NewPayloadAttributes(timestamp uint64, feeRecipient [types.AddressSize]byte, parentRoot [32]byte) *PayloadAttributes {
+	beaconRoot := common.Hash(parentRoot)
+	return &PayloadAttributes{
+		Timestamp:             timestamp,
+		SuggestedFeeRecipient: feeRecipient,
+		Withdrawals:           []*gethtypes.Withdrawal{},
+		BeaconRoot:            &beaconRoot,
 	}
-	n.ToInt().FillBytes(u[:])
-	slices.Reverse(u[:])
-	return nil
 }
 
-// ForkchoiceState is the head, safe, and finalized execution block hashes.
-type ForkchoiceState struct {
-	HeadBlockHash      Hash `json:"headBlockHash"`
-	SafeBlockHash      Hash `json:"safeBlockHash"`
-	FinalizedBlockHash Hash `json:"finalizedBlockHash"`
-}
-
-// PayloadAttributes asks the execution client to start building a payload.
-type PayloadAttributes struct {
-	Timestamp             Quantity     `json:"timestamp"`
-	PrevRandao            Hash         `json:"prevRandao"`
-	SuggestedFeeRecipient Address      `json:"suggestedFeeRecipient"`
-	Withdrawals           []Withdrawal `json:"withdrawals"`
-	ParentBeaconBlockRoot Hash         `json:"parentBeaconBlockRoot"`
-}
-
-// Withdrawal is the wire form of a payload withdrawal.
-type Withdrawal struct {
-	Index          Quantity `json:"index"`
-	ValidatorIndex Quantity `json:"validatorIndex"`
-	Address        Address  `json:"address"`
-	Amount         Quantity `json:"amount"`
-}
-
-// PayloadStatus is the execution client's verdict on a payload or a
-// forkchoice update.
-type PayloadStatus struct {
-	Status          string  `json:"status"`
-	LatestValidHash *Hash   `json:"latestValidHash"`
-	ValidationError *string `json:"validationError"`
-}
-
-// ForkchoiceUpdatedResult is the reply to engine_forkchoiceUpdated.
-type ForkchoiceUpdatedResult struct {
-	PayloadStatus PayloadStatus `json:"payloadStatus"`
-	PayloadID     *PayloadID    `json:"payloadId"`
-}
-
-// Payload is the wire form of ExecutionPayloadV3.
-type Payload struct {
-	ParentHash    Hash         `json:"parentHash"`
-	FeeRecipient  Address      `json:"feeRecipient"`
-	StateRoot     Hash         `json:"stateRoot"`
-	ReceiptsRoot  Hash         `json:"receiptsRoot"`
-	LogsBloom     Bloom        `json:"logsBloom"`
-	PrevRandao    Hash         `json:"prevRandao"`
-	BlockNumber   Quantity     `json:"blockNumber"`
-	GasLimit      Quantity     `json:"gasLimit"`
-	GasUsed       Quantity     `json:"gasUsed"`
-	Timestamp     Quantity     `json:"timestamp"`
-	ExtraData     Bytes        `json:"extraData"`
-	BaseFeePerGas U256         `json:"baseFeePerGas"`
-	BlockHash     Hash         `json:"blockHash"`
-	Transactions  []Bytes      `json:"transactions"`
-	Withdrawals   []Withdrawal `json:"withdrawals"`
-	BlobGasUsed   Quantity     `json:"blobGasUsed"`
-	ExcessBlobGas Quantity     `json:"excessBlobGas"`
-}
-
-// PayloadToWire converts the consensus payload for the engine API.
-func PayloadToWire(p *types.ExecutionPayload) *Payload {
+// ToExecutableData converts the consensus payload for the Engine API. The
+// base fee is little-endian in SSZ and a big-endian integer in geth, and the
+// Cancun blob-gas fields are pointers that must be present.
+func ToExecutableData(p *types.ExecutionPayload) *engine.ExecutableData {
 	if p == nil {
 		p = &types.ExecutionPayload{}
 	}
-	w := &Payload{
+	baseFee := slices.Clone(p.BaseFeePerGas[:])
+	slices.Reverse(baseFee)
+	data := &engine.ExecutableData{
 		ParentHash:    p.ParentHash,
 		FeeRecipient:  p.FeeRecipient,
 		StateRoot:     p.StateRoot,
 		ReceiptsRoot:  p.ReceiptsRoot,
-		LogsBloom:     p.LogsBloom,
-		PrevRandao:    p.PrevRandao,
-		BlockNumber:   Quantity(p.BlockNumber),
-		GasLimit:      Quantity(p.GasLimit),
-		GasUsed:       Quantity(p.GasUsed),
-		Timestamp:     Quantity(p.Timestamp),
-		ExtraData:     Bytes(append([]byte(nil), p.ExtraData...)),
-		BaseFeePerGas: p.BaseFeePerGas,
+		LogsBloom:     slices.Clone(p.LogsBloom[:]),
+		Random:        p.PrevRandao,
+		Number:        p.BlockNumber,
+		GasLimit:      p.GasLimit,
+		GasUsed:       p.GasUsed,
+		Timestamp:     p.Timestamp,
+		ExtraData:     slices.Clone(p.ExtraData),
+		BaseFeePerGas: new(big.Int).SetBytes(baseFee),
 		BlockHash:     p.BlockHash,
-		Transactions:  make([]Bytes, len(p.Transactions)),
-		Withdrawals:   make([]Withdrawal, len(p.Withdrawals)),
-		BlobGasUsed:   Quantity(p.BlobGasUsed),
-		ExcessBlobGas: Quantity(p.ExcessBlobGas),
+		Transactions:  make([][]byte, len(p.Transactions)),
+		Withdrawals:   make([]*gethtypes.Withdrawal, 0, len(p.Withdrawals)),
+		BlobGasUsed:   new(uint64),
+		ExcessBlobGas: new(uint64),
 	}
+	*data.BlobGasUsed = p.BlobGasUsed
+	*data.ExcessBlobGas = p.ExcessBlobGas
 	for i, tx := range p.Transactions {
-		w.Transactions[i] = Bytes(append([]byte(nil), tx...))
+		data.Transactions[i] = slices.Clone(tx)
 	}
-	for i, wd := range p.Withdrawals {
-		if wd == nil {
+	for _, w := range p.Withdrawals {
+		if w == nil {
 			continue
 		}
-		w.Withdrawals[i] = Withdrawal{
-			Index:          Quantity(wd.Index),
-			ValidatorIndex: Quantity(wd.ValidatorIndex),
-			Address:        wd.Address,
-			Amount:         Quantity(wd.Amount),
-		}
+		data.Withdrawals = append(data.Withdrawals, &gethtypes.Withdrawal{
+			Index: w.Index, Validator: w.ValidatorIndex, Address: w.Address, Amount: w.Amount,
+		})
 	}
-	return w
+	return data
 }
 
-// PayloadFromWire converts an engine API payload into the consensus type.
-func PayloadFromWire(w *Payload) *types.ExecutionPayload {
-	if w == nil {
-		return &types.ExecutionPayload{}
+// FromExecutableData converts a built or received payload into the consensus
+// type, rejecting shapes the SSZ container cannot hold.
+func FromExecutableData(d *engine.ExecutableData) (*types.ExecutionPayload, error) {
+	if d == nil {
+		return nil, fmt.Errorf("executable data is nil")
+	}
+	if len(d.LogsBloom) != types.BytesPerLogsBloom {
+		return nil, fmt.Errorf("logs bloom is %d bytes, want %d", len(d.LogsBloom), types.BytesPerLogsBloom)
+	}
+	if len(d.ExtraData) > types.MaxExtraDataBytes {
+		return nil, fmt.Errorf("extra data is %d bytes, max %d", len(d.ExtraData), types.MaxExtraDataBytes)
 	}
 	p := &types.ExecutionPayload{
-		ParentHash:    w.ParentHash,
-		FeeRecipient:  w.FeeRecipient,
-		StateRoot:     w.StateRoot,
-		ReceiptsRoot:  w.ReceiptsRoot,
-		LogsBloom:     w.LogsBloom,
-		PrevRandao:    w.PrevRandao,
-		BlockNumber:   uint64(w.BlockNumber),
-		GasLimit:      uint64(w.GasLimit),
-		GasUsed:       uint64(w.GasUsed),
-		Timestamp:     uint64(w.Timestamp),
-		ExtraData:     append([]byte(nil), w.ExtraData...),
-		BaseFeePerGas: w.BaseFeePerGas,
-		BlockHash:     w.BlockHash,
-		Transactions:  make([][]byte, len(w.Transactions)),
-		Withdrawals:   make([]*types.Withdrawal, len(w.Withdrawals)),
-		BlobGasUsed:   uint64(w.BlobGasUsed),
-		ExcessBlobGas: uint64(w.ExcessBlobGas),
+		ParentHash:   d.ParentHash,
+		FeeRecipient: d.FeeRecipient,
+		StateRoot:    d.StateRoot,
+		ReceiptsRoot: d.ReceiptsRoot,
+		PrevRandao:   d.Random,
+		BlockNumber:  d.Number,
+		GasLimit:     d.GasLimit,
+		GasUsed:      d.GasUsed,
+		Timestamp:    d.Timestamp,
+		ExtraData:    slices.Clone(d.ExtraData),
+		BlockHash:    d.BlockHash,
+		Transactions: make([][]byte, len(d.Transactions)),
+		Withdrawals:  make([]*types.Withdrawal, len(d.Withdrawals)),
 	}
-	for i, tx := range w.Transactions {
-		p.Transactions[i] = append([]byte(nil), tx...)
+	copy(p.LogsBloom[:], d.LogsBloom)
+	if d.BaseFeePerGas != nil {
+		if d.BaseFeePerGas.Sign() < 0 || d.BaseFeePerGas.BitLen() > 256 {
+			return nil, fmt.Errorf("base fee %s does not fit 256 bits", d.BaseFeePerGas)
+		}
+		d.BaseFeePerGas.FillBytes(p.BaseFeePerGas[:])
+		slices.Reverse(p.BaseFeePerGas[:])
 	}
-	for i, wd := range w.Withdrawals {
+	if d.BlobGasUsed != nil {
+		p.BlobGasUsed = *d.BlobGasUsed
+	}
+	if d.ExcessBlobGas != nil {
+		p.ExcessBlobGas = *d.ExcessBlobGas
+	}
+	for i, tx := range d.Transactions {
+		p.Transactions[i] = slices.Clone(tx)
+	}
+	for i, w := range d.Withdrawals {
+		if w == nil {
+			return nil, fmt.Errorf("withdrawal %d is nil", i)
+		}
 		p.Withdrawals[i] = &types.Withdrawal{
-			Index:          uint64(wd.Index),
-			ValidatorIndex: uint64(wd.ValidatorIndex),
-			Address:        wd.Address,
-			Amount:         uint64(wd.Amount),
+			Index: w.Index, ValidatorIndex: w.Validator, Address: w.Address, Amount: w.Amount,
 		}
 	}
-	return p
+	return p, nil
 }
