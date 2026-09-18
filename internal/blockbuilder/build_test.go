@@ -471,10 +471,12 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 
 	source := &types.Checkpoint{Slot: 0, Root: root0}
 	target := &types.Checkpoint{Slot: 1, Root: parentRoot}
+	// Distinct slots after the block's own (2), which the proposer's signature holds.
+	const firstSlot = 3
 	payloads := make([]AttestationPayload, 0, int(types.MaxAttestationsData)+1)
 	for i := range int(types.MaxAttestationsData) {
 		data := &types.AttestationData{
-			Slot:   uint64(i),
+			Slot:   firstSlot + uint64(i),
 			Head:   &types.Checkpoint{Slot: 1, Root: parentRoot},
 			Source: source,
 			Target: target,
@@ -486,7 +488,7 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 		})
 	}
 	unknownHead := &types.AttestationData{
-		Slot:   uint64(types.MaxAttestationsData),
+		Slot:   firstSlot + uint64(types.MaxAttestationsData),
 		Head:   &types.Checkpoint{Slot: 1, Root: [32]byte{0xff}},
 		Source: source,
 		Target: target,
@@ -513,5 +515,49 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 	}
 	if len(plan.payloadErrors) != 0 {
 		t.Fatalf("payload errors=%d, want 0", len(plan.payloadErrors))
+	}
+}
+
+func TestPlanAttestationsKeepsOneDataPerSlot(t *testing.T) {
+	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
+	root1 := [32]byte{0x11}
+
+	// Same slot, different head: a different message at a slot the block already covers.
+	rival := *data
+	rival.Head = &types.Checkpoint{Slot: 1, Root: root1}
+	// The block's own slot, which the proposer's signature holds.
+	atBlockSlot := *data
+	atBlockSlot.Slot = 3
+
+	plan, err := planAttestations(Input{
+		HeadState:       headState,
+		Slot:            3,
+		ProposerIndex:   0,
+		ParentRoot:      parentRoot,
+		KnownBlockRoots: RootSet{root1: true, parentRoot: true},
+		Payloads: []AttestationPayload{
+			{DataRoot: dataRoot, Data: data, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: hashAttestationData(t, &rival), Data: &rival, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: hashAttestationData(t, &atBlockSlot), Data: &atBlockSlot, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("plan attestations: %v", err)
+	}
+	if len(plan.attestations) != 1 || plan.attestations[0].Data.Slot != 2 {
+		t.Fatalf("planned %d attestations, want exactly one at slot 2", len(plan.attestations))
+	}
+	taken := 0
+	for _, payloadErr := range plan.payloadErrors {
+		if !errors.Is(payloadErr.Err, ErrPayloadSlotTaken) {
+			t.Fatalf("unexpected payload error: %v", payloadErr.Err)
+		}
+		if !IsExpectedSkip(payloadErr.Err) {
+			t.Fatalf("slot conflict not reported as an expected skip: %v", payloadErr.Err)
+		}
+		taken++
+	}
+	if taken != 2 {
+		t.Fatalf("slot conflicts reported=%d, want 2", taken)
 	}
 }
