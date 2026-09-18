@@ -246,7 +246,12 @@ func (e *Engine) mergeBlockProofWithProvers(
 			}
 			keys = append(keys, key)
 		}
-		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof})
+		data := block.Body.Attestations[i].Data
+		root, err := data.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("attestation %d data root: %w", i, err)
+		}
+		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof, Message: root, Slot: uint32(data.Slot)})
 	}
 
 	signature, err := xmss.ParseSignature(proposerSignature[:])
@@ -275,6 +280,8 @@ func (e *Engine) mergeBlockProofWithProvers(
 	inputs = append(inputs, xmss.Type1Input{
 		Pubkeys: []xmss.CPubKey{proposerKey.PublicKey()},
 		Proof:   proposerProof,
+		Message: blockRoot,
+		Slot:    uint32(block.Slot),
 	})
 	if e.Store.Head() != block.ParentRoot {
 		return nil, errStaleProposal

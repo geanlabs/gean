@@ -49,7 +49,7 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	if err != nil {
 		t.Fatalf("aggregate FAILED: %v", err)
 	}
-	merged, err := MergeType1Proofs([]Type1Input{{Pubkeys: []CPubKey{cpk}, Proof: proof}})
+	merged, err := MergeType1Proofs([]Type1Input{{Pubkeys: []CPubKey{cpk}, Proof: proof, Message: blockRoot, Slot: 1}})
 	if err != nil {
 		t.Fatalf("merge FAILED: %v", err)
 	}
