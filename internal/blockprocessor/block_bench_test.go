@@ -111,7 +111,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 		}
 		bits := types.BitlistFromIndices([]uint64{0})
 		atts[i] = &types.AggregatedAttestation{AggregationBits: bits, Data: data}
-		inputs = append(inputs, xmss.Type1Input{Pubkeys: []xmss.CPubKey{benchPubkey}, Proof: proof})
+		inputs = append(inputs, xmss.Type1Input{Pubkeys: []xmss.CPubKey{benchPubkey}, Proof: proof, Message: root, Slot: uint32(data.Slot)})
 	}
 
 	block := &types.Block{
@@ -146,7 +146,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs = append(inputs, xmss.Type1Input{Pubkeys: []xmss.CPubKey{benchPubkey}, Proof: proposerProof})
+	inputs = append(inputs, xmss.Type1Input{Pubkeys: []xmss.CPubKey{benchPubkey}, Proof: proposerProof, Message: blockRoot, Slot: blockSlot})
 	proof, err := xmss.MergeType1Proofs(inputs)
 	if err != nil {
 		return nil, err

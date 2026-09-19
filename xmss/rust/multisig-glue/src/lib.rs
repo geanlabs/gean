@@ -1,12 +1,8 @@
-use backend::symmetric::Permutation;
-use backend::{default_koalabear_poseidon1_16, KoalaBear, PrimeField32};
-use lean_multisig::{
-    aggregate_single_message_signatures, merge_single_message_aggregates, setup_prover,
-    setup_prover_without_arena, setup_verifier, verify_multi_message_aggregate,
-    verify_single_message_aggregate, MultiMessageAggregateSignature,
-    SingleMessageAggregateSignature, XmssPublicKey, XmssSignature,
+use leanvm::xmss::{Epoch, Message, XmssPublicKey, XmssSignature, MESSAGE_LEN};
+use leanvm::{
+    aggregate, setup_prover, setup_prover_without_arena, setup_verifier, AggregationError,
+    ClaimSelection, EthereumProof, SignatureClaims, XmssClaimGroup,
 };
-use rec_aggregation::split_multi_message_aggregate_by_message;
 use std::panic::AssertUnwindSafe;
 use std::slice;
 use std::sync::OnceLock;
@@ -21,8 +17,6 @@ pub struct Signature {
     pub inner: XmssSignature,
 }
 
-const MESSAGE_LEN: usize = 32;
-
 static PROVER_READY: OnceLock<bool> = OnceLock::new();
 static VERIFIER_READY: OnceLock<bool> = OnceLock::new();
 
@@ -32,17 +26,11 @@ macro_rules! ffi_guard {
     };
 }
 
-// setup_prover enables a process-wide arena allocator and warms the prover.
-// Its single shared region means two proofs must never be generated
-// concurrently; the Go-side proving.Gate serializes all aggregate/merge/split
-// work to one at a time, so that invariant holds. Verification does not use the
-// arena and stays safe to run concurrently.
-//
-// The arena is faster but never returns pages to the OS, so RSS ratchets to the
-// allocation high-water mark and stays there. xmss_setup_prover_without_arena
-// warms the same prover on the system allocator instead: slower, but each proof's
-// scratch is freed, keeping a long-lived node's memory bounded. Only one of the
-// two is ever called (shared readiness latch), chosen once at startup.
+// leanVM allows one `aggregate` call at a time per process, and setup_prover's arena is a
+// single shared region. The Go-side proving.Gate serializes all aggregate, merge and split
+// work, so that holds. Verification is not affected and stays safe to run concurrently.
+// Only one of the two prover setups is ever called (shared readiness latch), chosen once at
+// startup.
 #[no_mangle]
 pub extern "C" fn xmss_setup_prover() -> i32 {
     let ready = PROVER_READY.get_or_init(|| std::panic::catch_unwind(setup_prover).is_ok());
@@ -91,11 +79,21 @@ unsafe fn write_out(src: &[u8], out: *mut u8, cap: usize, written: *mut usize) -
     0
 }
 
+unsafe fn read_message(ptr: *const u8) -> Option<Message> {
+    if ptr.is_null() {
+        return None;
+    }
+    slice::from_raw_parts(ptr, MESSAGE_LEN).try_into().ok()
+}
+
 unsafe fn collect_pubkeys(
     ptrs: *const *const PublicKey,
     count: usize,
 ) -> Option<Vec<XmssPublicKey>> {
-    if count > 0 && ptrs.is_null() {
+    if count == 0 {
+        return Some(Vec::new());
+    }
+    if ptrs.is_null() {
         return None;
     }
     let mut keys = Vec::with_capacity(count);
@@ -108,22 +106,141 @@ unsafe fn collect_pubkeys(
     Some(keys)
 }
 
-unsafe fn collect_key_groups(
-    flat: *const *const PublicKey,
-    counts: *const usize,
-    group_count: usize,
-) -> Option<Vec<Vec<XmssPublicKey>>> {
-    if group_count == 0 || flat.is_null() || counts.is_null() {
+/// Reads `count` claim groups: group `i` holds `pubkey_counts[i]` keys from the flattened
+/// `pubkeys`, which signed the `i`th 32-byte message in `message_hashes` at `slots[i]`.
+unsafe fn collect_groups(
+    pubkeys: *const *const PublicKey,
+    pubkey_counts: *const usize,
+    message_hashes: *const u8,
+    slots: *const u32,
+    count: usize,
+) -> Option<Vec<XmssClaimGroup>> {
+    if count == 0
+        || pubkeys.is_null()
+        || pubkey_counts.is_null()
+        || message_hashes.is_null()
+        || slots.is_null()
+    {
         return None;
     }
-    let counts = slice::from_raw_parts(counts, group_count);
-    let mut groups = Vec::with_capacity(group_count);
+    let counts = slice::from_raw_parts(pubkey_counts, count);
+    let slots = slice::from_raw_parts(slots, count);
+    let mut groups = Vec::with_capacity(count);
     let mut offset = 0usize;
-    for &count in counts {
-        groups.push(collect_pubkeys(flat.add(offset), count)?);
-        offset = offset.checked_add(count)?;
+    for i in 0..count {
+        groups.push(XmssClaimGroup {
+            epoch: slots[i],
+            message: read_message(message_hashes.add(i.checked_mul(MESSAGE_LEN)?))?,
+            keys: collect_pubkeys(pubkeys.add(offset), counts[i])?,
+        });
+        offset = offset.checked_add(counts[i])?;
     }
     Some(groups)
+}
+
+/// The signer set a proof over `groups` is bound to. leanVM requires keys strictly sorted
+/// within a group and groups strictly increasing by epoch, and the prover and every verifier
+/// must derive the identical set, so it is built here in one place: groups sharing an epoch
+/// and message are merged, keys are sorted and deduplicated. Two different messages at one
+/// epoch cannot be carried by a single proof, and yield None.
+fn signature_claims(mut groups: Vec<XmssClaimGroup>) -> Option<SignatureClaims> {
+    groups.sort_by_key(|group| group.epoch);
+    let mut merged: Vec<XmssClaimGroup> = Vec::with_capacity(groups.len());
+    for group in groups {
+        match merged.last_mut() {
+            Some(last) if last.epoch == group.epoch => {
+                if last.message != group.message {
+                    return None;
+                }
+                last.keys.extend(group.keys);
+            }
+            _ => merged.push(group),
+        }
+    }
+    for group in &mut merged {
+        group.keys.sort();
+        group.keys.dedup();
+    }
+    Some(SignatureClaims {
+        xmss: merged,
+        sphincs: Vec::new(),
+    })
+}
+
+fn single_group(
+    epoch: Epoch,
+    message: Message,
+    keys: Vec<XmssPublicKey>,
+) -> Option<SignatureClaims> {
+    signature_claims(vec![XmssClaimGroup {
+        epoch,
+        message,
+        keys,
+    }])
+}
+
+/// Decodes proof bytes against the claims the caller expects them to prove. The bytes carry
+/// no claims of their own, so a proof decoded against the wrong claims fails verification.
+unsafe fn decode_proof(
+    proof: *const u8,
+    proof_len: usize,
+    claims: SignatureClaims,
+) -> Option<EthereumProof> {
+    if proof.is_null() || proof_len == 0 {
+        return None;
+    }
+    EthereumProof::from_bytes_without_pubkeys(slice::from_raw_parts(proof, proof_len), claims).ok()
+}
+
+/// Why a proving call failed, returned as its status so a failure names its cause. The
+/// Go side maps each code to a message (xmss/ffi.go). -1 is an invalid argument and -2 an
+/// output buffer too small.
+#[derive(Clone, Copy)]
+#[repr(i32)]
+enum Failure {
+    UndecodableInput = -3,
+    ConflictingMessages = -4,
+    SplitTargetMissing = -5,
+    Panicked = -6,
+    InvalidChild = -10,
+    MalformedRawSignature = -11,
+    TooManyEpochs = -12,
+    TooLarge = -13,
+    ChildOutOfRange = -14,
+    NotCovered = -15,
+    Empty = -16,
+    InvalidRate = -17,
+    InvalidBlob = -18,
+}
+
+impl From<AggregationError> for Failure {
+    fn from(err: AggregationError) -> Self {
+        match err {
+            AggregationError::ConflictingMessages => Failure::ConflictingMessages,
+            AggregationError::InvalidChild(_) => Failure::InvalidChild,
+            AggregationError::MalformedRawSignature => Failure::MalformedRawSignature,
+            AggregationError::TooManyEpochs => Failure::TooManyEpochs,
+            AggregationError::TooLarge => Failure::TooLarge,
+            AggregationError::ChildOutOfRange { .. } => Failure::ChildOutOfRange,
+            AggregationError::NotCovered => Failure::NotCovered,
+            AggregationError::Empty => Failure::Empty,
+            AggregationError::InvalidRate { .. } => Failure::InvalidRate,
+            AggregationError::InvalidBlobSize { .. } | AggregationError::BlobNotCovered => {
+                Failure::InvalidBlob
+            }
+        }
+    }
+}
+
+/// XMSS-only `aggregate`. It panics on an invalid raw signature, so every caller runs it
+/// inside `ffi_guard`.
+fn prove(
+    children: &[EthereumProof],
+    raw: Vec<(XmssPublicKey, Epoch, Message, XmssSignature)>,
+    declare: Option<ClaimSelection<'_>>,
+    log_inv_rate: usize,
+) -> Result<EthereumProof, Failure> {
+    aggregate(children, raw, Vec::new(), &[], declare, log_inv_rate).map_err(Failure::from)
 }
 
 #[no_mangle]
@@ -143,9 +260,8 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
     cap: usize,
     written: *mut usize,
 ) -> i32 {
-    ffi_guard!(-1, {
-        if message_hash.is_null()
-            || written.is_null()
+    ffi_guard!(Failure::Panicked as i32, {
+        if written.is_null()
             || (num_raw > 0 && (raw_pub_keys.is_null() || raw_signatures.is_null()))
             || (num_children > 0
                 && (child_all_pub_keys.is_null()
@@ -155,11 +271,9 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
         {
             return -1;
         }
-        let message: [u8; MESSAGE_LEN] =
-            match slice::from_raw_parts(message_hash, MESSAGE_LEN).try_into() {
-                Ok(message) => message,
-                Err(_) => return -1,
-            };
+        let Some(message) = read_message(message_hash) else {
+            return -1;
+        };
 
         let mut raw = Vec::with_capacity(num_raw);
         if num_raw > 0 {
@@ -169,7 +283,12 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
                 if keys[i].is_null() || signatures[i].is_null() {
                     return -1;
                 }
-                raw.push(((*keys[i]).inner.clone(), (*signatures[i]).inner.clone()));
+                raw.push((
+                    (*keys[i]).inner.clone(),
+                    slot,
+                    message,
+                    (*signatures[i]).inner.clone(),
+                ));
             }
         }
 
@@ -180,32 +299,27 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
             let lengths = slice::from_raw_parts(child_proof_lens, num_children);
             let mut offset = 0usize;
             for i in 0..num_children {
-                let keys = match collect_pubkeys(child_all_pub_keys.add(offset), counts[i]) {
-                    Some(keys) => keys,
-                    None => return -1,
-                };
-                offset = match offset.checked_add(counts[i]) {
-                    Some(offset) => offset,
-                    None => return -1,
-                };
-                if proofs[i].is_null() || lengths[i] == 0 {
+                let Some(keys) = collect_pubkeys(child_all_pub_keys.add(offset), counts[i]) else {
                     return -1;
-                }
-                let proof = slice::from_raw_parts(proofs[i], lengths[i]);
-                match SingleMessageAggregateSignature::from_bytes_without_pubkeys(proof, keys) {
+                };
+                let Some(next) = offset.checked_add(counts[i]) else {
+                    return -1;
+                };
+                offset = next;
+                let Some(claims) = single_group(slot, message, keys) else {
+                    return -1;
+                };
+                match decode_proof(proofs[i], lengths[i], claims) {
                     Some(proof) => children.push(proof),
-                    None => return -1,
+                    None => return Failure::UndecodableInput as i32,
                 }
             }
         }
 
-        let proof = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-            aggregate_single_message_signatures(&children, raw, message, slot, log_inv_rate)
-        })) {
-            Ok(Ok(proof)) => proof,
-            _ => return -1,
-        };
-        write_out(&proof.to_bytes_without_pubkeys(), out, cap, written)
+        match prove(&children, raw, None, log_inv_rate) {
+            Ok(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
+            Err(failure) => failure as i32,
+        }
     })
 }
 
@@ -219,29 +333,15 @@ pub unsafe extern "C" fn xmss_verify_type_1(
     proof_len: usize,
 ) -> bool {
     ffi_guard!(false, {
-        if message_hash.is_null() || proof.is_null() || proof_len == 0 {
+        let Some(message) = read_message(message_hash) else {
             return false;
-        }
-        let message: [u8; MESSAGE_LEN] =
-            match slice::from_raw_parts(message_hash, MESSAGE_LEN).try_into() {
-                Ok(message) => message,
-                Err(_) => return false,
-            };
-        let keys = match collect_pubkeys(public_keys, num_keys) {
-            Some(keys) => keys,
-            None => return false,
         };
-        let proof = match SingleMessageAggregateSignature::from_bytes_without_pubkeys(
-            slice::from_raw_parts(proof, proof_len),
-            keys,
-        ) {
-            Some(proof) => proof,
-            None => return false,
-        };
-        if proof.info.core.message != message || proof.info.core.slot != slot {
+        let Some(claims) = collect_pubkeys(public_keys, num_keys)
+            .and_then(|keys| single_group(slot, message, keys))
+        else {
             return false;
-        }
-        verify_single_message_aggregate(&proof).is_ok()
+        };
+        decode_proof(proof, proof_len, claims).is_some_and(|proof| proof.verify().is_ok())
     })
 }
 
@@ -251,57 +351,53 @@ pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
     proof_lens: *const usize,
     pubkeys: *const *const PublicKey,
     pubkey_counts: *const usize,
+    message_hashes: *const u8,
+    message_slots: *const u32,
     count: usize,
     log_inv_rate: usize,
     out: *mut u8,
     cap: usize,
     written: *mut usize,
 ) -> i32 {
-    ffi_guard!(-1, {
-        if count == 0
-            || proof_ptrs.is_null()
-            || proof_lens.is_null()
-            || pubkeys.is_null()
-            || pubkey_counts.is_null()
-            || written.is_null()
-        {
+    ffi_guard!(Failure::Panicked as i32, {
+        if proof_ptrs.is_null() || proof_lens.is_null() || written.is_null() {
             return -1;
         }
+        let Some(groups) =
+            collect_groups(pubkeys, pubkey_counts, message_hashes, message_slots, count)
+        else {
+            return -1;
+        };
         let proof_ptrs = slice::from_raw_parts(proof_ptrs, count);
         let proof_lens = slice::from_raw_parts(proof_lens, count);
-        let groups = match collect_key_groups(pubkeys, pubkey_counts, count) {
-            Some(groups) => groups,
-            None => return -1,
-        };
-        let mut proofs = Vec::with_capacity(count);
-        for i in 0..count {
-            if proof_ptrs[i].is_null() || proof_lens[i] == 0 {
+        let mut children = Vec::with_capacity(count);
+        for (i, group) in groups.into_iter().enumerate() {
+            let Some(claims) = signature_claims(vec![group]) else {
                 return -1;
-            }
-            match SingleMessageAggregateSignature::from_bytes_without_pubkeys(
-                slice::from_raw_parts(proof_ptrs[i], proof_lens[i]),
-                groups[i].clone(),
-            ) {
-                Some(proof) => proofs.push(proof),
-                None => return -1,
+            };
+            match decode_proof(proof_ptrs[i], proof_lens[i], claims) {
+                Some(proof) => children.push(proof),
+                None => return Failure::UndecodableInput as i32,
             }
         }
-        let proof = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-            merge_single_message_aggregates(proofs, log_inv_rate)
-        })) {
-            Ok(Ok(proof)) => proof,
-            _ => return -1,
-        };
-        write_out(&proof.to_bytes_without_pubkeys(), out, cap, written)
+        match prove(&children, Vec::new(), None, log_inv_rate) {
+            Ok(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
+            Err(failure) => failure as i32,
+        }
     })
 }
 
+/// Re-proves the one group of a Type-2 proof that signed `target_message` as a standalone
+/// Type-1. leanVM has no cheaper split: the Type-2 is a child of a new proof that declares
+/// only the kept group.
 #[no_mangle]
 pub unsafe extern "C" fn xmss_split_type_2_by_message(
     proof: *const u8,
     proof_len: usize,
     pubkeys: *const *const PublicKey,
     pubkey_counts: *const usize,
+    message_hashes: *const u8,
+    message_slots: *const u32,
     count: usize,
     target_message: *const u8,
     log_inv_rate: usize,
@@ -309,33 +405,40 @@ pub unsafe extern "C" fn xmss_split_type_2_by_message(
     cap: usize,
     written: *mut usize,
 ) -> i32 {
-    ffi_guard!(-1, {
-        if proof.is_null() || proof_len == 0 || target_message.is_null() || written.is_null() {
+    ffi_guard!(Failure::Panicked as i32, {
+        if written.is_null() {
             return -1;
         }
-        let groups = match collect_key_groups(pubkeys, pubkey_counts, count) {
-            Some(groups) => groups,
-            None => return -1,
+        let Some(target) = read_message(target_message) else {
+            return -1;
         };
-        let proof = match MultiMessageAggregateSignature::from_bytes_without_pubkeys(
-            slice::from_raw_parts(proof, proof_len),
-            groups,
-        ) {
-            Some(proof) => proof,
-            None => return -1,
+        let Some(groups) =
+            collect_groups(pubkeys, pubkey_counts, message_hashes, message_slots, count)
+        else {
+            return -1;
         };
-        let target: [u8; MESSAGE_LEN] =
-            match slice::from_raw_parts(target_message, MESSAGE_LEN).try_into() {
-                Ok(target) => target,
-                Err(_) => return -1,
-            };
-        let proof = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-            split_multi_message_aggregate_by_message(proof, target, log_inv_rate)
-        })) {
-            Ok(Ok(proof)) => proof,
-            _ => return -1,
+        let Some(claims) = signature_claims(groups) else {
+            return Failure::ConflictingMessages as i32;
         };
-        write_out(&proof.to_bytes_without_pubkeys(), out, cap, written)
+        let mut kept = claims.xmss.iter().filter(|group| group.message == target);
+        let (Some(group), None) = (kept.next(), kept.next()) else {
+            return Failure::SplitTargetMissing as i32;
+        };
+        let kept = SignatureClaims {
+            xmss: vec![group.clone()],
+            sphincs: Vec::new(),
+        };
+        let Some(type_2) = decode_proof(proof, proof_len, claims) else {
+            return Failure::UndecodableInput as i32;
+        };
+        let declare = ClaimSelection {
+            signatures: &kept,
+            da_commitments: &[],
+        };
+        match prove(&[type_2], Vec::new(), Some(declare), log_inv_rate) {
+            Ok(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
+            Err(failure) => failure as i32,
+        }
     })
 }
 
@@ -350,65 +453,12 @@ pub unsafe extern "C" fn xmss_verify_type_2(
     message_slots: *const u32,
 ) -> bool {
     ffi_guard!(false, {
-        if proof.is_null() || proof_len == 0 || message_hashes.is_null() || message_slots.is_null()
-        {
+        let Some(claims) =
+            collect_groups(pubkeys, pubkey_counts, message_hashes, message_slots, count)
+                .and_then(signature_claims)
+        else {
             return false;
-        }
-        let groups = match collect_key_groups(pubkeys, pubkey_counts, count) {
-            Some(groups) => groups,
-            None => return false,
         };
-        let proof = match MultiMessageAggregateSignature::from_bytes_without_pubkeys(
-            slice::from_raw_parts(proof, proof_len),
-            groups,
-        ) {
-            Some(proof) => proof,
-            None => return false,
-        };
-        if proof.info.len() != count {
-            return false;
-        }
-        let hashes = slice::from_raw_parts(message_hashes, count * MESSAGE_LEN);
-        let slots = slice::from_raw_parts(message_slots, count);
-        for i in 0..count {
-            let mut expected = [0; MESSAGE_LEN];
-            expected.copy_from_slice(&hashes[i * MESSAGE_LEN..(i + 1) * MESSAGE_LEN]);
-            if proof.info[i].core.message != expected || proof.info[i].core.slot != slots[i] {
-                return false;
-            }
-        }
-        verify_multi_message_aggregate(&proof).is_ok()
+        decode_proof(proof, proof_len, claims).is_some_and(|proof| proof.verify().is_ok())
     })
-}
-
-// Poseidon permutation over KoalaBear, exposed for spec test vectors. The state
-// is the canonical u32 field representation, permuted in place. This is the same
-// instance the XMSS stack hashes with, so it matches the spec. Returns -1 on a
-// null pointer or wrong width.
-#[no_mangle]
-pub unsafe extern "C" fn poseidon_permute_kb16(state: *mut u32, len: usize) -> i32 {
-    ffi_guard!(-1, {
-        if state.is_null() || len != 16 {
-            return -1;
-        }
-        let raw = slice::from_raw_parts_mut(state, 16);
-        let mut input = [0u32; 16];
-        input.copy_from_slice(raw);
-        let mut fe = KoalaBear::new_array(input);
-        default_koalabear_poseidon1_16().permute_mut(&mut fe);
-        for (dst, x) in raw.iter_mut().zip(fe.iter()) {
-            *dst = x.as_canonical_u32();
-        }
-        0
-    })
-}
-
-// SPIKE FOLLOW-UP: leanVM's internalized XMSS dropped the width-24 Poseidon permutation
-// (the scheme now hashes only with width-16 `poseidon16_compress`), so there is no upstream
-// constructor to back this. Returns -1 (unsupported) rather than silently mis-permuting.
-// The only consumer is the `poseidon_permutation` spec-vector test; revisit when the leanSpec
-// pin bumps to the new scheme — the vector set is expected to drop width-24 too.
-#[no_mangle]
-pub unsafe extern "C" fn poseidon_permute_kb24(_state: *mut u32, _len: usize) -> i32 {
-    -1
 }

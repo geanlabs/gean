@@ -75,11 +75,14 @@ via the environment if your budget differs.
 
 Gean tracks Lean Consensus devnet-5. Consensus fixtures are generated from
 `leanSpec@eca701efeb5931010fe63925cd203c9ee55b2dbc`, which pins
-`lean-multisig-py` v0.0.9. The XMSS FFI builds against
-leanVM `e2592df4e30fdddbbf8ae26a333116c68cec7026`.
+`lean-multisig-py` v0.0.9. The XMSS FFI builds against leanVM
+`022ec377a39de6c6982cb0d88799d54b05d5c981`, the BLAKE2s line: keys and proofs
+from the earlier Poseidon line do not verify against it, and validator keys must
+come from a keygen built on the same rev.
 
 `LEAN_SPEC_COMMIT_HASH` in the [`Makefile`](Makefile) is the source of truth for
 the spec version; the leanVM rev is pinned in
+[`xmss/rust/hashsig-glue/Cargo.toml`](xmss/rust/hashsig-glue/Cargo.toml) and
 [`xmss/rust/multisig-glue/Cargo.toml`](xmss/rust/multisig-glue/Cargo.toml).
 
 ## Philosophy
