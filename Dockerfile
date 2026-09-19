@@ -72,6 +72,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends libjemalloc2 \
     && ldconfig -p | grep -q 'libjemalloc\.so\.2'
 ENV LD_PRELOAD=libjemalloc.so.2
 
+# jemalloc purges freed pages only when the arena that freed them is used again,
+# unless its background threads are on, and they are off by default. A proof
+# spreads gigabytes across the prover's worker threads and then leaves those
+# arenas idle, so hundreds of megabytes stayed resident between proofs. Devnet,
+# 16 nodes over 10 hours, the only difference being this setting: 268 MB average
+# against 729 MB, with identical proof and verification times.
+ENV MALLOC_CONF=background_thread:true
+
 # Keep the Go heap tight so the XMSS prover's transient multi-GB proving
 # peaks (allocated by the Rust arena, invisible to the Go GC) land on free
 # memory instead of an uncollected heap. Operators can override.
