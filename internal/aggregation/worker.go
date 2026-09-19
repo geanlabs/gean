@@ -107,7 +107,7 @@ func RunWorker(
 			// The window is what the dispatcher actually allowed, which is less
 			// than SessionBudget whenever the gate was held for a while.
 			budget := deadline.Sub(workerStart)
-			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(dispatch.Snapshot, cache, deadline, dispatch.MaxGroups, shadowRates, estimator)
+			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(gate.ProposalPending, dispatch.Snapshot, cache, deadline, dispatch.MaxGroups, shadowRates, estimator)
 			workerElapsed := time.Since(workerStart)
 			if gate != nil {
 				gate.Release(false)
@@ -115,6 +115,8 @@ func RunWorker(
 			if truncated {
 				metrics.IncProofOperation("aggregation", "truncated")
 				switch {
+				case skips[metrics.AggGroupSkipProposalPending] > 0:
+					logger.Info(logger.Signature, "aggregation yielded to proposal: slot=%d produced=%d duration=%v", dispatch.Slot, len(aggs), workerElapsed)
 				case len(aggs) == 0:
 					// No output plus a budget stop is the actionable starvation case.
 					logger.Warn(logger.Signature, "aggregation session hit budget without output: slot=%d produced=0 duration=%v", dispatch.Slot, workerElapsed)

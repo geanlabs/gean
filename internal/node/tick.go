@@ -53,10 +53,8 @@ func (e *Engine) onTick() {
 		// Dispatch unconditionally, matching leanSpec's interval-2 aggregation:
 		// a sole aggregator that also proposes next would otherwise never
 		// aggregate at all. The proving gate's proposal priority only defers
-		// the *next* background acquire; it cannot preempt a session already
-		// holding the token, so a proposal duty landing mid-session waits for
-		// the whole session. What bounds that wait is the per-session group
-		// cap, not the gate.
+		// next proof attempt. The session yields between proofs when a proposal
+		// is waiting, but a native proof already running cannot be interrupted.
 		e.dispatchAggregationCycle(timestampMs, currentSlot, isAgg)
 	}
 

@@ -43,7 +43,7 @@ func TestAggregateFromSnapshotCapsGroupsPerSession(t *testing.T) {
 				return []byte{1}, nil
 			}
 
-			aggs, _, _, truncated, skips := aggregateFromSnapshotWithProver(
+			aggs, _, _, truncated, skips := aggregateFromSnapshotWithProver(nil,
 				snap, cache, time.Now().Add(time.Hour), tc.maxGroups, shadow.Rates{}, newUnitCostEstimator(), prove)
 
 			if calls != tc.wantProve {

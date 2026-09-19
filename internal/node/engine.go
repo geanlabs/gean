@@ -69,6 +69,10 @@ type Engine struct {
 	RecoveryCh            chan *types.SignedBlock
 	ProvingGate           *proving.Gate
 
+	// Dispatch-owned reservation survives dequeue and result acceptance.
+	lastProposalDuty proposalDuty
+	proposalReserved bool
+
 	// storageWorkers tracks the storage-size sampler so shutdown can join it
 	// before the database is closed: a sampler still running after Close calls
 	// into a closed Pebble instance, which panics rather than erroring.
