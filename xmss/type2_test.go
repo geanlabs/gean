@@ -1,6 +1,10 @@
 package xmss
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestType2Roundtrip(t *testing.T) {
 	key, err := GenerateKeyPair("type-2-roundtrip", 0, 1<<10)
@@ -105,7 +109,11 @@ func TestType2RejectsTwoMessagesAtOneSlot(t *testing.T) {
 		inputs = append(inputs, Type1Input{Pubkeys: []CPubKey{pubkey}, Proof: proof, Message: message, Slot: slot})
 	}
 
-	if _, err := MergeType1Proofs(inputs); err == nil {
+	_, err := MergeType1Proofs(inputs)
+	if err == nil {
 		t.Fatal("merged two different messages at one slot")
+	}
+	if !errors.Is(err, ErrAggregationFailed) || !strings.Contains(err.Error(), "two different messages at one slot") {
+		t.Fatalf("merge failed without naming the cause: %v", err)
 	}
 }

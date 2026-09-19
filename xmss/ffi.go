@@ -309,7 +309,7 @@ func AggregateWithChildren(
 		if status == -2 || int(written) > MaxProofSize {
 			return nil, ErrProofTooBig
 		}
-		return nil, ErrAggregationFailed
+		return nil, proofFailure(status)
 	}
 	if written == 0 {
 		return nil, ErrSerializationFailed
@@ -602,12 +602,37 @@ func flattenBindings(bindings []MessageBinding) ([]byte, []C.uint32_t) {
 	return hashes, slots
 }
 
+// proofFailures names the status codes the proving calls return (Failure in
+// multisig-glue), so a proof that could not be built says why.
+var proofFailures = map[C.int32_t]string{
+	-3:  "an input proof does not decode against its claims",
+	-4:  "two different messages at one slot",
+	-5:  "split target is not a group of the proof",
+	-6:  "prover panicked",
+	-10: "an input proof does not verify",
+	-11: "malformed raw signature",
+	-12: "too many slots",
+	-13: "too many inputs or signers",
+	-14: "an input proof is too large",
+	-15: "declared claim is not covered by the inputs",
+	-16: "nothing to prove",
+	-17: "invalid proof rate",
+	-18: "invalid data-availability input",
+}
+
+func proofFailure(status C.int32_t) error {
+	if reason, ok := proofFailures[status]; ok {
+		return fmt.Errorf("%w: %s", ErrAggregationFailed, reason)
+	}
+	return ErrAggregationFailed
+}
+
 func proofResult(status C.int32_t, written C.size_t, buf []byte) ([]byte, error) {
 	if status != 0 {
 		if status == -2 || int(written) > MaxProofSize {
 			return nil, ErrProofTooBig
 		}
-		return nil, ErrAggregationFailed
+		return nil, proofFailure(status)
 	}
 	if written == 0 {
 		return nil, ErrSerializationFailed
