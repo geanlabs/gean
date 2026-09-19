@@ -1,7 +1,7 @@
 use leanvm::xmss::{Epoch, Message, XmssPublicKey, XmssSignature, MESSAGE_LEN};
 use leanvm::{
-    aggregate, setup_prover, setup_prover_without_arena, setup_verifier, ClaimSelection,
-    EthereumProof, SignatureClaims, XmssClaimGroup,
+    aggregate, setup_prover, setup_prover_without_arena, setup_verifier, AggregationError,
+    ClaimSelection, EthereumProof, SignatureClaims, XmssClaimGroup,
 };
 use std::panic::AssertUnwindSafe;
 use std::slice;
@@ -192,6 +192,46 @@ unsafe fn decode_proof(
     EthereumProof::from_bytes_without_pubkeys(slice::from_raw_parts(proof, proof_len), claims).ok()
 }
 
+/// Why a proving call failed, returned as its status so a failure names its cause. The
+/// Go side maps each code to a message (xmss/ffi.go). -1 is an invalid argument and -2 an
+/// output buffer too small.
+#[derive(Clone, Copy)]
+#[repr(i32)]
+enum Failure {
+    UndecodableInput = -3,
+    ConflictingMessages = -4,
+    SplitTargetMissing = -5,
+    Panicked = -6,
+    InvalidChild = -10,
+    MalformedRawSignature = -11,
+    TooManyEpochs = -12,
+    TooLarge = -13,
+    ChildOutOfRange = -14,
+    NotCovered = -15,
+    Empty = -16,
+    InvalidRate = -17,
+    InvalidBlob = -18,
+}
+
+impl From<AggregationError> for Failure {
+    fn from(err: AggregationError) -> Self {
+        match err {
+            AggregationError::ConflictingMessages => Failure::ConflictingMessages,
+            AggregationError::InvalidChild(_) => Failure::InvalidChild,
+            AggregationError::MalformedRawSignature => Failure::MalformedRawSignature,
+            AggregationError::TooManyEpochs => Failure::TooManyEpochs,
+            AggregationError::TooLarge => Failure::TooLarge,
+            AggregationError::ChildOutOfRange { .. } => Failure::ChildOutOfRange,
+            AggregationError::NotCovered => Failure::NotCovered,
+            AggregationError::Empty => Failure::Empty,
+            AggregationError::InvalidRate { .. } => Failure::InvalidRate,
+            AggregationError::InvalidBlobSize { .. } | AggregationError::BlobNotCovered => {
+                Failure::InvalidBlob
+            }
+        }
+    }
+}
+
 /// XMSS-only `aggregate`. It panics on an invalid raw signature, so every caller runs it
 /// inside `ffi_guard`.
 fn prove(
@@ -199,8 +239,8 @@ fn prove(
     raw: Vec<(XmssPublicKey, Epoch, Message, XmssSignature)>,
     declare: Option<ClaimSelection<'_>>,
     log_inv_rate: usize,
-) -> Option<EthereumProof> {
-    aggregate(children, raw, Vec::new(), &[], declare, log_inv_rate).ok()
+) -> Result<EthereumProof, Failure> {
+    aggregate(children, raw, Vec::new(), &[], declare, log_inv_rate).map_err(Failure::from)
 }
 
 #[no_mangle]
@@ -220,7 +260,7 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
     cap: usize,
     written: *mut usize,
 ) -> i32 {
-    ffi_guard!(-1, {
+    ffi_guard!(Failure::Panicked as i32, {
         if written.is_null()
             || (num_raw > 0 && (raw_pub_keys.is_null() || raw_signatures.is_null()))
             || (num_children > 0
@@ -271,14 +311,14 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
                 };
                 match decode_proof(proofs[i], lengths[i], claims) {
                     Some(proof) => children.push(proof),
-                    None => return -1,
+                    None => return Failure::UndecodableInput as i32,
                 }
             }
         }
 
         match prove(&children, raw, None, log_inv_rate) {
-            Some(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
-            None => -1,
+            Ok(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
+            Err(failure) => failure as i32,
         }
     })
 }
@@ -319,7 +359,7 @@ pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
     cap: usize,
     written: *mut usize,
 ) -> i32 {
-    ffi_guard!(-1, {
+    ffi_guard!(Failure::Panicked as i32, {
         if proof_ptrs.is_null() || proof_lens.is_null() || written.is_null() {
             return -1;
         }
@@ -337,12 +377,12 @@ pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
             };
             match decode_proof(proof_ptrs[i], proof_lens[i], claims) {
                 Some(proof) => children.push(proof),
-                None => return -1,
+                None => return Failure::UndecodableInput as i32,
             }
         }
         match prove(&children, Vec::new(), None, log_inv_rate) {
-            Some(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
-            None => -1,
+            Ok(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
+            Err(failure) => failure as i32,
         }
     })
 }
@@ -365,37 +405,39 @@ pub unsafe extern "C" fn xmss_split_type_2_by_message(
     cap: usize,
     written: *mut usize,
 ) -> i32 {
-    ffi_guard!(-1, {
+    ffi_guard!(Failure::Panicked as i32, {
         if written.is_null() {
             return -1;
         }
         let Some(target) = read_message(target_message) else {
             return -1;
         };
-        let Some(claims) =
+        let Some(groups) =
             collect_groups(pubkeys, pubkey_counts, message_hashes, message_slots, count)
-                .and_then(signature_claims)
         else {
             return -1;
         };
+        let Some(claims) = signature_claims(groups) else {
+            return Failure::ConflictingMessages as i32;
+        };
         let mut kept = claims.xmss.iter().filter(|group| group.message == target);
         let (Some(group), None) = (kept.next(), kept.next()) else {
-            return -1;
+            return Failure::SplitTargetMissing as i32;
         };
         let kept = SignatureClaims {
             xmss: vec![group.clone()],
             sphincs: Vec::new(),
         };
         let Some(type_2) = decode_proof(proof, proof_len, claims) else {
-            return -1;
+            return Failure::UndecodableInput as i32;
         };
         let declare = ClaimSelection {
             signatures: &kept,
             da_commitments: &[],
         };
         match prove(&[type_2], Vec::new(), Some(declare), log_inv_rate) {
-            Some(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
-            None => -1,
+            Ok(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
+            Err(failure) => failure as i32,
         }
     })
 }
