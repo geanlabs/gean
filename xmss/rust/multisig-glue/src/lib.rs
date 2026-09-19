@@ -138,6 +138,39 @@ unsafe fn collect_groups(
     Some(groups)
 }
 
+/// Reads `count` raw signatures: signature `i` is by `keys[i]` over the `i`th 32-byte message
+/// in `message_hashes`, at `slots[i]`.
+unsafe fn collect_raw(
+    keys: *const *const PublicKey,
+    signatures: *const *const Signature,
+    message_hashes: *const u8,
+    slots: *const u32,
+    count: usize,
+) -> Option<Vec<(XmssPublicKey, Epoch, Message, XmssSignature)>> {
+    if count == 0 {
+        return Some(Vec::new());
+    }
+    if keys.is_null() || signatures.is_null() || message_hashes.is_null() || slots.is_null() {
+        return None;
+    }
+    let keys = slice::from_raw_parts(keys, count);
+    let signatures = slice::from_raw_parts(signatures, count);
+    let slots = slice::from_raw_parts(slots, count);
+    let mut raw = Vec::with_capacity(count);
+    for i in 0..count {
+        if keys[i].is_null() || signatures[i].is_null() {
+            return None;
+        }
+        raw.push((
+            (*keys[i]).inner.clone(),
+            slots[i],
+            read_message(message_hashes.add(i.checked_mul(MESSAGE_LEN)?))?,
+            (*signatures[i]).inner.clone(),
+        ));
+    }
+    Some(raw)
+}
+
 /// The signer set a proof over `groups` is bound to. leanVM requires keys strictly sorted
 /// within a group and groups strictly increasing by epoch, and the prover and every verifier
 /// must derive the identical set, so it is built here in one place: groups sharing an epoch
@@ -345,6 +378,8 @@ pub unsafe extern "C" fn xmss_verify_type_1(
     })
 }
 
+/// Merges Type-1 proofs, and raw signatures folded in as they are, into one Type-2. Proving
+/// a raw signature on its own first and merging that proof would cost a whole extra proof.
 #[no_mangle]
 pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
     proof_ptrs: *const *const u8,
@@ -354,33 +389,52 @@ pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
     message_hashes: *const u8,
     message_slots: *const u32,
     count: usize,
+    raw_pub_keys: *const *const PublicKey,
+    raw_signatures: *const *const Signature,
+    raw_message_hashes: *const u8,
+    raw_slots: *const u32,
+    num_raw: usize,
     log_inv_rate: usize,
     out: *mut u8,
     cap: usize,
     written: *mut usize,
 ) -> i32 {
     ffi_guard!(Failure::Panicked as i32, {
-        if proof_ptrs.is_null() || proof_lens.is_null() || written.is_null() {
+        if written.is_null() {
             return -1;
         }
-        let Some(groups) =
-            collect_groups(pubkeys, pubkey_counts, message_hashes, message_slots, count)
-        else {
-            return -1;
-        };
-        let proof_ptrs = slice::from_raw_parts(proof_ptrs, count);
-        let proof_lens = slice::from_raw_parts(proof_lens, count);
         let mut children = Vec::with_capacity(count);
-        for (i, group) in groups.into_iter().enumerate() {
-            let Some(claims) = signature_claims(vec![group]) else {
+        if count > 0 {
+            if proof_ptrs.is_null() || proof_lens.is_null() {
+                return -1;
+            }
+            let Some(groups) =
+                collect_groups(pubkeys, pubkey_counts, message_hashes, message_slots, count)
+            else {
                 return -1;
             };
-            match decode_proof(proof_ptrs[i], proof_lens[i], claims) {
-                Some(proof) => children.push(proof),
-                None => return Failure::UndecodableInput as i32,
+            let proof_ptrs = slice::from_raw_parts(proof_ptrs, count);
+            let proof_lens = slice::from_raw_parts(proof_lens, count);
+            for (i, group) in groups.into_iter().enumerate() {
+                let Some(claims) = signature_claims(vec![group]) else {
+                    return -1;
+                };
+                match decode_proof(proof_ptrs[i], proof_lens[i], claims) {
+                    Some(proof) => children.push(proof),
+                    None => return Failure::UndecodableInput as i32,
+                }
             }
         }
-        match prove(&children, Vec::new(), None, log_inv_rate) {
+        let Some(raw) = collect_raw(
+            raw_pub_keys,
+            raw_signatures,
+            raw_message_hashes,
+            raw_slots,
+            num_raw,
+        ) else {
+            return -1;
+        };
+        match prove(&children, raw, None, log_inv_rate) {
             Ok(proof) => write_out(&proof.to_bytes_without_pubkeys(), out, cap, written),
             Err(failure) => failure as i32,
         }

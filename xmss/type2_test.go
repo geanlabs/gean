@@ -2,6 +2,7 @@ package xmss
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -48,7 +49,7 @@ func TestType2Roundtrip(t *testing.T) {
 		inputs = append(inputs, Type1Input{Pubkeys: []CPubKey{pubkey}, Proof: proof, Message: message, Slot: uint32(slot)})
 	}
 
-	proof, err := MergeType1Proofs(inputs)
+	proof, err := MergeType1Proofs(inputs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,11 +110,76 @@ func TestType2RejectsTwoMessagesAtOneSlot(t *testing.T) {
 		inputs = append(inputs, Type1Input{Pubkeys: []CPubKey{pubkey}, Proof: proof, Message: message, Slot: slot})
 	}
 
-	_, err := MergeType1Proofs(inputs)
+	_, err := MergeType1Proofs(inputs, nil)
 	if err == nil {
 		t.Fatal("merged two different messages at one slot")
 	}
 	if !errors.Is(err, ErrAggregationFailed) || !strings.Contains(err.Error(), "two different messages at one slot") {
 		t.Fatalf("merge failed without naming the cause: %v", err)
+	}
+}
+
+// A raw signature merged beside Type-1 proofs is bound to its own message and slot,
+// exactly as a proof of it would be.
+func TestType2MergesRawSignature(t *testing.T) {
+	keys := make([]*ValidatorKeyPair, 3)
+	pubkeys := make([]CPubKey, 3)
+	for i := range keys {
+		key, err := GenerateKeyPair(fmt.Sprintf("raw-merge-%d", i), 0, 1<<10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer key.Close()
+		pubkeyBytes, err := key.PublicKeyBytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		pubkey, err := ParsePublicKey(pubkeyBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer FreePublicKey(pubkey)
+		keys[i], pubkeys[i] = key, pubkey
+	}
+	sign := func(i int, slot uint32, message [32]byte) CSig {
+		raw, err := keys[i].Sign(slot, message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig, err := ParseSignature(raw[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { FreeSignature(sig) })
+		return sig
+	}
+
+	var bindings []MessageBinding
+	var inputs []Type1Input
+	for i, slot := range []uint32{1, 2} {
+		var message [32]byte
+		message[0] = byte(slot)
+		proof, err := AggregateSignatures([]CPubKey{pubkeys[i]}, []CSig{sign(i, slot, message)}, message, slot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inputs = append(inputs, Type1Input{Pubkeys: []CPubKey{pubkeys[i]}, Proof: proof, Message: message, Slot: slot})
+		bindings = append(bindings, MessageBinding{Message: message, Slot: slot})
+	}
+	var blockRoot [32]byte
+	blockRoot[0] = 0xB
+	proposer := RawSignature{Pubkey: pubkeys[2], Signature: sign(2, 3, blockRoot), Message: blockRoot, Slot: 3}
+
+	proof, err := MergeType1Proofs(inputs, []RawSignature{proposer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := [][]CPubKey{{pubkeys[0]}, {pubkeys[1]}, {pubkeys[2]}}
+	if err := VerifyType2Proof(proof, groups, append(bindings, MessageBinding{Message: blockRoot, Slot: 3})); err != nil {
+		t.Fatal(err)
+	}
+	var otherRoot [32]byte
+	if VerifyType2Proof(proof, groups, append(bindings, MessageBinding{Message: otherRoot, Slot: 3})) == nil {
+		t.Fatal("verified against a different proposer message")
 	}
 }

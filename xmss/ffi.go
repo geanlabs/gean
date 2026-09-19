@@ -69,7 +69,10 @@ package xmss
 //     const uint8_t* const* proof_ptrs, const size_t* proof_lens,
 //     const PublicKey* const* pubkeys, const size_t* pubkey_counts,
 //     const uint8_t* message_hashes, const uint32_t* message_slots,
-//     size_t count, size_t log_inv_rate,
+//     size_t count,
+//     const PublicKey* const* raw_pub_keys, const Signature* const* raw_signatures,
+//     const uint8_t* raw_message_hashes, const uint32_t* raw_slots, size_t num_raw,
+//     size_t log_inv_rate,
 //     uint8_t* out_buf, size_t out_cap, size_t* out_written);
 //
 // int32_t xmss_split_type_2_by_message(
@@ -419,8 +422,19 @@ type MessageBinding struct {
 	Slot    uint32
 }
 
-func MergeType1Proofs(inputs []Type1Input) ([]byte, error) {
-	if len(inputs) == 0 {
+// RawSignature is a signature merged into a Type-2 as it is, without first being proved
+// on its own.
+type RawSignature struct {
+	Pubkey    CPubKey
+	Signature CSig
+	Message   [MessageLength]byte
+	Slot      uint32
+}
+
+// MergeType1Proofs merges Type-1 proofs, and raw signatures folded in directly, into one
+// Type-2. Either list may be empty, not both.
+func MergeType1Proofs(inputs []Type1Input, raw []RawSignature) ([]byte, error) {
+	if len(inputs) == 0 && len(raw) == 0 {
 		return nil, ErrEmptyInput
 	}
 	if err := EnsureProverReady(); err != nil {
@@ -430,46 +444,86 @@ func MergeType1Proofs(inputs []Type1Input) ([]byte, error) {
 	var pinner runtime.Pinner
 	defer pinner.Unpin()
 
-	proofPtrs := make([]*C.uint8_t, len(inputs))
-	proofLens := make([]C.size_t, len(inputs))
-	keyCounts := make([]C.size_t, len(inputs))
-	bindings := make([]MessageBinding, len(inputs))
-	var keys []*C.PublicKey
-	for i, input := range inputs {
-		bindings[i] = MessageBinding{Message: input.Message, Slot: input.Slot}
-		if len(input.Proof) == 0 || len(input.Proof) > MaxProofSize {
-			return nil, ErrMalformedChildProof
+	var (
+		proofPtrsPtr **C.uint8_t
+		proofLensPtr *C.size_t
+		keysPtr      **C.PublicKey
+		countsPtr    *C.size_t
+		hashesPtr    *C.uint8_t
+		slotsPtr     *C.uint32_t
+	)
+	if len(inputs) > 0 {
+		proofPtrs := make([]*C.uint8_t, len(inputs))
+		proofLens := make([]C.size_t, len(inputs))
+		keyCounts := make([]C.size_t, len(inputs))
+		bindings := make([]MessageBinding, len(inputs))
+		var keys []*C.PublicKey
+		for i, input := range inputs {
+			bindings[i] = MessageBinding{Message: input.Message, Slot: input.Slot}
+			if len(input.Proof) == 0 || len(input.Proof) > MaxProofSize {
+				return nil, ErrMalformedChildProof
+			}
+			if err := validatePublicKeys(input.Pubkeys); err != nil {
+				return nil, err
+			}
+			pinner.Pin(&input.Proof[0])
+			proofPtrs[i] = (*C.uint8_t)(unsafe.Pointer(&input.Proof[0]))
+			proofLens[i] = C.size_t(len(input.Proof))
+			keyCounts[i] = C.size_t(len(input.Pubkeys))
+			for _, key := range input.Pubkeys {
+				keys = append(keys, (*C.PublicKey)(key))
+			}
 		}
-		if err := validatePublicKeys(input.Pubkeys); err != nil {
-			return nil, err
+		if len(keys) == 0 {
+			return nil, ErrEmptyInput
 		}
-		pinner.Pin(&input.Proof[0])
-		proofPtrs[i] = (*C.uint8_t)(unsafe.Pointer(&input.Proof[0]))
-		proofLens[i] = C.size_t(len(input.Proof))
-		keyCounts[i] = C.size_t(len(input.Pubkeys))
-		for _, key := range input.Pubkeys {
-			keys = append(keys, (*C.PublicKey)(key))
-		}
+		hashes, slots := flattenBindings(bindings)
+		pinner.Pin(&proofPtrs[0])
+		pinner.Pin(&keys[0])
+		proofPtrsPtr = (**C.uint8_t)(unsafe.Pointer(&proofPtrs[0]))
+		proofLensPtr = (*C.size_t)(unsafe.Pointer(&proofLens[0]))
+		keysPtr = (**C.PublicKey)(unsafe.Pointer(&keys[0]))
+		countsPtr = (*C.size_t)(unsafe.Pointer(&keyCounts[0]))
+		hashesPtr = (*C.uint8_t)(unsafe.Pointer(&hashes[0]))
+		slotsPtr = (*C.uint32_t)(unsafe.Pointer(&slots[0]))
 	}
-	if len(keys) == 0 {
-		return nil, ErrEmptyInput
+
+	var (
+		rawKeysPtr   **C.PublicKey
+		rawSigsPtr   **C.Signature
+		rawHashesPtr *C.uint8_t
+		rawSlotsPtr  *C.uint32_t
+	)
+	if len(raw) > 0 {
+		rawKeys := make([]*C.PublicKey, len(raw))
+		rawSigs := make([]*C.Signature, len(raw))
+		bindings := make([]MessageBinding, len(raw))
+		for i, r := range raw {
+			if r.Pubkey == nil || r.Signature == nil {
+				return nil, fmt.Errorf("%w: raw signature %d", ErrMalformedRawInput, i)
+			}
+			rawKeys[i] = (*C.PublicKey)(r.Pubkey)
+			rawSigs[i] = (*C.Signature)(r.Signature)
+			bindings[i] = MessageBinding{Message: r.Message, Slot: r.Slot}
+		}
+		hashes, slots := flattenBindings(bindings)
+		pinner.Pin(&rawKeys[0])
+		pinner.Pin(&rawSigs[0])
+		rawKeysPtr = (**C.PublicKey)(unsafe.Pointer(&rawKeys[0]))
+		rawSigsPtr = (**C.Signature)(unsafe.Pointer(&rawSigs[0]))
+		rawHashesPtr = (*C.uint8_t)(unsafe.Pointer(&hashes[0]))
+		rawSlotsPtr = (*C.uint32_t)(unsafe.Pointer(&slots[0]))
 	}
-	hashes, slots := flattenBindings(bindings)
-	pinner.Pin(&proofPtrs[0])
-	pinner.Pin(&keys[0])
 
 	bufPtr := getProofBuf()
 	defer putProofBuf(bufPtr)
 	buf := *bufPtr
 	var written C.size_t
 	status := C.xmss_merge_type_1_to_type_2(
-		(**C.uint8_t)(unsafe.Pointer(&proofPtrs[0])),
-		(*C.size_t)(unsafe.Pointer(&proofLens[0])),
-		(**C.PublicKey)(unsafe.Pointer(&keys[0])),
-		(*C.size_t)(unsafe.Pointer(&keyCounts[0])),
-		(*C.uint8_t)(unsafe.Pointer(&hashes[0])),
-		(*C.uint32_t)(unsafe.Pointer(&slots[0])),
+		proofPtrsPtr, proofLensPtr, keysPtr, countsPtr, hashesPtr, slotsPtr,
 		C.size_t(len(inputs)),
+		rawKeysPtr, rawSigsPtr, rawHashesPtr, rawSlotsPtr,
+		C.size_t(len(raw)),
 		C.size_t(LogInvRate),
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
 		C.size_t(len(buf)),

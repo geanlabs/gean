@@ -208,16 +208,15 @@ func (e *Engine) mergeBlockProof(
 	proposerKey *xmss.ValidatorKeyPair,
 	proposerSignature [types.SignatureSize]byte,
 ) ([]byte, error) {
-	return e.mergeBlockProofWithProvers(block, attestationProofs, proposerKey, proposerSignature, xmss.AggregateSignatures, xmss.MergeType1Proofs)
+	return e.mergeBlockProofWithProver(block, attestationProofs, proposerKey, proposerSignature, xmss.MergeType1Proofs)
 }
 
-func (e *Engine) mergeBlockProofWithProvers(
+func (e *Engine) mergeBlockProofWithProver(
 	block *types.Block,
 	attestationProofs []*types.SingleMessageAggregate,
 	proposerKey *xmss.ValidatorKeyPair,
 	proposerSignature [types.SignatureSize]byte,
-	wrap func([]xmss.CPubKey, []xmss.CSig, [32]byte, uint32) ([]byte, error),
-	merge func([]xmss.Type1Input) ([]byte, error),
+	merge func([]xmss.Type1Input, []xmss.RawSignature) ([]byte, error),
 ) ([]byte, error) {
 	if block == nil || block.Body == nil || len(block.Body.Attestations) != len(attestationProofs) {
 		return nil, fmt.Errorf("attestation proof count mismatch")
@@ -230,7 +229,7 @@ func (e *Engine) mergeBlockProofWithProvers(
 		return nil, fmt.Errorf("parent state missing")
 	}
 
-	inputs := make([]xmss.Type1Input, 0, len(attestationProofs)+1)
+	inputs := make([]xmss.Type1Input, 0, len(attestationProofs))
 	for i, proof := range attestationProofs {
 		if proof == nil {
 			return nil, fmt.Errorf("attestation proof %d missing", i)
@@ -266,28 +265,17 @@ func (e *Engine) mergeBlockProofWithProvers(
 	if e.Store.Head() != block.ParentRoot {
 		return nil, errStaleProposal
 	}
-	wrapStart := time.Now()
-	proposerProof, err := wrap(
-		[]xmss.CPubKey{proposerKey.PublicKey()},
-		[]xmss.CSig{signature},
-		blockRoot,
-		uint32(block.Slot),
-	)
-	metrics.ObserveProposalStageDuration("signature_proof", time.Since(wrapStart).Seconds())
-	if err != nil {
-		return nil, err
-	}
-	inputs = append(inputs, xmss.Type1Input{
-		Pubkeys: []xmss.CPubKey{proposerKey.PublicKey()},
-		Proof:   proposerProof,
-		Message: blockRoot,
-		Slot:    uint32(block.Slot),
-	})
-	if e.Store.Head() != block.ParentRoot {
-		return nil, errStaleProposal
+	// The proposer's signature goes into the merge raw. Proving it alone first and
+	// merging that proof costs a whole extra proof, the most expensive part of a
+	// proposal after the merge itself.
+	proposer := xmss.RawSignature{
+		Pubkey:    proposerKey.PublicKey(),
+		Signature: signature,
+		Message:   blockRoot,
+		Slot:      uint32(block.Slot),
 	}
 	mergeStart := time.Now()
-	proof, err := merge(inputs)
+	proof, err := merge(inputs, []xmss.RawSignature{proposer})
 	metrics.ObserveProposalStageDuration("merge", time.Since(mergeStart).Seconds())
 	return proof, err
 }
