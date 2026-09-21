@@ -660,12 +660,11 @@ func flattenBindings(bindings []MessageBinding) ([]byte, []C.uint32_t) {
 // multisig-glue), so a proof that could not be built says why.
 var proofFailures = map[C.int32_t]string{
 	-3:  "an input proof does not decode against its claims",
-	-4:  "two different messages at one slot",
 	-5:  "split target is not a group of the proof",
 	-6:  "prover panicked",
 	-10: "an input proof does not verify",
 	-11: "malformed raw signature",
-	-12: "too many slots",
+	-12: "too many claim groups",
 	-13: "too many inputs or signers",
 	-14: "an input proof is too large",
 	-15: "declared claim is not covered by the inputs",

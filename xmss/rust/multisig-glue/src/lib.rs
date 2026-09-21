@@ -172,19 +172,16 @@ unsafe fn collect_raw(
 }
 
 /// The signer set a proof over `groups` is bound to. leanVM requires keys strictly sorted
-/// within a group and groups strictly increasing by epoch, and the prover and every verifier
-/// must derive the identical set, so it is built here in one place: groups sharing an epoch
-/// and message are merged, keys are sorted and deduplicated. Two different messages at one
-/// epoch cannot be carried by a single proof, and yield None.
-fn signature_claims(mut groups: Vec<XmssClaimGroup>) -> Option<SignatureClaims> {
-    groups.sort_by_key(|group| group.epoch);
+/// within a group and groups strictly increasing by `(epoch, message)`, and the prover and
+/// every verifier must derive the identical set, so it is built here in one place: groups
+/// sharing an epoch and message are merged, keys are sorted and deduplicated. An epoch
+/// signed at under several messages is one group per message.
+fn signature_claims(mut groups: Vec<XmssClaimGroup>) -> SignatureClaims {
+    groups.sort_by(|a, b| (a.epoch, a.message).cmp(&(b.epoch, b.message)));
     let mut merged: Vec<XmssClaimGroup> = Vec::with_capacity(groups.len());
     for group in groups {
         match merged.last_mut() {
-            Some(last) if last.epoch == group.epoch => {
-                if last.message != group.message {
-                    return None;
-                }
+            Some(last) if (last.epoch, last.message) == (group.epoch, group.message) => {
                 last.keys.extend(group.keys);
             }
             _ => merged.push(group),
@@ -194,17 +191,13 @@ fn signature_claims(mut groups: Vec<XmssClaimGroup>) -> Option<SignatureClaims> 
         group.keys.sort();
         group.keys.dedup();
     }
-    Some(SignatureClaims {
+    SignatureClaims {
         xmss: merged,
         sphincs: Vec::new(),
-    })
+    }
 }
 
-fn single_group(
-    epoch: Epoch,
-    message: Message,
-    keys: Vec<XmssPublicKey>,
-) -> Option<SignatureClaims> {
+fn single_group(epoch: Epoch, message: Message, keys: Vec<XmssPublicKey>) -> SignatureClaims {
     signature_claims(vec![XmssClaimGroup {
         epoch,
         message,
@@ -232,7 +225,6 @@ unsafe fn decode_proof(
 #[repr(i32)]
 enum Failure {
     UndecodableInput = -3,
-    ConflictingMessages = -4,
     SplitTargetMissing = -5,
     Panicked = -6,
     InvalidChild = -10,
@@ -249,7 +241,6 @@ enum Failure {
 impl From<AggregationError> for Failure {
     fn from(err: AggregationError) -> Self {
         match err {
-            AggregationError::ConflictingMessages => Failure::ConflictingMessages,
             AggregationError::InvalidChild(_) => Failure::InvalidChild,
             AggregationError::MalformedRawSignature => Failure::MalformedRawSignature,
             AggregationError::TooManyEpochs => Failure::TooManyEpochs,
@@ -339,9 +330,7 @@ pub unsafe extern "C" fn xmss_aggregate_type_1(
                     return -1;
                 };
                 offset = next;
-                let Some(claims) = single_group(slot, message, keys) else {
-                    return -1;
-                };
+                let claims = single_group(slot, message, keys);
                 match decode_proof(proofs[i], lengths[i], claims) {
                     Some(proof) => children.push(proof),
                     None => return Failure::UndecodableInput as i32,
@@ -369,8 +358,8 @@ pub unsafe extern "C" fn xmss_verify_type_1(
         let Some(message) = read_message(message_hash) else {
             return false;
         };
-        let Some(claims) = collect_pubkeys(public_keys, num_keys)
-            .and_then(|keys| single_group(slot, message, keys))
+        let Some(claims) =
+            collect_pubkeys(public_keys, num_keys).map(|keys| single_group(slot, message, keys))
         else {
             return false;
         };
@@ -416,9 +405,7 @@ pub unsafe extern "C" fn xmss_merge_type_1_to_type_2(
             let proof_ptrs = slice::from_raw_parts(proof_ptrs, count);
             let proof_lens = slice::from_raw_parts(proof_lens, count);
             for (i, group) in groups.into_iter().enumerate() {
-                let Some(claims) = signature_claims(vec![group]) else {
-                    return -1;
-                };
+                let claims = signature_claims(vec![group]);
                 match decode_proof(proof_ptrs[i], proof_lens[i], claims) {
                     Some(proof) => children.push(proof),
                     None => return Failure::UndecodableInput as i32,
@@ -471,9 +458,7 @@ pub unsafe extern "C" fn xmss_split_type_2_by_message(
         else {
             return -1;
         };
-        let Some(claims) = signature_claims(groups) else {
-            return Failure::ConflictingMessages as i32;
-        };
+        let claims = signature_claims(groups);
         let mut kept = claims.xmss.iter().filter(|group| group.message == target);
         let (Some(group), None) = (kept.next(), kept.next()) else {
             return Failure::SplitTargetMissing as i32;
@@ -509,7 +494,7 @@ pub unsafe extern "C" fn xmss_verify_type_2(
     ffi_guard!(false, {
         let Some(claims) =
             collect_groups(pubkeys, pubkey_counts, message_hashes, message_slots, count)
-                .and_then(signature_claims)
+                .map(signature_claims)
         else {
             return false;
         };

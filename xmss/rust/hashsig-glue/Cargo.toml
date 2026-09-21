@@ -8,7 +8,7 @@ sha2 = "0.9"
 # XMSS comes from leanVM's root `leanvm` crate, which also re-exports the SSZ traits
 # its key and signature types implement. multisig-glue depends on the same crate:
 # keep both on one rev, since keys, signatures and aggregates only verify within it.
-leanvm = { git = "https://github.com/leanEthereum/leanVM.git", rev = "022ec377a39de6c6982cb0d88799d54b05d5c981" }
+leanvm = { git = "https://github.com/leanEthereum/leanVM.git", rev = "48a904208d682848dac0e18ef8b01ebfc40df9ad" }
 # XmssSecretKey is serde-only (SSZ deliberately excluded upstream); persist it
 # with postcard. The secret key never goes on the wire, so the format is local.
 postcard = { version = "1.1.3", features = ["alloc"] }

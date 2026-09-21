@@ -1,9 +1,7 @@
 package xmss
 
 import (
-	"errors"
 	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -70,12 +68,14 @@ func TestType2Roundtrip(t *testing.T) {
 	}
 }
 
-// A proof carries at most one message per slot, so two validators that signed different
-// messages at the same slot cannot share a Type-2. The merge has to refuse rather than
-// produce a proof no verifier would accept.
-func TestType2RejectsTwoMessagesAtOneSlot(t *testing.T) {
+// A claim group is an (epoch, message) pair, so two validators that signed different
+// messages at the same slot are two groups of one proof. Validators disagreeing within a
+// slot is ordinary, and the merge has to carry both rather than lose the block.
+func TestType2MergesTwoMessagesAtOneSlot(t *testing.T) {
 	const slot = 5
 	var inputs []Type1Input
+	var bindings []MessageBinding
+	var groups [][]CPubKey
 	for i, seed := range []string{"same-slot-a", "same-slot-b"} {
 		key, err := GenerateKeyPair(seed, 0, 1<<10)
 		if err != nil {
@@ -108,14 +108,25 @@ func TestType2RejectsTwoMessagesAtOneSlot(t *testing.T) {
 			t.Fatal(err)
 		}
 		inputs = append(inputs, Type1Input{Pubkeys: []CPubKey{pubkey}, Proof: proof, Message: message, Slot: slot})
+		bindings = append(bindings, MessageBinding{Message: message, Slot: slot})
+		groups = append(groups, []CPubKey{pubkey})
 	}
 
-	_, err := MergeType1Proofs(inputs, nil)
-	if err == nil {
-		t.Fatal("merged two different messages at one slot")
+	proof, err := MergeType1Proofs(inputs, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !errors.Is(err, ErrAggregationFailed) || !strings.Contains(err.Error(), "two different messages at one slot") {
-		t.Fatalf("merge failed without naming the cause: %v", err)
+	if err := VerifyType2Proof(proof, groups, bindings); err != nil {
+		t.Fatal(err)
+	}
+	// Each group is bound to its own message: the proof does not verify against the
+	// two keys with their messages exchanged.
+	swapped := []MessageBinding{
+		{Message: bindings[1].Message, Slot: slot},
+		{Message: bindings[0].Message, Slot: slot},
+	}
+	if VerifyType2Proof(proof, groups, swapped) == nil {
+		t.Fatal("verified against exchanged messages")
 	}
 }
 

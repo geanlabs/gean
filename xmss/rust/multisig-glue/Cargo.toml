@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 # Same crate and rev as hashsig-glue: an aggregate verifies only against keys and
 # signatures from the leanVM rev that produced it.
-leanvm = { git = "https://github.com/leanEthereum/leanVM.git", rev = "022ec377a39de6c6982cb0d88799d54b05d5c981" }
+leanvm = { git = "https://github.com/leanEthereum/leanVM.git", rev = "48a904208d682848dac0e18ef8b01ebfc40df9ad" }
 
 [lib]
 # Built as an rlib so its `#[no_mangle] pub extern "C"` symbols can be

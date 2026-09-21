@@ -76,7 +76,7 @@ via the environment if your budget differs.
 Gean tracks Lean Consensus devnet-5. Consensus fixtures are generated from
 `leanSpec@eca701efeb5931010fe63925cd203c9ee55b2dbc`, which pins
 `lean-multisig-py` v0.0.9. The XMSS FFI builds against leanVM
-`022ec377a39de6c6982cb0d88799d54b05d5c981`, the BLAKE2s line: keys and proofs
+`48a904208d682848dac0e18ef8b01ebfc40df9ad`, the BLAKE2s line: keys and proofs
 from the earlier Poseidon line do not verify against it, and validator keys must
 come from a keygen built on the same rev.
 
