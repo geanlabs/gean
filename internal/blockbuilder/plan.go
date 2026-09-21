@@ -23,7 +23,6 @@ type planner struct {
 	proofMerger   proofMerger
 	payloads      []AttestationPayload
 	processed     map[[32]byte]bool
-	slotTaken     map[uint64]bool
 	attestations  []*types.AggregatedAttestation
 	proofs        []*types.SingleMessageAggregate
 	state         *types.State
@@ -55,7 +54,6 @@ func planAttestations(input Input) (planResult, error) {
 		proofMerger:   input.ProofMerger,
 		payloads:      sorted,
 		processed:     make(map[[32]byte]bool),
-		slotTaken:     map[uint64]bool{input.Slot: true},
 		state:         workingState,
 		progress:      captureProgress(workingState),
 		payloadErrors: payloadErrors,
@@ -107,14 +105,6 @@ func (p *planner) tryPayload(payload AttestationPayload) bool {
 	if payloadBuildIssue(p.state, p.knownRoots, payload) != nil {
 		return false
 	}
-	// The block proof carries at most one message per slot, and the proposer's signature
-	// over the block root already holds the block's own slot. A second AttestationData at
-	// a taken slot would make the proof unbuildable, so it is left out of this block.
-	if p.slotTaken[payload.Data.Slot] {
-		p.processed[payload.DataRoot] = true
-		p.recordPayloadError(payload.DataRoot, errPayloadSlotTaken(payload.Data.Slot))
-		return false
-	}
 
 	p.processed[payload.DataRoot] = true
 	att, sig, ok, selectErr := selectPayloadAttestation(payload, p.state, p.proofMerger)
@@ -125,7 +115,6 @@ func (p *planner) tryPayload(payload AttestationPayload) bool {
 		return false
 	}
 
-	p.slotTaken[payload.Data.Slot] = true
 	p.attestations = append(p.attestations, att)
 	p.proofs = append(p.proofs, sig)
 	metrics.IncBlockProposalAttestationBuilds()

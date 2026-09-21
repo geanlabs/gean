@@ -15,7 +15,6 @@ var ErrPayloadHeadOffChain = errors.New("payload head off canonical chain")
 var ErrPayloadRootMismatch = errors.New("payload root mismatch")
 var ErrPayloadVoteInvalid = errors.New("payload vote invalid")
 var ErrPayloadSourceNotCurrentJustified = errors.New("payload source is not the current justified checkpoint")
-var ErrPayloadSlotTaken = errors.New("payload slot already carries a message in this block")
 
 var errExpectedSkip = errors.New("expected builder skip")
 
@@ -59,10 +58,6 @@ func errPayloadHeadOffChain(root [32]byte) error {
 func errPayloadSourceNotCurrentJustified(sourceSlot, justifiedSlot uint64) error {
 	return fmt.Errorf("%w: source slot=%d justified slot=%d [%w]",
 		ErrPayloadSourceNotCurrentJustified, sourceSlot, justifiedSlot, errExpectedSkip)
-}
-
-func errPayloadSlotTaken(slot uint64) error {
-	return fmt.Errorf("%w: slot=%d [%w]", ErrPayloadSlotTaken, slot, errExpectedSkip)
 }
 
 func errPayloadVoteInvalid(data *types.AttestationData, reason string) error {
