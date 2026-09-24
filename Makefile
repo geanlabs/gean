@@ -46,7 +46,7 @@ lint: ## Run linters for go & rust
 	cd xmss/rust && cargo fmt --check
 	cd xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
 
-fmt: ## Format all Go code
+fmt: ## Format all Go and Rust code
 	gofmt -w .
 	cd xmss/rust && cargo fmt
 
