@@ -17,15 +17,20 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
+var errRangeRequestTooLarge = errors.New("compressed request exceeds maximum size")
+
 func handleBlocksByRangeRequest(
 	stream network.Stream,
 	currentSlotFn func() uint64,
 	blocksInRangeFn func(startSlot, count uint64) ([]*types.SignedBlock, bool),
 ) {
 	armReadDeadline(stream)
-	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(MaxCompressedPayloadSize)))
+	reqBuf, err := readRangeRequest(stream)
 	if err != nil {
 		logger.Warn(logger.Network, "blocks_by_range: read request failed: %v", err)
+		if errors.Is(err, errRangeRequestTooLarge) {
+			writeResponse(stream, "blocks_by_range", RespInvalidRequest, []byte("request too large"))
+		}
 		return
 	}
 
@@ -86,6 +91,17 @@ func handleBlocksByRangeRequest(
 		}
 		logger.Info(logger.Network, "blocks_by_range: served slot=%d", block.Block.Slot)
 	}
+}
+
+func readRangeRequest(r io.Reader) ([]byte, error) {
+	reqBuf, err := io.ReadAll(io.LimitReader(r, int64(MaxCompressedPayloadSize)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(reqBuf) > MaxCompressedPayloadSize {
+		return nil, fmt.Errorf("%w: %d bytes", errRangeRequestTooLarge, len(reqBuf))
+	}
+	return reqBuf, nil
 }
 
 func (h *Host) FetchBlocksByRange(
