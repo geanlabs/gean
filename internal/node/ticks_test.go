@@ -71,3 +71,49 @@ func TestAlignedTicksLandOnIntervalBoundary(t *testing.T) {
 		t.Fatal("no tick within two intervals")
 	}
 }
+
+// TestClaimIntervalRunsEachIntervalOnce covers a tick handled late, after the
+// next boundary's tick was already queued: both land in one interval, and only
+// the first may run its duties.
+func TestClaimIntervalRunsEachIntervalOnce(t *testing.T) {
+	e := makeTestEngine()
+	gMs := e.Store.Config().GenesisTime * 1000
+	iv := uint64(types.MillisecondsPerInterval)
+	steps := []struct {
+		name  string
+		atMs  uint64
+		claim bool
+	}{
+		{"first_tick_in_interval", gMs + 5*iv + 10, true},
+		{"second_tick_same_interval", gMs + 5*iv + 700, false},
+		{"next_interval", gMs + 6*iv + 3, true},
+		{"clock_stepped_back_into_a_handled_interval", gMs + 5*iv + 790, false},
+		{"skipped_interval_then_later_one", gMs + 8*iv + 1, true},
+	}
+	for _, s := range steps {
+		if got := e.claimInterval(s.atMs); got != s.claim {
+			t.Fatalf("%s: claimInterval(%d) = %v, want %v", s.name, s.atMs, got, s.claim)
+		}
+	}
+}
+
+// TestClaimIntervalBeforeGenesis: a node starts before genesis, so pre-genesis
+// ticks must neither collide with each other nor shadow the genesis interval.
+func TestClaimIntervalBeforeGenesis(t *testing.T) {
+	e := makeTestEngine()
+	gMs := e.Store.Config().GenesisTime * 1000
+	for _, s := range []struct {
+		name  string
+		atMs  uint64
+		claim bool
+	}{
+		{"startup_before_genesis", gMs - 5000, true},
+		{"later_pre_genesis_tick", gMs - 4200, true},
+		{"genesis_tick", gMs, true},
+		{"same_interval_as_genesis", gMs + 100, false},
+	} {
+		if got := e.claimInterval(s.atMs); got != s.claim {
+			t.Fatalf("%s: claimInterval(%d) = %v, want %v", s.name, s.atMs, got, s.claim)
+		}
+	}
+}

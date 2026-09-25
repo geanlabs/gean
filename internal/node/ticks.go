@@ -7,21 +7,14 @@ import (
 	"github.com/geanlabs/gean/internal/types"
 )
 
-// alignedTicks delivers one tick per interval boundary, anchored to genesis.
+// alignedTicks delivers one tick per interval boundary, measured from genesis.
+// A time.Ticker would keep the period but take its phase from process start.
 //
-// A time.Ticker keeps the period but not the phase: started at an arbitrary
-// moment, it fires at boundary+φ for the life of the process, so every
-// interval's duties run φ late and a node attests on a later head than the
-// rest of the network. Here each deadline is re-derived from the wall clock,
-// so the phase is right from the first tick and stays right across clock steps.
-//
-// Each boundary is delivered at most once and never before the wall clock has
-// reached it: onTick keeps no per-interval guard, so an early or repeated tick
-// would re-run the previous interval's duties.
-//
-// Delivery is a non-blocking send into a one-slot buffer, as with time.Ticker.
-// A boundary that passes while the dispatch loop is busy is handled as soon as
-// it frees; later ones are dropped rather than queued stale.
+// Each boundary is delivered at most once and never before the wall clock
+// reaches it. Delivery is a non-blocking send into a one-slot buffer, as with
+// time.Ticker: a tick missed while dispatch is busy is dropped, not queued.
+// A tick handled late can still land in an interval already run; onTick's
+// claimInterval drops it.
 func alignedTicks(ctx context.Context, genesisTime uint64) <-chan time.Time {
 	ch := make(chan time.Time, 1)
 	go func() {

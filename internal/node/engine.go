@@ -91,6 +91,10 @@ type Engine struct {
 	// goroutine precisely so it still reports while the dispatch loop is blocked.
 	lastTickMs atomic.Int64
 
+	// lastIntervalStartMs is the start of the interval whose duties onTick
+	// last ran; see claimInterval.
+	lastIntervalStartMs uint64
+
 	warnedMissingJustified [32]byte
 
 	// maxSeenGossipSlot is the highest plausible slot heard on gossip, whether
