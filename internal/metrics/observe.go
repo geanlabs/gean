@@ -25,6 +25,7 @@ func ObserveForkChoiceReorgDepth(depth float64) {
 func ObserveTickIntervalDuration(seconds float64) {
 	observeNonNegative(metricTickIntervalDuration, seconds)
 }
+func ObserveTickPhase(seconds float64) { observeNonNegative(metricTickPhase, seconds) }
 
 // ObserveDispatchEvent records how long one dispatch-loop event took.
 func ObserveDispatchEvent(event string, seconds float64) {

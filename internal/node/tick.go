@@ -29,6 +29,13 @@ func (e *Engine) onTick() {
 	currentSlot := e.currentSlot(timestampMs)
 	currentInterval := e.currentInterval(timestampMs)
 
+	// The startup tick lands wherever the process began, so only scheduled
+	// ticks say anything about the clock's phase.
+	if !firstTick {
+		phaseMs := e.millisIntoSlot(timestampMs) % types.MillisecondsPerInterval
+		metrics.ObserveTickPhase(float64(phaseMs) / 1000)
+	}
+
 	metrics.SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)
 

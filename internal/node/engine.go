@@ -176,12 +176,9 @@ func (e *Engine) WaitForStorageWorkers() {
 func (e *Engine) Run(ctx context.Context) {
 	e.initMetrics()
 
-	ticker := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
-	defer ticker.Stop()
-
 	e.startWorkers(ctx)
 
 	logger.Info(logger.Node, "started")
 	e.onTick()
-	e.dispatch(ctx, ticker.C)
+	e.dispatch(ctx, alignedTicks(ctx, e.Store.Config().GenesisTime))
 }
