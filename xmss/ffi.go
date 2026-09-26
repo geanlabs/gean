@@ -150,11 +150,13 @@ func SetProverArena(enabled bool) {
 func EnsureProverReady() error {
 	proverOnce.Do(func() {
 		var status C.int32_t
-		if proverArena.Load() {
-			status = C.xmss_setup_prover()
-		} else {
-			status = C.xmss_setup_prover_without_arena()
-		}
+		onProverThread(func() {
+			if proverArena.Load() {
+				status = C.xmss_setup_prover()
+			} else {
+				status = C.xmss_setup_prover_without_arena()
+			}
+		})
 		if status != 0 {
 			proverErr = ErrSetupFailed
 		}
@@ -292,22 +294,25 @@ func AggregateWithChildren(
 	defer putProofBuf(bufPtr)
 	buf := *bufPtr
 	var written C.size_t
-	status := C.xmss_aggregate_type_1(
-		rawPkPtr,
-		rawSigPtr,
-		C.size_t(numRaw),
-		childAllPkPtr,
-		childNumKeysPtr,
-		childProofPtrsPtr,
-		childProofLensPtr,
-		C.size_t(numChildren),
-		(*C.uint8_t)(unsafe.Pointer(&message[0])),
-		C.uint32_t(slot),
-		C.size_t(LogInvRate),
-		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
-		C.size_t(len(buf)),
-		&written,
-	)
+	var status C.int32_t
+	onProverThread(func() {
+		status = C.xmss_aggregate_type_1(
+			rawPkPtr,
+			rawSigPtr,
+			C.size_t(numRaw),
+			childAllPkPtr,
+			childNumKeysPtr,
+			childProofPtrsPtr,
+			childProofLensPtr,
+			C.size_t(numChildren),
+			(*C.uint8_t)(unsafe.Pointer(&message[0])),
+			C.uint32_t(slot),
+			C.size_t(LogInvRate),
+			(*C.uint8_t)(unsafe.Pointer(&buf[0])),
+			C.size_t(len(buf)),
+			&written,
+		)
+	})
 	if status != 0 {
 		if status == -2 || int(written) > MaxProofSize {
 			return nil, ErrProofTooBig
@@ -519,16 +524,19 @@ func MergeType1Proofs(inputs []Type1Input, raw []RawSignature) ([]byte, error) {
 	defer putProofBuf(bufPtr)
 	buf := *bufPtr
 	var written C.size_t
-	status := C.xmss_merge_type_1_to_type_2(
-		proofPtrsPtr, proofLensPtr, keysPtr, countsPtr, hashesPtr, slotsPtr,
-		C.size_t(len(inputs)),
-		rawKeysPtr, rawSigsPtr, rawHashesPtr, rawSlotsPtr,
-		C.size_t(len(raw)),
-		C.size_t(LogInvRate),
-		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
-		C.size_t(len(buf)),
-		&written,
-	)
+	var status C.int32_t
+	onProverThread(func() {
+		status = C.xmss_merge_type_1_to_type_2(
+			proofPtrsPtr, proofLensPtr, keysPtr, countsPtr, hashesPtr, slotsPtr,
+			C.size_t(len(inputs)),
+			rawKeysPtr, rawSigsPtr, rawHashesPtr, rawSlotsPtr,
+			C.size_t(len(raw)),
+			C.size_t(LogInvRate),
+			(*C.uint8_t)(unsafe.Pointer(&buf[0])),
+			C.size_t(len(buf)),
+			&written,
+		)
+	})
 	return proofResult(status, written, buf)
 }
 
@@ -568,20 +576,23 @@ func SplitType2Proof(
 	defer putProofBuf(bufPtr)
 	buf := *bufPtr
 	var written C.size_t
-	status := C.xmss_split_type_2_by_message(
-		(*C.uint8_t)(unsafe.Pointer(&proof[0])),
-		C.size_t(len(proof)),
-		(**C.PublicKey)(unsafe.Pointer(&keys[0])),
-		(*C.size_t)(unsafe.Pointer(&counts[0])),
-		(*C.uint8_t)(unsafe.Pointer(&hashes[0])),
-		(*C.uint32_t)(unsafe.Pointer(&slots[0])),
-		C.size_t(len(pubkeys)),
-		(*C.uint8_t)(unsafe.Pointer(&target[0])),
-		C.size_t(LogInvRate),
-		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
-		C.size_t(len(buf)),
-		&written,
-	)
+	var status C.int32_t
+	onProverThread(func() {
+		status = C.xmss_split_type_2_by_message(
+			(*C.uint8_t)(unsafe.Pointer(&proof[0])),
+			C.size_t(len(proof)),
+			(**C.PublicKey)(unsafe.Pointer(&keys[0])),
+			(*C.size_t)(unsafe.Pointer(&counts[0])),
+			(*C.uint8_t)(unsafe.Pointer(&hashes[0])),
+			(*C.uint32_t)(unsafe.Pointer(&slots[0])),
+			C.size_t(len(pubkeys)),
+			(*C.uint8_t)(unsafe.Pointer(&target[0])),
+			C.size_t(LogInvRate),
+			(*C.uint8_t)(unsafe.Pointer(&buf[0])),
+			C.size_t(len(buf)),
+			&written,
+		)
+	})
 	return proofResult(status, written, buf)
 }
 
