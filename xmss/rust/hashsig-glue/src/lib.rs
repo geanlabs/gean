@@ -1,17 +1,18 @@
+use leanvm::xmss::{
+    key_gen_from_seed, sign, verify, Decode, Encode, Epoch, XmssPublicKey, XmssSecretKey,
+    XmssSignature, MESSAGE_LEN, PUB_KEY_SSZ_LEN, SIGNATURE_SSZ_LEN,
+};
 use sha2::{Digest, Sha256};
-use ssz::{Decode, Encode};
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
-use xmss::{
-    xmss_key_gen_from_seed, xmss_sign, xmss_verify, XmssPublicKey, XmssSecretKey, XmssSignature,
-    MESSAGE_LEN_BYTES,
-};
 
-// leanVM-internalized XMSS: a single fixed instantiation (V=42, base 8, log-lifetime 32,
-// KoalaBear/Poseidon2). SSZ public key = 32 bytes, signature = 1208 bytes. Keys/sigs from
-// leanSig's Dim46 aborting scheme are NOT interoperable with this and must be regenerated.
+// leanVM XMSS over BLAKE2s: one fixed instantiation (V=42, base 8, log-lifetime 32). Keys and
+// signatures from the earlier Poseidon line do not verify here and must be regenerated.
+
+// The Go SSZ types hard-code these sizes (internal/types/constants.go, xmss.MessageLength).
+const _: () = assert!(PUB_KEY_SSZ_LEN == 32 && SIGNATURE_SSZ_LEN == 1208 && MESSAGE_LEN == 32);
 
 #[repr(C)]
 pub struct PrivateKey {
@@ -51,13 +52,23 @@ pub unsafe extern "C" fn hashsig_keypair_generate(
     hasher.update(seed_phrase.as_bytes());
     let seed: [u8; 32] = hasher.finalize().into();
 
-    match xmss_key_gen_from_seed(seed, activation_epoch as u64, num_active_epochs as u64) {
-        Ok((public_key, private_key)) => Box::into_raw(Box::new(KeyPair {
+    let Some((epoch_start, epoch_end)) = epoch_range(activation_epoch, num_active_epochs) else {
+        return ptr::null_mut();
+    };
+    match key_gen_from_seed(seed, epoch_start, epoch_end) {
+        Ok((private_key, public_key)) => Box::into_raw(Box::new(KeyPair {
             public_key: PublicKey { inner: public_key },
             private_key: PrivateKey { inner: private_key },
         })),
         Err(_) => ptr::null_mut(),
     }
+}
+
+/// leanVM takes an inclusive epoch range; this ABI passes a first epoch and a count.
+fn epoch_range(activation_epoch: usize, num_active_epochs: usize) -> Option<(Epoch, Epoch)> {
+    let start = Epoch::try_from(activation_epoch).ok()?;
+    let span = Epoch::try_from(num_active_epochs.checked_sub(1)?).ok()?;
+    Some((start, start.checked_add(span)?))
 }
 
 /// Reconstruct a key pair from its persisted parts: the secret key is postcard (serde), the
@@ -163,12 +174,12 @@ pub unsafe extern "C" fn hashsig_sign(
     }
     unsafe {
         let private_key_ref = &*private_key;
-        let message_slice = slice::from_raw_parts(message_ptr, MESSAGE_LEN_BYTES);
-        let message_array: &[u8; MESSAGE_LEN_BYTES] = match message_slice.try_into() {
+        let message_slice = slice::from_raw_parts(message_ptr, MESSAGE_LEN);
+        let message_array: &[u8; MESSAGE_LEN] = match message_slice.try_into() {
             Ok(arr) => arr,
             Err(_) => return ptr::null_mut(),
         };
-        match xmss_sign(&private_key_ref.inner, epoch, message_array) {
+        match sign(&private_key_ref.inner, message_array, epoch) {
             Ok(sig) => Box::into_raw(Box::new(Signature { inner: sig })),
             Err(_) => ptr::null_mut(),
         }
@@ -215,16 +226,16 @@ pub unsafe extern "C" fn hashsig_verify(
     unsafe {
         let public_key_ref = &*public_key;
         let signature_ref = &*signature;
-        let message_slice = slice::from_raw_parts(message_ptr, MESSAGE_LEN_BYTES);
-        let message_array: &[u8; MESSAGE_LEN_BYTES] = match message_slice.try_into() {
+        let message_slice = slice::from_raw_parts(message_ptr, MESSAGE_LEN);
+        let message_array: &[u8; MESSAGE_LEN] = match message_slice.try_into() {
             Ok(arr) => arr,
             Err(_) => return -1,
         };
-        match xmss_verify(
+        match verify(
             &public_key_ref.inner,
-            epoch,
             message_array,
             &signature_ref.inner,
+            epoch,
         ) {
             Ok(()) => 1,
             Err(_) => 0,
@@ -234,7 +245,7 @@ pub unsafe extern "C" fn hashsig_verify(
 
 #[no_mangle]
 pub extern "C" fn hashsig_message_length() -> usize {
-    MESSAGE_LEN_BYTES
+    MESSAGE_LEN
 }
 
 #[no_mangle]
@@ -320,8 +331,8 @@ pub unsafe extern "C" fn hashsig_verify_ssz(
     unsafe {
         let pk_data = slice::from_raw_parts(pubkey_bytes, pubkey_len);
         let sig_data = slice::from_raw_parts(signature_bytes, signature_len);
-        let msg_data = slice::from_raw_parts(message, MESSAGE_LEN_BYTES);
-        let message_array: &[u8; MESSAGE_LEN_BYTES] = match msg_data.try_into() {
+        let msg_data = slice::from_raw_parts(message, MESSAGE_LEN);
+        let message_array: &[u8; MESSAGE_LEN] = match msg_data.try_into() {
             Ok(arr) => arr,
             Err(_) => return -1,
         };
@@ -333,7 +344,7 @@ pub unsafe extern "C" fn hashsig_verify_ssz(
             Ok(sig) => sig,
             Err(_) => return -1,
         };
-        match xmss_verify(&pk, epoch, message_array, &sig) {
+        match verify(&pk, message_array, &sig, epoch) {
             Ok(()) => 1,
             Err(_) => 0,
         }

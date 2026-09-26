@@ -105,7 +105,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 	if headState == nil || headState.LatestJustified == nil {
 		return
 	}
-	pubkeys, err := e.blockProofPubkeys(block, state)
+	pubkeys, bindings, err := e.blockProofClaims(block, state)
 	if err != nil {
 		return
 	}
@@ -143,7 +143,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 			return
 		}
 		started := time.Now()
-		proof, err := xmss.SplitType2Proof(signedBlock.Proof.Proof, pubkeys, candidate.root)
+		proof, err := xmss.SplitType2Proof(signedBlock.Proof.Proof, pubkeys, bindings, candidate.root)
 		var recovered *types.SingleMessageAggregate
 		if err == nil {
 			recovered = &types.SingleMessageAggregate{
@@ -234,30 +234,45 @@ func coversParticipants(proof *types.SingleMessageAggregate, participants []byte
 	return true
 }
 
-func (e *Engine) blockProofPubkeys(block *types.Block, state *types.State) ([][]xmss.CPubKey, error) {
+// blockProofClaims returns the signer groups of a block's Type-2 proof and what each
+// signed, in the order block verification binds them: one group per attestation, then
+// the proposer over the block root.
+func (e *Engine) blockProofClaims(block *types.Block, state *types.State) ([][]xmss.CPubKey, []xmss.MessageBinding, error) {
 	groups := make([][]xmss.CPubKey, 0, len(block.Body.Attestations)+1)
+	bindings := make([]xmss.MessageBinding, 0, len(block.Body.Attestations)+1)
 	for _, att := range block.Body.Attestations {
 		keys := make([]xmss.CPubKey, 0, types.BitlistCount(att.AggregationBits))
 		for _, index := range types.BitlistIndices(att.AggregationBits) {
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
-				return nil, fmt.Errorf("validator %d out of range", index)
+				return nil, nil, fmt.Errorf("validator %d out of range", index)
 			}
 			key, err := e.Store.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			keys = append(keys, key)
 		}
+		root, err := att.Data.HashTreeRoot()
+		if err != nil {
+			return nil, nil, err
+		}
 		groups = append(groups, keys)
+		bindings = append(bindings, xmss.MessageBinding{Message: root, Slot: uint32(att.Data.Slot)})
 	}
 	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
-		return nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
+		return nil, nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
 	}
 	key, err := e.Store.PubKeyCache.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return append(groups, []xmss.CPubKey{key}), nil
+	blockRoot, err := block.HashTreeRoot()
+	if err != nil {
+		return nil, nil, err
+	}
+	groups = append(groups, []xmss.CPubKey{key})
+	bindings = append(bindings, xmss.MessageBinding{Message: blockRoot, Slot: uint32(block.Slot)})
+	return groups, bindings, nil
 }
 
 func localCoverage(entries ...*store.PayloadEntry) map[uint64]bool {

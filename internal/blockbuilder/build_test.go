@@ -515,3 +515,49 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 		t.Fatalf("payload errors=%d, want 0", len(plan.payloadErrors))
 	}
 }
+
+// Validators that disagree within a slot cast distinct AttestationData at that slot, and a
+// claim group is an (epoch, message) pair, so the block carries them all. The block's own
+// slot is no exception: the proposer's signature over the block root is its own group there.
+func TestPlanAttestationsKeepsEveryDataAtOneSlot(t *testing.T) {
+	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
+	root1 := [32]byte{0x11}
+
+	// Same slot as data, different head: a second message at a slot the block already covers.
+	rival := *data
+	rival.Head = &types.Checkpoint{Slot: 1, Root: root1}
+	// The block's own slot, which the proposer's signature also holds.
+	atBlockSlot := *data
+	atBlockSlot.Slot = 3
+
+	plan, err := planAttestations(Input{
+		HeadState:       headState,
+		Slot:            3,
+		ProposerIndex:   0,
+		ParentRoot:      parentRoot,
+		KnownBlockRoots: RootSet{root1: true, parentRoot: true},
+		Payloads: []AttestationPayload{
+			{DataRoot: dataRoot, Data: data, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: hashAttestationData(t, &rival), Data: &rival, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+			{DataRoot: hashAttestationData(t, &atBlockSlot), Data: &atBlockSlot, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("plan attestations: %v", err)
+	}
+	if len(plan.attestations) != 3 {
+		t.Fatalf("planned %d attestations, want 3", len(plan.attestations))
+	}
+	if len(plan.payloadErrors) != 0 {
+		t.Fatalf("payload errors=%d, want 0: %v", len(plan.payloadErrors), plan.payloadErrors)
+	}
+	atSlot2 := 0
+	for _, att := range plan.attestations {
+		if att.Data.Slot == 2 {
+			atSlot2++
+		}
+	}
+	if atSlot2 != 2 {
+		t.Fatalf("attestations at slot 2 = %d, want 2", atSlot2)
+	}
+}
