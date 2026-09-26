@@ -508,8 +508,8 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan attestations: %v", err)
 	}
-	if len(plan.attestations) != int(types.MaxAttestationsData) {
-		t.Fatalf("planned attestations=%d, want %d", len(plan.attestations), types.MaxAttestationsData)
+	if len(plan.attestations) != maxBlockAttestationData {
+		t.Fatalf("planned attestations=%d, want %d", len(plan.attestations), maxBlockAttestationData)
 	}
 	if len(plan.payloadErrors) != 0 {
 		t.Fatalf("payload errors=%d, want 0", len(plan.payloadErrors))
