@@ -6,8 +6,8 @@ description: Review and analyze devnet run results. Use when users want to (1) A
 # Devnet Log Review
 
 Analyze and summarize devnet run results from lean consensus testing involving
-gean and peer clients. Client names, images, and ports live in
-[devnet-runner/references/clients.md](../devnet-runner/references/clients.md).
+gean and peer clients. Read client names, image revisions, and ports from the
+run's configuration and recorded metadata.
 
 ## Quick Start
 

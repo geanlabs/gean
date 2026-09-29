@@ -29,7 +29,7 @@ gean itself ships only the prover-cost model (`internal/shadow`), the `--shadow-
    early dispatch from `maybeEarlyAggregate` in interval 1 has more. Proposals run off the tick loop.
 2. **Run the matrix** with `lean-shadow-fuzzer`: nodes, committee count, images, and prover-cost rates.
    Shadow finds the breaking rate deterministically. For absolute magnitudes on real proving, use a
-   devnet on the user's server (devnet-runner skill).
+   devnet on the user's server.
 3. **Read the failure chain** in this order: `lean_proving_duration_seconds{aggregation}` rises,
    `lean_aggregation_worker_total_time_seconds` approaches the deadline, sessions truncate,
    `lean_aggregation_dispatch_dropped_total` climbs and `lean_proving_queue_depth` pins,

@@ -6,8 +6,8 @@ description: Diagnose a live, running lean devnet from its Prometheus and contai
 # Devnet triage
 
 Diagnose a **running** devnet by reading metrics and logs, then hand the user findings and a
-proposed fix. Sibling skills cover other phases: `devnet-runner` starts a devnet,
-`devnet-log-review` analyses a finished run's saved logs, `gean-perf` is Shadow stress testing only.
+proposed fix. `devnet-log-review` analyses a finished run's saved logs;
+`gean-perf` is Shadow stress testing only.
 
 ## The contract
 

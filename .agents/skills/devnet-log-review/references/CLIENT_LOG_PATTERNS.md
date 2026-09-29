@@ -2,8 +2,7 @@
 
 gean's patterns below are verified against `internal/` and `cmd/`. Patterns for
 other clients were collected from past runs and are **unverified**; confirm them
-in the logs at hand before relying on them. Client background lives in
-[devnet-runner/references/clients.md](../../devnet-runner/references/clients.md).
+in the logs at hand before relying on them.
 
 ## gean (Go)
 
