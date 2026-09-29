@@ -1,6 +1,6 @@
 ---
 name: gean-perf
-description: Stress-test gean under the Shadow simulator. Use when the user wants to run gean on Shadow (single-client, multi-client, or multi-subnet), sweep the XMSS prover-cost rates, or find the load at which gean stops keeping up with the slot budget. For symptoms on a live devnet use devnet-triage; for saved devnet logs use devnet-log-review.
+description: Stress-test gean under the Shadow simulator. Use when the user wants to run gean on Shadow (single-client, multi-client, or multi-subnet), sweep the XMSS prover-cost rates, or find the load at which gean stops keeping up with the slot budget. For symptoms on a live devnet use devnet-triage.
 ---
 
 # gean performance under Shadow

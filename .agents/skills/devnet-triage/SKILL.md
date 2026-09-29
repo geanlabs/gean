@@ -1,13 +1,12 @@
 ---
 name: devnet-triage
-description: Diagnose a live, running lean devnet from its Prometheus and container logs, then report findings with proposed fixes and stop for approval. Use when the user reports a symptom on a running devnet — finality or justification lagging, the tick loop drifting, memory growing, aggregation producing nothing, nodes flapping sync status — or asks what a live metric reading means. Not for saved logs of a finished run (use devnet-log-review) or Shadow stress tests (use gean-perf).
+description: Diagnose a live, running lean devnet from its Prometheus and container logs, then report findings with proposed fixes and stop for approval. Use when the user reports a symptom on a running devnet — finality or justification lagging, the tick loop drifting, memory growing, aggregation producing nothing, nodes flapping sync status — or asks what a live metric reading means. Not for Shadow stress tests (use gean-perf).
 ---
 
 # Devnet triage
 
 Diagnose a **running** devnet by reading metrics and logs, then hand the user findings and a
-proposed fix. `devnet-log-review` analyses a finished run's saved logs;
-`gean-perf` is Shadow stress testing only.
+proposed fix. `gean-perf` is Shadow stress testing only.
 
 ## The contract
 
