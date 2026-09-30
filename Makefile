@@ -24,10 +24,11 @@ ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 			cargo build --profile multisig-release --locked; \
 		fi
 
-build: ffi ## Build gean and keygen binaries
+build: ffi ## Build gean, keygen and stfprove binaries
 	@mkdir -p bin
 	@go build -ldflags "-X github.com/geanlabs/gean/internal/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
+	@go build -o bin/stfprove ./cmd/stfprove
 
 test: ## Run unit tests (excludes crypto FFI and spec tests)
 	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
