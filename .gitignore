@@ -28,3 +28,7 @@ devnet.log
 
 # Rust build artifacts
 xmss/rust/target/
+
+# zkVM guest builds and toolchains
+zk/out/
+zk/.tools/

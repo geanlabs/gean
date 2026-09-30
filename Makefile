@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 zk-toolchain zk-guest zk-vectors zk-exec zk-haltcheck
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -124,6 +124,54 @@ leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.pinned-$(LEAN_S
 	done
 	cd leanSpec && uv run fill --clean --fork=lstar --scheme=prod --output=fixtures
 	touch $@
+
+# --- zkVM state-transition guest (opt-in; see zk/README.md) ---
+
+ZKVM ?= zisk
+ZK_OUT := zk/out
+ZK_TOOLS := zk/.tools
+TAMAGO_VERSION := tamago-go1.26.6
+TAMAGO_SHA256 := d9a59d85886ef9a755ce7d8ae5a8a4cf60a6b50292cbfafaa058a2ccaf90f00f
+TAMAGO_GO := $(ZK_TOOLS)/$(TAMAGO_VERSION)/usr/local/tamago-go/bin/go
+ZISKEMU ?= ziskemu
+
+# Per-zkVM link addresses: code in the zkVM's ROM, data at the start of its RAM.
+ZK_LDFLAGS_zisk := -T 0x80001000 -D 0xa0430000 -R 0x1000
+
+# Reproducible, soft-float, uncompressed RV64 bare-metal build.
+ZK_GO_ENV = GOTOOLCHAIN=local GOOS=tamago GOARCH=riscv64 GORISCV64=rva20u64 CGO_ENABLED=0 GOOSPKG=github.com/geanlabs/gean/zk
+ZK_GO_FLAGS = -trimpath -buildvcs=false -tags zkvm_$(ZKVM) \
+	-gcflags=all=-d=softfloat,compressinstructions=0 -asmflags=all=-d=compressinstructions=0 \
+	-ldflags "-buildid= $(ZK_LDFLAGS_$(ZKVM))"
+
+$(TAMAGO_GO):
+	@mkdir -p $(ZK_TOOLS)
+	curl -sSfL -o $(ZK_TOOLS)/$(TAMAGO_VERSION).tar.gz \
+		https://github.com/usbarmory/tamago-go/releases/download/$(TAMAGO_VERSION)/$(TAMAGO_VERSION).linux-amd64.tar.gz
+	echo "$(TAMAGO_SHA256)  $(ZK_TOOLS)/$(TAMAGO_VERSION).tar.gz" | sha256sum -c -
+	mkdir -p $(ZK_TOOLS)/$(TAMAGO_VERSION)
+	tar -xzf $(ZK_TOOLS)/$(TAMAGO_VERSION).tar.gz -C $(ZK_TOOLS)/$(TAMAGO_VERSION)
+
+zk-toolchain: $(TAMAGO_GO) ## Download the pinned TamaGo toolchain for zkVM guests
+
+zk-guest: $(TAMAGO_GO) ## Build the state-transition guest for ZKVM (default zisk)
+	@test -n "$(ZK_LDFLAGS_$(ZKVM))" || (echo "no guest board for ZKVM=$(ZKVM)"; exit 1)
+	@mkdir -p $(ZK_OUT)
+	cd zk && $(ZK_GO_ENV) ../$(TAMAGO_GO) build $(ZK_GO_FLAGS) -o out/stf-$(ZKVM).raw.elf ./guest/stf
+	cd zk && go run ./cmd/elffix -zkvm $(ZKVM) out/stf-$(ZKVM).raw.elf out/stf-$(ZKVM).elf
+	@sha256sum $(ZK_OUT)/stf-$(ZKVM).elf
+
+zk-haltcheck: $(TAMAGO_GO) ## Check that only a committed run halts successfully (ZKVM=zisk)
+	@mkdir -p $(ZK_OUT)
+	cd zk && $(ZK_GO_ENV) ../$(TAMAGO_GO) build $(ZK_GO_FLAGS) -o out/haltcheck-$(ZKVM).raw.elf ./guest/haltcheck
+	cd zk && go run ./cmd/elffix -zkvm $(ZKVM) out/haltcheck-$(ZKVM).raw.elf out/haltcheck-$(ZKVM).elf
+	cd zk && ZISKEMU=$(ZISKEMU) go run ./cmd/haltcheck -elf out/haltcheck-$(ZKVM).elf
+
+zk-vectors: ## Write the generated state-transition vectors to zk/out/vectors
+	go run ./cmd/stfprove vectors -o $(ZK_OUT)/vectors
+
+zk-exec: zk-vectors ## Execute every vector on the ZisK emulator and compare with native
+	go run ./cmd/stfprove execute --zkvm $(ZKVM) --backend emu --ziskemu $(ZISKEMU) --manifest $(ZK_OUT)/vectors/manifest.json
 
 # --- Docker ---
 
