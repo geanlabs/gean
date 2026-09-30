@@ -22,10 +22,21 @@ type aggregationGroup struct {
 	// currentSlot marks a vote cast in the slot being aggregated for, as opposed
 	// to a backlog entry carried over from an earlier one.
 	currentSlot bool
+	// settled marks a target the head state has already justified. Its votes can
+	// no longer advance finality, but they still carry the head, and fork choice
+	// only counts a head vote once it is inside an aggregate.
+	settled bool
 }
 
-// orderedGroups lists the snapshot's aggregation work current-slot first, then
-// frontier-first by ascending target slot.
+// orderedGroups lists the snapshot's aggregation work: groups whose target can
+// still be justified first, then current-slot first, then frontier-first by
+// ascending target slot.
+//
+// Groups whose target is already justified come last. leanSpec's aggregate
+// proves them like any other: their votes justify nothing, but they carry the
+// head, and dropping them leaves fork choice blind to where most validators
+// see the tip. Ordering them last keeps them off the session budget that an
+// unjustified target needs.
 //
 // This slot's votes are the only ones with a deadline: they must be aggregated
 // and gossiped in time to reach the next block, while a backlog entry loses
@@ -92,7 +103,7 @@ func (g groupSkips) summary() string {
 	return b.String()
 }
 
-func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
+func orderedGroups(snap *Snapshot) []aggregationGroup {
 	dataRoots := make(map[[32]byte]bool)
 	for dr := range snap.attSigs {
 		dataRoots[dr] = true
@@ -114,26 +125,24 @@ func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 		if attData.Target != nil {
 			targetSlot = attData.Target.Slot
 		}
-		// Skip targets already justified in the head state. process_attestations
-		// ignores a vote once its target is justified, so proving it spends the
-		// session budget on an aggregate that can no longer advance finality —
-		// budget that a still-unjustified target needs. Only a definite "yes"
-		// skips: an out-of-range target (beyond the tracked bitfield, i.e. a fresh
-		// slot) returns an error and is kept.
+		// Only a definite "yes" settles a target: an out-of-range target (beyond
+		// the tracked bitfield, i.e. a fresh slot) returns an error and stays open.
+		settled := false
 		if snap.headState != nil && snap.headState.LatestFinalized != nil {
 			justified, err := statetransition.IsSlotJustified(snap.headState, snap.headState.LatestFinalized.Slot, targetSlot)
-			if err == nil && justified {
-				skips.add(metrics.AggGroupSkipTargetJustified)
-				continue
-			}
+			settled = err == nil && justified
 		}
 		groups = append(groups, aggregationGroup{
 			dataRoot:    dr,
 			targetSlot:  targetSlot,
 			currentSlot: attData.Slot == snap.slot,
+			settled:     settled,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].settled != groups[j].settled {
+			return !groups[i].settled
+		}
 		if groups[i].currentSlot != groups[j].currentSlot {
 			return groups[i].currentSlot
 		}
@@ -274,7 +283,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	attempted := false
 	attempts := 0
 
-	groups := orderedGroups(snap, skips)
+	groups := orderedGroups(snap)
 	for i, group := range groups {
 		if shouldYield != nil && shouldYield() {
 			truncated = true
@@ -465,8 +474,8 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 				Proof:        proofBytes,
 			}
 
-			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
-				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
+			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v target_justified=%t",
+				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration, group.settled)
 
 			metrics.ObservePqSigAggBuildingTime(aggDuration.Seconds())
 			metrics.ObserveCommitteeSignaturesAggregationTime(aggDuration.Seconds())

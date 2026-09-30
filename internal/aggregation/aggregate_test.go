@@ -176,7 +176,7 @@ func TestOrderedGroupsPutsCurrentSlotFirst(t *testing.T) {
 	snap := aggregateTestSnapshot(10, 11, 12)
 	snap.slot = 12
 
-	groups := orderedGroups(snap, groupSkips{})
+	groups := orderedGroups(snap)
 	if len(groups) != 3 {
 		t.Fatalf("groups=%d, want 3", len(groups))
 	}

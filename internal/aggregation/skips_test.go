@@ -43,35 +43,6 @@ func TestAggregateResolvesSignersWithoutTargetState(t *testing.T) {
 	}
 }
 
-func TestOrderedGroupsCountsJustifiedSkips(t *testing.T) {
-	const finalized = uint64(100)
-	const justifiedTarget = uint64(105)
-	const openTarget = uint64(106)
-
-	justifiedSlots := types.BitlistExtend(nil, 10)
-	types.BitlistSet(justifiedSlots, justifiedTarget-finalized-1)
-	snap := &Snapshot{
-		headState: &types.State{
-			LatestFinalized: &types.Checkpoint{Slot: finalized},
-			JustifiedSlots:  justifiedSlots,
-		},
-		attSigs: map[[32]byte]*store.AttestationDataEntry{
-			rootByte(1): {Data: &types.AttestationData{Slot: justifiedTarget, Target: &types.Checkpoint{Slot: justifiedTarget}}},
-			rootByte(2): {Data: &types.AttestationData{Slot: openTarget, Target: &types.Checkpoint{Slot: openTarget}}},
-		},
-	}
-
-	skips := groupSkips{}
-	ordered := orderedGroups(snap, skips)
-
-	if len(ordered) != 1 {
-		t.Fatalf("groups=%d, want 1", len(ordered))
-	}
-	if got := skips[metrics.AggGroupSkipTargetJustified]; got != 1 {
-		t.Errorf("target_justified skips=%d, want 1", got)
-	}
-}
-
 // The summary is what reaches the operator's log line, so it must name every
 // non-zero reason and stay stable across runs despite map iteration order.
 func TestGroupSkipsSummary(t *testing.T) {
@@ -80,12 +51,12 @@ func TestGroupSkipsSummary(t *testing.T) {
 	}
 
 	skips := groupSkips{
-		metrics.AggGroupSkipTooFewSigners:   2,
-		metrics.AggGroupSkipTargetJustified: 5,
+		metrics.AggGroupSkipTooFewSigners: 2,
+		metrics.AggGroupSkipSessionCap:    5,
 	}
 	got := skips.summary()
 
-	for _, want := range []string{"target_justified=5", "too_few_signers=2"} {
+	for _, want := range []string{"session_cap=5", "too_few_signers=2"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary %q missing %q", got, want)
 		}

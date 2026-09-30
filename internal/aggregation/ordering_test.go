@@ -32,7 +32,7 @@ func snapshotWithTargets(targets map[byte]uint64) *Snapshot {
 // the votes nearest the finalized frontier are proven before the head-most ones.
 func TestOrderedGroupsFrontierFirst(t *testing.T) {
 	snap := snapshotWithTargets(map[byte]uint64{1: 104, 2: 100, 3: 102, 4: 101, 5: 103})
-	ordered := orderedGroups(snap, groupSkips{})
+	ordered := orderedGroups(snap)
 
 	want := []uint64{100, 101, 102, 103, 104}
 	if len(ordered) != len(want) {
@@ -55,7 +55,7 @@ func TestTruncatingAggregatorKeepsFrontier(t *testing.T) {
 	const headMost = uint64(104)
 	snap := snapshotWithTargets(map[byte]uint64{1: frontier, 2: 101, 3: 102, 4: 103, 5: headMost})
 
-	ordered := orderedGroups(snap, groupSkips{})
+	ordered := orderedGroups(snap)
 
 	// A budget that fits only the first two proofs.
 	const budget = 2
@@ -72,35 +72,41 @@ func TestTruncatingAggregatorKeepsFrontier(t *testing.T) {
 	}
 }
 
-// TestOrderedGroupsSkipsJustifiedTargets: a group whose target is already
-// justified in the head state is dropped, so the session budget goes to targets
-// that can still advance finality. An out-of-range (fresh) target is kept.
-func TestOrderedGroupsSkipsJustifiedTargets(t *testing.T) {
+// A target the head state already justified is kept, not dropped: its votes
+// still carry the head, and fork choice counts a head vote only once it is
+// inside an aggregate. It ranks after every open target, even a backlog one,
+// so a capped session spends its budget on what can still be justified.
+func TestOrderedGroupsKeepsSettledTargetsLast(t *testing.T) {
 	const finalized = uint64(100)
-	const justifiedTarget = uint64(105)
-	const openTarget = uint64(106)
+	const settledTarget = uint64(105)
+	const openTarget = uint64(103)
 
 	justifiedSlots := types.BitlistExtend(nil, 10)
-	types.BitlistSet(justifiedSlots, justifiedTarget-finalized-1) // mark slot 105 justified
-	headState := &types.State{
-		LatestFinalized: &types.Checkpoint{Slot: finalized},
-		JustifiedSlots:  justifiedSlots,
-	}
-
+	types.BitlistSet(justifiedSlots, settledTarget-finalized-1)
 	snap := &Snapshot{
-		headState: headState,
+		slot: settledTarget,
+		headState: &types.State{
+			LatestFinalized: &types.Checkpoint{Slot: finalized},
+			JustifiedSlots:  justifiedSlots,
+		},
 		attSigs: map[[32]byte]*store.AttestationDataEntry{
-			rootByte(1): {Data: &types.AttestationData{Slot: justifiedTarget, Target: &types.Checkpoint{Slot: justifiedTarget}}},
+			// This slot's vote, whose target is already justified.
+			rootByte(1): {Data: &types.AttestationData{Slot: settledTarget, Target: &types.Checkpoint{Slot: settledTarget}}},
+			// A backlog vote whose target is still open.
 			rootByte(2): {Data: &types.AttestationData{Slot: openTarget, Target: &types.Checkpoint{Slot: openTarget}}},
 		},
 	}
 
-	ordered := orderedGroups(snap, groupSkips{})
-	if len(ordered) != 1 {
-		t.Fatalf("groups=%d, want 1 (justified target skipped)", len(ordered))
+	ordered := orderedGroups(snap)
+
+	if len(ordered) != 2 {
+		t.Fatalf("groups=%d, want 2: a settled target must not be dropped", len(ordered))
 	}
-	if ordered[0].targetSlot != openTarget {
-		t.Fatalf("kept target=%d, want %d (the still-open one)", ordered[0].targetSlot, openTarget)
+	if ordered[0].dataRoot != rootByte(2) || ordered[0].settled {
+		t.Errorf("first group=%x settled=%v, want the open target first", ordered[0].dataRoot[:1], ordered[0].settled)
+	}
+	if ordered[1].dataRoot != rootByte(1) || !ordered[1].settled {
+		t.Errorf("last group=%x settled=%v, want the settled target last", ordered[1].dataRoot[:1], ordered[1].settled)
 	}
 }
 
@@ -108,9 +114,9 @@ func TestOrderedGroupsSkipsJustifiedTargets(t *testing.T) {
 // root, so the order is stable across snapshots regardless of map iteration.
 func TestOrderedGroupsDeterministicTiebreak(t *testing.T) {
 	snap := snapshotWithTargets(map[byte]uint64{9: 50, 3: 50, 7: 50})
-	first := orderedGroups(snap, groupSkips{})
+	first := orderedGroups(snap)
 	for range 5 {
-		again := orderedGroups(snap, groupSkips{})
+		again := orderedGroups(snap)
 		for i := range first {
 			if first[i].dataRoot != again[i].dataRoot {
 				t.Fatalf("non-deterministic order at %d", i)
