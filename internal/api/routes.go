@@ -14,6 +14,8 @@ func buildAPIMux(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *rol
 	mux.HandleFunc("GET /lean/v0/health", HealthHandler)
 	mux.HandleFunc("GET /lean/v0/states/finalized", FinalizedStateHandler(s))
 	mux.HandleFunc("GET /lean/v0/blocks/finalized", FinalizedBlockHandler(s))
+	mux.HandleFunc("GET /lean/v0/states/{state_id}", StateSSZHandler(s))
+	mux.HandleFunc("GET /lean/v0/blocks/{block_id}/ssz", BlockSSZHandler(s))
 	mux.HandleFunc("GET /lean/v0/checkpoints/justified", JustifiedCheckpointHandler(s))
 	mux.HandleFunc("GET /lean/v0/fork_choice", ForkChoiceHandler(s, fc))
 	mux.HandleFunc("GET /lean/v0/admin/aggregator", AggregatorStatusHandler(aggCtl))

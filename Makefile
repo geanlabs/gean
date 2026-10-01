@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 zk-toolchain zk-guest zk-vectors zk-exec zk-haltcheck zk-host
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -24,10 +24,11 @@ ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 			cargo build --profile multisig-release --locked; \
 		fi
 
-build: ffi ## Build gean and keygen binaries
+build: ffi ## Build gean, keygen and stfprove binaries
 	@mkdir -p bin
 	@go build -ldflags "-X github.com/geanlabs/gean/internal/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
+	@go build -o bin/stfprove ./cmd/stfprove
 
 test: ## Run unit tests (excludes crypto FFI and spec tests)
 	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
@@ -123,6 +124,78 @@ leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.pinned-$(LEAN_S
 	done
 	cd leanSpec && uv run fill --clean --fork=lstar --scheme=prod --output=fixtures
 	touch $@
+
+# --- zkVM state-transition guest (opt-in; see zk/README.md) ---
+
+ZKVM ?= zisk
+ZK_OUT := zk/out
+ZK_TOOLS := zk/.tools
+TAMAGO_VERSION := tamago-go1.26.6
+TAMAGO_SHA256 := d9a59d85886ef9a755ce7d8ae5a8a4cf60a6b50292cbfafaa058a2ccaf90f00f
+TAMAGO_PATCHES := $(sort $(wildcard zk/toolchain/patches/*.patch))
+TAMAGO_ROOT := $(ZK_TOOLS)/$(TAMAGO_VERSION)-zk
+TAMAGO_GO := $(TAMAGO_ROOT)/bin/go
+ZISKEMU ?= ziskemu
+SP1HOST ?= zk/sp1host/target/release/sp1host
+ZISKHOST ?= zk/ziskhost/target/release/ziskhost
+OPENVMHOST ?= zk/openvmhost/target/release/openvmhost
+ZK_HOST_ENV = ZISKEMU=$(ZISKEMU) SP1HOST=$(abspath $(SP1HOST)) ZISKHOST=$(abspath $(ZISKHOST)) OPENVMHOST=$(abspath $(OPENVMHOST))
+
+# Per-zkVM link addresses: code in the zkVM's ROM, data at the start of its RAM.
+ZK_LDFLAGS_zisk := -T 0x80001000 -D 0xa0430000 -R 0x1000
+ZK_LDFLAGS_sp1 := -T 0x78001000 -D 0x80000000 -R 0x1000
+ZK_LDFLAGS_openvm := -T 0x10001000 -D 0x20000000 -R 0x1000
+
+# Reproducible, soft-float, uncompressed RV64 bare-metal build. The patched
+# compiler reports the release version, so its objects get their own cache
+# rather than being mixed with the stock toolchain's.
+ZK_GO_ENV = GOTOOLCHAIN=local GOOS=tamago GOARCH=riscv64 GORISCV64=rva20u64 CGO_ENABLED=0 GOOSPKG=github.com/geanlabs/gean/zk \
+	GOCACHE=$(abspath $(TAMAGO_ROOT))/cache
+ZK_GO_FLAGS = -trimpath -buildvcs=false -tags zkvm_$(ZKVM) \
+	-gcflags=all=-d=softfloat,compressinstructions=0 -asmflags=all=-d=compressinstructions=0 \
+	-ldflags "-buildid= $(ZK_LDFLAGS_$(ZKVM))"
+
+$(ZK_TOOLS)/$(TAMAGO_VERSION).tar.gz:
+	@mkdir -p $(ZK_TOOLS)
+	curl -sSfL -o $@.tmp \
+		https://github.com/usbarmory/tamago-go/releases/download/$(TAMAGO_VERSION)/$(TAMAGO_VERSION).linux-amd64.tar.gz
+	echo "$(TAMAGO_SHA256)  $@.tmp" | sha256sum -c -
+	mv $@.tmp $@
+
+# The pinned TamaGo release with zk/toolchain/patches applied and the compiler
+# rebuilt; rebuilt from scratch whenever a patch changes.
+$(TAMAGO_GO): $(ZK_TOOLS)/$(TAMAGO_VERSION).tar.gz $(TAMAGO_PATCHES)
+	rm -rf $(TAMAGO_ROOT)
+	mkdir -p $(TAMAGO_ROOT)
+	tar -xzf $< -C $(TAMAGO_ROOT) --strip-components=3
+	for p in $(TAMAGO_PATCHES); do patch -s -p1 -d $(TAMAGO_ROOT) < $$p || exit 1; done
+	cd $(TAMAGO_ROOT)/src && GOTOOLCHAIN=local ../bin/go install cmd/compile
+	touch $@
+
+zk-toolchain: $(TAMAGO_GO) ## Build the patched TamaGo toolchain for zkVM guests
+
+zk-guest: $(TAMAGO_GO) ## Build the state-transition guest for ZKVM (default zisk)
+	@test -n "$(ZK_LDFLAGS_$(ZKVM))" || (echo "no guest board for ZKVM=$(ZKVM)"; exit 1)
+	@mkdir -p $(ZK_OUT)
+	cd zk && $(ZK_GO_ENV) ../$(TAMAGO_GO) build $(ZK_GO_FLAGS) -o out/stf-$(ZKVM).raw.elf ./guest/stf
+	cd zk && go run ./cmd/elffix -zkvm $(ZKVM) out/stf-$(ZKVM).raw.elf out/stf-$(ZKVM).elf
+	@sha256sum $(ZK_OUT)/stf-$(ZKVM).elf
+
+zk-haltcheck: $(TAMAGO_GO) ## Check that only a committed run halts successfully (ZKVM=zisk|sp1|openvm)
+	@mkdir -p $(ZK_OUT)
+	cd zk && $(ZK_GO_ENV) ../$(TAMAGO_GO) build $(ZK_GO_FLAGS) -o out/haltcheck-$(ZKVM).raw.elf ./guest/haltcheck
+	cd zk && go run ./cmd/elffix -zkvm $(ZKVM) out/haltcheck-$(ZKVM).raw.elf out/haltcheck-$(ZKVM).elf
+	cd zk && $(ZK_HOST_ENV) go run ./cmd/haltcheck -zkvm $(ZKVM) -elf out/haltcheck-$(ZKVM).elf
+
+zk-vectors: ## Write the generated state-transition vectors to zk/out/vectors
+	go run ./cmd/stfprove vectors -o $(ZK_OUT)/vectors
+
+zk-exec: zk-vectors ## Execute every vector on ZKVM's local executor and compare with native
+	$(ZK_HOST_ENV) go run ./cmd/stfprove execute --zkvm $(ZKVM) --manifest $(ZK_OUT)/vectors/manifest.json
+
+zk-host: ## Build zk/<ZKVM>host, the Rust host that proves and verifies on ZKVM
+	@test -d zk/$(ZKVM)host || (echo "no host for ZKVM=$(ZKVM)"; exit 1)
+	cd zk/$(ZKVM)host && cargo build --release --locked
 
 # --- Docker ---
 
