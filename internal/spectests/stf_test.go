@@ -103,4 +103,16 @@ func runStateTransitionTest(t *testing.T, tt *StateTransitionTest) {
 			t.Fatalf("post-state validation failed: %v", err)
 		}
 	}
+
+	// The full post-state root pins every field, not just the ones the
+	// fixture's post section happens to list.
+	if tt.PostStateRoot != "" {
+		got, err := state.HashTreeRoot()
+		if err != nil {
+			t.Fatalf("post-state hash tree root: %v", err)
+		}
+		if want := parseHexRoot(tt.PostStateRoot); got != want {
+			t.Fatalf("post-state root mismatch: got %x, want %x", got, want)
+		}
+	}
 }

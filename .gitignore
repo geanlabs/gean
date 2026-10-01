@@ -28,3 +28,8 @@ devnet.log
 
 # Rust build artifacts
 xmss/rust/target/
+
+# zkVM state-transition proofs: generated vectors, guests and proofs
+zk/out/
+zk/**/target/
+zk/openvm/guest/openvm/

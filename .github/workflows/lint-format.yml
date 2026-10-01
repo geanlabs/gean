@@ -61,7 +61,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             xmss/rust/target
-          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
+            zk/stf/target
+          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock', 'zk/stf/Cargo.lock') }}
           restore-keys: |
             cargo-lint-${{ runner.os }}-
 
@@ -76,3 +77,9 @@ jobs:
         run: |
           rustup component add --toolchain 1.92.0-x86_64-unknown-linux-gnu clippy
           cargo clippy -- -D warnings -A clippy::missing_safety_doc
+
+      - name: Check zk/stf formatting and Clippy
+        working-directory: zk/stf
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
