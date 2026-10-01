@@ -32,7 +32,8 @@ func headerClimbIsAncestor(s *store.ConsensusStore, ancestor, descendant *types.
 	}
 }
 
-// headerWalkTarget is GetAttestationTarget as it was before the block index.
+// headerWalkTarget is GetAttestationTarget as it was before the block index,
+// with a missing parent ending the walk on the last block held.
 func headerWalkTarget(s *store.ConsensusStore) *types.Checkpoint {
 	targetRoot := s.Head()
 	targetHeader := s.GetBlockHeader(targetRoot)
@@ -49,21 +50,19 @@ func headerWalkTarget(s *store.ConsensusStore) *types.Checkpoint {
 		if targetHeader.Slot <= lowerBoundSlot {
 			break
 		}
-		targetRoot = targetHeader.ParentRoot
-		parent := s.GetBlockHeader(targetRoot)
+		parent := s.GetBlockHeader(targetHeader.ParentRoot)
 		if parent == nil {
 			break
 		}
-		targetHeader = parent
+		targetRoot, targetHeader = targetHeader.ParentRoot, parent
 	}
 	for targetHeader.Slot > finalizedSlot &&
 		!statetransition.SlotIsJustifiableAfter(targetHeader.Slot, finalizedSlot) {
-		targetRoot = targetHeader.ParentRoot
-		parent := s.GetBlockHeader(targetRoot)
+		parent := s.GetBlockHeader(targetHeader.ParentRoot)
 		if parent == nil {
 			break
 		}
-		targetHeader = parent
+		targetRoot, targetHeader = targetHeader.ParentRoot, parent
 	}
 	return &types.Checkpoint{Root: targetRoot, Slot: targetHeader.Slot}
 }
@@ -157,4 +156,31 @@ func blockSlot(blocks []walkBlock, root [32]byte) uint64 {
 		}
 	}
 	return 0
+}
+
+// A walk that reaches a block whose parent is not stored, as below a
+// checkpoint-sync anchor, must stop on that block: the target's root and slot
+// have to name the same block or no peer accepts the vote.
+func TestAttestationTargetStopsOnLastHeldBlock(t *testing.T) {
+	s := store.NewConsensusStore(storage.NewInMemoryBackend())
+	s.SetConfig(&types.ChainConfig{GenesisTime: 1000})
+	anchor := [32]byte{0xaa}
+	s.InsertBlockHeader(anchor, &types.BlockHeader{Slot: 10, ParentRoot: [32]byte{0xee}})
+	head := [32]byte{0xbb}
+	s.InsertBlockHeader(head, &types.BlockHeader{Slot: 11, ParentRoot: anchor})
+	// A finalized slot below the anchor lets the walk try to step past it.
+	s.SetLatestFinalized(&types.Checkpoint{Slot: 0})
+	s.SetSafeTarget(head)
+	s.SetHead(head)
+
+	// With the safe target at the head the lookback walk stops at once, and the
+	// justifiability walk is the one that meets the missing parent. With no
+	// usable safe target the lookback walk meets it first.
+	for name, safeTarget := range map[string][32]byte{"justifiability walk": head, "lookback walk": {0xcc}} {
+		s.SetSafeTarget(safeTarget)
+		got := GetAttestationTarget(s)
+		if got.Root != anchor || got.Slot != 10 {
+			t.Fatalf("%s: target = 0x%x at slot %d, want the anchor 0x%x at slot 10", name, got.Root, got.Slot, anchor)
+		}
+	}
 }

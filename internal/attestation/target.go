@@ -32,7 +32,6 @@ func GetAttestationTarget(s *store.ConsensusStore) *types.Checkpoint {
 		}
 		slot, parent, ok := s.BlockSlotAndParent(targetParent)
 		if !ok {
-			targetRoot = targetParent
 			break
 		}
 		targetRoot, targetSlot, targetParent = targetParent, slot, parent
@@ -42,12 +41,16 @@ func GetAttestationTarget(s *store.ConsensusStore) *types.Checkpoint {
 		!statetransition.SlotIsJustifiableAfter(targetSlot, finalizedSlot) {
 		slot, parent, ok := s.BlockSlotAndParent(targetParent)
 		if !ok {
-			targetRoot = targetParent
 			break
 		}
 		targetRoot, targetSlot, targetParent = targetParent, slot, parent
 	}
 
+	// The root and slot always describe the same block, as the spec's
+	// Checkpoint(root=target_block_root, slot=target_block.slot) does. When a
+	// parent is missing the walk stops on the last block it has, rather than
+	// naming the missing parent with its child's slot, a checkpoint no peer
+	// could accept.
 	return &types.Checkpoint{
 		Root: targetRoot,
 		Slot: targetSlot,
