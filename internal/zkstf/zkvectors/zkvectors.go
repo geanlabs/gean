@@ -5,8 +5,8 @@
 // 52-byte XMSS keys while gean's types carry 32-byte keys, so their roots do
 // not reproduce. These chains are built with gean's own transition instead.
 // They exercise the same machinery (empty slots, votes, justification,
-// finalization, the distinct-data cap, large registries) and every accept case
-// is checked natively before it is returned. Spec conformance stays with the
+// finalization, the distinct-data cap, large registries), and
+// TestApplyMatchesNativeTransition checks every case natively. Spec conformance stays with the
 // spectests; these vectors establish guest/native equivalence.
 package zkvectors
 

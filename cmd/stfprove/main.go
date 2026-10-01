@@ -14,17 +14,20 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"github.com/geanlabs/gean/internal/zkstf"
 	"github.com/geanlabs/gean/internal/zkstf/ziskemu"
+	"github.com/geanlabs/gean/internal/zkstf/zkhost"
 )
 
 const usage = `usage: stfprove <command> [flags]
 
 commands:
   vectors   write the generated test vectors as framed inputs plus a manifest
-  input     frame a pre-state and block (SSZ files) into a guest input
   execute   run inputs on a backend and check them against the manifest or native
+  prove     prove one framed input and write a proof file
+  verify    verify a proof file and print its public values
   replay    fetch blocks from a node and run them, checking every root
   zkvms     list backends and whether each is available
 
@@ -58,10 +61,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	switch cmd {
 	case "vectors":
 		return runVectors(args, stdout, stderr)
-	case "input":
-		return runInput(args, stderr)
 	case "execute":
 		return runExecute(ctx, args, stdout, stderr)
+	case "prove":
+		return runProve(ctx, args, stdout, stderr)
+	case "verify":
+		return runVerify(ctx, args, stdout, stderr)
 	case "replay":
 		return runReplay(ctx, args, stdout, stderr)
 	case "zkvms":
@@ -76,16 +81,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 // run can never silently use a different backend than intended.
 type backendFlags struct {
 	zkvm    string
-	backend string
 	elf     string
 	ziskemu string
+	host    string
 }
 
 func (b *backendFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&b.zkvm, "zkvm", "", "backend: native, zisk, sp1 or openvm (required)")
-	fs.StringVar(&b.backend, "backend", "ere", "how a zkVM runs: ere (prover server) or emu (ZisK emulator, execute only)")
 	fs.StringVar(&b.elf, "elf", "", "guest ELF (default zk/out/stf-<zkvm>.elf)")
-	fs.StringVar(&b.ziskemu, "ziskemu", envOr("ZISKEMU", "ziskemu"), "ziskemu binary for --backend emu (env ZISKEMU)")
+	fs.StringVar(&b.ziskemu, "ziskemu", envOr("ZISKEMU", "ziskemu"), "ziskemu binary, which executes for --zkvm zisk (env ZISKEMU)")
+	fs.StringVar(&b.host, "host", "", "host binary built from zk/<zkvm>host (default env <ZKVM>HOST, e.g. SP1HOST, else <zkvm>host on PATH)")
 }
 
 func (b *backendFlags) prover() (zkstf.Prover, error) {
@@ -108,42 +113,45 @@ func (b *backendFlags) newProver(z zkstf.ZKVM) (zkstf.Prover, error) {
 	if elf == "" {
 		elf = filepath.Join("zk", "out", "stf-"+string(z)+".elf")
 	}
-	switch {
-	case z == zkstf.ZisK && b.backend == "emu":
-		if _, err := os.Stat(elf); err != nil {
-			return nil, fmt.Errorf("zisk guest: %w (run make zk-guest ZKVM=zisk)", err)
-		}
+	if _, err := os.Stat(elf); err != nil {
+		return nil, fmt.Errorf("%s guest: %w (run make zk-guest ZKVM=%s)", z, err, z)
+	}
+	p := zkhost.Prover{VM: z, ELF: elf}
+	// A missing host leaves Bin empty: execution may still work, and
+	// proving reports how to build the host.
+	p.Bin, _ = exec.LookPath(b.hostName(z))
+	if z == zkstf.ZisK {
 		bin, err := exec.LookPath(b.ziskemu)
 		if err != nil {
-			return nil, fmt.Errorf("ziskemu: %w", err)
+			return nil, err
 		}
-		return ziskemu.Prover{Bin: bin, ELF: elf}, nil
-	case b.backend == "emu":
-		return nil, fmt.Errorf("%w: only zisk has an emulator backend", zkstf.ErrUnsupported)
-	case b.backend == "ere":
-		return nil, fmt.Errorf("%w: %s proving through ere is not implemented yet", zkstf.ErrUnsupported, z)
-	default:
-		return nil, fmt.Errorf("%w: unknown --backend %q", errUsage, b.backend)
+		p.Exec = ziskemu.Executor{Bin: bin, ELF: elf}.Execute
+	} else if p.Bin == "" {
+		return nil, fmt.Errorf("no %s host: %s not found (run make zk-host ZKVM=%s)", z, b.hostName(z), z)
 	}
+	return p, nil
+}
+
+// hostName is the host binary for z: --host, else env <ZKVM>HOST, else
+// <zkvm>host on PATH.
+func (b *backendFlags) hostName(z zkstf.ZKVM) string {
+	if b.host != "" {
+		return b.host
+	}
+	return envOr(strings.ToUpper(string(z))+"HOST", string(z)+"host")
 }
 
 func runZKVMs(stdout io.Writer) error {
+	b := backendFlags{ziskemu: envOr("ZISKEMU", "ziskemu")}
 	for _, z := range zkstf.ZKVMs {
-		for _, backend := range []string{"emu", "ere"} {
-			if z == zkstf.Native && backend == "ere" {
-				continue
-			}
-			b := backendFlags{backend: backend, ziskemu: envOr("ZISKEMU", "ziskemu")}
-			status := "available"
-			if _, err := b.newProver(z); err != nil {
-				status = err.Error()
-			}
-			name := string(z) + "/" + backend
-			if z == zkstf.Native {
-				name = string(z)
-			}
-			fmt.Fprintf(stdout, "%-12s %s\n", name, status)
+		status := "available"
+		p, err := b.newProver(z)
+		if err != nil {
+			status = err.Error()
+		} else if h, ok := p.(zkhost.Prover); ok && h.Bin == "" {
+			status = "execute only: no " + b.hostName(z) + " to prove (run make zk-host ZKVM=" + string(z) + ")"
 		}
+		fmt.Fprintf(stdout, "%-8s %s\n", z, status)
 	}
 	return nil
 }

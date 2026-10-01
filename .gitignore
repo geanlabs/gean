@@ -32,3 +32,6 @@ xmss/rust/target/
 # zkVM guest builds and toolchains
 zk/out/
 zk/.tools/
+zk/sp1host/target/
+zk/ziskhost/target/
+zk/openvmhost/target/

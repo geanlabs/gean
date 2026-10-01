@@ -3,13 +3,12 @@ package zkvectors
 import (
 	"fmt"
 
-	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/types"
 )
 
 // Suite returns the standard vector set: several honest chains plus reject
-// cases derived from them. Every case's expectation is confirmed against the
-// native transition before it is returned.
+// cases derived from them. TestApplyMatchesNativeTransition confirms every
+// case's expectation against the native transition.
 func Suite() ([]Case, error) {
 	configs := []ChainConfig{
 		// Two-thirds votes every slot: justification and finalization advance.
@@ -45,14 +44,7 @@ func Suite() ([]Case, error) {
 	if err != nil {
 		return nil, err
 	}
-	cases = append(cases, rejects...)
-
-	for _, c := range cases {
-		if err := check(c); err != nil {
-			return nil, err
-		}
-	}
-	return cases, nil
+	return append(cases, rejects...), nil
 }
 
 // Rejects derives invalid blocks from a valid case, one fault each.
@@ -100,22 +92,6 @@ func Rejects(valid Case) ([]Case, error) {
 		out = append(out, Case{Name: "reject/" + f.name, Pre: valid.Pre, Block: block, WantErr: true})
 	}
 	return out, nil
-}
-
-// check confirms a case's expectation natively, on a copy of the pre-state.
-func check(c Case) error {
-	state, err := c.Pre.Clone()
-	if err != nil {
-		return err
-	}
-	err = statetransition.StateTransition(state, c.Block)
-	switch {
-	case c.WantErr && err == nil:
-		return fmt.Errorf("%s: expected rejection, transition succeeded", c.Name)
-	case !c.WantErr && err != nil:
-		return fmt.Errorf("%s: %w", c.Name, err)
-	}
-	return nil
 }
 
 func cloneBlock(b *types.Block) (*types.Block, error) {

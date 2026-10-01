@@ -10,7 +10,9 @@ func main() {
 	in := zkio.ReadInput()
 	switch string(in) {
 	case "commit":
-		zkio.Commit([]byte("ok"))
+		var pv [96]byte // a public values record: three roots
+		copy(pv[:], "ok")
+		zkio.Commit(pv[:])
 		zkio.Succeed()
 	case "panic":
 		panic("haltcheck")

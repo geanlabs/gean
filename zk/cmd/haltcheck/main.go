@@ -1,5 +1,6 @@
 // Command haltcheck runs the haltcheck guest through each termination path on
-// the ZisK emulator and checks that only a committed run halts successfully.
+// a zkVM's local executor and checks that only a committed run halts
+// successfully.
 package main
 
 import (
@@ -9,23 +10,31 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/geanlabs/gean/internal/zkstf"
 	"github.com/geanlabs/gean/internal/zkstf/ziskemu"
+	"github.com/geanlabs/gean/internal/zkstf/zkhost"
 )
 
 func main() {
+	zkvm := flag.String("zkvm", "zisk", "zkvm: zisk (runs $ZISKEMU), sp1 or openvm (runs $<ZKVM>HOST)")
 	elf := flag.String("elf", "", "haltcheck guest ELF")
 	flag.Parse()
-	bin := os.Getenv("ZISKEMU")
-	if bin == "" {
-		bin = "ziskemu"
+	var execute func(context.Context, []byte) (*zkstf.ExecResult, error)
+	switch *zkvm {
+	case "zisk":
+		execute = ziskemu.Executor{Bin: envOr("ZISKEMU", "ziskemu"), ELF: *elf}.Execute
+	case "sp1", "openvm":
+		host := envOr(strings.ToUpper(*zkvm)+"HOST", *zkvm+"host")
+		execute = zkhost.Prover{VM: zkstf.ZKVM(*zkvm), Bin: host, ELF: *elf}.Execute
+	default:
+		log.Fatalf("unsupported zkvm %q", *zkvm)
 	}
-	emu := ziskemu.Prover{Bin: bin, ELF: *elf}
 
 	failed := false
 	for _, mode := range []string{"commit", "return", "panic", "nil"} {
-		_, err := emu.Execute(context.Background(), []byte(mode))
+		_, err := execute(context.Background(), []byte(mode))
 		wantOK := mode == "commit"
 		ok := err == nil
 		switch {
@@ -41,4 +50,11 @@ func main() {
 	if failed {
 		os.Exit(1)
 	}
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

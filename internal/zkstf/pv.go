@@ -9,7 +9,7 @@ import (
 const PublicValuesSize = 96
 
 // maxPaddedPublicValues is the largest zero-padded form a zkVM reports: ZisK
-// and OpenVM expose a fixed 256-byte output region.
+// exposes a fixed 256-byte output region, OpenVM 128 bytes.
 const maxPaddedPublicValues = 256
 
 var ErrMalformedPublicValues = errors.New("zkstf: malformed public values")

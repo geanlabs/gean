@@ -31,9 +31,6 @@ var ErrMalformedInput = errors.New("zkstf: malformed input")
 
 // NewInput encodes a pre-state and an unsigned block.
 func NewInput(state *types.State, block *types.Block) ([]byte, error) {
-	if state == nil || block == nil {
-		return nil, fmt.Errorf("%w: nil state or block", ErrMalformedInput)
-	}
 	stateSSZ, err := state.MarshalSSZ()
 	if err != nil {
 		return nil, fmt.Errorf("marshal state: %w", err)

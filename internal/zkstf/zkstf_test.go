@@ -62,7 +62,6 @@ func TestProofFileRoundTrip(t *testing.T) {
 	p := &zkstf.Proof{
 		ZKVM:         zkstf.ZisK,
 		VKHash:       [32]byte{9},
-		InputHash:    zkstf.InputHash([]byte("in")),
 		PublicValues: zkstf.PublicValues{PostStateRoot: [32]byte{7}},
 		Data:         []byte("proof bytes"),
 	}
@@ -74,7 +73,7 @@ func TestProofFileRoundTrip(t *testing.T) {
 	if err := got.UnmarshalBinary(enc); err != nil {
 		t.Fatal(err)
 	}
-	if got.ZKVM != p.ZKVM || got.VKHash != p.VKHash || got.InputHash != p.InputHash ||
+	if got.ZKVM != p.ZKVM || got.VKHash != p.VKHash ||
 		got.PublicValues != p.PublicValues || !bytes.Equal(got.Data, p.Data) {
 		t.Fatalf("round trip mismatch: %+v", got)
 	}

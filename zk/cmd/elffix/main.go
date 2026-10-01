@@ -4,8 +4,9 @@
 // A zkVM transpiles every word of every executable segment before running, so
 // the ELF must contain nothing it cannot decode:
 //
-//   - The linker places the ELF header in the first executable segment. The
-//     segment is trimmed to start at .text.
+//   - The linker places the ELF header in the first executable segment, and
+//     .text can end in a partial word of zero padding. The segment is trimmed
+//     to the whole words of .text.
 //   - The zkVM targets have no floating-point or vector unit. The guest is
 //     built with soft float, but a few runtime assembly routines still name
 //     float registers, and the vector paths of the byte and random-number
@@ -19,9 +20,13 @@
 //     decodes. Padding is never executed; it becomes the failing halt too.
 //   - Compressed instructions are rejected outright; the guest is built
 //     without them.
+//   - SP1 and OpenVM implement RV64IM only: SP1 rejects atomics at load time
+//     and aborts on FENCE or a CSR access. The patched toolchain emits none
+//     of them, and any left in an SP1 or OpenVM guest fails the build.
 package main
 
 import (
+	"bytes"
 	"debug/elf"
 	"encoding/binary"
 	"errors"
@@ -50,33 +55,48 @@ var (
 	}
 )
 
-// failWords is each zkVM's failing halt, a single 32-bit instruction.
-var failWords = map[string]uint32{
+// target is one zkVM's instruction policy.
+type target struct {
+	// fail is the zkVM's failing halt, a single 32-bit instruction.
+	fail uint32
+	// rv64im rejects atomics, fences and CSR accesses other than fail.
+	rv64im bool
+}
+
+var targets = map[string]target{
 	// SYSTEM word that ZisK decodes as reserved: halt_with_error.
-	"zisk": 0x00200073,
+	"zisk": {fail: 0x00200073},
+	// UNIMP (csrrw x0, cycle, x0), which SP1 executes as an abort.
+	"sp1": {fail: 0xc0001073, rv64im: true},
+	// terminate(1) on OpenVM's custom-0 opcode: exit code 1 is not provable.
+	// OpenVM would itself turn an atomic or CSR word into a failing
+	// terminate and a FENCE into a no-op, but the guest is held to RV64IM
+	// all the same.
+	"openvm": {fail: 0x0010000b, rv64im: true},
 }
 
 func main() {
-	zkvm := flag.String("zkvm", "", "target zkVM: zisk")
+	zkvm := flag.String("zkvm", "", "target zkVM: zisk, sp1 or openvm")
 	flag.Parse()
 	if flag.NArg() != 2 {
 		log.Fatal("usage: elffix -zkvm <zkvm> <in.elf> <out.elf>")
 	}
-	fail, ok := failWords[*zkvm]
+	t, ok := targets[*zkvm]
 	if !ok {
 		log.Fatalf("unsupported zkvm %q", *zkvm)
 	}
-	if err := fix(flag.Arg(0), flag.Arg(1), fail); err != nil {
+	if err := fix(flag.Arg(0), flag.Arg(1), t); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func fix(in, out string, fail uint32) error {
+func fix(in, out string, t target) error {
+	fail := t.fail
 	data, err := os.ReadFile(in)
 	if err != nil {
 		return err
 	}
-	f, err := elf.NewFile(bytesReaderAt(data))
+	f, err := elf.NewFile(bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -109,6 +129,8 @@ func fix(in, out string, fail uint32) error {
 			padding++
 		case word&3 != 3:
 			return fmt.Errorf("compressed instruction %#08x at %#x (%s)", word, addr, symbolAt(syms, addr))
+		case t.rv64im && word != fail && isAtomicFenceOrCSR(word):
+			return fmt.Errorf("atomic, fence or CSR instruction %#08x at %#x in %s", word, addr, symbolAt(syms, addr))
 		case isVector(word):
 			sym := symbolAt(syms, addr)
 			if !unreachableVector[sym] {
@@ -132,28 +154,31 @@ func fix(in, out string, fail uint32) error {
 	return os.WriteFile(out, data, 0o755)
 }
 
-// trimTextSegment moves the start of the executable segment holding .text
-// forward to .text, dropping the ELF header and notes from what is loaded as
-// code.
+// trimTextSegment shrinks the executable segment to the whole words of .text:
+// it drops the ELF header and notes before .text, and the partial word of
+// zero padding the linker can leave at its end.
 func trimTextSegment(f *elf.File, data []byte, text *elf.Section) error {
 	for i, p := range f.Progs {
 		if p.Type != elf.PT_LOAD || p.Flags&elf.PF_X == 0 {
 			continue
 		}
-		if text.Addr < p.Vaddr || text.Addr >= p.Vaddr+p.Memsz {
-			return fmt.Errorf("executable segment at %#x does not hold .text", p.Vaddr)
+		end := text.Addr + text.Size
+		if text.Addr < p.Vaddr || end != p.Vaddr+p.Filesz || p.Filesz != p.Memsz {
+			return fmt.Errorf("executable segment at %#x is not the ELF header and notes followed by .text", p.Vaddr)
 		}
-		d := text.Addr - p.Vaddr
-		if d == 0 {
-			return nil
+		size := text.Size &^ 3
+		for _, b := range data[text.Offset+size : text.Offset+text.Size] {
+			if b != 0 {
+				return errors.New(".text ends in a partial instruction")
+			}
 		}
 		base := int(binary.LittleEndian.Uint64(data[32:])) + i*56 // e_phoff + i*sizeof(Elf64_Phdr)
 		put := func(field int, v uint64) { binary.LittleEndian.PutUint64(data[base+field:], v) }
-		put(8, p.Off+d)
-		put(16, p.Vaddr+d)
-		put(24, p.Paddr+d)
-		put(32, p.Filesz-d)
-		put(40, p.Memsz-d)
+		put(8, text.Offset)
+		put(16, text.Addr)
+		put(24, p.Paddr+(text.Addr-p.Vaddr))
+		put(32, size)
+		put(40, size)
 		return nil
 	}
 	return errors.New("no executable segment")
@@ -184,23 +209,23 @@ func isFloat(word uint32) bool {
 	return false
 }
 
+// isAtomicFenceOrCSR reports whether a 32-bit RISC-V word is outside RV64IM
+// in a way a float check does not catch: an A-extension instruction (AMO
+// major opcode), a FENCE, or a SYSTEM instruction that accesses a CSR.
+func isAtomicFenceOrCSR(word uint32) bool {
+	switch word & 0x7f {
+	case 0x2f, 0x0f:
+		return true
+	case 0x73:
+		return (word>>12)&7 != 0
+	}
+	return false
+}
+
 func symbolAt(syms []elf.Symbol, addr uint64) string {
 	i := sort.Search(len(syms), func(i int) bool { return syms[i].Value > addr }) - 1
 	if i < 0 {
 		return "?"
 	}
 	return syms[i].Name
-}
-
-type bytesReaderAt []byte
-
-func (b bytesReaderAt) ReadAt(p []byte, off int64) (int, error) {
-	if off >= int64(len(b)) {
-		return 0, errors.New("read past end")
-	}
-	n := copy(p, b[off:])
-	if n < len(p) {
-		return n, errors.New("short read")
-	}
-	return n, nil
 }

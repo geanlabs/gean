@@ -17,8 +17,8 @@ import (
 	"github.com/geanlabs/gean/internal/zkstf"
 )
 
-// Prover runs ELF under the ziskemu binary at Bin.
-type Prover struct {
+// Executor runs ELF under the ziskemu binary at Bin.
+type Executor struct {
 	Bin string
 	ELF string
 }
@@ -30,9 +30,7 @@ var (
 	stepsLine = regexp.MustCompile(`process_rom\(\) steps=(\d+)`)
 )
 
-func (Prover) ZKVM() zkstf.ZKVM { return zkstf.ZisK }
-
-func (p Prover) Execute(ctx context.Context, input []byte) (*zkstf.ExecResult, error) {
+func (e Executor) Execute(ctx context.Context, input []byte) (*zkstf.ExecResult, error) {
 	dir, err := os.MkdirTemp("", "ziskemu-")
 	if err != nil {
 		return nil, err
@@ -44,7 +42,7 @@ func (p Prover) Execute(ctx context.Context, input []byte) (*zkstf.ExecResult, e
 	}
 
 	start := time.Now()
-	cmd := exec.CommandContext(ctx, p.Bin, "-e", p.ELF, "-i", inPath, "-o", outPath, "-m")
+	cmd := exec.CommandContext(ctx, e.Bin, "-e", e.ELF, "-i", inPath, "-o", outPath, "-m")
 	report, err := cmd.CombinedOutput()
 	elapsed := time.Since(start)
 	if err != nil {
@@ -70,14 +68,6 @@ func (p Prover) Execute(ctx context.Context, input []byte) (*zkstf.ExecResult, e
 		return nil, err
 	}
 	return &zkstf.ExecResult{PublicValues: pv, Cycles: steps, Duration: elapsed}, nil
-}
-
-func (Prover) Prove(context.Context, []byte) (*zkstf.Proof, error) {
-	return nil, fmt.Errorf("%w: the ZisK emulator executes but does not prove", zkstf.ErrUnsupported)
-}
-
-func (Prover) Verify(context.Context, *zkstf.Proof) (zkstf.PublicValues, error) {
-	return zkstf.PublicValues{}, fmt.Errorf("%w: the ZisK emulator executes but does not verify", zkstf.ErrUnsupported)
 }
 
 // Frame wraps an input in ZisK's stdin record: a u64 little-endian length
