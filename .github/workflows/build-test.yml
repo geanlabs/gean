@@ -36,7 +36,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             xmss/rust/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
+            zk/stf/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock', 'zk/stf/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 
@@ -51,3 +52,6 @@ jobs:
 
       - name: Run race tests
         run: go test -race ./internal/node ./internal/store ./internal/proving -count=1
+
+      - name: Check the Rust state transition against Go
+        run: make zk-stf-test
