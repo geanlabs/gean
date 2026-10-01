@@ -85,6 +85,10 @@ type ConsensusStore struct {
 	// Entries are added when a state is written and dropped when it is pruned.
 	stateSummariesMu sync.Mutex
 	stateSummaries   map[[32]byte]StateSummary
+
+	// blocks keeps block metadata and the canonical chain in memory for chain
+	// walks. See blockIndex.
+	blocks blockIndex
 }
 
 // ObserveStoredBlockSlot raises the stored-block high-water mark. Safe from any

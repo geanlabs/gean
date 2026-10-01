@@ -34,7 +34,11 @@ func (s *ConsensusStore) SetHead(root [32]byte) {
 }
 
 func (s *ConsensusStore) PutHead(root [32]byte) error {
-	return s.putMetadataRoot(storage.KeyHead, root, "set head")
+	if err := s.putMetadataRoot(storage.KeyHead, root, "set head"); err != nil {
+		return err
+	}
+	s.moveCanonicalHead(root)
+	return nil
 }
 
 func (s *ConsensusStore) SafeTarget() [32]byte {
@@ -113,12 +117,12 @@ func DeriveFinalizedFromHead(s *ConsensusStore, headRoot [32]byte) *types.Checkp
 	// A head at or below the finalized slot is where the climb stops before its
 	// first step. Genesis is the case that reaches this: its state carries a zero
 	// finalized root, and the climb answers with the genesis block itself.
-	headHeader := s.GetBlockHeader(headRoot)
-	if headHeader == nil {
+	headSlot, _, ok := s.BlockSlotAndParent(headRoot)
+	if !ok {
 		return nil
 	}
-	if headHeader.Slot <= finalized.Slot {
-		if headHeader.Slot == finalized.Slot {
+	if headSlot <= finalized.Slot {
+		if headSlot == finalized.Slot {
 			return &types.Checkpoint{Root: headRoot, Slot: finalized.Slot}
 		}
 		return nil
@@ -130,7 +134,7 @@ func DeriveFinalizedFromHead(s *ConsensusStore, headRoot [32]byte) *types.Checkp
 	// a checkpoint-sync anchor whose finalized block lies below the anchor, which
 	// is never stored because import rejects blocks below the finalized slot; the
 	// climb stops at the anchor and reports nothing.
-	if header := s.GetBlockHeader(finalized.Root); header != nil && header.Slot == finalized.Slot {
+	if slot, _, ok := s.BlockSlotAndParent(finalized.Root); ok && slot == finalized.Slot {
 		return finalized
 	}
 	return nil

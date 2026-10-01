@@ -34,6 +34,7 @@ func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinali
 	}
 
 	prunedChain := pruneLiveChain(s, newFinalizedSlot)
+	s.pruneBlockIndexBelow(newFinalizedSlot)
 
 	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
 	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
@@ -168,6 +169,7 @@ func pruneBlocksByRoots(s *ConsensusStore, roots [][32]byte) int {
 	if !commitDeletes(wb, "prune blocks") {
 		return 0
 	}
+	s.forgetBlockHeaders(roots)
 	return len(roots)
 }
 
