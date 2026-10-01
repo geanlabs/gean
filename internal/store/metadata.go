@@ -80,36 +80,58 @@ func (s *ConsensusStore) PutLatestFinalized(cp *types.Checkpoint) error {
 }
 
 // DeriveFinalizedFromHead resolves the finalized checkpoint implied by the head's
-// post-state, mirroring the spec's update_head: it climbs the head's chain to the
-// ancestor block at the post-state finalized slot. Finalization is anchored to the
-// canonical head rather than advanced per imported block, so a losing fork that
-// finalizes a higher slot cannot latch finalization above the head and stall target
-// advancement. Returns nil when no stored block sits exactly at that slot (e.g. a
-// fresh checkpoint-sync anchor), so the caller keeps its current trusted checkpoint.
+// post-state, matching the spec's update_head: the head's ancestor block at the
+// post-state finalized slot. Finalization is anchored to the canonical head rather
+// than advanced per imported block, so a losing fork that finalizes a higher slot
+// cannot latch finalization above the head and stall target advancement. Returns
+// nil when no stored block sits exactly at that slot (e.g. a fresh checkpoint-sync
+// anchor), so the caller keeps its current trusted checkpoint.
+//
+// The spec reaches that ancestor by climbing parent links from the head. That
+// climb is redundant: a state's finalized root is always its own chain's block at
+// the finalized slot. Genesis sets it to the genesis block, and every later change
+// takes the source of a justifying vote, which the transition admits only when the
+// source root matches the state's historical_block_hashes at its slot. So the
+// head state's checkpoint already names the ancestor the climb would reach, and it
+// is returned whenever that block is stored.
+//
+// Reading it directly matters because the climb is as long as the distance to
+// finalization, and here every step was a header read from disk. It ran on every
+// head update, twice a slot and once per imported block, all on the dispatch
+// loop; with finalization stalled for ~6,000 slots on a shared devnet it reached
+// ~26s per block and the node fell permanently behind the head.
 func DeriveFinalizedFromHead(s *ConsensusStore, headRoot [32]byte) *types.Checkpoint {
 	if s == nil {
 		return nil
 	}
-	headState := s.GetState(headRoot)
-	if headState == nil || headState.LatestFinalized == nil {
+	summary, ok := s.StateSummary(headRoot)
+	if !ok {
 		return nil
 	}
-	finalizedSlot := headState.LatestFinalized.Slot
+	finalized := &summary.Finalized
 
-	root := headRoot
-	for {
-		header := s.GetBlockHeader(root)
-		if header == nil || header.Slot <= finalizedSlot {
-			break
+	// A head at or below the finalized slot is where the climb stops before its
+	// first step. Genesis is the case that reaches this: its state carries a zero
+	// finalized root, and the climb answers with the genesis block itself.
+	headHeader := s.GetBlockHeader(headRoot)
+	if headHeader == nil {
+		return nil
+	}
+	if headHeader.Slot <= finalized.Slot {
+		if headHeader.Slot == finalized.Slot {
+			return &types.Checkpoint{Root: headRoot, Slot: finalized.Slot}
 		}
-		if s.GetBlockHeader(header.ParentRoot) == nil {
-			break
-		}
-		root = header.ParentRoot
+		return nil
 	}
 
-	if header := s.GetBlockHeader(root); header != nil && header.Slot == finalizedSlot {
-		return &types.Checkpoint{Root: root, Slot: finalizedSlot}
+	// Every block between the head and its finalized block was imported, so the
+	// climb never stops early on that stretch: it reaches the finalized block
+	// exactly when that block's own header is stored. The case where it is not is
+	// a checkpoint-sync anchor whose finalized block lies below the anchor, which
+	// is never stored because import rejects blocks below the finalized slot; the
+	// climb stops at the anchor and reports nothing.
+	if header := s.GetBlockHeader(finalized.Root); header != nil && header.Slot == finalized.Slot {
+		return finalized
 	}
 	return nil
 }

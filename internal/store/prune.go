@@ -132,6 +132,7 @@ func pruneStatesByRoots(s *ConsensusStore, roots [][32]byte) int {
 	if !commitDeletes(wb, "prune states") {
 		return 0
 	}
+	s.forgetStateSummaries(roots)
 	return len(roots)
 }
 

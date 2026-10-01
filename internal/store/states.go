@@ -47,7 +47,11 @@ func (s *ConsensusStore) PutState(root [32]byte, state *types.State) error {
 	if err != nil {
 		return fmt.Errorf("insert state: marshal: %w", err)
 	}
-	return s.putOne(storage.TableStates, root[:], data, "insert state")
+	if err := s.putOne(storage.TableStates, root[:], data, "insert state"); err != nil {
+		return err
+	}
+	s.noteStateSummary(root, state)
+	return nil
 }
 
 func (s *ConsensusStore) StatesCount() int {

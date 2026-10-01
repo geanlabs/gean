@@ -101,8 +101,8 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 	}
 	// The head post-state's justified checkpoint is the source selectRecoveryCandidates
 	// filters votes against.
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil || headState.LatestJustified == nil {
+	headSummary, ok := e.Store.StateSummary(e.Store.Head())
+	if !ok {
 		return
 	}
 	pubkeys, bindings, err := e.blockProofClaims(block, state)
@@ -112,7 +112,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 
 	newEntries := e.Store.NewPayloads.Entries()
 	knownEntries := e.Store.KnownPayloads.Entries()
-	candidates := selectRecoveryCandidates(block.Body.Attestations, headState.LatestJustified, newEntries, knownEntries)
+	candidates := selectRecoveryCandidates(block.Body.Attestations, &headSummary.Justified, newEntries, knownEntries)
 
 	for _, candidate := range candidates {
 		if ctx.Err() != nil {

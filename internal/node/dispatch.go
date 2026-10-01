@@ -6,16 +6,28 @@ import (
 
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/types"
 )
+
+// slowDispatchEvent is the event duration that gets logged. One interval is the
+// whole budget between ticks, so an event that long has already delayed the
+// clock and everything queued behind it.
+var slowDispatchEvent = types.MillisecondsPerInterval * time.Millisecond
 
 // timeEvent records how long one dispatch-loop event took. Every case runs on
 // the single goroutine that also keeps the slot clock, so an unattributed slow
 // handler here shows up only as a late tick — which is exactly how a set of
-// full-table storage scans went unnoticed until they were costing minutes.
+// full-table storage scans went unnoticed until they were costing minutes, and
+// how a per-block disk walk later reached ~26s per block during a finality stall
+// with nothing in the logs naming it.
 func timeEvent(event string, fn func()) {
 	start := time.Now()
 	fn()
-	metrics.ObserveDispatchEvent(event, time.Since(start).Seconds())
+	elapsed := time.Since(start)
+	metrics.ObserveDispatchEvent(event, elapsed.Seconds())
+	if elapsed >= slowDispatchEvent {
+		logger.Warn(logger.Node, "slow dispatch event=%s took=%s", event, elapsed.Round(time.Millisecond))
+	}
 }
 
 func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
