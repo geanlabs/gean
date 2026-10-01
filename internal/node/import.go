@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"time"
 
 	"github.com/geanlabs/gean/internal/blockprocessor"
 	"github.com/geanlabs/gean/internal/logger"
@@ -13,6 +14,9 @@ import (
 func (e *Engine) onBlock(signedBlock *types.SignedBlock) {
 	if signedBlock == nil || signedBlock.Block == nil {
 		return
+	}
+	if root, err := signedBlock.Block.HashTreeRoot(); err == nil {
+		e.recordBlockArrival(root, signedBlock.Block.Slot, uint64(time.Now().UnixMilli()))
 	}
 
 	queue := []*types.SignedBlock{signedBlock}

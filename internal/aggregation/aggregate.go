@@ -32,11 +32,15 @@ type aggregationGroup struct {
 // still be justified first, then current-slot first, then frontier-first by
 // ascending target slot.
 //
-// Groups whose target is already justified come last. leanSpec's aggregate
-// proves them like any other: their votes justify nothing, but they carry the
-// head, and dropping them leaves fork choice blind to where most validators
-// see the tip. Ordering them last keeps them off the session budget that an
-// unjustified target needs.
+// A group whose target is already justified justifies nothing, but its votes
+// still carry the head, and fork choice counts a head vote only once it is
+// inside an aggregate. That matters when the head is contested, which in
+// practice means a late head: a block that reached this node at or after
+// interval 3 has usually not reached the next proposer, who then builds beside
+// it. Such groups are kept and ordered last, off the budget an unjustified
+// target needs. When the head arrived on time the votes repeat a head the
+// network already agrees on, and proving them only adds load every peer must
+// verify, so they are skipped.
 //
 // This slot's votes are the only ones with a deadline: they must be aggregated
 // and gossiped in time to reach the next block, while a backlog entry loses
@@ -103,7 +107,7 @@ func (g groupSkips) summary() string {
 	return b.String()
 }
 
-func orderedGroups(snap *Snapshot) []aggregationGroup {
+func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 	dataRoots := make(map[[32]byte]bool)
 	for dr := range snap.attSigs {
 		dataRoots[dr] = true
@@ -131,6 +135,10 @@ func orderedGroups(snap *Snapshot) []aggregationGroup {
 		if snap.headState != nil && snap.headState.LatestFinalized != nil {
 			justified, err := statetransition.IsSlotJustified(snap.headState, snap.headState.LatestFinalized.Slot, targetSlot)
 			settled = err == nil && justified
+		}
+		if settled && (attData.Head == nil || !snap.lateHeads[attData.Head.Root]) {
+			skips.add(metrics.AggGroupSkipTargetJustified)
+			continue
 		}
 		groups = append(groups, aggregationGroup{
 			dataRoot:    dr,
@@ -283,7 +291,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	attempted := false
 	attempts := 0
 
-	groups := orderedGroups(snap)
+	groups := orderedGroups(snap, skips)
 	for i, group := range groups {
 		if shouldYield != nil && shouldYield() {
 			truncated = true

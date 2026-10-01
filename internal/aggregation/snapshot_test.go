@@ -39,7 +39,7 @@ func TestSnapshotInputsCapturesPayloadAndTargetState(t *testing.T) {
 		Proof:        []byte{1},
 	})
 
-	snap := SnapshotInputs(s, headState, 1)
+	snap := SnapshotInputs(s, headState, 1, nil)
 	if snap == nil {
 		t.Fatal("snapshot is nil")
 	}
@@ -53,11 +53,11 @@ func TestSnapshotInputsCapturesPayloadAndTargetState(t *testing.T) {
 
 func TestSnapshotInputsReturnsNilWithoutWork(t *testing.T) {
 	s := store.NewConsensusStore(storage.NewInMemoryBackend())
-	if snap := SnapshotInputs(s, &types.State{}, 0); snap != nil {
+	if snap := SnapshotInputs(s, &types.State{}, 0, nil); snap != nil {
 		t.Fatalf("snapshot=%v, want nil", snap)
 	}
 	// A caller with no head state has nothing to resolve signers against.
-	if snap := SnapshotInputs(s, nil, 0); snap != nil {
+	if snap := SnapshotInputs(s, nil, 0, nil); snap != nil {
 		t.Fatalf("snapshot=%v, want nil without a head state", snap)
 	}
 }

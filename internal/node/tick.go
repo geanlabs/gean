@@ -132,7 +132,7 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 		return
 	}
 
-	snap := aggregation.SnapshotInputs(e.Store, headState, currentSlot)
+	snap := aggregation.SnapshotInputs(e.Store, headState, currentSlot, e.lateHeads(currentSlot))
 	if snap == nil {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return

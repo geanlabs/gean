@@ -166,10 +166,11 @@ docker logs gean_0 2>&1 | grep -iE "aggregation session" | tail -20
 instead of).
 
 `lean_aggregation_groups_skipped_total{reason=}` counts groups a session dropped (`session_cap`,
-`budget`, `proposal_pending`, `too_few_signers`, `error`). A group whose target is already
-justified is not skipped: it is aggregated last, for its head votes, and its `aggregate:` log line
-reads `target_justified=true`. When those groups are cut by the cap or budget they show up here
-as `session_cap` or `budget`.
+`budget`, `proposal_pending`, `too_few_signers`, `error`, `target_justified`). A group whose
+target is already justified is proved only when its head block reached the node late (at or after
+interval 3 of its slot); its `aggregate:` log line then reads `target_justified=true`. With an
+on-time head it is skipped as `target_justified`, which is normally the largest reason and is
+expected: those votes repeat a head the network already agrees on.
 
 Session logs carry the real durations the histograms cannot reach.
 

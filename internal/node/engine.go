@@ -105,7 +105,10 @@ type Engine struct {
 	// fetchInFlight tracks block roots already queued for by-root fetch so a single
 	// missing parent cannot flood FetchRootCh with duplicate requests. Accessed only
 	// on the dispatch loop (queue on onBlock, clear on receive/exhaustion), so no lock.
-	fetchInFlight  map[[32]byte]bool
+	fetchInFlight map[[32]byte]bool
+	// blockArrivals records when each recent block first reached this node, so
+	// aggregation can tell a late head from one that arrived on time.
+	blockArrivals  map[[32]byte]blockArrival
 	topicMeshSizes atomic.Pointer[map[string]int]
 
 	// coveragePreMerge holds the new-payload participants captured before the

@@ -11,13 +11,16 @@ type Snapshot struct {
 	attSigs      map[[32]byte]*store.AttestationDataEntry
 	newEntries   map[[32]byte]*store.PayloadEntry
 	knownEntries map[[32]byte]*store.PayloadEntry
+	// lateHeads holds the recent blocks this node first saw late in their slot.
+	// See orderedGroups for why only their already-justified votes are proved.
+	lateHeads map[[32]byte]bool
 }
 
 // SnapshotInputs copies the aggregation inputs out of the store. headState is
 // supplied by the caller rather than fetched here: GetState decodes the whole
 // state from SSZ on every call, and the dispatcher has already resolved it to
 // decide whether to run at all.
-func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64) *Snapshot {
+func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64, lateHeads map[[32]byte]bool) *Snapshot {
 	if headState == nil {
 		return nil
 	}
@@ -31,6 +34,7 @@ func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64
 		attSigs:      s.AttestationSignatures.Snapshot(),
 		newEntries:   make(map[[32]byte]*store.PayloadEntry),
 		knownEntries: make(map[[32]byte]*store.PayloadEntry),
+		lateHeads:    lateHeads,
 	}
 
 	dataRoots := make(map[[32]byte]bool)
