@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/aggregation"
+	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
@@ -28,6 +29,18 @@ func (e *Engine) onTick() {
 
 	currentSlot := e.currentSlot(timestampMs)
 	currentInterval := e.currentInterval(timestampMs)
+
+	// The startup tick lands wherever the process began, so only scheduled
+	// ticks say anything about the clock's phase.
+	if !firstTick {
+		phaseMs := e.millisIntoSlot(timestampMs) % types.MillisecondsPerInterval
+		metrics.ObserveTickPhase(float64(phaseMs) / 1000)
+	}
+
+	if !e.claimInterval(timestampMs) {
+		logger.Warn(logger.Node, "tick skipped: interval already handled slot=%d interval=%d", currentSlot, currentInterval)
+		return
+	}
 
 	metrics.SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)

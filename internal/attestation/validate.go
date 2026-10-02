@@ -129,23 +129,33 @@ func ValidateAttestationData(s *store.ConsensusStore, data *types.AttestationDat
 // chain. Mirrors leanSpec _checkpoint_is_ancestor: climb parent links from the
 // descendant; the ancestor's slot must carry its exact root, otherwise the two
 // checkpoints sit on forked branches.
+//
+// The climb stops early once it stands on a canonical block: below that block the
+// chain is the canonical one, so the canonical map names the block the climb would
+// meet at the ancestor's slot. That bounds the check by how far the descendant's
+// branch forked rather than by how far back the ancestor sits.
 func checkpointIsAncestor(s *store.ConsensusStore, ancestor, descendant *types.Checkpoint) bool {
 	if ancestor.Slot > descendant.Slot {
 		return false
 	}
 	current := descendant.Root
 	for {
-		header := s.GetBlockHeader(current)
-		if header == nil {
+		slot, parent, ok := s.BlockSlotAndParent(current)
+		if !ok {
 			return false
 		}
-		if header.Slot == ancestor.Slot {
+		if slot == ancestor.Slot {
 			return current == ancestor.Root
 		}
-		if header.Slot < ancestor.Slot {
+		if slot < ancestor.Slot {
 			return false
 		}
-		current = header.ParentRoot
+		// An empty slot on the canonical chain means the climb would skip
+		// past it and report false, so the zero root never matches.
+		if held, ok := s.CanonicalAncestorAt(current, slot, ancestor.Slot); ok {
+			return !types.IsZeroRoot(held) && held == ancestor.Root
+		}
+		current = parent
 	}
 }
 

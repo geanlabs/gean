@@ -121,6 +121,15 @@ var (
 		Help:    "Elapsed time between clock ticks in seconds",
 		Buckets: []float64{0.4, 0.6, 0.75, 0.8, 0.805, 0.81, 0.815, 0.82, 0.825, 0.85, 0.9, 1.0, 1.2, 1.6},
 	})
+	// metricTickPhase is where in its interval each tick's duties start. An
+	// aligned clock reads near zero; a constant offset means the tick schedule
+	// is shifted and every duty runs that much late. Dispatch-loop delay before
+	// the tick is handled counts too, since that is when the duties really run.
+	metricTickPhase = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_tick_phase_seconds",
+		Help:    "Offset of each tick into its interval, measured when the tick is handled",
+		Buckets: []float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8},
+	})
 	// metricDispatchEventDuration times each case of the dispatch select, so a
 	// slow handler can be attributed rather than only observed as a late tick.
 	// Buckets run well past a slot: the point is to size a stall, and the

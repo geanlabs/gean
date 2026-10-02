@@ -94,11 +94,11 @@ func (c *coverageSet) record(section string) {
 // validatorCount reads the head state's registry size, which is what every
 // coverage section is measured against.
 func (e *Engine) coverageValidatorCount() int {
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
+	headSummary, ok := e.Store.StateSummary(e.Store.Head())
+	if !ok {
 		return 0
 	}
-	return len(headState.Validators)
+	return int(headSummary.NumValidators)
 }
 
 // snapshotNewPayloadParticipants captures the participant bits currently in the

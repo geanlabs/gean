@@ -69,6 +69,13 @@ func (v *inMemoryReadView) Get(table Table, key []byte) ([]byte, error) {
 	return cp, nil
 }
 
+func (v *inMemoryReadView) Has(table Table, key []byte) (bool, error) {
+	v.backend.mu.RLock()
+	defer v.backend.mu.RUnlock()
+	_, ok := v.backend.tables[table][string(key)]
+	return ok, nil
+}
+
 func (v *inMemoryReadView) PrefixIterator(table Table, prefix []byte) (Iterator, error) {
 	v.backend.mu.RLock()
 	defer v.backend.mu.RUnlock()
