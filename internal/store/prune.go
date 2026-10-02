@@ -34,6 +34,7 @@ func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinali
 	}
 
 	prunedChain := pruneLiveChain(s, newFinalizedSlot)
+	s.pruneBlockIndexBelow(newFinalizedSlot)
 
 	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
 	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
@@ -120,6 +121,11 @@ func pruneStatesByRoots(s *ConsensusStore, roots [][32]byte) int {
 		keys[i] = k
 	}
 
+	// Forget the summaries first: HasState trusts a summary as proof the state
+	// is stored, so one must never outlive its state, even if the delete fails.
+	// A summary missing for a state that survives is recomputed on demand.
+	s.forgetStateSummaries(roots)
+
 	wb, err := s.beginWrite("prune states")
 	if err != nil {
 		logger.Error(logger.Store, "%v", err)
@@ -167,6 +173,7 @@ func pruneBlocksByRoots(s *ConsensusStore, roots [][32]byte) int {
 	if !commitDeletes(wb, "prune blocks") {
 		return 0
 	}
+	s.forgetBlockHeaders(roots)
 	return len(roots)
 }
 

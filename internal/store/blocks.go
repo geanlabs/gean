@@ -54,6 +54,7 @@ func (s *ConsensusStore) PutBlockHeader(root [32]byte, header *types.BlockHeader
 	if err := s.putOne(storage.TableBlockHeaders, root[:], data, "insert block header"); err != nil {
 		return err
 	}
+	s.NoteStoredHeader(root, header)
 	s.ObserveStoredBlockSlot(header.Slot)
 	return nil
 }
@@ -289,27 +290,39 @@ func (s *ConsensusStore) GetCanonicalBlocksInRange(startSlot, count uint64) ([]*
 
 	endSlot := startSlot + count
 	var blocks []*types.SignedBlock
-	complete := false
-	root := s.Head()
-	for {
-		header := s.GetBlockHeader(root)
-		if header == nil {
-			break
-		}
-		if header.Slot < startSlot {
-			complete = true
-			break
-		}
-		if header.Slot < endSlot {
+
+	// The canonical map answers directly when it reaches below the range, which
+	// is what a walk from the head would have to reach.
+	if roots, ok := s.canonicalRootsInRange(startSlot, endSlot); ok {
+		for _, root := range roots {
 			if block := s.GetSignedBlock(root); block != nil {
 				blocks = append(blocks, block)
 			}
 		}
-		if header.Slot == 0 {
+		return blocks, true
+	}
+
+	complete := false
+	root := s.Head()
+	for {
+		slot, parent, ok := s.BlockSlotAndParent(root)
+		if !ok {
+			break
+		}
+		if slot < startSlot {
 			complete = true
 			break
 		}
-		root = header.ParentRoot
+		if slot < endSlot {
+			if block := s.GetSignedBlock(root); block != nil {
+				blocks = append(blocks, block)
+			}
+		}
+		if slot == 0 {
+			complete = true
+			break
+		}
+		root = parent
 	}
 
 	for i, j := 0, len(blocks)-1; i < j; i, j = i+1, j-1 {

@@ -123,11 +123,11 @@ func (e *Engine) updateSafeTarget() {
 		e.FC.SetNewVote(vid, data.Head.Root, data.Slot, data)
 	}
 
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
+	headSummary, ok := e.Store.StateSummary(e.Store.Head())
+	if !ok {
 		return
 	}
-	numValidators := uint64(len(headState.Validators))
+	numValidators := headSummary.NumValidators
 
 	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators)
 	e.Store.SetSafeTarget(safeTarget)

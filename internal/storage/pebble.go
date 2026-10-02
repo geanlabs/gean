@@ -89,6 +89,17 @@ func (v *pebbleReadView) Get(table Table, key []byte) ([]byte, error) {
 	return bytes.Clone(val), nil
 }
 
+func (v *pebbleReadView) Has(table Table, key []byte) (bool, error) {
+	_, closer, err := v.db.Get(tableKey(table, key))
+	if err == pebble.ErrNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, closer.Close()
+}
+
 func (v *pebbleReadView) PrefixIterator(table Table, prefix []byte) (Iterator, error) {
 	fullPrefix := tableKey(table, prefix)
 	iter, err := v.db.NewIter(&pebble.IterOptions{
