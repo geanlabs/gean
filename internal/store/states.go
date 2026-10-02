@@ -66,7 +66,7 @@ func (s *ConsensusStore) PutState(root [32]byte, state *types.State) error {
 	if err := s.putOne(storage.TableStates, root[:], data, "insert state"); err != nil {
 		return err
 	}
-	s.noteStateSummary(root, state)
+	s.NoteStoredState(root, state)
 	return nil
 }
 

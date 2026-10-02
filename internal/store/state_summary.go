@@ -37,14 +37,10 @@ func (s *ConsensusStore) StateSummary(root [32]byte) (StateSummary, bool) {
 	return summaryOf(s.GetState(root))
 }
 
-// NoteStoredState records the summary of a state written outside PutState, such
-// as the block-import batch.
+// NoteStoredState records the summary of a state just stored under root. PutState
+// calls it; a writer that bypasses PutState, such as the block-import batch, must
+// call it after its commit.
 func (s *ConsensusStore) NoteStoredState(root [32]byte, state *types.State) {
-	s.noteStateSummary(root, state)
-}
-
-// noteStateSummary records the summary of a state just stored under root.
-func (s *ConsensusStore) noteStateSummary(root [32]byte, state *types.State) {
 	summary, ok := summaryOf(state)
 	if s == nil || !ok {
 		return
