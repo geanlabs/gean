@@ -43,7 +43,6 @@ type blockIndex struct {
 
 	canonical         map[uint64][32]byte
 	canonicalValid    bool
-	canonicalHead     [32]byte
 	canonicalHeadSlot uint64
 	canonicalLow      uint64
 	// moving is set while moveCanonicalHead walks. Eviction waits for it to end:
@@ -270,7 +269,6 @@ func (s *ConsensusStore) moveCanonicalHead(head [32]byte) {
 			}
 		}
 	}
-	bi.canonicalHead = head
 	bi.canonicalHeadSlot = headMeta.slot
 	bi.canonicalValid = true
 }
