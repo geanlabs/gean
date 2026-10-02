@@ -121,6 +121,11 @@ func pruneStatesByRoots(s *ConsensusStore, roots [][32]byte) int {
 		keys[i] = k
 	}
 
+	// Forget the summaries first: HasState trusts a summary as proof the state
+	// is stored, so one must never outlive its state, even if the delete fails.
+	// A summary missing for a state that survives is recomputed on demand.
+	s.forgetStateSummaries(roots)
+
 	wb, err := s.beginWrite("prune states")
 	if err != nil {
 		logger.Error(logger.Store, "%v", err)
@@ -133,7 +138,6 @@ func pruneStatesByRoots(s *ConsensusStore, roots [][32]byte) int {
 	if !commitDeletes(wb, "prune states") {
 		return 0
 	}
-	s.forgetStateSummaries(roots)
 	return len(roots)
 }
 

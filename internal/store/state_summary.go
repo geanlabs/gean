@@ -17,7 +17,12 @@ type StateSummary struct {
 }
 
 // StateSummary returns the summary of the stored state at root. A miss — a state
-// written before a restart — decodes that state once and keeps the summary.
+// written before a restart — decodes the state and is not cached: summaries are
+// created only when a state is written, so HasState can take one as proof the
+// state is stored. A reader caching on a miss could race a prune and leave a
+// summary behind for a deleted state. Once the head moves to a block imported
+// after the restart, every state the per-slot paths ask about has a summary;
+// until then they decode the head state as they did before summaries existed.
 func (s *ConsensusStore) StateSummary(root [32]byte) (StateSummary, bool) {
 	if s == nil {
 		return StateSummary{}, false
@@ -29,11 +34,7 @@ func (s *ConsensusStore) StateSummary(root [32]byte) (StateSummary, bool) {
 		return summary, true
 	}
 
-	state := s.GetState(root)
-	if !s.noteStateSummary(root, state) {
-		return StateSummary{}, false
-	}
-	return summarize(state), true
+	return summaryOf(s.GetState(root))
 }
 
 // NoteStoredState records the summary of a state written outside PutState, such
@@ -42,29 +43,33 @@ func (s *ConsensusStore) NoteStoredState(root [32]byte, state *types.State) {
 	s.noteStateSummary(root, state)
 }
 
-// noteStateSummary records the summary of a state stored under root. A state
-// missing any part the summary needs is not recorded, so readers fall back to
-// the state itself and see the same gap they always did.
-func (s *ConsensusStore) noteStateSummary(root [32]byte, state *types.State) bool {
-	if s == nil || state == nil || state.LatestBlockHeader == nil ||
-		state.LatestJustified == nil || state.LatestFinalized == nil {
-		return false
+// noteStateSummary records the summary of a state just stored under root.
+func (s *ConsensusStore) noteStateSummary(root [32]byte, state *types.State) {
+	summary, ok := summaryOf(state)
+	if s == nil || !ok {
+		return
 	}
 	s.stateSummariesMu.Lock()
 	defer s.stateSummariesMu.Unlock()
 	if s.stateSummaries == nil {
 		s.stateSummaries = make(map[[32]byte]StateSummary)
 	}
-	s.stateSummaries[root] = summarize(state)
-	return true
+	s.stateSummaries[root] = summary
 }
 
-func summarize(state *types.State) StateSummary {
+// summaryOf extracts a state's summary. A state missing any part the summary
+// needs has none, so readers fall back to the state itself and see the same gap
+// they always did.
+func summaryOf(state *types.State) (StateSummary, bool) {
+	if state == nil || state.LatestBlockHeader == nil ||
+		state.LatestJustified == nil || state.LatestFinalized == nil {
+		return StateSummary{}, false
+	}
 	return StateSummary{
 		Finalized:     *state.LatestFinalized,
 		Justified:     *state.LatestJustified,
 		NumValidators: state.NumValidators(),
-	}
+	}, true
 }
 
 // forgetStateSummaries drops the summaries of states that have been deleted, so

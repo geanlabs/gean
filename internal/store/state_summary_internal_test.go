@@ -65,8 +65,8 @@ func TestStateSummaryMatchesStoredState(t *testing.T) {
 			t.Fatalf("%s: summary = %+v (ok=%t), want %+v", name, got, ok, want)
 		}
 	}
-	if _, ok := restarted.stateSummaries[root]; !ok {
-		t.Fatal("a decoded summary is not kept for the next read")
+	if _, ok := restarted.stateSummaries[root]; ok {
+		t.Fatal("a summary decoded on a miss was cached; only writes may create one")
 	}
 	if _, ok := live.StateSummary([32]byte{0xee}); ok {
 		t.Fatal("summary reported for a root with no stored state")
