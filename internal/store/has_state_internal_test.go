@@ -7,38 +7,11 @@ import (
 	"github.com/geanlabs/gean/internal/storage"
 )
 
-// stateValueReads counts reads of state values, the multi-megabyte part an
-// existence check must not touch.
-type stateValueReads struct {
-	storage.Backend
-	reads int
-}
-
-func (b *stateValueReads) BeginRead() (storage.ReadView, error) {
-	rv, err := b.Backend.BeginRead()
-	if err != nil {
-		return nil, err
-	}
-	return &stateValueReadsView{ReadView: rv, owner: b}, nil
-}
-
-type stateValueReadsView struct {
-	storage.ReadView
-	owner *stateValueReads
-}
-
-func (v *stateValueReadsView) Get(table storage.Table, key []byte) ([]byte, error) {
-	if table == storage.TableStates {
-		v.owner.reads++
-	}
-	return v.ReadView.Get(table, key)
-}
-
 // HasState answers from the summary or by key, never by reading the state, and
 // its answer always matches what the states table holds: after a write, after
 // a restart has emptied memory, and after a prune.
 func TestHasStateNeverReadsStateValues(t *testing.T) {
-	backend := &stateValueReads{Backend: storage.NewInMemoryBackend()}
+	backend := &tableReadCounter{Backend: storage.NewInMemoryBackend(), table: storage.TableStates}
 	s := NewConsensusStore(backend)
 	stored, other := [32]byte{0x01}, [32]byte{0x02}
 	s.InsertState(stored, summaryTestState(3, 4))

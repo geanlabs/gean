@@ -178,7 +178,7 @@ func TestBlockIndexMatchesHeaderWalks(t *testing.T) {
 // After warming up, extending the head must not read the header table: the
 // canonical map moves by one slot and the parent is already in memory.
 func TestBlockIndexHeadExtensionReadsNothing(t *testing.T) {
-	backend := &indexCountingBackend{Backend: storage.NewInMemoryBackend()}
+	backend := &tableReadCounter{Backend: storage.NewInMemoryBackend(), table: storage.TableBlockHeaders}
 	s := NewConsensusStore(backend)
 	parent := [32]byte{0x01}
 	storeIndexTestBlock(t, s, parent, types.ZeroRoot, 0)
@@ -187,44 +187,46 @@ func TestBlockIndexHeadExtensionReadsNothing(t *testing.T) {
 	for slot := uint64(1); slot <= 3000; slot++ {
 		root := [32]byte{0x03, byte(slot), byte(slot >> 8)}
 		storeIndexTestBlock(t, s, root, parent, slot)
-		before := backend.headerReads
+		before := backend.reads
 		s.SetHead(root)
-		if read := backend.headerReads - before; read != 0 {
+		if read := backend.reads - before; read != 0 {
 			t.Fatalf("slot %d: head extension read %d headers", slot, read)
 		}
 		parent = root
 	}
 	// The finalized-to-head ancestry check, run against every vote, is one step.
-	before := backend.headerReads
+	before := backend.reads
 	if !indexedClimb(s, [32]byte{0x01}, 0, parent) {
 		t.Fatal("genesis is not an ancestor of the head")
 	}
-	if read := backend.headerReads - before; read != 0 {
+	if read := backend.reads - before; read != 0 {
 		t.Fatalf("finalized-to-head check read %d headers", read)
 	}
 }
 
-type indexCountingBackend struct {
+// tableReadCounter counts the value reads that reach the backend for one table.
+type tableReadCounter struct {
 	storage.Backend
-	headerReads int
+	table storage.Table
+	reads int
 }
 
-func (b *indexCountingBackend) BeginRead() (storage.ReadView, error) {
+func (b *tableReadCounter) BeginRead() (storage.ReadView, error) {
 	rv, err := b.Backend.BeginRead()
 	if err != nil {
 		return nil, err
 	}
-	return &indexCountingView{ReadView: rv, owner: b}, nil
+	return &tableReadCounterView{ReadView: rv, owner: b}, nil
 }
 
-type indexCountingView struct {
+type tableReadCounterView struct {
 	storage.ReadView
-	owner *indexCountingBackend
+	owner *tableReadCounter
 }
 
-func (v *indexCountingView) Get(table storage.Table, key []byte) ([]byte, error) {
-	if table == storage.TableBlockHeaders {
-		v.owner.headerReads++
+func (v *tableReadCounterView) Get(table storage.Table, key []byte) ([]byte, error) {
+	if table == v.owner.table {
+		v.owner.reads++
 	}
 	return v.ReadView.Get(table, key)
 }
