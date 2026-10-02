@@ -133,9 +133,7 @@ func ValidateAttestationData(s *store.ConsensusStore, data *types.AttestationDat
 // The climb stops early once it stands on a canonical block: below that block the
 // chain is the canonical one, so the canonical map names the block the climb would
 // meet at the ancestor's slot. That bounds the check by how far the descendant's
-// branch forked rather than by how far back the ancestor sits. Each vote checks
-// the finalized checkpoint against its head, so without this every vote climbed
-// the whole unfinalized chain, header by header, during a finality stall.
+// branch forked rather than by how far back the ancestor sits.
 func checkpointIsAncestor(s *store.ConsensusStore, ancestor, descendant *types.Checkpoint) bool {
 	if ancestor.Slot > descendant.Slot {
 		return false

@@ -97,13 +97,8 @@ func (s *ConsensusStore) PutLatestFinalized(cp *types.Checkpoint) error {
 // takes the source of a justifying vote, which the transition admits only when the
 // source root matches the state's historical_block_hashes at its slot. So the
 // head state's checkpoint already names the ancestor the climb would reach, and it
-// is returned whenever that block is stored.
-//
-// Reading it directly matters because the climb is as long as the distance to
-// finalization, and here every step was a header read from disk. It ran on every
-// head update, twice a slot and once per imported block, all on the dispatch
-// loop; with finalization stalled for ~6,000 slots on a shared devnet it reached
-// ~26s per block and the node fell permanently behind the head.
+// is returned whenever that block is stored. The climb would cost a step per slot
+// back to finalization, on every head update.
 func DeriveFinalizedFromHead(s *ConsensusStore, headRoot [32]byte) *types.Checkpoint {
 	if s == nil {
 		return nil

@@ -292,9 +292,7 @@ func (s *ConsensusStore) GetCanonicalBlocksInRange(startSlot, count uint64) ([]*
 	var blocks []*types.SignedBlock
 
 	// The canonical map answers directly when it reaches below the range, which
-	// is what a walk from the head would have to reach. A peer syncing from far
-	// behind asks for ranges thousands of slots under the head; walking there
-	// header by header cost a read per slot in between.
+	// is what a walk from the head would have to reach.
 	if roots, ok := s.canonicalRootsInRange(startSlot, endSlot); ok {
 		for _, root := range roots {
 			if block := s.GetSignedBlock(root); block != nil {

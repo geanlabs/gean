@@ -24,13 +24,10 @@ func (s *ConsensusStore) GetState(root [32]byte) *types.State {
 	return st
 }
 
-// HasState reports whether a post-state is stored for root. Block import asks
-// this several times per block, of the parent among others, and a state grows
-// with the chain's history: reading the value to test for it copied megabytes
-// to answer yes or no. A state stored by this process has its summary in
-// memory; one written before a restart is checked through ReadView.Has, which
-// never copies the value out (a miss, the common case for a new block, never
-// touches one at all).
+// HasState reports whether a post-state is stored for root, without reading it:
+// a state grows with the chain's history. A state stored by this process has its
+// summary in memory; one written before a restart is checked through
+// ReadView.Has, which never copies the value out.
 func (s *ConsensusStore) HasState(root [32]byte) bool {
 	if s == nil {
 		return false

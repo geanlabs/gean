@@ -21,11 +21,9 @@ type blockMeta struct {
 
 // blockIndex keeps the walkable part of the chain in memory.
 //
-// The spec's fork choice walks parent links over store.blocks, an in-memory map,
-// for the finalized checkpoint, for attestation ancestry checks and for the
-// canonical chain. gean did the same walks over the header table on disk, one
-// read per step, so their cost grew with the distance to finalization. During a
-// long finality stall that distance grows by a block a slot.
+// Attestation ancestry checks, range serving and the attestation target follow
+// parent links, as the spec does over store.blocks; these walks must not cost a
+// disk read per step, since their length grows with the distance to finalization.
 //
 // meta caches each header's slot and parent. Headers never change once written,
 // so an entry cannot go stale; it only has to leave when its header is deleted.

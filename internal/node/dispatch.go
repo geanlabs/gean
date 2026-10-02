@@ -17,9 +17,7 @@ var slowDispatchEvent = types.MillisecondsPerInterval * time.Millisecond
 // timeEvent records how long one dispatch-loop event took. Every case runs on
 // the single goroutine that also keeps the slot clock, so an unattributed slow
 // handler here shows up only as a late tick — which is exactly how a set of
-// full-table storage scans went unnoticed until they were costing minutes, and
-// how a per-block disk walk later reached ~26s per block during a finality stall
-// with nothing in the logs naming it.
+// full-table storage scans went unnoticed until they were costing minutes.
 func timeEvent(event string, fn func()) {
 	start := time.Now()
 	fn()
