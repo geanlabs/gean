@@ -357,7 +357,9 @@ func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
 	}
 }
 
-func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
+// A parent-missing block at the finalized slot can't be the finalized block,
+// which has a state, so it is dropped as the spec's head sync drops it.
+func TestProcessOneBlock_RejectsOtherBlockAtFinalizedSlot(t *testing.T) {
 	e := makeTestEngine()
 
 	var finalizedRoot, parentRoot [32]byte
@@ -377,8 +379,11 @@ func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 	var queue []*types.SignedBlock
 	e.processOneBlock(signedBlock, &queue)
 
-	if e.Pending.Entries() == 0 {
-		t.Fatal("block at finalized slot was rejected by the strict-less-than guard")
+	if e.Pending.Entries() != 0 || e.Pending.Count() != 0 {
+		t.Fatalf("block at the finalized slot was buffered: entries=%d count=%d", e.Pending.Entries(), e.Pending.Count())
+	}
+	if len(queue) != 0 {
+		t.Fatalf("block at the finalized slot produced cascade work; queue=%d", len(queue))
 	}
 }
 
