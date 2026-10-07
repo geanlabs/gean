@@ -11,7 +11,6 @@ import (
 	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/store"
-	"github.com/geanlabs/gean/syncer"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -83,7 +82,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 	// proofs, while non-aggregators rely on the gossip path. Recovery is skipped while
 	// syncing, when historical blocks flood this path and the justified anchor is still
 	// moving, so recovered votes would not match a live head.
-	if e.AggCtl == nil || !e.AggCtl.Get() || e.GetSyncStatus() != syncer.SyncSynced ||
+	if e.AggCtl == nil || !e.AggCtl.Get() || e.GetSyncStatus() != types.SyncSynced ||
 		signedBlock == nil || signedBlock.Block == nil || signedBlock.Block.Body == nil ||
 		signedBlock.Proof == nil || len(signedBlock.Proof.Proof) == 0 {
 		return
@@ -173,8 +172,8 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 			metrics.IncProofOperation("recovery", "success")
 			metrics.ObserveProofSize("type1", len(proof))
 			e.Store.NewPayloads().Push(candidate.root, candidate.att.Data, recovered)
-			if e.P2P != nil {
-				_ = e.P2P.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
+			if e.Network != nil {
+				_ = e.Network.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
 					Data:  candidate.att.Data,
 					Proof: recovered,
 				})

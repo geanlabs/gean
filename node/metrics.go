@@ -8,7 +8,6 @@ import (
 
 func (e *Engine) initMetrics() {
 	metrics.SetSyncStatus("idle")
-	metrics.SetNodeInfo("gean", gitCommit)
 	metrics.SetNodeStartTime(float64(time.Now().Unix()))
 	metrics.SetAttestationCommitteeCount(e.CommitteeCount)
 

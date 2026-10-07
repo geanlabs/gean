@@ -28,5 +28,10 @@ const (
 
 	MaxRequestBlocks = 1 << 10
 
+	// MaxBlocksPerRootFetch is how many roots one batched blocks_by_root fetch
+	// carries. The engine never batches more and the network never sends more,
+	// so a root the engine queued is always requested.
+	MaxBlocksPerRootFetch = 10
+
 	MinSlotsForBlockRequests = 3600
 )

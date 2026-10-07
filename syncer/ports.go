@@ -17,7 +17,7 @@ type SyncDriverP2P interface {
 }
 
 type LocalNode interface {
-	GetSyncStatus() SyncStatus
+	GetSyncStatus() types.SyncStatus
 	OnBlock(*types.SignedBlock)
 	// OnSyncBlock delivers a requested block with backpressure; it blocks until
 	// the node accepts it and returns false only if ctx ends first.

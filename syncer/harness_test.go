@@ -70,11 +70,11 @@ func (m *mockSyncP2P) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots
 }
 
 type testNode struct {
-	status  SyncStatus
+	status  types.SyncStatus
 	BlockCh chan *types.SignedBlock
 }
 
-func (n *testNode) GetSyncStatus() SyncStatus { return n.status }
+func (n *testNode) GetSyncStatus() types.SyncStatus { return n.status }
 
 func (n *testNode) OnBlock(block *types.SignedBlock) {
 	n.BlockCh <- block
@@ -95,7 +95,7 @@ func makeTestSyncHarness() (*testNode, *store.ConsensusStore) {
 	root := mustHeaderRoot(header)
 	store.SetHead(root)
 	store.InsertBlockHeader(root, header)
-	return &testNode{status: SyncSyncing, BlockCh: make(chan *types.SignedBlock, 16)}, store
+	return &testNode{status: types.SyncSyncing, BlockCh: make(chan *types.SignedBlock, 16)}, store
 }
 
 func makeSyncRange(parentRoot [32]byte, slots ...uint64) []*types.SignedBlock {

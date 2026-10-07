@@ -185,10 +185,10 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 	}
 	metrics.IncProofOperation("proposal", "success")
 
-	if e.P2P != nil {
+	if e.Network != nil {
 		publishCtx, cancel := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
 		defer cancel()
-		if err := e.P2P.PublishBlock(publishCtx, result.signedBlock); err != nil {
+		if err := e.Network.PublishBlock(publishCtx, result.signedBlock); err != nil {
 			logger.Error(logger.Network, "publish block failed: %v", err)
 		}
 	}

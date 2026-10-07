@@ -7,7 +7,6 @@ import (
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
-	"github.com/geanlabs/gean/syncer"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -30,18 +29,18 @@ func (e *Engine) updateSyncStatus(currentSlot uint64) {
 	metrics.SetSyncStatus(status.String())
 }
 
-func (e *Engine) computeSyncStatus(currentSlot uint64) syncer.SyncStatus {
-	if e.P2P != nil && e.P2P.ConnectedPeers() == 0 {
-		return syncer.SyncIdle
+func (e *Engine) computeSyncStatus(currentSlot uint64) types.SyncStatus {
+	if e.Network != nil && e.Network.ConnectedPeers() == 0 {
+		return types.SyncIdle
 	}
 	headSlot := e.Store.HeadSlot()
 	if currentSlot <= headSlot || currentSlot-headSlot <= SyncLagSlots {
-		return syncer.SyncSynced
+		return types.SyncSynced
 	}
-	return syncer.SyncSyncing
+	return types.SyncSyncing
 }
 
-func (e *Engine) GetSyncStatus() syncer.SyncStatus {
+func (e *Engine) GetSyncStatus() types.SyncStatus {
 	return e.computeSyncStatus(e.currentSlot(uint64(time.Now().UnixMilli())))
 }
 
@@ -67,8 +66,8 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 	}
 
 	peerCount := 0
-	if e.P2P != nil {
-		peerCount = e.P2P.ConnectedPeers()
+	if e.Network != nil {
+		peerCount = e.Network.ConnectedPeers()
 	}
 
 	gossipSigs := e.Store.AttestationSignatures().Len()
@@ -103,7 +102,7 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 // the tick loop that is a slow gauge; on it, it delayed store.OnTick and stalled
 // the store clock. Sampling is coarse by nature — a slow cadence loses nothing.
 func (e *Engine) runGossipMeshGauge(ctx context.Context) {
-	if e.P2P == nil {
+	if e.Network == nil {
 		return
 	}
 	ticker := time.NewTicker(gossipMeshSampleInterval)
@@ -162,7 +161,7 @@ func (e *Engine) runStorageSizeGauge(ctx context.Context) {
 }
 
 func (e *Engine) sampleGossipMesh() {
-	metrics.SetGossipMeshPeers(e.P2P.MeshPeerCount())
-	sizes := e.P2P.TopicMeshSizes()
+	metrics.SetGossipMeshPeers(e.Network.MeshPeerCount())
+	sizes := e.Network.TopicMeshSizes()
 	e.topicMeshSizes.Store(&sizes)
 }

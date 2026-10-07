@@ -12,10 +12,9 @@ import (
 )
 
 const (
-	MaxFetchRetries     = 10
-	InitialBackoffMs    = 5
-	BackoffMultiplier   = 2
-	MaxBlocksPerRequest = 10
+	MaxFetchRetries   = 10
+	InitialBackoffMs  = 5
+	BackoffMultiplier = 2
 )
 
 type SignedBlockResult struct {
@@ -41,8 +40,8 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	if len(roots) == 0 {
 		return nil, nil, nil
 	}
-	if len(roots) > MaxBlocksPerRequest {
-		roots = roots[:MaxBlocksPerRequest]
+	if len(roots) > types.MaxBlocksPerRootFetch {
+		roots = roots[:types.MaxBlocksPerRootFetch]
 	}
 
 	excluded := make(map[peer.ID]bool)

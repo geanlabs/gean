@@ -53,8 +53,8 @@ func (e *Engine) produceAttestations(slot uint64) {
 			e.Store.AttestationSignatures().Insert(dataRoot, attData, vid, sig)
 		}
 
-		if e.P2P != nil {
-			if err := e.P2P.PublishAttestation(context.Background(), signedAtt, e.CommitteeCount); err != nil {
+		if e.Network != nil {
+			if err := e.Network.PublishAttestation(context.Background(), signedAtt, e.CommitteeCount); err != nil {
 				logger.Error(logger.Network, "publish attestation failed validator=%d: %v", vid, err)
 			} else {
 				logger.Info(logger.Network, "published attestation to network slot=%d validator=%d", slot, vid)

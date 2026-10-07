@@ -10,7 +10,6 @@ import (
 	"github.com/geanlabs/gean/dutygate"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/pending"
 	"github.com/geanlabs/gean/proving"
 	"github.com/geanlabs/gean/role"
@@ -19,8 +18,6 @@ import (
 	"github.com/geanlabs/gean/tasks"
 	"github.com/geanlabs/gean/types"
 )
-
-var gitCommit = "unknown"
 
 const (
 	MaxBlockFetchDepth = 512
@@ -32,12 +29,29 @@ const (
 	PendingAttestationsTotalCap   = 512
 )
 
+// Network is what the engine needs from the peer-to-peer layer: publishing its
+// own messages, fetching blocks it is missing, and peer counts for sync status
+// and metrics. Inbound gossip reaches the engine through its On* methods.
+// p2p.Host is the libp2p implementation; sim.Network delivers in-process.
+type Network interface {
+	PublishBlock(ctx context.Context, block *types.SignedBlock) error
+	PublishAttestation(ctx context.Context, att *types.SignedAttestation, committeeCount uint64) error
+	PublishAggregatedAttestation(ctx context.Context, agg *types.SignedAggregatedAttestation) error
+	// FetchBlocksByRootBatchWithRetry returns the blocks it found and the roots
+	// it could not, for at most types.MaxBlocksPerRootFetch roots.
+	FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error)
+	ConnectedPeers() int
+	MeshPeerCount() int
+	TopicMeshSizes() map[string]int
+}
+
 // Components are the parts an Engine is assembled from. The caller builds and
 // owns each one; the engine only uses them.
 type Components struct {
 	Store      *store.ConsensusStore
 	ForkChoice *forkchoice.ForkChoice
-	P2P        *p2p.Host
+	// Network is nil for an engine that never publishes or fetches.
+	Network Network
 	// Keys signs this node's duties; nil runs the engine without validators.
 	Keys *xmss.KeyManager
 	// PubKeys caches decoded validator public keys for signature verification
@@ -58,7 +72,7 @@ type Config struct {
 type Engine struct {
 	Store              *store.ConsensusStore
 	FC                 *forkchoice.ForkChoice
-	P2P                *p2p.Host
+	Network            Network
 	Keys               *xmss.KeyManager
 	PubKeys            *xmss.PubKeyCache
 	AggCtl             *role.Controller
@@ -139,11 +153,10 @@ type Engine struct {
 
 // New assembles an engine from its components.
 func New(c Components, cfg Config) *Engine {
-	p2p.SetClientGitCommit(gitCommit)
 	e := &Engine{
 		Store:               c.Store,
 		FC:                  c.ForkChoice,
-		P2P:                 c.P2P,
+		Network:             c.Network,
 		Keys:                c.Keys,
 		PubKeys:             c.PubKeys,
 		AggCtl:              c.Aggregator,
@@ -169,7 +182,6 @@ func New(c Components, cfg Config) *Engine {
 		ProvingGate:           proving.NewGate(),
 		fetchInFlight:         make(map[[32]byte]bool),
 	}
-	e.configureP2PHooks()
 	return e
 }
 

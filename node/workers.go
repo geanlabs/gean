@@ -9,7 +9,7 @@ import (
 func (e *Engine) startWorkers(ctx context.Context) {
 	e.workers.Go(func() { e.runFetchBatcher(ctx) })
 	e.workers.Go(func() {
-		aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.PubKeys, e.P2P, e.ProvingGate, e.Shadow)
+		aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.PubKeys, e.Network, e.ProvingGate, e.Shadow)
 	})
 	e.workers.Go(func() { e.runProposalWorker(ctx) })
 	e.workers.Go(func() { e.runRecoveryWorker(ctx) })

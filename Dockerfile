@@ -48,7 +48,7 @@ COPY . .
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 RUN mkdir -p bin && \
-    go build -tags hive_testdriver -ldflags "-X github.com/geanlabs/gean/node.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean && \
+    go build -tags hive_testdriver -ldflags "-X main.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean && \
     go build -o bin/keygen ./cmd/keygen
 
 # Runtime stage

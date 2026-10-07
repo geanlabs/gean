@@ -2,6 +2,7 @@ package syncer
 
 import (
 	"context"
+	"github.com/geanlabs/gean/types"
 	"sync"
 	"time"
 
@@ -62,7 +63,7 @@ func (sd *SyncDriver) Run() {
 		case <-sd.ctx.Done():
 			return
 		case <-ticker.C:
-			if sd.node.GetSyncStatus() == SyncSyncing {
+			if sd.node.GetSyncStatus() == types.SyncSyncing {
 				sd.refreshSyncFromPeers(sd.ctx)
 			}
 		}

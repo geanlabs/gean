@@ -13,7 +13,6 @@ import (
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/role"
 	"github.com/geanlabs/gean/store"
-	"github.com/geanlabs/gean/syncer"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -479,12 +478,12 @@ func TestNilEngineClockReturnsZero(t *testing.T) {
 func TestComputeSyncStatus_FreshNodePastWallClock(t *testing.T) {
 	e := makeTestEngine()
 
-	if status := e.computeSyncStatus(39); status != syncer.SyncSyncing {
-		t.Errorf("head=0 currentSlot=39 should be syncer.SyncSyncing, got %s", status)
+	if status := e.computeSyncStatus(39); status != types.SyncSyncing {
+		t.Errorf("head=0 currentSlot=39 should be types.SyncSyncing, got %s", status)
 	}
 
-	if status := e.computeSyncStatus(2); status != syncer.SyncSynced {
-		t.Errorf("head=0 currentSlot=2 should be syncer.SyncSynced, got %s", status)
+	if status := e.computeSyncStatus(2); status != types.SyncSynced {
+		t.Errorf("head=0 currentSlot=2 should be types.SyncSynced, got %s", status)
 	}
 }
 
@@ -493,8 +492,8 @@ func TestComputeSyncStatusAvoidsHeadSlotOverflow(t *testing.T) {
 	head := e.Store.Head()
 	e.Store.InsertBlockHeader(head, &types.BlockHeader{Slot: ^uint64(0)})
 
-	if status := e.computeSyncStatus(^uint64(0)); status != syncer.SyncSynced {
-		t.Fatalf("max head/current slot status=%s, want %s", status, syncer.SyncSynced)
+	if status := e.computeSyncStatus(^uint64(0)); status != types.SyncSynced {
+		t.Fatalf("max head/current slot status=%s, want %s", status, types.SyncSynced)
 	}
 }
 

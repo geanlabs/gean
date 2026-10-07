@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/types"
 )
 
 const fetchBatchGracePeriod = 50 * time.Millisecond
@@ -25,7 +25,7 @@ func (e *Engine) runFetchBatcher(ctx context.Context) {
 
 		grace := time.After(fetchBatchGracePeriod)
 	gather:
-		for len(batch) < p2p.MaxBlocksPerRequest {
+		for len(batch) < types.MaxBlocksPerRootFetch {
 			select {
 			case <-ctx.Done():
 				return
@@ -44,11 +44,11 @@ func (e *Engine) runFetchBatcher(ctx context.Context) {
 }
 
 func (e *Engine) fireBatchFetch(ctx context.Context, roots [][32]byte) {
-	if e.P2P == nil || len(roots) == 0 {
+	if e.Network == nil || len(roots) == 0 {
 		return
 	}
 	logger.Info(logger.Sync, "batched fetch starting count=%d", len(roots))
-	blocks, missing, err := e.P2P.FetchBlocksByRootBatchWithRetry(ctx, roots)
+	blocks, missing, err := e.Network.FetchBlocksByRootBatchWithRetry(ctx, roots)
 	if err != nil {
 		logger.Warn(logger.Sync, "batched fetch failed count=%d err=%v", len(roots), err)
 	}
@@ -82,7 +82,7 @@ func (e *Engine) notifyFailedRoots(ctx context.Context, roots [][32]byte) {
 }
 
 func (e *Engine) queueMissingBlockFetch(root [32]byte) {
-	if e.P2P == nil {
+	if e.Network == nil {
 		return
 	}
 	// A missing parent is re-derived on every child that arrives referencing it, so the

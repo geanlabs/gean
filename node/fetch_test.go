@@ -14,7 +14,7 @@ import (
 // once until its block is received or its fetch is exhausted.
 func TestQueueMissingBlockFetchDedupes(t *testing.T) {
 	e := makeTestEngine()
-	e.P2P = &p2p.Host{} // non-nil so the fetch path runs; queueMissingBlockFetch calls no P2P method
+	e.Network = &p2p.Host{} // non-nil so the fetch path runs; queueMissingBlockFetch calls no P2P method
 
 	var root [32]byte
 	root[0] = 0x77

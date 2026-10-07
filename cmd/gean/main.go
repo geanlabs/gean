@@ -11,10 +11,14 @@ import (
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/node"
+	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/role"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/tasks"
 )
+
+// gitCommit is injected at build time with -ldflags "-X main.gitCommit=...".
+var gitCommit = "unknown"
 
 func main() {
 	cfg, err := parseConfig(os.Args[1:], os.Stderr)
@@ -32,6 +36,8 @@ func main() {
 
 func run(cfg config) error {
 	logger.Info(logger.Node, "gean consensus client starting")
+	p2p.SetClientGitCommit(gitCommit)
+	metrics.SetNodeInfo("gean", gitCommit)
 
 	inputs, err := loadStartupInputs(cfg)
 	if err != nil {
@@ -107,7 +113,7 @@ func run(cfg config) error {
 	n := node.New(node.Components{
 		Store:      s,
 		ForkChoice: fc,
-		P2P:        p2pHost,
+		Network:    p2pHost,
 		Keys:       inputs.keyManager,
 		PubKeys:    pubKeys,
 		Aggregator: aggCtl,
