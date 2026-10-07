@@ -94,7 +94,7 @@ func (c *coverageSet) record(section string) {
 // validatorCount reads the head state's registry size, which is what every
 // coverage section is measured against.
 func (e *Engine) coverageValidatorCount() int {
-	headState := e.Store.GetState(e.Store.Head())
+	headState := e.store.GetState(e.store.Head())
 	if headState == nil {
 		return 0
 	}
@@ -137,21 +137,21 @@ func snapshotNewPayloadParticipants(s *store.ConsensusStore) map[uint64][][]byte
 // seen — counted through a different channel.
 func (e *Engine) reportPostBlockCoverage(reportingSlot uint64) {
 	validatorCount := e.coverageValidatorCount()
-	if validatorCount == 0 || e.CommitteeCount == 0 {
+	if validatorCount == 0 || e.committeeCount == 0 {
 		return
 	}
 
-	timely := newCoverageSet(validatorCount, e.CommitteeCount)
-	late := newCoverageSet(validatorCount, e.CommitteeCount)
-	block := newCoverageSet(validatorCount, e.CommitteeCount)
+	timely := newCoverageSet(validatorCount, e.committeeCount)
+	late := newCoverageSet(validatorCount, e.committeeCount)
+	block := newCoverageSet(validatorCount, e.committeeCount)
 
 	for _, participants := range e.coveragePreMerge[reportingSlot] {
 		timely.add(participants)
 	}
-	for _, participants := range snapshotNewPayloadParticipants(e.Store)[reportingSlot] {
+	for _, participants := range snapshotNewPayloadParticipants(e.store)[reportingSlot] {
 		late.add(participants)
 	}
-	if head := e.Store.GetSignedBlock(e.Store.Head()); head != nil && head.Block != nil && head.Block.Body != nil {
+	if head := e.store.GetSignedBlock(e.store.Head()); head != nil && head.Block != nil && head.Block.Body != nil {
 		for _, att := range head.Block.Body.Attestations {
 			if att != nil && att.Data != nil && att.Data.Slot == reportingSlot {
 				block.add(att.AggregationBits)
@@ -159,7 +159,7 @@ func (e *Engine) reportPostBlockCoverage(reportingSlot uint64) {
 		}
 	}
 
-	combined := newCoverageSet(validatorCount, e.CommitteeCount)
+	combined := newCoverageSet(validatorCount, e.committeeCount)
 	combined.or(timely)
 	combined.or(late)
 	combined.or(block)
@@ -204,11 +204,11 @@ func (e *Engine) reportPostBlockCoverage(reportingSlot uint64) {
 // from, recorded at interval 2 just before dispatch.
 func (e *Engine) reportAggStartNewCoverage() {
 	validatorCount := e.coverageValidatorCount()
-	if validatorCount == 0 || e.CommitteeCount == 0 {
+	if validatorCount == 0 || e.committeeCount == 0 {
 		return
 	}
-	set := newCoverageSet(validatorCount, e.CommitteeCount)
-	for _, bySlot := range snapshotNewPayloadParticipants(e.Store) {
+	set := newCoverageSet(validatorCount, e.committeeCount)
+	for _, bySlot := range snapshotNewPayloadParticipants(e.store) {
 		for _, participants := range bySlot {
 			set.add(participants)
 		}
@@ -220,10 +220,10 @@ func (e *Engine) reportAggStartNewCoverage() {
 // about to publish in our own block.
 func (e *Engine) reportProposalCoverage(attestations []*types.AggregatedAttestation) {
 	validatorCount := e.coverageValidatorCount()
-	if validatorCount == 0 || e.CommitteeCount == 0 {
+	if validatorCount == 0 || e.committeeCount == 0 {
 		return
 	}
-	set := newCoverageSet(validatorCount, e.CommitteeCount)
+	set := newCoverageSet(validatorCount, e.committeeCount)
 	for _, att := range attestations {
 		if att != nil {
 			set.add(att.AggregationBits)

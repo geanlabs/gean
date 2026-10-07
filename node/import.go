@@ -41,18 +41,18 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types
 	// fetch for it is done — drop the in-flight marker so a future gap can re-request it.
 	delete(e.fetchInFlight, blockRoot)
 
-	if e.Store.HasState(blockRoot) {
+	if e.store.HasState(blockRoot) {
 		return
 	}
 
-	finalizedSlot := e.Store.LatestFinalized().Slot
+	finalizedSlot := e.store.LatestFinalized().Slot
 	if block.Slot < finalizedSlot {
 		logger.Warn(logger.Chain, "rejecting pre-finalized block slot=%d block_root=0x%x finalized_slot=%d",
 			block.Slot, blockRoot, finalizedSlot)
 		return
 	}
 
-	hasParent := e.Store.HasState(parentRoot)
+	hasParent := e.store.HasState(parentRoot)
 	logger.Info(logger.Chain, "processing block slot=%d block_root=0x%x has_parent=%t", block.Slot, blockRoot, hasParent)
 
 	if !hasParent {
@@ -70,17 +70,17 @@ func (e *Engine) importKnownParentBlock(
 	queue *[]*types.SignedBlock,
 ) {
 	block := signedBlock.Block
-	err := blockprocessor.OnBlock(e.Store, e.PubKeys, signedBlock)
+	err := blockprocessor.OnBlock(e.store, e.pubKeys, signedBlock)
 	if err != nil {
 		logger.Error(logger.Chain, "block processing failed slot=%d block_root=0x%x: %v", block.Slot, blockRoot, err)
 		return
 	}
 	e.dispatchRecovery(signedBlock)
 
-	e.FC.OnBlock(block.Slot, blockRoot, parentRoot)
+	e.forkChoice.OnBlock(block.Slot, blockRoot, parentRoot)
 
 	e.updateHead()
-	e.Pending.ClearDepth(blockRoot)
+	e.pendingBlocks.ClearDepth(blockRoot)
 	e.replayPendingAttestations(blockRoot)
 	e.collectPendingChildren(blockRoot, queue)
 }
@@ -101,6 +101,6 @@ func (e *Engine) recordTableBytes(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		metrics.SetTableBytes(string(table), e.Store.EstimateTableBytes(table))
+		metrics.SetTableBytes(string(table), e.store.EstimateTableBytes(table))
 	}
 }

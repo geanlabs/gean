@@ -126,8 +126,8 @@ func run(cfg config) error {
 
 	// services owns the engine, sync driver and HTTP servers. Each returns only
 	// after its own work has finished, so once services.Wait returns the
-	// deferred closes can run: the p2p host (which joins its handlers), then
-	// storage, then the keys.
+	// deferred closes can run: the pubkey cache, the p2p host (which joins its
+	// handlers), storage, then the keys.
 	var services tasks.Group
 	startNodeNetworking(ctx, &services, n, s, p2pHost, inputs.bootnodes)
 

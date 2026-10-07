@@ -32,7 +32,7 @@ func (e *Engine) onTick() {
 	metrics.SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)
 
-	isAgg := e.AggCtl != nil && e.AggCtl.Get()
+	isAgg := e.aggregator != nil && e.aggregator.Get()
 
 	hasProposal := false
 	var proposerValidatorID uint64
@@ -42,11 +42,11 @@ func (e *Engine) onTick() {
 
 	// Capture before OnTick promotes new payloads into known, so the timely
 	// section reflects what had arrived by the promotion boundary.
-	if snap := snapshotNewPayloadParticipants(e.Store); snap != nil {
+	if snap := snapshotNewPayloadParticipants(e.store); snap != nil {
 		e.coveragePreMerge = snap
 	}
 
-	store.OnTick(e.Store, timestampMs, hasProposal)
+	store.OnTick(e.store, timestampMs, hasProposal)
 
 	if currentInterval == 2 {
 		e.reportAggStartNewCoverage()
@@ -72,9 +72,9 @@ func (e *Engine) onTick() {
 
 	if currentInterval == 3 {
 		e.updateSafeTarget()
-		finalizedSlot := e.Store.LatestFinalized().Slot
-		store.PruneStaleAttestationPools(e.Store, e.Store.HeadSlot(), finalizedSlot)
-		store.PeriodicPrune(e.Store, e.FC, currentSlot, finalizedSlot)
+		finalizedSlot := e.store.LatestFinalized().Slot
+		store.PruneStaleAttestationPools(e.store, e.store.HeadSlot(), finalizedSlot)
+		store.PeriodicPrune(e.store, e.forkChoice, currentSlot, finalizedSlot)
 	}
 }
 
@@ -109,17 +109,17 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 	// deadline and MaxGroupsPerSession, so an aggregate built on a stale view
 	// costs one bounded proving budget and is dropped by peers — strictly better
 	// than not producing one at all.
-	if e.Store.AttestationSignatures().Len() == 0 && e.Store.NewPayloads().Len() == 0 {
+	if e.store.AttestationSignatures().Len() == 0 && e.store.NewPayloads().Len() == 0 {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
 	}
-	headState := e.Store.GetState(e.Store.Head())
+	headState := e.store.GetState(e.store.Head())
 	if headState == nil {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipMissingState)
 		return
 	}
 
-	snap := aggregation.SnapshotInputs(e.Store, headState, currentSlot)
+	snap := aggregation.SnapshotInputs(e.store, headState, currentSlot)
 	if snap == nil {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
@@ -132,14 +132,14 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 		maxGroups = aggregation.MaxGroupsWhenProposing
 	}
 	select {
-	case e.AggregationDispatchCh <- aggregation.Dispatch{
+	case e.aggregationDispatchCh <- aggregation.Dispatch{
 		Snapshot:  snap,
 		Slot:      currentSlot,
 		MaxGroups: maxGroups,
 		Deadline:  e.aggregationDeadline(nowMs),
 	}:
 		e.aggregatedSlot = currentSlot
-		metrics.SetProvingQueueDepth("aggregation", len(e.AggregationDispatchCh))
+		metrics.SetProvingQueueDepth("aggregation", len(e.aggregationDispatchCh))
 	default:
 		metrics.IncAggregationDispatchDropped()
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipSpawnFailed)
@@ -179,7 +179,7 @@ func (e *Engine) aggregationDeadline(nowMs uint64) time.Time {
 // dispatchAggregationCycle enforces the once-per-slot guard shared with the
 // interval-2 fallback.
 func (e *Engine) maybeEarlyAggregate(nowMs uint64) {
-	isAgg := e.AggCtl != nil && e.AggCtl.Get()
+	isAgg := e.aggregator != nil && e.aggregator.Get()
 	if !isAgg || e.currentInterval(nowMs) != 1 {
 		return
 	}
@@ -190,7 +190,7 @@ func (e *Engine) maybeEarlyAggregate(nowMs uint64) {
 	// Validator set is fixed at genesis in lean devnet, so decode the head state
 	// once and cache the count rather than on every arrival.
 	if e.numValidators == 0 {
-		headState := e.Store.GetState(e.Store.Head())
+		headState := e.store.GetState(e.store.Head())
 		if headState == nil {
 			return
 		}
@@ -206,7 +206,7 @@ func (e *Engine) maybeEarlyAggregate(nowMs uint64) {
 	// justification. Scoped to the slot, the threshold is reached only in late
 	// interval 1 once votes are in — a modest proving lead that still carries
 	// decisive weight, with the interval-2 dispatch as the fallback below quorum.
-	if e.Store.AttestationSignatures().SignatureCountForSlot(slot) < earlyAggregationQuorum(e.expectedVotersPerSlot()) {
+	if e.store.AttestationSignatures().SignatureCountForSlot(slot) < earlyAggregationQuorum(e.expectedVotersPerSlot()) {
 		return
 	}
 	e.dispatchAggregationCycle(nowMs, slot, isAgg)
@@ -236,13 +236,13 @@ func (e *Engine) expectedVotersPerSlot() uint64 {
 		return e.expectedVoters
 	}
 	total := e.numValidators
-	committees := e.CommitteeCount
-	if committees <= 1 || len(e.AggregateSubnetIDs) == 0 || uint64(len(e.AggregateSubnetIDs)) >= committees {
+	committees := e.committeeCount
+	if committees <= 1 || len(e.aggregateSubnetIDs) == 0 || uint64(len(e.aggregateSubnetIDs)) >= committees {
 		e.expectedVoters = total
 		return total
 	}
-	subscribed := make(map[uint64]bool, len(e.AggregateSubnetIDs))
-	for _, id := range e.AggregateSubnetIDs {
+	subscribed := make(map[uint64]bool, len(e.aggregateSubnetIDs))
+	for _, id := range e.aggregateSubnetIDs {
 		subscribed[id] = true
 	}
 	var voters uint64

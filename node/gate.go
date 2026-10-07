@@ -13,7 +13,7 @@ import (
 // extending a dead fork for a day with its pending cache rejecting every
 // block it heard.
 func (e *Engine) networkSeenSlot() uint64 {
-	stored := e.Store.MaxStoredBlockSlot()
+	stored := e.store.MaxStoredBlockSlot()
 	if seen := e.maxSeenGossipSlot.Load(); seen > stored {
 		return seen
 	}

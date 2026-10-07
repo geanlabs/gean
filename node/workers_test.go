@@ -9,7 +9,7 @@ import (
 )
 
 func TestRunAttestationWorkerStopsOnContextCancel(t *testing.T) {
-	e := &Engine{AttestationCh: make(chan *types.SignedAttestation)}
+	e := &Engine{attestationCh: make(chan *types.SignedAttestation)}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 

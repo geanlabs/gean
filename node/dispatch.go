@@ -28,16 +28,16 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 		case <-ticks:
 			timeEvent("tick", e.onTick)
 
-		case <-e.EarlyAggregateCh:
+		case <-e.earlyAggregateCh:
 			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(e.nowMs()) })
 
-		case block := <-e.BlockCh:
+		case block := <-e.blockCh:
 			timeEvent("block", func() { e.onBlock(block) })
 
-		case result := <-e.ProposalResultCh:
+		case result := <-e.proposalResultCh:
 			timeEvent("proposal_result", func() { e.acceptProposal(ctx, result) })
 
-		case root := <-e.FailedRootCh:
+		case root := <-e.failedRootCh:
 			timeEvent("failed_root", func() { e.onFailedRoot(root) })
 		}
 	}

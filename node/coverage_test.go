@@ -158,7 +158,7 @@ func TestSnapshotNewPayloadParticipantsGroupsBySlot(t *testing.T) {
 func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 	const reportingSlot = uint64(7)
 
-	e := &Engine{Store: makeTestStore(), CommitteeCount: 2}
+	e := &Engine{store: makeTestStore(), committeeCount: 2}
 
 	headState := &types.State{
 		Slot:            reportingSlot + 1,
@@ -167,13 +167,13 @@ func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 	}
 	var headRoot [32]byte
 	headRoot[0] = 0xAA
-	if err := e.Store.PutState(headRoot, headState); err != nil {
+	if err := e.store.PutState(headRoot, headState); err != nil {
 		t.Fatalf("put state: %v", err)
 	}
-	e.Store.SetHead(headRoot)
+	e.store.SetHead(headRoot)
 
 	// Head block carries votes for the round from validators 0,1,2.
-	e.Store.StorePendingBlock(headRoot, &types.SignedBlock{Block: &types.Block{
+	e.store.StorePendingBlock(headRoot, &types.SignedBlock{Block: &types.Block{
 		Slot: reportingSlot + 1,
 		Body: &types.BlockBody{Attestations: []*types.AggregatedAttestation{{
 			Data:            &types.AttestationData{Slot: reportingSlot, Target: &types.Checkpoint{}},
@@ -190,9 +190,9 @@ func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 
 	// block={0,1,2} timely={2,3} -> block_only={0,1}=2, timely_only={3}=1,
 	// combined={0,1,2,3}=4 across subnets 0 and 1.
-	block := newCoverageSet(len(headState.Validators), e.CommitteeCount)
+	block := newCoverageSet(len(headState.Validators), e.committeeCount)
 	block.add(types.BitlistFromIndices([]uint64{0, 1, 2}))
-	timely := newCoverageSet(len(headState.Validators), e.CommitteeCount)
+	timely := newCoverageSet(len(headState.Validators), e.committeeCount)
 	timely.add(types.BitlistFromIndices([]uint64{2, 3}))
 
 	blockOnly, timelyOnly := 0, 0
@@ -208,7 +208,7 @@ func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 		t.Errorf("diff block_only=%d timely_only=%d, want 2 and 1", blockOnly, timelyOnly)
 	}
 
-	combined := newCoverageSet(len(headState.Validators), e.CommitteeCount)
+	combined := newCoverageSet(len(headState.Validators), e.committeeCount)
 	combined.or(block)
 	combined.or(timely)
 	total := 0
@@ -225,16 +225,16 @@ func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 // A report for a round with no data must not panic and must leave the gauges
 // recordable — an empty round is a real reading.
 func TestReportPostBlockCoverageEmptyRoundIsSafe(t *testing.T) {
-	e := &Engine{Store: makeTestStore(), CommitteeCount: 2}
+	e := &Engine{store: makeTestStore(), committeeCount: 2}
 	var headRoot [32]byte
 	headRoot[0] = 0xBB
-	if err := e.Store.PutState(headRoot, &types.State{
+	if err := e.store.PutState(headRoot, &types.State{
 		Validators:      validatorRegistry(4),
 		LatestFinalized: &types.Checkpoint{Slot: 0},
 	}); err != nil {
 		t.Fatalf("put state: %v", err)
 	}
-	e.Store.SetHead(headRoot)
+	e.store.SetHead(headRoot)
 
 	e.reportPostBlockCoverage(3)
 	e.reportAggStartNewCoverage()
@@ -244,7 +244,7 @@ func TestReportPostBlockCoverageEmptyRoundIsSafe(t *testing.T) {
 // Without a head state there is no registry to measure against; the emitters
 // must return rather than divide by a zero committee or index a nil slice.
 func TestCoverageEmittersWithoutHeadState(t *testing.T) {
-	e := &Engine{Store: makeTestStore(), CommitteeCount: 2}
+	e := &Engine{store: makeTestStore(), committeeCount: 2}
 	e.reportPostBlockCoverage(1)
 	e.reportAggStartNewCoverage()
 	e.reportProposalCoverage(nil)

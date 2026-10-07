@@ -10,7 +10,7 @@ import (
 func (e *Engine) OnBlock(block *types.SignedBlock) {
 	e.noteGossipSlot(block)
 	select {
-	case e.BlockCh <- block:
+	case e.blockCh <- block:
 	default:
 		logger.Warn(logger.Chain, "block channel full, dropping")
 	}
@@ -44,7 +44,7 @@ func (e *Engine) noteGossipSlot(block *types.SignedBlock) {
 // chain can no longer connect. Returns false only if ctx ends first.
 func (e *Engine) OnSyncBlock(ctx context.Context, block *types.SignedBlock) bool {
 	select {
-	case e.BlockCh <- block:
+	case e.blockCh <- block:
 		return true
 	case <-ctx.Done():
 		return false
@@ -53,7 +53,7 @@ func (e *Engine) OnSyncBlock(ctx context.Context, block *types.SignedBlock) bool
 
 func (e *Engine) OnGossipAttestation(att *types.SignedAttestation) {
 	select {
-	case e.AttestationCh <- att:
+	case e.attestationCh <- att:
 	default:
 		logger.Warn(logger.Gossip, "attestation channel full, dropping")
 	}
@@ -61,7 +61,7 @@ func (e *Engine) OnGossipAttestation(att *types.SignedAttestation) {
 
 func (e *Engine) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
 	select {
-	case e.AggregationCh <- agg:
+	case e.aggregationCh <- agg:
 	default:
 		logger.Warn(logger.Signature, "aggregation channel full, dropping")
 	}

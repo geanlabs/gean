@@ -62,7 +62,7 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 		Proof:        []byte{0x01},
 	})
 
-	e := &Engine{Store: s}
+	e := &Engine{store: s}
 	block, sigs, err := e.produceBlockWithSignatures(1, 0)
 	if err != nil {
 		t.Fatalf("produce block: %v", err)
@@ -112,7 +112,7 @@ func TestProduceBlockWithSignaturesStaleHeadReturnsSlotError(t *testing.T) {
 	s.InsertState(parentRoot, headState)
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
-	e := &Engine{Store: s}
+	e := &Engine{store: s}
 	_, _, err := e.produceBlockWithSignatures(1, 0)
 	var stale *statetransition.StateSlotIsNewerError
 	if !errors.As(err, &stale) {
@@ -128,7 +128,7 @@ func TestBuildProposalSkipsStaleSlot(t *testing.T) {
 	s.InsertState(parentRoot, headState)
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
-	e := &Engine{Store: s}
+	e := &Engine{store: s}
 	if result := e.buildProposal(1, 0); result.signedBlock != nil || !result.retryable {
 		t.Fatalf("buildProposal result=%v, want retryable failure before signing", result)
 	}
@@ -142,7 +142,7 @@ func TestProduceBlockWithSignaturesRejectsNonProposer(t *testing.T) {
 	s.InsertState(parentRoot, headState)
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
-	e := &Engine{Store: s}
+	e := &Engine{store: s}
 	block, sigs, err := e.produceBlockWithSignatures(1, 0)
 	if err == nil {
 		t.Fatal("expected non-proposer error")
@@ -159,7 +159,7 @@ func proposalTestEngine(t *testing.T) *Engine {
 	s.SetHead(root)
 	s.InsertState(root, state)
 	s.InsertBlockHeader(root, state.LatestBlockHeader)
-	return &Engine{Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan proposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
+	return &Engine{store: s, keys: &xmss.KeyManager{}, proposalCh: make(chan proposalDuty, 1), proposalResultCh: make(chan *proposalResult, 1)}
 }
 
 func TestProposalDutyReservedThroughCompletion(t *testing.T) {
@@ -168,10 +168,10 @@ func TestProposalDutyReservedThroughCompletion(t *testing.T) {
 			e := proposalTestEngine(t)
 			e.maybePropose(1, 0)
 			if phase != "queued" {
-				<-e.ProposalCh
+				<-e.proposalCh
 			}
 			if phase == "awaiting_acceptance" {
-				e.ProposalResultCh <- &proposalResult{duty: proposalDuty{slot: 1}}
+				e.proposalResultCh <- &proposalResult{duty: proposalDuty{slot: 1}}
 			}
 			if phase == "completed" {
 				// A post-sign failure must also retain the reservation.
@@ -182,15 +182,15 @@ func TestProposalDutyReservedThroughCompletion(t *testing.T) {
 			if phase == "queued" {
 				want = 1
 			}
-			if len(e.ProposalCh) != want {
+			if len(e.proposalCh) != want {
 				t.Fatal("duplicate duty enqueued")
 			}
 			if phase == "queued" {
-				<-e.ProposalCh
+				<-e.proposalCh
 			}
 			// Advancing duties must not be suppressed by the old reservation.
 			e.maybePropose(2, 0)
-			if len(e.ProposalCh) != 1 {
+			if len(e.proposalCh) != 1 {
 				t.Fatal("next slot suppressed")
 			}
 		})
@@ -201,10 +201,10 @@ func TestProposalQueueFullDoesNotReserveDuty(t *testing.T) {
 	e := proposalTestEngine(t)
 	e.maybePropose(1, 0)
 	e.maybePropose(2, 0)
-	<-e.ProposalCh
+	<-e.proposalCh
 	e.maybePropose(2, 0)
 	select {
-	case duty := <-e.ProposalCh:
+	case duty := <-e.proposalCh:
 		if duty.slot != 2 {
 			t.Fatalf("slot=%d", duty.slot)
 		}
@@ -216,27 +216,27 @@ func TestProposalQueueFullDoesNotReserveDuty(t *testing.T) {
 func TestProposalPreSignFailureReleasesOnlyMatchingDuty(t *testing.T) {
 	e := proposalTestEngine(t)
 	e.maybePropose(1, 0)
-	first := <-e.ProposalCh
+	first := <-e.proposalCh
 	e.acceptProposal(context.Background(), &proposalResult{duty: first, retryable: true})
 	e.maybePropose(1, 0)
-	if len(e.ProposalCh) != 1 {
+	if len(e.proposalCh) != 1 {
 		t.Fatal("pre-sign retry suppressed")
 	}
-	<-e.ProposalCh
+	<-e.proposalCh
 	e.maybePropose(2, 0)
-	second := <-e.ProposalCh
+	second := <-e.proposalCh
 	e.acceptProposal(context.Background(), &proposalResult{duty: first, retryable: true})
 	e.maybePropose(2, 0)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposalCh) != 0 {
 		t.Fatal("old completion released newer reservation")
 	}
 	e.acceptProposal(context.Background(), &proposalResult{duty: second, retryable: true})
 	e.maybePropose(1, 0)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposalCh) != 0 {
 		t.Fatal("old slot admitted after newer duty")
 	}
 	e.maybePropose(2, 0)
-	if len(e.ProposalCh) != 1 {
+	if len(e.proposalCh) != 1 {
 		t.Fatal("matching retry suppressed")
 	}
 }
@@ -256,7 +256,7 @@ func TestProposalWorkerReportsPreSignFailure(t *testing.T) {
 	}()
 	e.maybePropose(1, 0)
 	select {
-	case result := <-e.ProposalResultCh:
+	case result := <-e.proposalResultCh:
 		// Empty key manager fails before signing; no real key material needed.
 		if !result.retryable || result.signedBlock != nil || result.duty.slot != 1 {
 			t.Fatalf("unexpected result: %+v", result)
@@ -272,11 +272,11 @@ func TestProposalWorkerReportsPreSignFailure(t *testing.T) {
 
 func TestProposalGateCancellationReportsRetryableFailure(t *testing.T) {
 	e := proposalTestEngine(t)
-	e.ProvingGate = proving.NewGate()
-	if !e.ProvingGate.Acquire(context.Background(), false) {
+	e.provingGate = proving.NewGate()
+	if !e.provingGate.Acquire(context.Background(), false) {
 		t.Fatal("could not occupy prover")
 	}
-	defer e.ProvingGate.Release(false)
+	defer e.provingGate.Release(false)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	duty := proposalDuty{slot: 1}
@@ -289,16 +289,16 @@ func TestProposalGateCancellationReportsRetryableFailure(t *testing.T) {
 func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 	e := proposalTestEngine(t)
 	// A closed key reaches Sign and fails without native signing or real keys.
-	e.Keys = xmss.NewKeyManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
+	e.keys = xmss.NewKeyManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
 	e.maybePropose(1, 0)
-	duty := <-e.ProposalCh
+	duty := <-e.proposalCh
 	result := e.buildProposal(duty.slot, duty.validatorID)
 	if result.retryable || result.signedBlock != nil {
 		t.Fatalf("unexpected signing failure: %+v", result)
 	}
 	e.acceptProposal(context.Background(), result)
 	e.maybePropose(1, 0)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposalCh) != 0 {
 		t.Fatal("signing error permitted another signing attempt")
 	}
 }
@@ -317,13 +317,13 @@ func TestBlockProofStopsBetweenStagesWhenParentChanges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := proposalTestEngine(t)
-			block := &types.Block{Slot: 1, ParentRoot: e.Store.Head(), Body: &types.BlockBody{}}
+			block := &types.Block{Slot: 1, ParentRoot: e.store.Head(), Body: &types.BlockBody{}}
 			root, err := block.HashTreeRoot()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if tc.staleBefore {
-				e.Store.SetHead([32]byte{99})
+				e.store.SetHead([32]byte{99})
 			}
 			wrapCalls, mergeCalls := 0, 0
 			proofErr := errors.New("test prover failure")
@@ -333,7 +333,7 @@ func TestBlockProofStopsBetweenStagesWhenParentChanges(t *testing.T) {
 					t.Fatal("proposer binding changed")
 				}
 				if tc.staleAfterWrap {
-					e.Store.SetHead([32]byte{99})
+					e.store.SetHead([32]byte{99})
 				}
 				if tc.wrapFails {
 					return nil, proofErr

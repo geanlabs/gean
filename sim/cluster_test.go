@@ -100,7 +100,7 @@ func TestRuntimeAggregatorRestartsFinality(t *testing.T) {
 		t.Fatalf("justified slot %d without an aggregator, want 0", got)
 	}
 
-	c.Nodes()[1].Engine.AggCtl.Set(true)
+	c.Nodes()[1].Aggregator.Set(true)
 	c.AdvanceSlots(ctx, 1)
 	if got := c.Nodes()[0].Store.LatestJustified().Slot; got == 0 {
 		t.Fatal("justification did not resume in the slot after enabling an aggregator")

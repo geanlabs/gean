@@ -39,10 +39,13 @@ type Config struct {
 
 // Node is one simulated node.
 type Node struct {
-	Engine  *node.Engine
-	Store   *store.ConsensusStore
-	keys    *xmss.KeyManager
-	pubKeys *xmss.PubKeyCache
+	Engine *node.Engine
+	Store  *store.ConsensusStore
+	// Aggregator is the node's aggregator role; setting it switches
+	// aggregation on or off at runtime, as the admin API does.
+	Aggregator *role.Controller
+	keys       *xmss.KeyManager
+	pubKeys    *xmss.PubKeyCache
 }
 
 // Cluster is a set of nodes sharing a simulated network and clock.
@@ -136,7 +139,7 @@ func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValida
 		return nil, err
 	}
 
-	n := &Node{Store: s, pubKeys: xmss.NewPubKeyCache()}
+	n := &Node{Store: s, Aggregator: role.New(aggregator), pubKeys: xmss.NewPubKeyCache()}
 	if len(attKeys) > 0 {
 		n.keys = xmss.NewKeyManager(attKeys, propKeys)
 	}
@@ -146,7 +149,7 @@ func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValida
 		Network:    &network{cluster: c, self: index},
 		Keys:       n.keys,
 		PubKeys:    n.pubKeys,
-		Aggregator: role.New(aggregator),
+		Aggregator: n.Aggregator,
 		Clock:      &c.clock,
 	}, node.Config{CommitteeCount: types.AttestationCommitteeCount})
 	return n, nil

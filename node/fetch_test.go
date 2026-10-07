@@ -10,11 +10,11 @@ import (
 )
 
 // A missing parent is re-derived on every child that references it, so without dedup the
-// same root floods FetchRootCh and starves the fetch. Each root must be queued at most
+// same root floods fetchRootCh and starves the fetch. Each root must be queued at most
 // once until its block is received or its fetch is exhausted.
 func TestQueueMissingBlockFetchDedupes(t *testing.T) {
 	e := makeTestEngine()
-	e.Network = &p2p.Host{} // non-nil so the fetch path runs; queueMissingBlockFetch calls no P2P method
+	e.network = &p2p.Host{} // non-nil so the fetch path runs; queueMissingBlockFetch calls no P2P method
 
 	var root [32]byte
 	root[0] = 0x77
@@ -22,8 +22,8 @@ func TestQueueMissingBlockFetchDedupes(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		e.queueMissingBlockFetch(root)
 	}
-	if got := len(e.FetchRootCh); got != 1 {
-		t.Fatalf("FetchRootCh has %d requests after 10 queues, want 1 (deduped)", got)
+	if got := len(e.fetchRootCh); got != 1 {
+		t.Fatalf("fetchRootCh has %d requests after 10 queues, want 1 (deduped)", got)
 	}
 	if !e.fetchInFlight[root] {
 		t.Fatal("queued root should be marked in-flight")
@@ -34,10 +34,10 @@ func TestQueueMissingBlockFetchDedupes(t *testing.T) {
 	if e.fetchInFlight[root] {
 		t.Fatal("onFailedRoot should clear the in-flight marker")
 	}
-	<-e.FetchRootCh // drain the first request so the channel has room
+	<-e.fetchRootCh // drain the first request so the channel has room
 	e.queueMissingBlockFetch(root)
-	if got := len(e.FetchRootCh); got != 1 {
-		t.Fatalf("re-queue after exhaustion: FetchRootCh has %d, want 1", got)
+	if got := len(e.fetchRootCh); got != 1 {
+		t.Fatalf("re-queue after exhaustion: fetchRootCh has %d, want 1", got)
 	}
 }
 
@@ -46,8 +46,8 @@ func TestQueueMissingBlockFetchDedupes(t *testing.T) {
 // dispatch loop rather than drop.
 func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 	e := makeTestEngine()
-	for len(e.FailedRootCh) < cap(e.FailedRootCh) {
-		e.FailedRootCh <- [32]byte{}
+	for len(e.failedRootCh) < cap(e.failedRootCh) {
+		e.failedRootCh <- [32]byte{}
 	}
 
 	var root [32]byte
@@ -65,7 +65,7 @@ func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	<-e.FailedRootCh // dispatch loop makes room
+	<-e.failedRootCh // dispatch loop makes room
 	select {
 	case <-done:
 	case <-time.After(time.Second):
@@ -74,8 +74,8 @@ func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 
 	// Drain the backlog to reach the root that was waiting.
 	var delivered bool
-	for len(e.FailedRootCh) > 0 {
-		if <-e.FailedRootCh == root {
+	for len(e.failedRootCh) > 0 {
+		if <-e.failedRootCh == root {
 			delivered = true
 		}
 	}
@@ -87,8 +87,8 @@ func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 // Shutdown must not wedge the fetch batcher on a dispatch loop that has already stopped.
 func TestNotifyFailedRootsAbortsOnContextCancel(t *testing.T) {
 	e := makeTestEngine()
-	for len(e.FailedRootCh) < cap(e.FailedRootCh) {
-		e.FailedRootCh <- [32]byte{}
+	for len(e.failedRootCh) < cap(e.failedRootCh) {
+		e.failedRootCh <- [32]byte{}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

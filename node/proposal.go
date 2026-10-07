@@ -34,21 +34,21 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	if slot < e.lastProposalDuty.slot || (slot == e.lastProposalDuty.slot && e.proposalReserved) {
 		return
 	}
-	if e.Keys == nil {
+	if e.keys == nil {
 		return
 	}
-	if e.Store.HeadSlot() >= slot {
+	if e.store.HeadSlot() >= slot {
 		return
 	}
-	if e.DutyGate != nil && !e.DutyGate.Decide("block", slot, e.Store.HeadSlot(), e.networkSeenSlot()) {
+	if e.dutyGate != nil && !e.dutyGate.Decide("block", slot, e.store.HeadSlot(), e.networkSeenSlot()) {
 		metrics.IncBlocksSkippedLag()
 		return
 	}
 	select {
-	case e.ProposalCh <- proposalDuty{slot: slot, validatorID: validatorID}:
+	case e.proposalCh <- proposalDuty{slot: slot, validatorID: validatorID}:
 		e.lastProposalDuty = proposalDuty{slot: slot, validatorID: validatorID}
 		e.proposalReserved = true
-		metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
+		metrics.SetProvingQueueDepth("proposal", len(e.proposalCh))
 	default:
 		logger.Warn(logger.Validator, "proposal worker busy slot=%d", slot)
 	}
@@ -59,11 +59,11 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case duty := <-e.ProposalCh:
-			metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
+		case duty := <-e.proposalCh:
+			metrics.SetProvingQueueDepth("proposal", len(e.proposalCh))
 			result := e.proveProposal(ctx, duty)
 			select {
-			case e.ProposalResultCh <- result:
+			case e.proposalResultCh <- result:
 			case <-ctx.Done():
 				return
 			}
@@ -73,23 +73,23 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 
 func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposalResult {
 	failed := &proposalResult{duty: duty, retryable: true}
-	if head := e.Store.HeadSlot(); head >= duty.slot {
+	if head := e.store.HeadSlot(); head >= duty.slot {
 		logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", duty.slot, head)
 		metrics.IncProofOperation("proposal", "skipped_stale")
 		return failed
 	}
 	deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
 	defer cancel()
-	if e.ProvingGate != nil {
+	if e.provingGate != nil {
 		waitStart := time.Now()
-		acquired := e.ProvingGate.Acquire(deadline, true)
+		acquired := e.provingGate.Acquire(deadline, true)
 		metrics.ObserveProposalStageDuration("gate", time.Since(waitStart).Seconds())
 		if !acquired {
 			metrics.IncProofOperation("proposal", "canceled")
 			logger.Error(logger.Validator, "proposal prover unavailable slot=%d", duty.slot)
 			return failed
 		}
-		defer e.ProvingGate.Release(true)
+		defer e.provingGate.Release(true)
 	}
 	return e.buildProposal(duty.slot, duty.validatorID)
 }
@@ -103,7 +103,7 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 		// Head advanced past the target slot; skip as a slot-boundary miss (matches spec).
 		var stale *statetransition.StateSlotIsNewerError
 		if errors.As(err, &stale) {
-			logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", slot, e.Store.HeadSlot())
+			logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", slot, e.store.HeadSlot())
 			metrics.IncProofOperation("proposal", "skipped_stale")
 			return result
 		}
@@ -112,7 +112,7 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	}
 
 	signStart := time.Now()
-	propKey := e.Keys.GetProposalKey(validatorID)
+	propKey := e.keys.GetProposalKey(validatorID)
 	if propKey == nil {
 		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
 		return result
@@ -122,7 +122,7 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 		logger.Error(logger.Validator, "block root failed: %v", err)
 		return result
 	}
-	if e.Store.Head() != block.ParentRoot {
+	if e.store.Head() != block.ParentRoot {
 		metrics.IncProofOperation("proposal", "skipped_stale")
 		logger.Info(logger.Validator, "skipping stale proposal before signing slot=%d", slot)
 		return result
@@ -172,23 +172,23 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 	// A proposal that outlived its slot is still the chain's best extension
 	// unless the head moved past it; fork choice accepts late blocks, while
 	// discarding one here can permanently halt a stalled chain.
-	if e.Store.HeadSlot() >= block.Slot || e.Store.Head() != block.ParentRoot {
+	if e.store.HeadSlot() >= block.Slot || e.store.Head() != block.ParentRoot {
 		metrics.IncProofOperation("proposal", "canceled")
 		logger.Warn(logger.Validator, "discarding proposal slot=%d: head moved head_slot=%d head=0x%x parent=0x%x",
-			block.Slot, e.Store.HeadSlot(), e.Store.Head(), block.ParentRoot)
+			block.Slot, e.store.HeadSlot(), e.store.Head(), block.ParentRoot)
 		return
 	}
 	e.onBlock(result.signedBlock)
-	if !e.Store.HasState(result.blockRoot) {
+	if !e.store.HasState(result.blockRoot) {
 		metrics.IncProofOperation("proposal", "error")
 		return
 	}
 	metrics.IncProofOperation("proposal", "success")
 
-	if e.Network != nil {
+	if e.network != nil {
 		publishCtx, cancel := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
 		defer cancel()
-		if err := e.Network.PublishBlock(publishCtx, result.signedBlock); err != nil {
+		if err := e.network.PublishBlock(publishCtx, result.signedBlock); err != nil {
 			logger.Error(logger.Network, "publish block failed: %v", err)
 		}
 	}
@@ -222,10 +222,10 @@ func (e *Engine) mergeBlockProofWithProvers(
 	if block == nil || block.Body == nil || len(block.Body.Attestations) != len(attestationProofs) {
 		return nil, fmt.Errorf("attestation proof count mismatch")
 	}
-	if e.Store.Head() != block.ParentRoot {
+	if e.store.Head() != block.ParentRoot {
 		return nil, errStaleProposal
 	}
-	state := e.Store.GetState(block.ParentRoot)
+	state := e.store.GetState(block.ParentRoot)
 	if state == nil {
 		return nil, fmt.Errorf("parent state missing")
 	}
@@ -240,7 +240,7 @@ func (e *Engine) mergeBlockProofWithProvers(
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
 				return nil, fmt.Errorf("attestation proof %d validator %d out of range", i, index)
 			}
-			key, err := e.PubKeys.Get(state.Validators[index].AttestationPubkey)
+			key, err := e.pubKeys.Get(state.Validators[index].AttestationPubkey)
 			if err != nil {
 				return nil, fmt.Errorf("attestation proof %d validator %d: %w", i, index, err)
 			}
@@ -258,7 +258,7 @@ func (e *Engine) mergeBlockProofWithProvers(
 	if err != nil {
 		return nil, err
 	}
-	if e.Store.Head() != block.ParentRoot {
+	if e.store.Head() != block.ParentRoot {
 		return nil, errStaleProposal
 	}
 	wrapStart := time.Now()
@@ -276,7 +276,7 @@ func (e *Engine) mergeBlockProofWithProvers(
 		Pubkeys: []xmss.CPubKey{proposerKey.PublicKey()},
 		Proof:   proposerProof,
 	})
-	if e.Store.Head() != block.ParentRoot {
+	if e.store.Head() != block.ParentRoot {
 		return nil, errStaleProposal
 	}
 	mergeStart := time.Now()
@@ -289,8 +289,8 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 	buildStart := time.Now()
 	defer func() { metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds()) }()
 
-	headRoot := e.Store.Head()
-	headState := e.Store.GetState(headRoot)
+	headRoot := e.store.Head()
+	headState := e.store.GetState(headRoot)
 	if headState == nil {
 		metrics.IncBlockBuildingFailures()
 		return nil, nil, fmt.Errorf("head state missing for slot %d", slot)
@@ -307,9 +307,9 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		Slot:            slot,
 		ProposerIndex:   validatorIndex,
 		ParentRoot:      headRoot,
-		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
-		Payloads:        payloadsFromEntries(e.Store.KnownPayloads().Entries()),
-		ProofMerger:     aggregation.NewProofMerger(e.PubKeys),
+		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.store.HasBlockHeader),
+		Payloads:        payloadsFromEntries(e.store.KnownPayloads().Entries()),
+		ProofMerger:     aggregation.NewProofMerger(e.pubKeys),
 	})
 	if err != nil {
 		metrics.IncBlockBuildingFailures()

@@ -6,7 +6,7 @@ import (
 
 func (e *Engine) startWorkers(ctx context.Context) {
 	e.workers.Go(func() { e.runFetchBatcher(ctx) })
-	e.workers.Go(func() { e.aggregator.Run(ctx, e.AggregationDispatchCh) })
+	e.workers.Go(func() { e.aggregationWorker.Run(ctx, e.aggregationDispatchCh) })
 	e.workers.Go(func() { e.runProposalWorker(ctx) })
 	e.workers.Go(func() { e.runRecoveryWorker(ctx) })
 	e.workers.Go(func() { e.runAttestationWorker(ctx) })
@@ -21,7 +21,7 @@ func (e *Engine) runAttestationWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case att := <-e.AttestationCh:
+		case att := <-e.attestationCh:
 			e.workers.Go(func() { e.onGossipAttestation(att) })
 		}
 	}
@@ -38,7 +38,7 @@ func (e *Engine) runAggregationWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case agg := <-e.AggregationCh:
+		case agg := <-e.aggregationCh:
 			e.onGossipAggregatedAttestation(agg)
 		}
 	}

@@ -10,34 +10,34 @@ import (
 
 func (e *Engine) updateHead() {
 	defer e.publishForkChoiceView()
-	attestations := e.Store.ExtractLatestKnownAttestations()
-	justifiedRoot := e.Store.LatestJustified().Root
+	attestations := e.store.ExtractLatestKnownAttestations()
+	justifiedRoot := e.store.LatestJustified().Root
 
 	// FindHead echoes back a justified root it doesn't know, freezing the
 	// head there — surface that state instead of stalling silently.
-	if e.FC.NodeIndex(justifiedRoot) < 0 && e.warnedMissingJustified != justifiedRoot {
+	if e.forkChoice.NodeIndex(justifiedRoot) < 0 && e.warnedMissingJustified != justifiedRoot {
 		e.warnedMissingJustified = justifiedRoot
 		logger.Warn(logger.Forkchoice, "justified root 0x%x unknown to fork choice; head cannot advance past it", justifiedRoot)
 	}
 
 	for vid, data := range attestations {
-		e.FC.SetKnownVote(vid, data.Head.Root, data.Slot, data)
+		e.forkChoice.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 	}
 
-	oldHead := e.Store.Head()
-	newHead := e.FC.UpdateHead(justifiedRoot)
+	oldHead := e.store.Head()
+	newHead := e.forkChoice.UpdateHead(justifiedRoot)
 
 	e.updateFinalizedFromHead(newHead)
 
 	if newHead != oldHead {
-		e.Store.SetHead(newHead)
+		e.store.SetHead(newHead)
 		if !types.IsZeroRoot(oldHead) {
-			newHeader := e.Store.GetBlockHeader(newHead)
+			newHeader := e.store.GetBlockHeader(newHead)
 			if newHeader == nil {
 				return
 			}
-			justified := e.Store.LatestJustified()
-			finalized := e.Store.LatestFinalized()
+			justified := e.store.LatestJustified()
+			finalized := e.store.LatestFinalized()
 
 			isReorg := newHeader.ParentRoot != oldHead
 
@@ -46,14 +46,14 @@ func (e *Engine) updateHead() {
 			metrics.SetLatestFinalizedSlot(finalized.Slot)
 			metrics.SetJustifiedSlot(justified.Slot)
 			metrics.SetFinalizedSlot(finalized.Slot)
-			metrics.SetGossipSignatures(e.Store.AttestationSignatures().Len())
-			metrics.SetNewAggregatedPayloads(e.Store.NewPayloads().Len())
-			metrics.SetKnownAggregatedPayloads(e.Store.KnownPayloads().Len())
-			metrics.SetPendingAttestationsTotal(e.PendingAttestations.Total())
+			metrics.SetGossipSignatures(e.store.AttestationSignatures().Len())
+			metrics.SetNewAggregatedPayloads(e.store.NewPayloads().Len())
+			metrics.SetKnownAggregatedPayloads(e.store.KnownPayloads().Len())
+			metrics.SetPendingAttestationsTotal(e.pendingAttestations.Total())
 
 			if isReorg {
 				metrics.IncForkChoiceReorgs()
-				depth := e.FC.ReorgDepth(oldHead, newHead)
+				depth := e.forkChoice.ReorgDepth(oldHead, newHead)
 				metrics.ObserveForkChoiceReorgDepth(float64(depth))
 				logger.Warn(logger.Forkchoice, "REORG depth=%d slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
 					depth, newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
@@ -76,12 +76,12 @@ func (e *Engine) updateHead() {
 // above the canonical head, which would otherwise stall target advancement. When
 // finalization advances it drives the same pruning/discard work the import path used.
 func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
-	derived := store.DeriveFinalizedFromHead(e.Store, headRoot)
+	derived := store.DeriveFinalizedFromHead(e.store, headRoot)
 	if derived == nil {
 		return
 	}
 
-	old := e.Store.LatestFinalized()
+	old := e.store.LatestFinalized()
 	oldSlot := uint64(0)
 	if old != nil {
 		if derived.Root == old.Root && derived.Slot == old.Slot {
@@ -94,7 +94,7 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 	// running maximum: a higher-finalized fork that loses head selection must not
 	// latch finalization above the head, so the checkpoint moves down when the head
 	// reorgs onto a chain that finalized fewer slots.
-	e.Store.SetLatestFinalized(derived)
+	e.store.SetLatestFinalized(derived)
 
 	// Pruning is irreversible, so it only runs when finalization genuinely
 	// advances; a downward move keeps the existing pruned horizon.
@@ -109,9 +109,9 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 		// nothing to report — canonical is length 1 so canonical[1:] is empty, and
 		// nonCanonical is empty — so the database prune silently deletes nothing
 		// and TableStates/TableBlockHeaders grow for the life of the chain.
-		store.PruneOnFinalization(e.Store, e.FC, oldSlot, derived.Slot, derived.Root)
+		store.PruneOnFinalization(e.store, e.forkChoice, oldSlot, derived.Slot, derived.Root)
 		if derived.Slot > 0 {
-			e.FC.Prune(derived.Root)
+			e.forkChoice.Prune(derived.Root)
 		}
 		e.discardFinalizedPending(derived.Slot)
 	}
@@ -119,23 +119,23 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 
 func (e *Engine) updateSafeTarget() {
 	defer e.publishForkChoiceView()
-	attestations := e.Store.ExtractLatestNewAttestations()
-	justifiedRoot := e.Store.LatestJustified().Root
+	attestations := e.store.ExtractLatestNewAttestations()
+	justifiedRoot := e.store.LatestJustified().Root
 
 	for vid, data := range attestations {
-		e.FC.SetNewVote(vid, data.Head.Root, data.Slot, data)
+		e.forkChoice.SetNewVote(vid, data.Head.Root, data.Slot, data)
 	}
 
-	headState := e.Store.GetState(e.Store.Head())
+	headState := e.store.GetState(e.store.Head())
 	if headState == nil {
 		return
 	}
 	numValidators := uint64(len(headState.Validators))
 
-	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators)
-	e.Store.SetSafeTarget(safeTarget)
+	safeTarget := e.forkChoice.UpdateSafeTarget(justifiedRoot, numValidators)
+	e.store.SetSafeTarget(safeTarget)
 
-	safeHeader := e.Store.GetBlockHeader(safeTarget)
+	safeHeader := e.store.GetBlockHeader(safeTarget)
 	if safeHeader != nil {
 		metrics.SetSafeTargetSlot(safeHeader.Slot)
 	}
@@ -149,10 +149,10 @@ func (e *Engine) ForkChoiceView() *forkchoice.View {
 
 func (e *Engine) publishForkChoiceView() {
 	e.forkChoiceView.Store(&forkchoice.View{
-		Nodes:      e.FC.Nodes(),
-		Head:       e.Store.Head(),
-		Justified:  *e.Store.LatestJustified(),
-		Finalized:  *e.Store.LatestFinalized(),
-		SafeTarget: e.Store.SafeTarget(),
+		Nodes:      e.forkChoice.Nodes(),
+		Head:       e.store.Head(),
+		Justified:  *e.store.LatestJustified(),
+		Finalized:  *e.store.LatestFinalized(),
+		SafeTarget: e.store.SafeTarget(),
 	})
 }

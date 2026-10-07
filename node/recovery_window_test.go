@@ -12,7 +12,7 @@ import (
 // session itself holds the prover.
 func TestSplitFitsBeforeAggregation(t *testing.T) {
 	e := makeTestEngine()
-	genesisMs := e.Store.Config().GenesisTime * 1000
+	genesisMs := e.store.Config().GenesisTime * 1000
 
 	const interval = types.MillisecondsPerInterval
 
@@ -47,7 +47,7 @@ func TestSplitFitsBeforeAggregation(t *testing.T) {
 // check is re-evaluated on acquisition, so a window that closed while waiting is caught.
 func TestSplitFitsBeforeAggregationRejectsWindowClosedWhileWaiting(t *testing.T) {
 	e := makeTestEngine()
-	genesisMs := e.Store.Config().GenesisTime * 1000
+	genesisMs := e.store.Config().GenesisTime * 1000
 	base := genesisMs + 10*types.MillisecondsPerSlot
 
 	// Cleared at the start of the slot...

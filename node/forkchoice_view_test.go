@@ -7,7 +7,7 @@ import "testing"
 // only see published views, which nothing mutates. Run with -race.
 func TestForkChoiceViewIsSafeToReadDuringUpdates(t *testing.T) {
 	e := makeTestEngine()
-	genesis := e.Store.Head()
+	genesis := e.store.Head()
 
 	done := make(chan struct{})
 	go func() {
@@ -15,7 +15,7 @@ func TestForkChoiceViewIsSafeToReadDuringUpdates(t *testing.T) {
 		parent := genesis
 		for i := range 100 {
 			root := [32]byte{0x02, byte(i)}
-			e.FC.OnBlock(uint64(i+1), root, parent)
+			e.forkChoice.OnBlock(uint64(i+1), root, parent)
 			e.updateHead()
 			parent = root
 		}

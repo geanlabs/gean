@@ -3,7 +3,7 @@ package node
 import "github.com/geanlabs/gean/logger"
 
 func (e *Engine) replayPendingAttestations(headRoot [32]byte) {
-	pending := e.PendingAttestations.Drain(headRoot)
+	pending := e.pendingAttestations.Drain(headRoot)
 	if len(pending) == 0 {
 		return
 	}

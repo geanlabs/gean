@@ -71,41 +71,41 @@ type Config struct {
 }
 
 type Engine struct {
-	Store              *store.ConsensusStore
-	FC                 *forkchoice.ForkChoice
-	Network            Network
-	Keys               *xmss.KeyManager
-	PubKeys            *xmss.PubKeyCache
-	AggCtl             *role.Controller
-	DutyGate           *dutygate.Gate
-	CommitteeCount     uint64
-	AggregateSubnetIDs []uint64
+	store              *store.ConsensusStore
+	forkChoice         *forkchoice.ForkChoice
+	network            Network
+	keys               *xmss.KeyManager
+	pubKeys            *xmss.PubKeyCache
+	aggregator         *role.Controller
+	dutyGate           *dutygate.Gate
+	committeeCount     uint64
+	aggregateSubnetIDs []uint64
 	// expectedVoters caches how many validators this node can hear from in a
 	// slot. Its inputs are fixed once the registry is known, and it is read on
 	// every attestation arrival.
 	expectedVoters      uint64
-	Shadow              shadow.Rates
-	Pending             *pending.BlockBuffer
-	PendingAttestations *pending.AttestationBuffer
+	shadowRates         shadow.Rates
+	pendingBlocks       *pending.BlockBuffer
+	pendingAttestations *pending.AttestationBuffer
 
-	BlockCh       chan *types.SignedBlock
-	AttestationCh chan *types.SignedAttestation
-	AggregationCh chan *types.SignedAggregatedAttestation
-	FailedRootCh  chan [32]byte
-	FetchRootCh   chan [32]byte
+	blockCh       chan *types.SignedBlock
+	attestationCh chan *types.SignedAttestation
+	aggregationCh chan *types.SignedAggregatedAttestation
+	failedRootCh  chan [32]byte
+	fetchRootCh   chan [32]byte
 
-	// EarlyAggregateCh is a coalescing (capacity-1) wake-up: an attestation-verify
+	// earlyAggregateCh is a coalescing (capacity-1) wake-up: an attestation-verify
 	// goroutine pokes it after inserting a signature, and the dispatch loop reacts
 	// by considering an early aggregation session. It carries no data — the loop
 	// re-reads live store state — so a full channel is simply dropped.
-	EarlyAggregateCh chan struct{}
+	earlyAggregateCh chan struct{}
 
-	AggregationDispatchCh chan aggregation.Dispatch
-	ProposalCh            chan proposalDuty
-	ProposalResultCh      chan *proposalResult
-	RecoveryCh            chan *types.SignedBlock
-	ProvingGate           *proving.Gate
-	aggregator            *aggregation.Worker
+	aggregationDispatchCh chan aggregation.Dispatch
+	proposalCh            chan proposalDuty
+	proposalResultCh      chan *proposalResult
+	recoveryCh            chan *types.SignedBlock
+	provingGate           *proving.Gate
+	aggregationWorker     *aggregation.Worker
 	clock                 Clock
 
 	// Dispatch-owned reservation survives dequeue and result acceptance.
@@ -135,7 +135,7 @@ type Engine struct {
 	maxSeenGossipSlot atomic.Uint64
 
 	// fetchInFlight tracks block roots already queued for by-root fetch so a single
-	// missing parent cannot flood FetchRootCh with duplicate requests. Accessed only
+	// missing parent cannot flood fetchRootCh with duplicate requests. Accessed only
 	// on the dispatch loop (queue on onBlock, clear on receive/exhaustion), so no lock.
 	fetchInFlight  map[[32]byte]bool
 	topicMeshSizes atomic.Pointer[map[string]int]
@@ -161,37 +161,37 @@ type Engine struct {
 // New assembles an engine from its components.
 func New(c Components, cfg Config) *Engine {
 	e := &Engine{
-		Store:               c.Store,
-		FC:                  c.ForkChoice,
-		Network:             c.Network,
-		Keys:                c.Keys,
-		PubKeys:             c.PubKeys,
-		AggCtl:              c.Aggregator,
-		DutyGate:            dutygate.New(logDutyGateEvent),
-		CommitteeCount:      cfg.CommitteeCount,
-		AggregateSubnetIDs:  cfg.AggregateSubnetIDs,
-		Shadow:              cfg.Shadow,
-		Pending:             pending.NewBlockBuffer(),
-		PendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		store:               c.Store,
+		forkChoice:          c.ForkChoice,
+		network:             c.Network,
+		keys:                c.Keys,
+		pubKeys:             c.PubKeys,
+		aggregator:          c.Aggregator,
+		dutyGate:            dutygate.New(logDutyGateEvent),
+		committeeCount:      cfg.CommitteeCount,
+		aggregateSubnetIDs:  cfg.AggregateSubnetIDs,
+		shadowRates:         cfg.Shadow,
+		pendingBlocks:       pending.NewBlockBuffer(),
+		pendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		// Sized so gossip keeps flowing while the dispatch loop chews through a
 		// fetched batch: sync delivery blocks when full, but gossip drops, and a
 		// large import burst can take minutes of XMSS verification.
-		BlockCh:               make(chan *types.SignedBlock, 256),
-		AttestationCh:         make(chan *types.SignedAttestation, 256),
-		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),
-		FailedRootCh:          make(chan [32]byte, 64),
-		FetchRootCh:           make(chan [32]byte, 256),
-		EarlyAggregateCh:      make(chan struct{}, 1),
-		AggregationDispatchCh: make(chan aggregation.Dispatch, 1),
-		ProposalCh:            make(chan proposalDuty, 1),
-		ProposalResultCh:      make(chan *proposalResult, 1),
-		RecoveryCh:            make(chan *types.SignedBlock, 8),
-		ProvingGate:           proving.NewGate(),
+		blockCh:               make(chan *types.SignedBlock, 256),
+		attestationCh:         make(chan *types.SignedAttestation, 256),
+		aggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),
+		failedRootCh:          make(chan [32]byte, 64),
+		fetchRootCh:           make(chan [32]byte, 256),
+		earlyAggregateCh:      make(chan struct{}, 1),
+		aggregationDispatchCh: make(chan aggregation.Dispatch, 1),
+		proposalCh:            make(chan proposalDuty, 1),
+		proposalResultCh:      make(chan *proposalResult, 1),
+		recoveryCh:            make(chan *types.SignedBlock, 8),
+		provingGate:           proving.NewGate(),
 		fetchInFlight:         make(map[[32]byte]bool),
 		clock:                 c.Clock,
 	}
 	e.publishForkChoiceView()
-	e.aggregator = aggregation.NewWorker(e.Store, e.PubKeys, e.Network, e.ProvingGate, e.Shadow, e.clock.Now)
+	e.aggregationWorker = aggregation.NewWorker(e.store, e.pubKeys, e.network, e.provingGate, e.shadowRates, e.clock.Now)
 	return e
 }
 

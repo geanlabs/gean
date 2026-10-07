@@ -11,25 +11,25 @@ import (
 )
 
 func (e *Engine) produceAttestations(slot uint64) {
-	if e.Keys == nil {
+	if e.keys == nil {
 		return
 	}
 
-	if e.DutyGate != nil && !e.DutyGate.Decide("attestation", slot, e.Store.HeadSlot(), e.networkSeenSlot()) {
+	if e.dutyGate != nil && !e.dutyGate.Decide("attestation", slot, e.store.HeadSlot(), e.networkSeenSlot()) {
 		metrics.IncAttestationsSkippedLag()
 		return
 	}
 
-	attData := attestation.ProduceAttestationData(e.Store, slot)
+	attData := attestation.ProduceAttestationData(e.store, slot)
 	if attData == nil {
 		return
 	}
 
-	for _, vid := range e.Keys.ValidatorIDs() {
+	for _, vid := range e.keys.ValidatorIDs() {
 		prodStart := time.Now()
 
 		sStart := time.Now()
-		sig, err := e.Keys.SignAttestation(vid, attData)
+		sig, err := e.keys.SignAttestation(vid, attData)
 		metrics.ObservePqSigSigningTime(time.Since(sStart).Seconds())
 		if err != nil {
 			logger.Error(logger.Validator, "sign attestation failed validator=%d: %v", vid, err)
@@ -44,17 +44,17 @@ func (e *Engine) produceAttestations(slot uint64) {
 
 		logger.Info(logger.Validator, "produced attestation slot=%d validator=%d", slot, vid)
 
-		if e.AggCtl != nil && e.AggCtl.Get() {
+		if e.aggregator != nil && e.aggregator.Get() {
 			dataRoot, err := attData.HashTreeRoot()
 			if err != nil {
 				logger.Error(logger.Validator, "attestation root failed validator=%d: %v", vid, err)
 				continue
 			}
-			e.Store.AttestationSignatures().Insert(dataRoot, attData, vid, sig)
+			e.store.AttestationSignatures().Insert(dataRoot, attData, vid, sig)
 		}
 
-		if e.Network != nil {
-			if err := e.Network.PublishAttestation(context.Background(), signedAtt, e.CommitteeCount); err != nil {
+		if e.network != nil {
+			if err := e.network.PublishAttestation(context.Background(), signedAtt, e.committeeCount); err != nil {
 				logger.Error(logger.Network, "publish attestation failed validator=%d: %v", vid, err)
 			} else {
 				logger.Info(logger.Network, "published attestation to network slot=%d validator=%d", slot, vid)
@@ -70,10 +70,10 @@ func (e *Engine) produceAttestations(slot uint64) {
 // state to learn that count; callers holding a state should use this instead
 // rather than pay a second SSZ decode on the tick loop.
 func (e *Engine) proposingAt(slot uint64, numValidators uint64) bool {
-	if e.Keys == nil || numValidators == 0 {
+	if e.keys == nil || numValidators == 0 {
 		return false
 	}
-	for _, vid := range e.Keys.ValidatorIDs() {
+	for _, vid := range e.keys.ValidatorIDs() {
 		if types.IsProposer(slot, vid, numValidators) {
 			return true
 		}
@@ -82,16 +82,16 @@ func (e *Engine) proposingAt(slot uint64, numValidators uint64) bool {
 }
 
 func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
-	if e.Keys == nil {
+	if e.keys == nil {
 		return 0, false
 	}
-	headState := e.Store.GetState(e.Store.Head())
+	headState := e.store.GetState(e.store.Head())
 	if headState == nil {
 		return 0, false
 	}
 	numValidators := headState.NumValidators()
 
-	for _, vid := range e.Keys.ValidatorIDs() {
+	for _, vid := range e.keys.ValidatorIDs() {
 		if types.IsProposer(slot, vid, numValidators) {
 			return vid, true
 		}

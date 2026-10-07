@@ -3,7 +3,7 @@ package node
 import "github.com/geanlabs/gean/logger"
 
 // drainPendingBlocks imports the blocks already queued when the drain starts and
-// no more. Sync delivery blocks on BlockCh, so a producer refills every slot the
+// no more. Sync delivery blocks on blockCh, so a producer refills every slot the
 // drain frees: draining until the channel reads empty hands the tick loop an
 // unbounded amount of work, and store.OnTick has already run for this tick — the
 // store clock then sits stale for the whole drain and correctly-timed blocks are
@@ -12,9 +12,9 @@ import "github.com/geanlabs/gean/logger"
 func (e *Engine) drainPendingBlocks() int {
 	drained := 0
 drain:
-	for remaining := len(e.BlockCh); remaining > 0; remaining-- {
+	for remaining := len(e.blockCh); remaining > 0; remaining-- {
 		select {
-		case block := <-e.BlockCh:
+		case block := <-e.blockCh:
 			e.onBlock(block)
 			drained++
 		default:

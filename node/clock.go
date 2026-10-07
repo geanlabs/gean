@@ -24,22 +24,22 @@ func (e *Engine) nowMs() uint64 {
 }
 
 func (e *Engine) currentSlot(timestampMs uint64) uint64 {
-	if e == nil || e.Store == nil {
+	if e == nil || e.store == nil {
 		return 0
 	}
-	return types.CurrentSlot(e.Store.Config().GenesisTime, timestampMs)
+	return types.CurrentSlot(e.store.Config().GenesisTime, timestampMs)
 }
 
 func (e *Engine) currentInterval(timestampMs uint64) uint64 {
-	if e == nil || e.Store == nil {
+	if e == nil || e.store == nil {
 		return 0
 	}
-	return types.CurrentInterval(e.Store.Config().GenesisTime, timestampMs)
+	return types.CurrentInterval(e.store.Config().GenesisTime, timestampMs)
 }
 
 func (e *Engine) millisIntoSlot(timestampMs uint64) uint64 {
-	if e == nil || e.Store == nil {
+	if e == nil || e.store == nil {
 		return 0
 	}
-	return types.MillisIntoSlot(e.Store.Config().GenesisTime, timestampMs)
+	return types.MillisIntoSlot(e.store.Config().GenesisTime, timestampMs)
 }

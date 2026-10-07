@@ -12,14 +12,14 @@ func (e *Engine) bufferMissingParentBlock(
 	queue *[]*types.SignedBlock,
 ) {
 	block := signedBlock.Block
-	if e.Pending.Count() >= MaxPendingBlocks && !e.evictFarthestPending(block.Slot) {
+	if e.pendingBlocks.Count() >= MaxPendingBlocks && !e.evictFarthestPending(block.Slot) {
 		logger.Warn(logger.Chain, "pending block cache full (%d), rejecting block slot=%d block_root=0x%x",
 			MaxPendingBlocks, block.Slot, blockRoot)
 		return
 	}
 
 	depth := 1
-	if parentDepth, ok := e.Pending.Depth(parentRoot); ok {
+	if parentDepth, ok := e.pendingBlocks.Depth(parentRoot); ok {
 		depth = parentDepth + 1
 	}
 	if depth > MaxBlockFetchDepth {
@@ -31,12 +31,12 @@ func (e *Engine) bufferMissingParentBlock(
 	logger.Warn(logger.Chain, "block parent missing slot=%d block_root=0x%x parent_root=0x%x depth=%d, storing as pending",
 		block.Slot, blockRoot, parentRoot, depth)
 
-	e.Pending.SetDepth(blockRoot, depth)
-	e.Pending.SetSlot(blockRoot, block.Slot)
-	missingRoot := e.Pending.ResolveAncestor(parentRoot)
-	e.Pending.SetParent(blockRoot, parentRoot)
-	e.Store.StorePendingBlock(blockRoot, signedBlock)
-	e.Pending.AddChild(parentRoot, blockRoot)
+	e.pendingBlocks.SetDepth(blockRoot, depth)
+	e.pendingBlocks.SetSlot(blockRoot, block.Slot)
+	missingRoot := e.pendingBlocks.ResolveAncestor(parentRoot)
+	e.pendingBlocks.SetParent(blockRoot, parentRoot)
+	e.store.StorePendingBlock(blockRoot, signedBlock)
+	e.pendingBlocks.AddChild(parentRoot, blockRoot)
 
 	missingRoot, queued := e.queueStoredAncestor(missingRoot, queue)
 	if queued {
@@ -53,36 +53,36 @@ func (e *Engine) bufferMissingParentBlock(
 // incoming block sits no closer than everything already held, it is the one
 // that loses.
 func (e *Engine) evictFarthestPending(incomingSlot uint64) bool {
-	evictRoot, evictSlot, ok := e.Pending.HighestSlotEntry()
+	evictRoot, evictSlot, ok := e.pendingBlocks.HighestSlotEntry()
 	if !ok || evictSlot <= incomingSlot {
 		return false
 	}
 	logger.Warn(logger.Chain, "pending block cache full (%d), evicting slot=%d block_root=0x%x to admit slot=%d",
 		MaxPendingBlocks, evictSlot, evictRoot, incomingSlot)
-	e.Pending.DiscardSubtree(evictRoot)
+	e.pendingBlocks.DiscardSubtree(evictRoot)
 	return true
 }
 
 func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, bool) {
 	for {
-		header := e.Store.GetBlockHeader(missingRoot)
+		header := e.store.GetBlockHeader(missingRoot)
 		if header == nil {
 			return missingRoot, false
 		}
-		if e.Store.HasState(header.ParentRoot) {
-			if storedBlock := e.Store.GetSignedBlock(missingRoot); storedBlock != nil {
+		if e.store.HasState(header.ParentRoot) {
+			if storedBlock := e.store.GetSignedBlock(missingRoot); storedBlock != nil {
 				*queue = append(*queue, storedBlock)
 			}
 			return missingRoot, true
 		}
-		e.Pending.AddChild(header.ParentRoot, missingRoot)
-		e.Pending.SetParent(missingRoot, header.ParentRoot)
+		e.pendingBlocks.AddChild(header.ParentRoot, missingRoot)
+		e.pendingBlocks.SetParent(missingRoot, header.ParentRoot)
 		missingRoot = header.ParentRoot
 	}
 }
 
 func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.SignedBlock) {
-	childRoots, ok := e.Pending.RemoveBucket(parentRoot)
+	childRoots, ok := e.pendingBlocks.RemoveBucket(parentRoot)
 	if !ok {
 		return
 	}
@@ -90,9 +90,9 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 	logger.Info(logger.Chain, "processing %d pending children of parent_root=0x%x", len(childRoots), parentRoot)
 
 	for childRoot := range childRoots {
-		e.Pending.ClearEntry(childRoot)
+		e.pendingBlocks.ClearEntry(childRoot)
 
-		childBlock := e.Store.GetSignedBlock(childRoot)
+		childBlock := e.store.GetSignedBlock(childRoot)
 		if childBlock == nil {
 			logger.Warn(logger.Chain, "pending block block_root=0x%x missing from DB, skipping", childRoot)
 			continue
@@ -104,12 +104,12 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
 	discarded := 0
 
-	for _, pair := range e.Pending.Pairs() {
+	for _, pair := range e.pendingBlocks.Pairs() {
 		parentRoot, childRoot := pair[0], pair[1]
-		header := e.Store.GetBlockHeader(childRoot)
+		header := e.store.GetBlockHeader(childRoot)
 		if header != nil && header.Slot <= finalizedSlot {
-			e.Pending.DiscardSubtree(childRoot)
-			e.Pending.RemoveChild(parentRoot, childRoot)
+			e.pendingBlocks.DiscardSubtree(childRoot)
+			e.pendingBlocks.RemoveChild(parentRoot, childRoot)
 			discarded++
 		}
 	}
@@ -118,7 +118,7 @@ func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
 		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
 	}
 
-	if removed := e.PendingAttestations.PruneBelow(finalizedSlot); removed > 0 {
+	if removed := e.pendingAttestations.PruneBelow(finalizedSlot); removed > 0 {
 		logger.Info(logger.Store, "discarded %d finalized pending attestations (finalized_slot=%d)", removed, finalizedSlot)
 	}
 }
@@ -128,14 +128,14 @@ func (e *Engine) onFailedRoot(failedRoot [32]byte) {
 	// re-requested if a later child reintroduces the gap.
 	delete(e.fetchInFlight, failedRoot)
 
-	children, ok := e.Pending.RemoveBucket(failedRoot)
+	children, ok := e.pendingBlocks.RemoveBucket(failedRoot)
 	if !ok {
 		return
 	}
 
 	discarded := 0
 	for childRoot := range children {
-		e.Pending.DiscardSubtree(childRoot)
+		e.pendingBlocks.DiscardSubtree(childRoot)
 		discarded++
 	}
 	logger.Warn(logger.Sync, "fetch exhausted for root 0x%x, discarded %d pending child block(s)", failedRoot, discarded)

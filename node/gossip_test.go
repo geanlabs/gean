@@ -8,7 +8,7 @@ import (
 
 func TestOnGossipAggregatedAttestationRejectsMissingProof(t *testing.T) {
 	e := makeTestEngine()
-	head := e.Store.Head()
+	head := e.store.Head()
 	attData := &types.AttestationData{
 		Slot:   0,
 		Source: &types.Checkpoint{Root: head, Slot: 0},
@@ -20,8 +20,8 @@ func TestOnGossipAggregatedAttestationRejectsMissingProof(t *testing.T) {
 		Data:  attData,
 		Proof: nil,
 	})
-	if e.Store.NewPayloads().Len() != 0 {
-		t.Fatalf("payloads=%d, want 0 after nil proof", e.Store.NewPayloads().Len())
+	if e.store.NewPayloads().Len() != 0 {
+		t.Fatalf("payloads=%d, want 0 after nil proof", e.store.NewPayloads().Len())
 	}
 
 	e.onGossipAggregatedAttestation(&types.SignedAggregatedAttestation{
@@ -31,7 +31,7 @@ func TestOnGossipAggregatedAttestationRejectsMissingProof(t *testing.T) {
 			Proof:        nil,
 		},
 	})
-	if e.Store.NewPayloads().Len() != 0 {
-		t.Fatalf("payloads=%d, want 0 after empty proof", e.Store.NewPayloads().Len())
+	if e.store.NewPayloads().Len() != 0 {
+		t.Fatalf("payloads=%d, want 0 after empty proof", e.store.NewPayloads().Len())
 	}
 }

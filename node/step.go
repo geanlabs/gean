@@ -30,43 +30,43 @@ func (e *Engine) ProcessPending(ctx context.Context) bool {
 }
 
 func (e *Engine) processOne(ctx context.Context) bool {
-	if block, ok := poll(e.BlockCh); ok {
+	if block, ok := poll(e.blockCh); ok {
 		e.onBlock(block)
 		return true
 	}
-	if root, ok := poll(e.FailedRootCh); ok {
+	if root, ok := poll(e.failedRootCh); ok {
 		e.onFailedRoot(root)
 		return true
 	}
-	if att, ok := poll(e.AttestationCh); ok {
+	if att, ok := poll(e.attestationCh); ok {
 		e.onGossipAttestation(att)
 		return true
 	}
-	if agg, ok := poll(e.AggregationCh); ok {
+	if agg, ok := poll(e.aggregationCh); ok {
 		e.onGossipAggregatedAttestation(agg)
 		return true
 	}
-	if _, ok := poll(e.EarlyAggregateCh); ok {
+	if _, ok := poll(e.earlyAggregateCh); ok {
 		e.maybeEarlyAggregate(e.nowMs())
 		return true
 	}
-	if duty, ok := poll(e.ProposalCh); ok {
+	if duty, ok := poll(e.proposalCh); ok {
 		e.acceptProposal(ctx, e.proveProposal(ctx, duty))
 		return true
 	}
-	if result, ok := poll(e.ProposalResultCh); ok {
+	if result, ok := poll(e.proposalResultCh); ok {
 		e.acceptProposal(ctx, result)
 		return true
 	}
-	if dispatch, ok := poll(e.AggregationDispatchCh); ok {
-		e.aggregator.Session(ctx, dispatch)
+	if dispatch, ok := poll(e.aggregationDispatchCh); ok {
+		e.aggregationWorker.Session(ctx, dispatch)
 		return true
 	}
-	if block, ok := poll(e.RecoveryCh); ok {
+	if block, ok := poll(e.recoveryCh); ok {
 		e.recoverBlockProofs(ctx, block)
 		return true
 	}
-	if root, ok := poll(e.FetchRootCh); ok {
+	if root, ok := poll(e.fetchRootCh); ok {
 		e.fireBatchFetch(ctx, e.collectFetchBatch(root))
 		return true
 	}
@@ -79,7 +79,7 @@ func (e *Engine) collectFetchBatch(first [32]byte) [][32]byte {
 	batch := [][32]byte{first}
 	seen := map[[32]byte]bool{first: true}
 	for len(batch) < types.MaxBlocksPerRootFetch {
-		root, ok := poll(e.FetchRootCh)
+		root, ok := poll(e.fetchRootCh)
 		if !ok {
 			break
 		}

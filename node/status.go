@@ -30,10 +30,10 @@ func (e *Engine) updateSyncStatus(currentSlot uint64) {
 }
 
 func (e *Engine) computeSyncStatus(currentSlot uint64) types.SyncStatus {
-	if e.Network != nil && e.Network.ConnectedPeers() == 0 {
+	if e.network != nil && e.network.ConnectedPeers() == 0 {
 		return types.SyncIdle
 	}
-	headSlot := e.Store.HeadSlot()
+	headSlot := e.store.HeadSlot()
 	if currentSlot <= headSlot || currentSlot-headSlot <= SyncLagSlots {
 		return types.SyncSynced
 	}
@@ -46,10 +46,10 @@ func (e *Engine) GetSyncStatus() types.SyncStatus {
 
 func (e *Engine) logChainStatus(currentSlot uint64) {
 	metrics.SampleProcessRSS()
-	headRoot := e.Store.Head()
-	headHeader := e.Store.GetBlockHeader(headRoot)
-	justified := e.Store.LatestJustified()
-	finalized := e.Store.LatestFinalized()
+	headRoot := e.store.Head()
+	headHeader := e.store.GetBlockHeader(headRoot)
+	justified := e.store.LatestJustified()
+	finalized := e.store.LatestFinalized()
 
 	headSlot := uint64(0)
 	parentRoot := types.ZeroRoot
@@ -66,15 +66,15 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 	}
 
 	peerCount := 0
-	if e.Network != nil {
-		peerCount = e.Network.ConnectedPeers()
+	if e.network != nil {
+		peerCount = e.network.ConnectedPeers()
 	}
 
-	gossipSigs := e.Store.AttestationSignatures().Len()
-	knownPayloads := e.Store.KnownPayloads().Len()
+	gossipSigs := e.store.AttestationSignatures().Len()
+	knownPayloads := e.store.KnownPayloads().Len()
 	fcNodesCount := 0
-	if e.FC != nil {
-		fcNodesCount = e.FC.Len()
+	if e.forkChoice != nil {
+		fcNodesCount = e.forkChoice.Len()
 	}
 
 	// Read the sample runGossipMeshGauge cached rather than querying pubsub here:
@@ -102,7 +102,7 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 // the tick loop that is a slow gauge; on it, it delayed store.OnTick and stalled
 // the store clock. Sampling is coarse by nature — a slow cadence loses nothing.
 func (e *Engine) runGossipMeshGauge(ctx context.Context) {
-	if e.Network == nil {
+	if e.network == nil {
 		return
 	}
 	ticker := time.NewTicker(gossipMeshSampleInterval)
@@ -161,7 +161,7 @@ func (e *Engine) runStorageSizeGauge(ctx context.Context) {
 }
 
 func (e *Engine) sampleGossipMesh() {
-	metrics.SetGossipMeshPeers(e.Network.MeshPeerCount())
-	sizes := e.Network.TopicMeshSizes()
+	metrics.SetGossipMeshPeers(e.network.MeshPeerCount())
+	sizes := e.network.TopicMeshSizes()
 	e.topicMeshSizes.Store(&sizes)
 }

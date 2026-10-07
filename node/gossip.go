@@ -11,7 +11,7 @@ import (
 )
 
 func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
-	if e.AggCtl == nil || !e.AggCtl.Get() || att == nil {
+	if e.aggregator == nil || !e.aggregator.Get() || att == nil {
 		return
 	}
 
@@ -23,12 +23,12 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 		}
 	}()
 
-	if err := attestation.ValidateAttestationData(e.Store, att.Data); err != nil {
+	if err := attestation.ValidateAttestationData(e.store, att.Data); err != nil {
 		if se, ok := err.(*store.StoreError); ok && se.Kind == store.ErrUnknownHeadBlock && att.Data.Head != nil {
-			added, dropped := e.PendingAttestations.Add(att.Data.Head.Root, att)
+			added, dropped := e.pendingAttestations.Add(att.Data.Head.Root, att)
 			if added {
 				select {
-				case e.FetchRootCh <- att.Data.Head.Root:
+				case e.fetchRootCh <- att.Data.Head.Root:
 				default:
 				}
 			}
@@ -48,14 +48,14 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	// A duplicate arrival cannot change the answer, and verification is the
 	// expensive step. The store's own record of what it holds serves as the
 	// seen set, so it is pruned along with the signatures themselves.
-	if e.Store.AttestationSignatures().Has(dataRoot, att.ValidatorID) {
+	if e.store.AttestationSignatures().Has(dataRoot, att.ValidatorID) {
 		return
 	}
 
 	metrics.IncPqSigAttestationSigsTotal()
 	verifyStart := time.Now()
-	err = attestation.VerifyGossipAttestation(e.Store, att.ValidatorID, att.Data, dataRoot, att.Signature[:])
-	e.Shadow.SleepVerify()
+	err = attestation.VerifyGossipAttestation(e.store, att.ValidatorID, att.Data, dataRoot, att.Signature[:])
+	e.shadowRates.SleepVerify()
 	metrics.ObservePqSigVerificationTime(time.Since(verifyStart).Seconds())
 	if err != nil {
 		metrics.IncPqSigAttestationSigsInvalid()
@@ -66,14 +66,14 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	metrics.IncAttestationsValid(1)
 
 	logger.Info(logger.Gossip, "attestation verified: validator=%d slot=%d dataRoot=%x", att.ValidatorID, att.Data.Slot, dataRoot)
-	e.Store.AttestationSignatures().Insert(dataRoot, att.Data, att.ValidatorID, att.Signature)
+	e.store.AttestationSignatures().Insert(dataRoot, att.Data, att.ValidatorID, att.Signature)
 	success = true
 
 	// Nudge the dispatch loop to consider aggregating early now that another vote
 	// is in. The signal is best-effort and coalescing; the loop owns the actual
 	// timing and quorum decision.
 	select {
-	case e.EarlyAggregateCh <- struct{}{}:
+	case e.earlyAggregateCh <- struct{}{}:
 	default:
 	}
 }
@@ -83,7 +83,7 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 		return
 	}
 
-	if err := attestation.ValidateAttestationData(e.Store, agg.Data); err != nil {
+	if err := attestation.ValidateAttestationData(e.store, agg.Data); err != nil {
 		return
 	}
 
@@ -91,8 +91,8 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 		return
 	}
 	verifyStart := time.Now()
-	err := attestation.VerifyAggregatedGossipAttestation(e.Store, agg.Data, agg.Proof.Participants, agg.Proof.Proof)
-	e.Shadow.SleepVerifyAggregated(int(types.BitlistCount(agg.Proof.Participants)))
+	err := attestation.VerifyAggregatedGossipAttestation(e.store, agg.Data, agg.Proof.Participants, agg.Proof.Proof)
+	e.shadowRates.SleepVerifyAggregated(int(types.BitlistCount(agg.Proof.Participants)))
 	metrics.ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
 	if err != nil {
 		metrics.IncPqSigAggregatedInvalid()
@@ -106,5 +106,5 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 		logger.Error(logger.Signature, "aggregated attestation root failed: %v", err)
 		return
 	}
-	e.Store.NewPayloads().Push(dataRoot, agg.Data, agg.Proof)
+	e.store.NewPayloads().Push(dataRoot, agg.Data, agg.Proof)
 }

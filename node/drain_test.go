@@ -12,7 +12,7 @@ func blockAtSlot(slot uint64) *types.SignedBlock {
 }
 
 // The drain must import only what was queued on entry. Sync delivery blocks on
-// BlockCh, so a producer refills every slot the drain frees; draining until the
+// blockCh, so a producer refills every slot the drain frees; draining until the
 // channel reads empty hands the tick loop unbounded work, and the store clock —
 // already advanced for this tick — then sits stale for the whole drain, which is
 // what makes correctly-timed blocks fail the future-horizon check.
@@ -23,11 +23,11 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 	const capacity = 8
 
 	e := &Engine{
-		Store:   makeTestStore(),
-		BlockCh: make(chan *types.SignedBlock, capacity),
+		store:   makeTestStore(),
+		blockCh: make(chan *types.SignedBlock, capacity),
 	}
 	for i := 0; i < capacity; i++ {
-		e.BlockCh <- blockAtSlot(uint64(i))
+		e.blockCh <- blockAtSlot(uint64(i))
 	}
 
 	stop := make(chan struct{})
@@ -38,7 +38,7 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 			select {
 			case <-stop:
 				return
-			case e.BlockCh <- blockAtSlot(999):
+			case e.blockCh <- blockAtSlot(999):
 			}
 		}
 	}()
@@ -64,8 +64,8 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 
 func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
 	e := &Engine{
-		Store:   makeTestStore(),
-		BlockCh: make(chan *types.SignedBlock, 4),
+		store:   makeTestStore(),
+		blockCh: make(chan *types.SignedBlock, 4),
 	}
 
 	done := make(chan struct{})
@@ -87,19 +87,19 @@ func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
 // producer, everything queued on entry is imported.
 func TestDrainPendingBlocks_ConsumesEveryQueuedBlock(t *testing.T) {
 	e := &Engine{
-		Store:   makeTestStore(),
-		BlockCh: make(chan *types.SignedBlock, 16),
+		store:   makeTestStore(),
+		blockCh: make(chan *types.SignedBlock, 16),
 	}
 
 	const queued = 8
 	for i := 0; i < queued; i++ {
-		e.BlockCh <- blockAtSlot(uint64(i))
+		e.blockCh <- blockAtSlot(uint64(i))
 	}
 
 	if drained := e.drainPendingBlocks(); drained != queued {
 		t.Errorf("drained = %d, want %d", drained, queued)
 	}
-	if remaining := len(e.BlockCh); remaining != 0 {
+	if remaining := len(e.blockCh); remaining != 0 {
 		t.Errorf("expected the queued blocks to be consumed, %d left in channel", remaining)
 	}
 }

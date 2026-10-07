@@ -9,14 +9,14 @@ import (
 func (e *Engine) initMetrics() {
 	metrics.SetSyncStatus("idle")
 	metrics.SetNodeStartTime(float64(time.Now().Unix()))
-	metrics.SetAttestationCommitteeCount(e.CommitteeCount)
+	metrics.SetAttestationCommitteeCount(e.committeeCount)
 
-	if e.Keys == nil {
+	if e.keys == nil {
 		return
 	}
-	vids := e.Keys.ValidatorIDs()
+	vids := e.keys.ValidatorIDs()
 	metrics.SetValidatorsCount(len(vids))
-	if len(vids) > 0 && e.CommitteeCount > 0 {
-		metrics.SetAttestationCommitteeSubnet(vids[0] % e.CommitteeCount)
+	if len(vids) > 0 && e.committeeCount > 0 {
+		metrics.SetAttestationCommitteeSubnet(vids[0] % e.committeeCount)
 	}
 }

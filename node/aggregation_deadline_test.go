@@ -14,7 +14,7 @@ import (
 // dispatch paths on the same instant.
 func TestAggregationDeadlineAnchorsToIntervalFour(t *testing.T) {
 	e := makeTestEngine()
-	genesisMs := e.Store.Config().GenesisTime * 1000
+	genesisMs := e.store.Config().GenesisTime * 1000
 	slotStart := genesisMs + types.MillisecondsPerSlot*7
 
 	const interval = types.MillisecondsPerInterval
@@ -71,8 +71,8 @@ func TestExpectedVotersPerSlotFollowsSubscribedSubnets(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			e := &Engine{
 				numValidators:      tc.validators,
-				CommitteeCount:     tc.committees,
-				AggregateSubnetIDs: tc.subnets,
+				committeeCount:     tc.committees,
+				aggregateSubnetIDs: tc.subnets,
 			}
 			if got := e.expectedVotersPerSlot(); got != tc.want {
 				t.Fatalf("voters=%d, want %d", got, tc.want)
@@ -82,7 +82,7 @@ func TestExpectedVotersPerSlotFollowsSubscribedSubnets(t *testing.T) {
 
 	// The quorum a single-subnet aggregator must reach has to be reachable from
 	// the votes it can actually receive.
-	e := &Engine{numValidators: 12, CommitteeCount: 4, AggregateSubnetIDs: []uint64{1}}
+	e := &Engine{numValidators: 12, committeeCount: 4, aggregateSubnetIDs: []uint64{1}}
 	if q := earlyAggregationQuorum(e.expectedVotersPerSlot()); uint64(q) > e.expectedVotersPerSlot() {
 		t.Fatalf("quorum %d exceeds the %d votes this node can receive", q, e.expectedVotersPerSlot())
 	}

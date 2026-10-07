@@ -29,8 +29,8 @@ func TestFinalizationPrunesAncestorAndLosingBranch(t *testing.T) {
 
 	// finalizedIn is the checkpoint a block's post-state carries.
 	add := func(root, parent [32]byte, slot uint64, finalizedIn *types.Checkpoint) {
-		e.Store.InsertBlockHeader(root, &types.BlockHeader{Slot: slot, ParentRoot: parent})
-		e.Store.InsertState(root, &types.State{
+		e.store.InsertBlockHeader(root, &types.BlockHeader{Slot: slot, ParentRoot: parent})
+		e.store.InsertState(root, &types.State{
 			Slot:                     slot,
 			LatestBlockHeader:        &types.BlockHeader{Slot: slot, ParentRoot: parent},
 			LatestJustified:          &types.Checkpoint{Root: genesis, Slot: 0},
@@ -38,7 +38,7 @@ func TestFinalizationPrunesAncestorAndLosingBranch(t *testing.T) {
 			JustifiedSlots:           types.NewBitlistSSZ(0),
 			JustificationsValidators: types.NewBitlistSSZ(0),
 		})
-		e.FC.OnBlock(slot, root, parent)
+		e.forkChoice.OnBlock(slot, root, parent)
 	}
 
 	genesisCP := &types.Checkpoint{Root: genesis, Slot: 0}
@@ -48,33 +48,33 @@ func TestFinalizationPrunesAncestorAndLosingBranch(t *testing.T) {
 	// c's post-state is what drives finalization: it finalizes b at slot 2.
 	add(rootC, rootB, 3, &types.Checkpoint{Root: rootB, Slot: 2})
 
-	e.Store.SetHead(rootC)
+	e.store.SetHead(rootC)
 	e.updateFinalizedFromHead(rootC)
 
-	if got := e.Store.LatestFinalized(); got == nil || got.Slot != 2 || got.Root != rootB {
+	if got := e.store.LatestFinalized(); got == nil || got.Slot != 2 || got.Root != rootB {
 		t.Fatalf("finalized checkpoint = %+v, want slot 2 root %x", got, rootB)
 	}
 
 	// The losing branch goes entirely: state and block header both.
-	if e.Store.HasState(rootX) {
+	if e.store.HasState(rootX) {
 		t.Error("losing branch state survived finalization pruning")
 	}
-	if e.Store.GetBlockHeader(rootX) != nil {
+	if e.store.GetBlockHeader(rootX) != nil {
 		t.Error("losing branch block header survived finalization pruning")
 	}
 
 	// Ancestors below the finalized root keep their headers but lose their
 	// states — canonical[1:] in PruneOnFinalization.
-	if e.Store.HasState(rootA) {
+	if e.store.HasState(rootA) {
 		t.Error("ancestor state below the finalized root survived finalization pruning")
 	}
 
 	// The finalized block and the head above it must be untouched: without
 	// their states the node cannot run a transition from the finalized anchor.
-	if !e.Store.HasState(rootB) {
+	if !e.store.HasState(rootB) {
 		t.Error("finalized block state was pruned")
 	}
-	if !e.Store.HasState(rootC) {
+	if !e.store.HasState(rootC) {
 		t.Error("head state was pruned")
 	}
 }
