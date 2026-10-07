@@ -79,6 +79,8 @@ go test ./node -run TestName -v -count=1
   `node.Components` (store, fork choice, `Network`, keys, `Clock`).
 - `sim/`: in-process multi-node simulation on a simulated network and manual clock.
 - `tasks/`: goroutine ownership; every component joins its work before releasing resources.
+- `internal/layering/`: the package dependency rules, enforced by `make test`. Change a rule only
+  with the boundary it protects.
 - `statetransition/`, `forkchoice/`, `types/`: spec logic, LMD-GHOST, and SSZ types.
 - `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`,
   `proving/`: block import, proposal, attestations, and XMSS proof work.
