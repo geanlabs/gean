@@ -68,6 +68,7 @@ type Engine struct {
 	ProposalResultCh      chan *proposalResult
 	RecoveryCh            chan *types.SignedBlock
 	ProvingGate           *proving.Gate
+	AggregationPacer      *aggregation.Pacer
 
 	// Dispatch-owned reservation survives dequeue and result acceptance.
 	lastProposalDuty proposalDuty
@@ -124,6 +125,11 @@ type Engine struct {
 	// lazily on the dispatch loop to avoid SSZ-decoding the head state on every
 	// attestation arrival; read/written only there, so no lock.
 	numValidators uint64
+
+	// aggHeadRoot and aggHeadState cache the decoded head state aggregation
+	// snapshots are built on; see aggregationHeadState. Dispatch loop only.
+	aggHeadRoot  [32]byte
+	aggHeadState *types.State
 }
 
 func New(
@@ -161,6 +167,7 @@ func New(
 		ProposalResultCh:      make(chan *proposalResult, 1),
 		RecoveryCh:            make(chan *types.SignedBlock, 8),
 		ProvingGate:           proving.NewGate(),
+		AggregationPacer:      aggregation.NewPacer(),
 		fetchInFlight:         make(map[[32]byte]bool),
 	}
 	e.configureP2PHooks()

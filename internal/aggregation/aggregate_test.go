@@ -79,7 +79,7 @@ func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
 	cache := xmss.NewPubKeyCache()
 
-	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), shadow.Rates{}, newUnitCostEstimator())
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")
@@ -92,7 +92,7 @@ func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 func TestAggregateFromSnapshotZeroDeadlineProcessesAll(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
 
-	_, _, _, truncated, _ := aggregateFromSnapshot(nil, snap, xmss.NewPubKeyCache(), time.Time{}, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	_, _, _, truncated, _ := aggregateFromSnapshot(nil, snap, xmss.NewPubKeyCache(), time.Time{}, shadow.Rates{}, newUnitCostEstimator())
 
 	if truncated {
 		t.Fatal("zero deadline must never truncate")
@@ -158,7 +158,7 @@ func TestAggregateFromSnapshotBudgetStopCountsEveryDeferredGroup(t *testing.T) {
 	snap := aggregateTestSnapshot(5, 6, 7)
 	cache := xmss.NewPubKeyCache()
 
-	_, _, _, truncated, skips := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	_, _, _, truncated, skips := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), shadow.Rates{}, newUnitCostEstimator())
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")
@@ -189,4 +189,9 @@ func TestOrderedGroupsPutsCurrentSlotFirst(t *testing.T) {
 		t.Fatalf("backlog order = %d,%d, want ascending target 10,11",
 			groups[1].targetSlot, groups[2].targetSlot)
 	}
+}
+
+// aggregateFromSnapshot runs a session against the real prover.
+func aggregateFromSnapshot(yield func() string, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+	return aggregateFromSnapshotWithProver(yield, snap, cache, deadline, shadowRates, estimator, xmss.AggregateWithChildren)
 }

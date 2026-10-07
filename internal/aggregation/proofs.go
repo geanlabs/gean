@@ -35,7 +35,10 @@ const maxChildProofsPerGroup = 2
 //     first child out under a tight budget defers exactly the votes finality is
 //     waiting on, every session, for as long as the pressure lasts.
 //
-// Every child after that must fit the remaining budget.
+// Every child after that must fit the remaining budget. With strict, no child
+// is exempt: a backlog session must not start a proof that runs into the window
+// the interval-2 session or a proposal needs, and a group whose coverage needs
+// a child that does not fit is left to the interval-2 session.
 //
 // Selection is greedy on coverage: each round takes the proof adding the most
 // still-uncovered validators, matching leanSpec's select_proofs_for_coverage.
@@ -51,6 +54,7 @@ func selectChildProofs(
 	remaining *time.Duration,
 	childCost time.Duration,
 	rawCount int,
+	strict bool,
 ) (selectedIDs []uint64) {
 	if entry == nil || state == nil || cache == nil || len(entry.Proofs) == 0 {
 		return
@@ -65,7 +69,7 @@ func selectChildProofs(
 		if len(*children) >= maxChildProofsPerGroup {
 			return
 		}
-		exempt := len(*children) == 0 || rawCount+len(*children) < 2
+		exempt := !strict && (len(*children) == 0 || rawCount+len(*children) < 2)
 		if !exempt && *remaining < childCost {
 			return
 		}

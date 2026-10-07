@@ -27,7 +27,7 @@ func TestRunWorkerReturnsWhenDispatchChannelCloses(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RunWorker(context.Background(), dispatches, nil, nil, nil, nil, shadow.Rates{})
+		RunWorker(context.Background(), dispatches, nil, nil, nil, nil, nil, shadow.Rates{})
 		close(done)
 	}()
 
@@ -41,7 +41,7 @@ func TestRunWorkerSkipsNilSnapshot(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RunWorker(context.Background(), dispatches, nil, nil, nil, nil, shadow.Rates{})
+		RunWorker(context.Background(), dispatches, nil, nil, nil, nil, nil, shadow.Rates{})
 		close(done)
 	}()
 
@@ -85,7 +85,7 @@ func TestRunWorkerSkipsDispatchPastItsDeadline(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RunWorker(context.Background(), dispatches, nil, xmss.NewPubKeyCache(), publisher, nil, shadow.Rates{})
+		RunWorker(context.Background(), dispatches, nil, xmss.NewPubKeyCache(), publisher, nil, nil, shadow.Rates{})
 		close(done)
 	}()
 

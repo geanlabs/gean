@@ -86,6 +86,10 @@ var (
 		Name: "lean_attestation_aggregate_coverage_diff_validators",
 		Help: "Validator coverage delta between block payloads and timely pre-merge payloads, by direction",
 	}, []string{"direction"})
+	metricAggregationBacklogBudget = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_aggregation_backlog_budget_seconds",
+		Help: "Proving time per slot that backlog aggregation may currently use; self-tuned",
+	})
 	metricProvingQueueDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lean_proving_queue_depth", Help: "Queued recursive proof work",
 	}, []string{"operation"})

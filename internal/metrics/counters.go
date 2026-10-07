@@ -26,6 +26,10 @@ var (
 		Name: "lean_aggregation_groups_skipped_total",
 		Help: "Aggregation groups dropped inside a session by reason",
 	}, []string{"reason"})
+	metricAggregationBacklogBudgetChanges = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_aggregation_backlog_budget_changes_total",
+		Help: "Slot-boundary adjustments to the self-tuned backlog aggregation budget, by reason",
+	}, []string{"reason"})
 	metricForkChoiceReorgs = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_fork_choice_reorgs_total", Help: "Total fork choice reorgs",
 	})

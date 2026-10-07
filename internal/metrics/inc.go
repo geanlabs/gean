@@ -25,6 +25,9 @@ func IncAggregationGroupSkipped(reason string, n int) {
 	}
 	metricAggregationGroupSkipped.WithLabelValues(aggregationGroupSkipReason(reason)).Add(float64(n))
 }
+func IncAggregationBacklogBudgetChange(reason string) {
+	metricAggregationBacklogBudgetChanges.WithLabelValues(labelOrUnknown(reason)).Inc()
+}
 func IncFinalization(result string) {
 	metricFinalizationsTotal.WithLabelValues(labelOrUnknown(result)).Inc()
 }

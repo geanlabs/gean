@@ -28,17 +28,19 @@ const (
 	AggGroupSkipTargetJustified = "target_justified"
 	AggGroupSkipTooFewSigners   = "too_few_signers"
 	AggGroupSkipBudget          = "budget"
-	AggGroupSkipSessionCap      = "session_cap"
 	AggGroupSkipProposalPending = "proposal_pending"
-	AggGroupSkipError           = "error"
+	// AggGroupSkipSuperseded: a backlog session gave the prover to the next
+	// dispatch; its groups stay pooled for that session.
+	AggGroupSkipSuperseded = "superseded"
+	AggGroupSkipError      = "error"
 )
 
 var aggregationGroupSkipReasons = []string{
 	AggGroupSkipTargetJustified,
 	AggGroupSkipTooFewSigners,
 	AggGroupSkipBudget,
-	AggGroupSkipSessionCap,
 	AggGroupSkipProposalPending,
+	AggGroupSkipSuperseded,
 	AggGroupSkipError,
 }
 
@@ -80,6 +82,15 @@ func aggregatorSkipReason(reason string) string {
 	}
 	return AggregatorSkipOther
 }
+
+// Reasons the self-tuned backlog aggregation budget changes at a slot boundary:
+// it grows after a slot that wanted more and showed no strain, and is cut when
+// a tick ran late or proofs ran slow.
+const (
+	BacklogBudgetGrow      = "grow"
+	BacklogBudgetTickLate  = "tick_late"
+	BacklogBudgetProofSlow = "proof_slow"
+)
 
 func aggregationGroupSkipReason(reason string) string {
 	reason = labelOrUnknown(reason)

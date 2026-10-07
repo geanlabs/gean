@@ -1,6 +1,8 @@
 package aggregation
 
 import (
+	"time"
+
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )
@@ -11,6 +13,15 @@ type Snapshot struct {
 	attSigs      map[[32]byte]*store.AttestationDataEntry
 	newEntries   map[[32]byte]*store.PayloadEntry
 	knownEntries map[[32]byte]*store.PayloadEntry
+	takenAt      time.Time
+
+	// Set by the worker before a session runs. skipCurrent leaves the slot's own
+	// votes for its interval-2 session; skipRoots holds roots proved since this
+	// snapshot was taken, whose signatures it still carries; strictFit makes
+	// every proof, children included, fit the time left (see selectChildProofs).
+	skipCurrent bool
+	skipRoots   map[[32]byte]bool
+	strictFit   bool
 }
 
 // SnapshotInputs copies the aggregation inputs out of the store. headState is
@@ -31,6 +42,7 @@ func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64
 		attSigs:      s.AttestationSignatures.Snapshot(),
 		newEntries:   make(map[[32]byte]*store.PayloadEntry),
 		knownEntries: make(map[[32]byte]*store.PayloadEntry),
+		takenAt:      time.Now(),
 	}
 
 	dataRoots := make(map[[32]byte]bool)

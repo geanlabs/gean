@@ -30,7 +30,7 @@ func TestAggregationDeadlineAnchorsToIntervalFour(t *testing.T) {
 		{"interval 2 fallback", 2 * interval, 2 * interval * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := e.aggregationDeadline(slotStart + tc.intoSlot)
+			got := e.aggregationDeadline(slotStart+tc.intoSlot, aggregationDeadlineOffset)
 			if !got.Equal(boundary) {
 				t.Fatalf("deadline = %v, want the interval-4 boundary %v", got, boundary)
 			}
@@ -43,7 +43,7 @@ func TestAggregationDeadlineAnchorsToIntervalFour(t *testing.T) {
 	// A dispatch past the boundary would otherwise hand the worker an expired
 	// deadline, which it reads as "stop before the first group" — the produced=0
 	// shape this branch exists to remove.
-	late := e.aggregationDeadline(slotStart + 4*interval)
+	late := e.aggregationDeadline(slotStart+4*interval, aggregationDeadlineOffset)
 	if window := late.Sub(time.UnixMilli(int64(slotStart + 4*interval))); window <= 0 {
 		t.Fatalf("late dispatch window = %v, want a usable window", window)
 	}

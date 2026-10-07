@@ -30,8 +30,8 @@ type aggregationGroup struct {
 // This slot's votes are the only ones with a deadline: they must be aggregated
 // and gossiped in time to reach the next block, while a backlog entry loses
 // nothing by waiting a slot. Ordering purely by target slot puts the oldest
-// backlog ahead of them, so a session capped at two groups can spend both on
-// stale work and let the current slot's own votes go unaggregated.
+// backlog ahead of them, so a session whose budget fits two groups can spend
+// both on stale work and let the current slot's own votes go unaggregated.
 //
 // Within each tier the frontier rule stands. Finalization advances only when
 // the checkpoint
@@ -104,7 +104,11 @@ func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 	groups := make([]aggregationGroup, 0, len(dataRoots))
 	for dr := range dataRoots {
 		attData := attestationDataForRoot(snap, dr)
-		if attData == nil {
+		if attData == nil || snap.skipRoots[dr] {
+			continue
+		}
+		currentSlot := attData.Slot == snap.slot
+		if currentSlot && snap.skipCurrent {
 			continue
 		}
 		// The target checkpoint drives finalization; fall back to the attestation
@@ -130,7 +134,7 @@ func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 		groups = append(groups, aggregationGroup{
 			dataRoot:    dr,
 			targetSlot:  targetSlot,
-			currentSlot: attData.Slot == snap.slot,
+			currentSlot: currentSlot,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool {
@@ -153,20 +157,6 @@ const seedPerChildSeconds = 1.5
 
 // seedPerGroupSeconds is used until a successful group supplies a wall-time sample.
 const seedPerGroupSeconds = 0.3
-
-// MaxGroupsPerSession bounds how many groups one session hands to the prover.
-// Without it a session costs whatever the backlog costs, which is how four
-// aggregators covering four subnets saturated a 16-core host and left the node
-// 129 slots behind. A count is a cruder bound than the wall-clock deadline, but
-// it is the one that holds before any proof has started, so the gate token is
-// never held for an unbounded stretch.
-const MaxGroupsPerSession = 2
-
-// MaxGroupsWhenProposing applies in the slot before this node proposes. The
-// session yields between proofs when a proposal waits, but cannot interrupt
-// the current proof. The smaller cap also limits work started before the
-// proposal becomes pending.
-const MaxGroupsWhenProposing = 1
 
 // unitCostEstimator tracks observed aggregation-proving time so each pass can be
 // sized to the remaining session budget. The single-threaded worker holds one
@@ -251,11 +241,13 @@ func (e *unitCostEstimator) childDuration() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
-func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
-	return aggregateFromSnapshotWithProver(shouldYield, snap, cache, deadline, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
-}
-
-func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+// A session is bounded by time, not by a group count: it starts a proof only
+// while the estimate fits the deadline, so one in-flight proof is the most it
+// can overrun, and maxChildProofsPerGroup bounds how long that proof can be.
+//
+// yield is asked before each proof; a non-empty reason stops the session there
+// and is recorded against every group left unproved.
+func aggregateFromSnapshotWithProver(yield func() string, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
 	if snap == nil || cache == nil || snap.headState == nil {
 		return nil, nil, nil, false, skips
@@ -263,29 +255,18 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	if estimator == nil {
 		estimator = newUnitCostEstimator()
 	}
-	if maxGroups <= 0 {
-		maxGroups = MaxGroupsPerSession
-	}
 
 	var newAggregates []*types.SignedAggregatedAttestation
 	var payloadEntries []store.PayloadKV
 	var keysToDelete []store.AttestationDeleteKey
 	truncated := false
 	attempted := false
-	attempts := 0
 
 	groups := orderedGroups(snap, skips)
 	for i, group := range groups {
-		if shouldYield != nil && shouldYield() {
+		if reason := yieldReason(yield); reason != "" {
 			truncated = true
-			skips.addN(metrics.AggGroupSkipProposalPending, len(groups)-i)
-			break
-		}
-		// Groups that never reached the prover cost nothing, so the cap counts
-		// proof attempts rather than loop iterations.
-		if attempts >= maxGroups {
-			truncated = true
-			skips.addN(metrics.AggGroupSkipSessionCap, len(groups)-i)
+			skips.addN(reason, len(groups)-i)
 			break
 		}
 		// An over-budget observation must not prevent every future attempt:
@@ -293,7 +274,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 		// one attempt while time remains; subsequent attempts use the estimate.
 		if !deadline.IsZero() {
 			remaining := time.Until(deadline)
-			if remaining <= 0 || (attempted && remaining < estimator.nextGroupDuration()) {
+			if remaining <= 0 || ((attempted || snap.strictFit) && remaining < estimator.nextGroupDuration()) {
 				truncated = true
 				skips.addN(metrics.AggGroupSkipBudget, len(groups)-i)
 				break
@@ -345,7 +326,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			//
 			// Holding signatures back buys nothing and spends a whole proof on a
 			// fraction of the coverage it could have carried. What is rationed is
-			// proofs: the per-session group cap and the deadline.
+			// proofs, through the session deadline.
 			//
 			// The steps are logarithmic, so even a group covering every validator
 			// of a 512-node network stays well inside the 512 KiB proof ceiling;
@@ -391,9 +372,13 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			}
 
 			childBudget := time.Until(deadline)
+			if snap.strictFit {
+				// The group's own proof comes out of the same window.
+				childBudget -= estimator.nextGroupDuration()
+			}
 			childCost := estimator.childDuration()
-			childIDs := selectChildProofs(newEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf))
-			childIDs = append(childIDs, selectChildProofs(knownEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf))...)
+			childIDs := selectChildProofs(newEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf), snap.strictFit)
+			childIDs = append(childIDs, selectChildProofs(knownEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf), snap.strictFit)...)
 			groupChildren = len(*childProofsBuf)
 			childCovered := make(map[uint64]bool, len(childIDs))
 			for _, vid := range childIDs {
@@ -434,13 +419,12 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 				skips.add(metrics.AggGroupSkipBudget)
 				return
 			}
-			if shouldYield != nil && shouldYield() {
+			if reason := yieldReason(yield); reason != "" {
 				truncated = true
-				skips.addN(metrics.AggGroupSkipProposalPending, len(groups)-i)
+				skips.addN(reason, len(groups)-i)
 				return
 			}
 			attempted = true
-			attempts++
 			aggStart := time.Now()
 			proofBytes, err := prove(*rawPubkeysBuf, *rawSigsBuf, *childProofsBuf, dataRootHash, slot)
 			// Charge virtual time for the proving cost Shadow would otherwise not
@@ -514,6 +498,13 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	}
 
 	return newAggregates, payloadEntries, keysToDelete, truncated, skips
+}
+
+func yieldReason(yield func() string) string {
+	if yield == nil {
+		return ""
+	}
+	return yield()
 }
 
 func aggregationMessage(attData *types.AttestationData) ([32]byte, uint32, error) {

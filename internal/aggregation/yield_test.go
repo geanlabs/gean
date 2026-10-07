@@ -42,7 +42,7 @@ func TestAggregationYieldsToWaitingProposal(t *testing.T) {
 				return []byte{1}, nil
 			}
 			snap := budgetTestSnapshot()
-			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshotWithProver(gate.ProposalPending, snap, cache, time.Now().Add(time.Hour), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshotWithProver(proposalYield(gate), snap, cache, time.Now().Add(time.Hour), shadow.Rates{}, newUnitCostEstimator(), prove)
 			if calls != 1 || !truncated || skips[metrics.AggGroupSkipProposalPending] != 1 {
 				t.Fatalf("calls=%d truncated=%v skips=%v", calls, truncated, skips)
 			}
@@ -81,16 +81,31 @@ func TestAggregationYieldsAfterPreparation(t *testing.T) {
 	cache := xmss.NewPubKeyCache()
 	defer cache.Close()
 	checks := 0
-	shouldYield := func() bool { checks++; return checks == 2 }
+	yield := func() string {
+		checks++
+		if checks == 2 {
+			return metrics.AggGroupSkipProposalPending
+		}
+		return ""
+	}
 	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
 		t.Fatal("started proof after proposal became pending")
 		return nil, nil
 	}
-	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshotWithProver(shouldYield, snap, cache, time.Now().Add(time.Hour), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshotWithProver(yield, snap, cache, time.Now().Add(time.Hour), shadow.Rates{}, newUnitCostEstimator(), prove)
 	if !truncated || skips[metrics.AggGroupSkipProposalPending] != 1 || len(aggs)+len(payloads)+len(deletes) != 0 {
 		t.Fatalf("unexpected yield: %v %v", truncated, skips)
 	}
 	if len(snap.attSigs[rootByte(2)].Signatures) != 3 {
 		t.Fatal("unproved inputs lost")
+	}
+}
+
+func proposalYield(gate *proving.Gate) func() string {
+	return func() string {
+		if gate.ProposalPending() {
+			return metrics.AggGroupSkipProposalPending
+		}
+		return ""
 	}
 }

@@ -16,11 +16,19 @@ import (
 // was produced for.
 const aggregationDeadlineOffset = 4 * types.MillisecondsPerInterval
 
+// proposingDeadlineOffset ends the interval-2 session an interval early in the
+// slot before this node proposes. A proof cannot be interrupted, so the gap
+// leaves room for one overrunning proof to finish before the proposal needs
+// the prover.
+const proposingDeadlineOffset = 3 * types.MillisecondsPerInterval
+
 func (e *Engine) onTick() {
 	now := time.Now()
 	firstTick := e.lastTick.IsZero()
+	var sinceLastTick time.Duration
 	if !firstTick {
-		metrics.ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
+		sinceLastTick = now.Sub(e.lastTick)
+		metrics.ObserveTickIntervalDuration(sinceLastTick.Seconds())
 	}
 	e.lastTick = now
 	e.lastTickMs.Store(now.UnixMilli())
@@ -35,6 +43,7 @@ func (e *Engine) onTick() {
 	if !firstTick {
 		phaseMs := e.millisIntoSlot(timestampMs) % types.MillisecondsPerInterval
 		metrics.ObserveTickPhase(float64(phaseMs) / 1000)
+		e.AggregationPacer.ReportTickLag(tickLateness(phaseMs, sinceLastTick))
 	}
 
 	if !e.claimInterval(timestampMs) {
@@ -89,6 +98,18 @@ func (e *Engine) onTick() {
 		store.PruneStaleAttestationPools(e.Store, e.Store.HeadSlot(), finalizedSlot)
 		store.PeriodicPrune(e.Store, e.FC, currentSlot, finalizedSlot)
 	}
+
+	// Last, so building a snapshot never delays this interval's duties.
+	if currentInterval != 2 {
+		e.dispatchBacklog(timestampMs, currentSlot, currentInterval, isAgg)
+	}
+}
+
+// tickLateness is how long after its interval boundary a tick was handled. The
+// phase wraps once a tick is a whole interval late, so the gap since the
+// previous tick bounds it as well.
+func tickLateness(phaseMs uint64, sinceLastTick time.Duration) time.Duration {
+	return max(time.Duration(phaseMs)*time.Millisecond, sinceLastTick-types.MillisecondsPerInterval*time.Millisecond)
 }
 
 func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregator bool) {
@@ -119,14 +140,14 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 	// above is why it has to go.
 	//
 	// The work is bounded without the gate: a session has a slot-anchored
-	// deadline and MaxGroupsPerSession, so an aggregate built on a stale view
-	// costs one bounded proving budget and is dropped by peers — strictly better
-	// than not producing one at all.
+	// deadline, so an aggregate built on a stale view costs one bounded proving
+	// budget and is dropped by peers — strictly better than not producing one
+	// at all.
 	if e.Store.AttestationSignatures.Len() == 0 && e.Store.NewPayloads.Len() == 0 {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
 	}
-	headState := e.Store.GetState(e.Store.Head())
+	headState := e.aggregationHeadState()
 	if headState == nil {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipMissingState)
 		return
@@ -137,19 +158,15 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
 	}
-	// A session holds the proving gate until it finishes, so a proposal duty
-	// next slot waits on it however the gate's priority flag is set. Prove one
-	// group in that case and leave the rest for the following session.
-	maxGroups := aggregation.MaxGroupsPerSession
+	deadlineOffset := uint64(aggregationDeadlineOffset)
 	if e.proposingAt(currentSlot+1, headState.NumValidators()) {
-		maxGroups = aggregation.MaxGroupsWhenProposing
+		deadlineOffset = proposingDeadlineOffset
 	}
 	select {
 	case e.AggregationDispatchCh <- aggregation.Dispatch{
-		Snapshot:  snap,
-		Slot:      currentSlot,
-		MaxGroups: maxGroups,
-		Deadline:  e.aggregationDeadline(nowMs),
+		Snapshot: snap,
+		Slot:     currentSlot,
+		Deadline: e.aggregationDeadline(nowMs, deadlineOffset),
 	}:
 		e.aggregatedSlot = currentSlot
 		metrics.SetProvingQueueDepth("aggregation", len(e.AggregationDispatchCh))
@@ -159,23 +176,100 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 	}
 }
 
+// dispatchBacklog offers the worker backlog work while it sits idle outside
+// the interval-2 session, so votes the interval-2 session had no time for are
+// proved during the rest of the slot instead of waiting a slot each. The
+// pacer decides how much of that time it may use; this only picks the window,
+// each ending inside the slot so its proving is charged to the slot it uses:
+//
+//   - interval 0: until interval 2, leaving this slot's votes to its own
+//     session. Not offered again at interval 1, where the early aggregation
+//     path fires on this slot's votes.
+//   - interval 3: until interval 4, like the interval-2 session.
+//   - interval 4: until the end of the slot.
+//
+// None is offered while the block this node proposes needs the prover: at
+// interval 0 of that slot, and from interval 3 of the slot before, where the
+// interval-2 session already stops early to leave room for an overrun.
+//
+// A backlog session gives way as soon as another dispatch arrives.
+func (e *Engine) dispatchBacklog(nowMs, slot, interval uint64, isAggregator bool) {
+	var deadlineOffset uint64
+	switch interval {
+	case 0:
+		deadlineOffset = 2 * types.MillisecondsPerInterval
+	case 3:
+		deadlineOffset = aggregationDeadlineOffset
+	case 4:
+		deadlineOffset = types.MillisecondsPerSlot
+	default:
+		return
+	}
+	early := interval == 0
+	if !isAggregator || !e.AggregationPacer.BacklogOpen(slot, early) {
+		return
+	}
+	if e.Store.AttestationSignatures.Len() == 0 && e.Store.NewPayloads.Len() == 0 {
+		return
+	}
+	headState := e.aggregationHeadState()
+	if headState == nil {
+		return
+	}
+	proposalSlot := slot + 1
+	if early {
+		proposalSlot = slot
+	}
+	if e.proposingAt(proposalSlot, headState.NumValidators()) {
+		return
+	}
+	snap := aggregation.SnapshotInputs(e.Store, headState, slot)
+	if snap == nil {
+		return
+	}
+	select {
+	case e.AggregationDispatchCh <- aggregation.Dispatch{
+		Snapshot: snap,
+		Slot:     slot,
+		Deadline: e.aggregationDeadline(nowMs, deadlineOffset),
+		Backlog:  true,
+		Early:    early,
+	}:
+	default:
+	}
+}
+
+// aggregationHeadState returns the head state aggregation snapshots are built
+// on, decoding it only when the head has moved: GetState decodes the whole
+// state from SSZ, and backlog dispatches can ask several times a slot. Sessions
+// only read it, so one decoded copy is shared.
+func (e *Engine) aggregationHeadState() *types.State {
+	head := e.Store.Head()
+	if e.aggHeadState == nil || head != e.aggHeadRoot {
+		e.aggHeadState = e.Store.GetState(head)
+		e.aggHeadRoot = head
+	}
+	return e.aggHeadState
+}
+
 // aggregationDeadline is the wall-clock instant a session dispatched now must
-// stop by: this slot's interval-4 boundary. Measuring a fixed span from when
-// the worker starts instead gives the early-interval-1 path a deadline earlier
-// than the boundary, taking back most of the head start that path exists to
-// create, and lets time spent waiting on the proving gate extend the session
-// past the promotion it was produced for rather than come out of its window.
-func (e *Engine) aggregationDeadline(nowMs uint64) time.Time {
+// stop by: offsetMs into the current slot, which may reach into the next one.
+// Measuring a fixed span from when the worker starts instead gives the
+// early-interval-1 path a deadline earlier than the boundary, taking back most
+// of the head start that path exists to create, and lets time spent waiting on
+// the proving gate extend the session past the promotion it was produced for
+// rather than come out of its window.
+func (e *Engine) aggregationDeadline(nowMs, offsetMs uint64) time.Time {
 	intoSlot := e.millisIntoSlot(nowMs)
-	// Dispatch only runs at intervals 1 and 2, so a slot position at or past the
-	// boundary is unreachable in practice. Handle it before subtracting: these
+	// Each dispatch point sits before its boundary, so a slot position at or
+	// past it is unreachable in practice. Handle it before subtracting: these
 	// are unsigned milliseconds, so the difference would wrap rather than go
 	// negative. Hand back a usable window instead of an expired deadline, which
 	// the worker reads as "stop before the first group".
-	if intoSlot >= aggregationDeadlineOffset {
+	if intoSlot >= offsetMs {
 		return time.UnixMilli(int64(nowMs)).Add(types.MillisecondsPerInterval * time.Millisecond)
 	}
-	window := time.Duration(aggregationDeadlineOffset-intoSlot) * time.Millisecond
+	window := time.Duration(offsetMs-intoSlot) * time.Millisecond
 	// Anchored to the tick's own timestamp rather than a fresh clock read, so
 	// the deadline is the slot boundary itself and does not drift by however
 	// long the tick took to reach here.
