@@ -44,7 +44,7 @@ func TestAggregateFromSnapshotCapsGroupsPerSession(t *testing.T) {
 			}
 
 			aggs, _, _, truncated, skips := aggregateFromSnapshotWithProver(nil,
-				snap, cache, time.Now().Add(time.Hour), tc.maxGroups, shadow.Rates{}, newUnitCostEstimator(), prove)
+				snap, cache, time.Now().Add(time.Hour), time.Now, tc.maxGroups, shadow.Rates{}, newUnitCostEstimator(), prove)
 
 			if calls != tc.wantProve {
 				t.Fatalf("prove calls = %d, want %d", calls, tc.wantProve)

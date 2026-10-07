@@ -27,7 +27,7 @@ func TestRunWorkerReturnsWhenDispatchChannelCloses(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RunWorker(context.Background(), dispatches, nil, nil, nil, nil, shadow.Rates{})
+		NewWorker(nil, nil, nil, nil, shadow.Rates{}, time.Now).Run(context.Background(), dispatches)
 		close(done)
 	}()
 
@@ -41,7 +41,7 @@ func TestRunWorkerSkipsNilSnapshot(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RunWorker(context.Background(), dispatches, nil, nil, nil, nil, shadow.Rates{})
+		NewWorker(nil, nil, nil, nil, shadow.Rates{}, time.Now).Run(context.Background(), dispatches)
 		close(done)
 	}()
 
@@ -73,23 +73,16 @@ func waitForWorker(t *testing.T, done <-chan struct{}) {
 // anyway produces nothing and raises the starvation warning, which is meant for
 // a session that had time and still produced nothing — the alarm that surfaced
 // the estimator latch. It must stay unambiguous.
-func TestRunWorkerSkipsDispatchPastItsDeadline(t *testing.T) {
+func TestSessionSkipsDispatchPastItsDeadline(t *testing.T) {
 	publisher := &recordingPublisher{}
-	dispatches := make(chan Dispatch, 1)
-	dispatches <- Dispatch{
+	now := time.Unix(1_000, 0)
+	worker := NewWorker(nil, xmss.NewPubKeyCache(), publisher, nil, shadow.Rates{}, func() time.Time { return now })
+
+	worker.Session(context.Background(), Dispatch{
 		Slot:     1,
 		Snapshot: aggregateTestSnapshot(1),
-		Deadline: time.Now().Add(-time.Second),
-	}
-	close(dispatches)
-
-	done := make(chan struct{})
-	go func() {
-		RunWorker(context.Background(), dispatches, nil, xmss.NewPubKeyCache(), publisher, nil, shadow.Rates{})
-		close(done)
-	}()
-
-	waitForWorker(t, done)
+		Deadline: now.Add(-time.Second),
+	})
 
 	if publisher.count != 0 {
 		t.Fatalf("published=%d, want 0 for a dispatch past its deadline", publisher.count)

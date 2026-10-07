@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"time"
 
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
@@ -27,7 +26,7 @@ func (e *Engine) noteGossipSlot(block *types.SignedBlock) {
 		return
 	}
 	slot := block.Block.Slot
-	if slot > e.currentSlot(uint64(time.Now().UnixMilli()))+1 {
+	if slot > e.currentSlot(e.nowMs())+1 {
 		return
 	}
 	for {

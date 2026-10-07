@@ -41,7 +41,7 @@ func (e *Engine) computeSyncStatus(currentSlot uint64) types.SyncStatus {
 }
 
 func (e *Engine) GetSyncStatus() types.SyncStatus {
-	return e.computeSyncStatus(e.currentSlot(uint64(time.Now().UnixMilli())))
+	return e.computeSyncStatus(e.currentSlot(e.nowMs()))
 }
 
 func (e *Engine) logChainStatus(currentSlot uint64) {

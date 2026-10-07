@@ -16,7 +16,7 @@ import (
 const aggregationDeadlineOffset = 4 * types.MillisecondsPerInterval
 
 func (e *Engine) onTick() {
-	now := time.Now()
+	now := e.clock.Now()
 	firstTick := e.lastTick.IsZero()
 	if !firstTick {
 		metrics.ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())

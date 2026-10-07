@@ -117,6 +117,7 @@ func run(cfg config) error {
 		Keys:       inputs.keyManager,
 		PubKeys:    pubKeys,
 		Aggregator: aggCtl,
+		Clock:      node.SystemClock{},
 	}, node.Config{
 		CommitteeCount:     cfg.CommitteeCount,
 		AggregateSubnetIDs: cfg.AggregateSubnetIDs,

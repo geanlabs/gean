@@ -58,6 +58,7 @@ type Components struct {
 	// and proving.
 	PubKeys    *xmss.PubKeyCache
 	Aggregator *role.Controller
+	Clock      Clock
 }
 
 // Config holds the engine's network parameters.
@@ -104,6 +105,8 @@ type Engine struct {
 	ProposalResultCh      chan *proposalResult
 	RecoveryCh            chan *types.SignedBlock
 	ProvingGate           *proving.Gate
+	aggregator            *aggregation.Worker
+	clock                 Clock
 
 	// Dispatch-owned reservation survives dequeue and result acceptance.
 	lastProposalDuty proposalDuty
@@ -181,7 +184,9 @@ func New(c Components, cfg Config) *Engine {
 		RecoveryCh:            make(chan *types.SignedBlock, 8),
 		ProvingGate:           proving.NewGate(),
 		fetchInFlight:         make(map[[32]byte]bool),
+		clock:                 c.Clock,
 	}
+	e.aggregator = aggregation.NewWorker(e.Store, e.PubKeys, e.Network, e.ProvingGate, e.Shadow, e.clock.Now)
 	return e
 }
 

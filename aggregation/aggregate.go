@@ -251,11 +251,13 @@ func (e *unitCostEstimator) childDuration() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
-func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
-	return aggregateFromSnapshotWithProver(shouldYield, snap, cache, deadline, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
+// aggregateFromSnapshot proves the snapshot's groups until deadline, measured
+// by now, or until it must yield to a pending proposal.
+func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, now func() time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+	return aggregateFromSnapshotWithProver(shouldYield, snap, cache, deadline, now, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
 }
 
-func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, now func() time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
 	if snap == nil || cache == nil || snap.headState == nil {
 		return nil, nil, nil, false, skips
@@ -292,7 +294,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 		// without a successful proof the estimator cannot recalibrate. Allow
 		// one attempt while time remains; subsequent attempts use the estimate.
 		if !deadline.IsZero() {
-			remaining := time.Until(deadline)
+			remaining := deadline.Sub(now())
 			if remaining <= 0 || (attempted && remaining < estimator.nextGroupDuration()) {
 				truncated = true
 				skips.addN(metrics.AggGroupSkipBudget, len(groups)-i)
@@ -390,7 +392,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 				}
 			}
 
-			childBudget := time.Until(deadline)
+			childBudget := deadline.Sub(now())
 			childCost := estimator.childDuration()
 			childIDs := selectChildProofs(newEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf))
 			childIDs = append(childIDs, selectChildProofs(knownEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf))...)
@@ -429,7 +431,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 
 			// Preparation can consume the remaining time. Once started, proving
 			// cannot be interrupted by this deadline.
-			if !deadline.IsZero() && time.Until(deadline) <= 0 {
+			if !deadline.IsZero() && deadline.Sub(now()) <= 0 {
 				truncated = true
 				skips.add(metrics.AggGroupSkipBudget)
 				return

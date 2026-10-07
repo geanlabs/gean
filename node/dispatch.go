@@ -29,7 +29,7 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 			timeEvent("tick", e.onTick)
 
 		case <-e.EarlyAggregateCh:
-			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(uint64(time.Now().UnixMilli())) })
+			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(e.nowMs()) })
 
 		case block := <-e.BlockCh:
 			timeEvent("block", func() { e.onBlock(block) })

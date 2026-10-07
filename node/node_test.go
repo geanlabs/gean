@@ -47,7 +47,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
-	return New(Components{Store: s, ForkChoice: fc, PubKeys: xmss.NewPubKeyCache(), Aggregator: role.New(false)}, Config{CommitteeCount: 1})
+	return New(Components{Store: s, ForkChoice: fc, PubKeys: xmss.NewPubKeyCache(), Aggregator: role.New(false), Clock: SystemClock{}}, Config{CommitteeCount: 1})
 }
 
 func TestEngineCreation(t *testing.T) {

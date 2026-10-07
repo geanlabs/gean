@@ -87,7 +87,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		signedBlock.Proof == nil || len(signedBlock.Proof.Proof) == 0 {
 		return
 	}
-	now := uint64(time.Now().UnixMilli())
+	now := e.nowMs()
 	currentSlot := e.currentSlot(now)
 	if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext {
 		return
@@ -117,7 +117,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		if ctx.Err() != nil {
 			return
 		}
-		now = uint64(time.Now().UnixMilli())
+		now = e.nowMs()
 		currentSlot = e.currentSlot(now)
 		if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext {
 			return
@@ -134,7 +134,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		// check above describes when recovery asked, not when it was handed over.
 		// Sessions routinely run past their nominal budget, so re-check before
 		// spending the gate and give it back if the window closed while waiting.
-		if !e.splitFitsBeforeAggregation(uint64(time.Now().UnixMilli())) {
+		if !e.splitFitsBeforeAggregation(e.nowMs()) {
 			if e.ProvingGate != nil {
 				e.ProvingGate.Release(false)
 			}

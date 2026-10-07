@@ -41,19 +41,44 @@ const SessionBudget = 2 * types.MillisecondsPerInterval * time.Millisecond
 // giving up on the slot's aggregate.
 const AcquirePatience = 750 * time.Millisecond
 
-func RunWorker(
-	ctx context.Context,
-	dispatches <-chan Dispatch,
+// Worker runs aggregation sessions. Run drives it from a dispatch channel;
+// Session runs one dispatch on the calling goroutine, so a caller that owns
+// scheduling (a deterministic simulation) can order sessions itself.
+type Worker struct {
+	store       *store.ConsensusStore
+	pubKeys     *xmss.PubKeyCache
+	publisher   Publisher
+	gate        *proving.Gate
+	shadowRates shadow.Rates
+	// now is the consensus clock that session deadlines are measured against.
+	now func() time.Time
+	// One estimator lives across sessions so it keeps calibrating to this
+	// node's real per-unit prover cost. Sessions never overlap, so it needs no
+	// locking.
+	estimator *unitCostEstimator
+}
+
+func NewWorker(
 	consensusStore *store.ConsensusStore,
-	cache *xmss.PubKeyCache,
+	pubKeys *xmss.PubKeyCache,
 	publisher Publisher,
 	gate *proving.Gate,
 	shadowRates shadow.Rates,
-) {
-	// One estimator lives across dispatches so it keeps calibrating to this
-	// node's real per-unit prover cost. The worker is single-threaded, so no
-	// locking is needed.
-	estimator := newUnitCostEstimator()
+	now func() time.Time,
+) *Worker {
+	return &Worker{
+		store:       consensusStore,
+		pubKeys:     pubKeys,
+		publisher:   publisher,
+		gate:        gate,
+		shadowRates: shadowRates,
+		now:         now,
+		estimator:   newUnitCostEstimator(),
+	}
+}
+
+// Run runs a session for each dispatch until ctx ends or dispatches closes.
+func (w *Worker) Run(ctx context.Context, dispatches <-chan Dispatch) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -63,98 +88,105 @@ func RunWorker(
 				return
 			}
 			metrics.SetProvingQueueDepth("aggregation", len(dispatches))
-			if dispatch.Snapshot == nil {
-				continue
-			}
-			acquireCtx, cancelAcquire := context.WithTimeout(ctx, AcquirePatience)
-			if gate != nil && !gate.Acquire(acquireCtx, false) {
-				cancelAcquire()
-				metrics.IncProofOperation("aggregation", "canceled")
-				// A lost prover costs this slot its aggregate and slows justification;
-				// without this line the loss shows only in metrics, a silent gap in the logs.
-				logger.Warn(logger.Signature, "aggregation skipped: prover unavailable slot=%d", dispatch.Slot)
-				continue
-			}
-			cancelAcquire()
-
-			// The session budget bounds how long the gate is held, not which
-			// results survive: groups are proven frontier-first (ascending
-			// target slot, see orderedGroups) and every completed aggregate is
-			// applied and published even when the budget cuts the session
-			// short. Discarding finished aggregates
-			// (and their signature deletes) regrows the next snapshot until
-			// no session can ever finish inside a slot.
-			workerStart := time.Now()
-			deadline := dispatch.Deadline
-			if deadline.IsZero() {
-				deadline = workerStart.Add(SessionBudget)
-			}
-			// The deadline is the slot's promotion boundary, so waiting on the
-			// gate or behind a previous session can consume it entirely. An
-			// aggregate finished after that boundary misses the promotion it was
-			// produced for, so there is nothing to gain by proving one. Report it
-			// as its own case: running the session anyway would produce no output
-			// and raise the starvation warning, which is meant for a session that
-			// had time and still produced nothing.
-			if !time.Now().Before(deadline) {
-				metrics.IncProofOperation("aggregation", "expired")
-				logger.Warn(logger.Signature, "aggregation skipped: past the promotion boundary slot=%d late_by=%v", dispatch.Slot, time.Since(deadline))
-				if gate != nil {
-					gate.Release(false)
-				}
-				continue
-			}
-			// The window is what the dispatcher actually allowed, which is less
-			// than SessionBudget whenever the gate was held for a while.
-			budget := deadline.Sub(workerStart)
-			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(gate.ProposalPending, dispatch.Snapshot, cache, deadline, dispatch.MaxGroups, shadowRates, estimator)
-			workerElapsed := time.Since(workerStart)
-			if gate != nil {
-				gate.Release(false)
-			}
-			if truncated {
-				metrics.IncProofOperation("aggregation", "truncated")
-				switch {
-				case skips[metrics.AggGroupSkipProposalPending] > 0:
-					logger.Info(logger.Signature, "aggregation yielded to proposal: slot=%d produced=%d duration=%v", dispatch.Slot, len(aggs), workerElapsed)
-				case len(aggs) == 0:
-					// No output plus a budget stop is the actionable starvation case.
-					logger.Warn(logger.Signature, "aggregation session hit budget without output: slot=%d produced=0 duration=%v", dispatch.Slot, workerElapsed)
-				case workerElapsed > budget:
-					// A proof exceeded the wall-clock budget; keep this visible even
-					// though partial results were preserved and published.
-					logger.Warn(logger.Signature, "aggregation session overran budget: slot=%d produced=%d duration=%v budget=%v", dispatch.Slot, len(aggs), workerElapsed, budget)
-				default:
-					// Normal partial completion: the admission estimate stopped a
-					// later group while the completed output stayed within budget.
-					logger.Info(logger.Signature, "aggregation session truncated after partial output: slot=%d produced=%d duration=%v budget=%v", dispatch.Slot, len(aggs), workerElapsed, budget)
-				}
-			}
-			applyAggregationMutations(consensusStore, payloads, deletes)
-			publishCtx, cancelPublish := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
-			publishAggregates(publishCtx, publisher, aggs)
-			cancelPublish()
-			// A session that dropped every group is not a success. Counting it
-			// as one is what let an aggregator produce nothing for 355
-			// consecutive slots on devnet-5 while the success rate read 100%.
-			if len(aggs) > 0 {
-				metrics.IncProofOperation("aggregation", "success")
-			} else {
-				metrics.IncProofOperation("aggregation", "empty")
-			}
-			metrics.ObserveProvingDuration("aggregation", workerElapsed.Seconds())
-			metrics.ObserveAggregationWorkerTotalTime(workerElapsed.Seconds())
-			for reason, n := range skips {
-				metrics.IncAggregationGroupSkipped(reason, n)
-			}
-			// Report why a session produced little or nothing. produced=0 alone
-			// cannot distinguish an idle aggregator from one dropping every group.
-			skipSummary := ""
-			if s := skips.summary(); s != "" {
-				skipSummary = " skipped=" + s
-			}
-			logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v%s",
-				dispatch.Slot, len(aggs), workerElapsed, skipSummary)
+			w.Session(ctx, dispatch)
 		}
 	}
+}
+
+// Session acquires the prover, aggregates the dispatched snapshot within its
+// deadline, applies the results to the store and publishes them.
+func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
+	if dispatch.Snapshot == nil {
+		return
+	}
+	acquireCtx, cancelAcquire := context.WithTimeout(ctx, AcquirePatience)
+	if w.gate != nil && !w.gate.Acquire(acquireCtx, false) {
+		cancelAcquire()
+		metrics.IncProofOperation("aggregation", "canceled")
+		// A lost prover costs this slot its aggregate and slows justification;
+		// without this line the loss shows only in metrics, a silent gap in the logs.
+		logger.Warn(logger.Signature, "aggregation skipped: prover unavailable slot=%d", dispatch.Slot)
+		return
+	}
+	cancelAcquire()
+
+	// The session budget bounds how long the gate is held, not which
+	// results survive: groups are proven frontier-first (ascending
+	// target slot, see orderedGroups) and every completed aggregate is
+	// applied and published even when the budget cuts the session
+	// short. Discarding finished aggregates
+	// (and their signature deletes) regrows the next snapshot until
+	// no session can ever finish inside a slot.
+	workerStart := time.Now()
+	sessionStart := w.now()
+	deadline := dispatch.Deadline
+	if deadline.IsZero() {
+		deadline = sessionStart.Add(SessionBudget)
+	}
+	// The deadline is the slot's promotion boundary, so waiting on the
+	// gate or behind a previous session can consume it entirely. An
+	// aggregate finished after that boundary misses the promotion it was
+	// produced for, so there is nothing to gain by proving one. Report it
+	// as its own case: running the session anyway would produce no output
+	// and raise the starvation warning, which is meant for a session that
+	// had time and still produced nothing.
+	if !sessionStart.Before(deadline) {
+		metrics.IncProofOperation("aggregation", "expired")
+		logger.Warn(logger.Signature, "aggregation skipped: past the promotion boundary slot=%d late_by=%v", dispatch.Slot, sessionStart.Sub(deadline))
+		if w.gate != nil {
+			w.gate.Release(false)
+		}
+		return
+	}
+	// The window is what the dispatcher actually allowed, which is less
+	// than SessionBudget whenever the gate was held for a while.
+	budget := deadline.Sub(sessionStart)
+	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(w.gate.ProposalPending, dispatch.Snapshot, w.pubKeys, deadline, w.now, dispatch.MaxGroups, w.shadowRates, w.estimator)
+	workerElapsed := time.Since(workerStart)
+	if w.gate != nil {
+		w.gate.Release(false)
+	}
+	if truncated {
+		metrics.IncProofOperation("aggregation", "truncated")
+		switch {
+		case skips[metrics.AggGroupSkipProposalPending] > 0:
+			logger.Info(logger.Signature, "aggregation yielded to proposal: slot=%d produced=%d duration=%v", dispatch.Slot, len(aggs), workerElapsed)
+		case len(aggs) == 0:
+			// No output plus a budget stop is the actionable starvation case.
+			logger.Warn(logger.Signature, "aggregation session hit budget without output: slot=%d produced=0 duration=%v", dispatch.Slot, workerElapsed)
+		case workerElapsed > budget:
+			// A proof exceeded the wall-clock budget; keep this visible even
+			// though partial results were preserved and published.
+			logger.Warn(logger.Signature, "aggregation session overran budget: slot=%d produced=%d duration=%v budget=%v", dispatch.Slot, len(aggs), workerElapsed, budget)
+		default:
+			// Normal partial completion: the admission estimate stopped a
+			// later group while the completed output stayed within budget.
+			logger.Info(logger.Signature, "aggregation session truncated after partial output: slot=%d produced=%d duration=%v budget=%v", dispatch.Slot, len(aggs), workerElapsed, budget)
+		}
+	}
+	applyAggregationMutations(w.store, payloads, deletes)
+	publishCtx, cancelPublish := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
+	publishAggregates(publishCtx, w.publisher, aggs)
+	cancelPublish()
+	// A session that dropped every group is not a success. Counting it
+	// as one is what let an aggregator produce nothing for 355
+	// consecutive slots on devnet-5 while the success rate read 100%.
+	if len(aggs) > 0 {
+		metrics.IncProofOperation("aggregation", "success")
+	} else {
+		metrics.IncProofOperation("aggregation", "empty")
+	}
+	metrics.ObserveProvingDuration("aggregation", workerElapsed.Seconds())
+	metrics.ObserveAggregationWorkerTotalTime(workerElapsed.Seconds())
+	for reason, n := range skips {
+		metrics.IncAggregationGroupSkipped(reason, n)
+	}
+	// Report why a session produced little or nothing. produced=0 alone
+	// cannot distinguish an idle aggregator from one dropping every group.
+	skipSummary := ""
+	if s := skips.summary(); s != "" {
+		skipSummary = " skipped=" + s
+	}
+	logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v%s",
+		dispatch.Slot, len(aggs), workerElapsed, skipSummary)
 }
