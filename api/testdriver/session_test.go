@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/geanlabs/gean/crypto/xmss"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -167,7 +168,7 @@ func TestForkChoiceInit_RejectsMismatchedAnchor(t *testing.T) {
 	}
 	req := map[string]any{"anchorState": state, "anchorBlock": anchorBlock}
 
-	sess := NewSession()
+	sess := NewSession(xmss.NewScheme())
 	var resp driverStepResponse
 	status := postJSON(t, sess.ForkChoiceInitHandler(), req, &resp)
 
@@ -188,7 +189,7 @@ func TestForkChoiceInit_RejectsMismatchedAnchor(t *testing.T) {
 // TestForkChoiceStep_BeforeInitErrs guarantees a step call without a prior
 // init returns the dedicated error rather than panicking on a nil store.
 func TestForkChoiceStep_BeforeInitErrs(t *testing.T) {
-	sess := NewSession()
+	sess := NewSession(xmss.NewScheme())
 	tick := uint64(1)
 	step := map[string]any{"stepType": "tick", "interval": tick}
 
@@ -220,7 +221,7 @@ func TestForkChoiceInitThenStep(t *testing.T) {
 		"body":          map[string]any{"attestations": map[string]any{"data": []any{}}},
 	}
 
-	sess := NewSession()
+	sess := NewSession(xmss.NewScheme())
 	body, _ := json.Marshal(map[string]any{"anchorState": preState, "anchorBlock": anchorBlock})
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -285,7 +286,7 @@ func TestVerifySignatures_RejectsMalformedAnchor(t *testing.T) {
 	}
 
 	var resp verifySignaturesResponse
-	status := postJSON(t, VerifySignaturesHandler(), fixture, &resp)
+	status := postJSON(t, NewSession(xmss.NewScheme()).VerifySignaturesHandler(), fixture, &resp)
 
 	if status != http.StatusOK {
 		t.Fatalf("expected 200 on logical failure, got %d", status)

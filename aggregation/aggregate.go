@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/shadow"
@@ -251,15 +251,15 @@ func (e *unitCostEstimator) childDuration() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
+// proveFunc proves a group's raw signatures and child proofs; it is
+// crypto.Scheme.Aggregate.
+type proveFunc func(raw []crypto.RawSignature, children []crypto.Proof, message [32]byte, slot uint32) ([]byte, error)
+
 // aggregateFromSnapshot proves the snapshot's groups until deadline, measured
 // by now, or until it must yield to a pending proposal.
-func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, now func() time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
-	return aggregateFromSnapshotWithProver(shouldYield, snap, cache, deadline, now, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
-}
-
-func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, now func() time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, deadline time.Time, now func() time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove proveFunc) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
-	if snap == nil || cache == nil || snap.headState == nil {
+	if snap == nil || snap.headState == nil {
 		return nil, nil, nil, false, skips
 	}
 	if estimator == nil {
@@ -311,14 +311,9 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 		// raw-only group from one that carried children.
 		groupChildren := 0
 		func() {
-			childProofsBuf := getChildProofsBuf()
-			defer putChildProofsBuf(childProofsBuf)
-			rawPubkeysBuf := getRawPubkeysBuf()
-			defer putRawPubkeysBuf(rawPubkeysBuf)
-			rawSigsBuf := getRawSigsBuf()
-			defer putRawSigsBuf(rawSigsBuf)
-			rawIDsBuf := getRawIDsBuf()
-			defer putRawIDsBuf(rawIDsBuf)
+			var raw []crypto.RawSignature
+			var rawIDs []uint64
+			var children []crypto.Proof
 
 			prepStart := time.Now()
 			gossipEntry := snap.attSigs[dataRoot]
@@ -373,52 +368,37 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 						continue
 					}
 
-					// Parse a handle the worker owns and frees at the end of this
-					// group. The snapshot carries only bytes, never a handle shared
-					// with the live map, so a concurrent prune cannot free it underneath
-					// the prover.
-					sigHandle, err := xmss.ParseSignature(sigEntry.Signature[:])
-					if err != nil {
-						continue
-					}
-					defer xmss.FreeSignature(sigHandle)
-
-					pk, err := cache.Get(registry[sigEntry.ValidatorID].AttestationPubkey)
-					if err != nil {
-						continue
-					}
-
-					*rawPubkeysBuf = append(*rawPubkeysBuf, pk)
-					*rawSigsBuf = append(*rawSigsBuf, sigHandle)
-					*rawIDsBuf = append(*rawIDsBuf, sigEntry.ValidatorID)
+					raw = append(raw, crypto.RawSignature{
+						PublicKey: registry[sigEntry.ValidatorID].AttestationPubkey,
+						Signature: sigEntry.Signature,
+					})
+					rawIDs = append(rawIDs, sigEntry.ValidatorID)
 					covered[sigEntry.ValidatorID] = true
 				}
 			}
 
 			childBudget := deadline.Sub(now())
 			childCost := estimator.childDuration()
-			childIDs := selectChildProofs(newEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf))
-			childIDs = append(childIDs, selectChildProofs(knownEntry, snap.headState, childProofsBuf, covered, cache, &childBudget, childCost, len(*rawIDsBuf))...)
-			groupChildren = len(*childProofsBuf)
+			childIDs := selectChildProofs(newEntry, snap.headState, &children, covered, &childBudget, childCost, len(rawIDs))
+			childIDs = append(childIDs, selectChildProofs(knownEntry, snap.headState, &children, covered, &childBudget, childCost, len(rawIDs))...)
+			groupChildren = len(children)
 			childCovered := make(map[uint64]bool, len(childIDs))
 			for _, vid := range childIDs {
 				childCovered[vid] = true
 			}
 			kept := 0
-			for i, vid := range *rawIDsBuf {
+			for i, vid := range rawIDs {
 				if childCovered[vid] {
 					continue
 				}
-				(*rawIDsBuf)[kept] = vid
-				(*rawPubkeysBuf)[kept] = (*rawPubkeysBuf)[i]
-				(*rawSigsBuf)[kept] = (*rawSigsBuf)[i]
+				rawIDs[kept] = vid
+				raw[kept] = raw[i]
 				kept++
 			}
-			*rawIDsBuf = (*rawIDsBuf)[:kept]
-			*rawPubkeysBuf = (*rawPubkeysBuf)[:kept]
-			*rawSigsBuf = (*rawSigsBuf)[:kept]
+			rawIDs = rawIDs[:kept]
+			raw = raw[:kept]
 
-			if len(*rawIDsBuf)+len(*childProofsBuf) < 2 {
+			if len(rawIDs)+len(children) < 2 {
 				skips.add(metrics.AggGroupSkipTooFewSigners)
 				return
 			}
@@ -447,15 +427,15 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			attempted = true
 			attempts++
 			aggStart := time.Now()
-			proofBytes, err := prove(*rawPubkeysBuf, *rawSigsBuf, *childProofsBuf, dataRootHash, slot)
+			proofBytes, err := prove(raw, children, dataRootHash, slot)
 			// Charge virtual time for the proving cost Shadow would otherwise not
 			// account; the capacity-1 dispatch channel then drops the next slot's
 			// work if proving can't keep up, exactly as on real hardware.
-			shadowRates.SleepAggregate(len(*rawIDsBuf) + len(*childProofsBuf))
+			shadowRates.SleepAggregate(len(rawIDs) + len(children))
 			aggDuration := time.Since(aggStart)
 			if err != nil {
 				logger.Error(logger.Signature, "aggregate: failed slot=%d raw=%d children=%d duration=%v: %v",
-					slot, len(*rawIDsBuf), len(*childProofsBuf), aggDuration, err)
+					slot, len(rawIDs), len(children), aggDuration, err)
 				skips.add(metrics.AggGroupSkipError)
 				return
 			}
@@ -471,7 +451,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			}
 
 			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
-				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
+				slot, len(rawIDs), len(children), len(allIDs), len(proofBytes), aggDuration)
 
 			metrics.ObservePqSigAggBuildingTime(aggDuration.Seconds())
 			metrics.ObserveCommitteeSignaturesAggregationTime(aggDuration.Seconds())

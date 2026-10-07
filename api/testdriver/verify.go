@@ -6,14 +6,13 @@ import (
 	"net/http"
 
 	"github.com/geanlabs/gean/blockprocessor"
-	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/internal/specfixtures"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
 
-func VerifySignaturesHandler() http.HandlerFunc {
+func (sess *Session) VerifySignaturesHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var fixture specfixtures.VerifySignaturesFixture
 		if err := json.NewDecoder(r.Body).Decode(&fixture); err != nil {
@@ -60,9 +59,7 @@ func VerifySignaturesHandler() http.HandlerFunc {
 			return
 		}
 
-		pubKeys := xmss.NewPubKeyCache()
-		defer pubKeys.Close()
-		if err := blockprocessor.OnBlock(consensusStore, pubKeys, signedBlock); err != nil {
+		if err := blockprocessor.OnBlock(consensusStore, sess.scheme, signedBlock); err != nil {
 			writeVerifyFailure(w, err.Error())
 			return
 		}

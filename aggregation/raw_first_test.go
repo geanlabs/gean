@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
@@ -51,21 +51,19 @@ func TestRawFirstSelection(t *testing.T) {
 			} else {
 				snap.newEntries[dr] = entry
 			}
-			cache := xmss.NewPubKeyCache()
-			defer cache.Close()
 			estimator := newUnitCostEstimator()
 			calls := 0
-			prove := func(pks []xmss.CPubKey, sigs []xmss.CSig, children []xmss.ChildProof, _ [32]byte, _ uint32) ([]byte, error) {
+			prove := func(raw []crypto.RawSignature, children []crypto.Proof, _ [32]byte, _ uint32) ([]byte, error) {
 				calls++
-				if len(pks) != tc.wantRaw || len(sigs) != tc.wantRaw || len(children) != tc.wantChildren {
-					t.Fatalf("raw=%d children=%d", len(sigs), len(children))
+				if len(raw) != tc.wantRaw || len(children) != tc.wantChildren {
+					t.Fatalf("raw=%d children=%d", len(raw), len(children))
 				}
 				if tc.fail {
 					return nil, errors.New("test failure")
 				}
 				return []byte{1}, nil
 			}
-			aggs, payloads, deletes, _, _ := aggregateFromSnapshotWithProver(nil, snap, cache, time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, estimator, prove)
+			aggs, payloads, deletes, _, _ := aggregateFromSnapshot(nil, snap, time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, estimator, prove)
 			if calls != 1 {
 				t.Fatalf("calls=%d", calls)
 			}

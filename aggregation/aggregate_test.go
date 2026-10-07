@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto/insecure"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/store"
@@ -77,9 +77,8 @@ func aggregateTestSnapshot(slots ...uint64) *Snapshot {
 
 func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
-	cache := xmss.NewPubKeyCache()
 
-	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(nil, snap, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate)
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")
@@ -92,7 +91,7 @@ func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 func TestAggregateFromSnapshotZeroDeadlineProcessesAll(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
 
-	_, _, _, truncated, _ := aggregateFromSnapshot(nil, snap, xmss.NewPubKeyCache(), time.Time{}, time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	_, _, _, truncated, _ := aggregateFromSnapshot(nil, snap, time.Time{}, time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate)
 
 	if truncated {
 		t.Fatal("zero deadline must never truncate")
@@ -156,9 +155,8 @@ func TestUnitCostEstimatorChargesChildrenTheResidual(t *testing.T) {
 // a long queue look like one that dropped a single group.
 func TestAggregateFromSnapshotBudgetStopCountsEveryDeferredGroup(t *testing.T) {
 	snap := aggregateTestSnapshot(5, 6, 7)
-	cache := xmss.NewPubKeyCache()
 
-	_, _, _, truncated, skips := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	_, _, _, truncated, skips := aggregateFromSnapshot(nil, snap, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate)
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")

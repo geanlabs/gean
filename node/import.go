@@ -70,7 +70,7 @@ func (e *Engine) importKnownParentBlock(
 	queue *[]*types.SignedBlock,
 ) {
 	block := signedBlock.Block
-	err := blockprocessor.OnBlock(e.store, e.pubKeys, signedBlock)
+	err := blockprocessor.OnBlock(e.store, e.scheme, signedBlock)
 	if err != nil {
 		logger.Error(logger.Chain, "block processing failed slot=%d block_root=0x%x: %v", block.Slot, blockRoot, err)
 		return

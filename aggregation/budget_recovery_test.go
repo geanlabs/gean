@@ -6,7 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/store"
@@ -40,18 +40,16 @@ func TestAggregationBudgetRecovery(t *testing.T) {
 				for _, d := range tc.observations {
 					e.observeGroup(d, 0)
 				}
-				cache := xmss.NewPubKeyCache()
-				defer cache.Close()
 				for session := 0; session < 5; session++ {
 					before := e.nextGroupDuration()
 					calls := 0
-					prove := func(pks []xmss.CPubKey, sigs []xmss.CSig, children []xmss.ChildProof, root [32]byte, slot uint32) ([]byte, error) {
+					prove := func(raw []crypto.RawSignature, children []crypto.Proof, root [32]byte, slot uint32) ([]byte, error) {
 						calls++
 						// All three of the group's signatures, not the two the
 						// old per-signature budget floor allowed: the proof costs
 						// the same either way.
-						if slot != 6 || len(pks) != 3 || len(sigs) != 3 || len(children) != 0 {
-							t.Fatalf("unexpected inputs: slot=%d raw=%d children=%d", slot, len(sigs), len(children))
+						if slot != 6 || len(raw) != 3 || len(children) != 0 {
+							t.Fatalf("unexpected inputs: slot=%d raw=%d children=%d", slot, len(raw), len(children))
 						}
 						time.Sleep(time.Second)
 						if tc.fail {
@@ -59,7 +57,7 @@ func TestAggregationBudgetRecovery(t *testing.T) {
 						}
 						return []byte{1}, nil
 					}
-					aggs, payloads, deletes, truncated, skips := aggregateFromSnapshotWithProver(nil, budgetTestSnapshot(), cache, time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, e, prove)
+					aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, e, prove)
 					if calls != 1 || !truncated || skips[metrics.AggGroupSkipBudget] != 1 || skips[metrics.AggGroupSkipTooFewSigners] != 1 {
 						t.Fatalf("session=%d calls=%d truncated=%v skips=%v", session, calls, truncated, skips)
 					}
@@ -103,15 +101,13 @@ func TestAggregationBudgetDeadline(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				cache := xmss.NewPubKeyCache()
-				defer cache.Close()
 				calls := 0
-				prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+				prove := func([]crypto.RawSignature, []crypto.Proof, [32]byte, uint32) ([]byte, error) {
 					calls++
 					time.Sleep(tc.proofTime)
 					return []byte{1}, nil
 				}
-				aggs, _, _, truncated, skips := aggregateFromSnapshotWithProver(nil, budgetTestSnapshot(), cache, time.Now().Add(tc.deadline), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+				aggs, _, _, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), time.Now().Add(tc.deadline), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
 				if calls != tc.wantCalls || len(aggs) != calls || truncated != tc.wantTruncated {
 					t.Fatalf("calls=%d aggs=%d truncated=%v skips=%v", calls, len(aggs), truncated, skips)
 				}
@@ -127,18 +123,16 @@ func TestAggregationBudgetDeadline(t *testing.T) {
 // on how fast the host is.
 func TestAggregationBudgetUsesSessionClock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cache := xmss.NewPubKeyCache()
-		defer cache.Close()
 		frozen := time.Now()
 		calls := 0
-		prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+		prove := func([]crypto.RawSignature, []crypto.Proof, [32]byte, uint32) ([]byte, error) {
 			calls++
 			time.Sleep(2 * time.Second) // wall time passes; the session clock does not
 			return []byte{1}, nil
 		}
 		e := newUnitCostEstimator()
 		before := e.nextGroupDuration()
-		_, _, _, truncated, skips := aggregateFromSnapshotWithProver(nil, budgetTestSnapshot(), cache, frozen.Add(SessionBudget), func() time.Time { return frozen }, MaxGroupsPerSession, shadow.Rates{}, e, prove)
+		_, _, _, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), frozen.Add(SessionBudget), func() time.Time { return frozen }, MaxGroupsPerSession, shadow.Rates{}, e, prove)
 		if calls != 2 || truncated {
 			t.Fatalf("calls=%d truncated=%v skips=%v, want both groups proven", calls, truncated, skips)
 		}

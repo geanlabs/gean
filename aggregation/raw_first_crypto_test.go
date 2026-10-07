@@ -4,6 +4,7 @@ package aggregation
 
 import (
 	"fmt"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/store"
@@ -58,8 +59,8 @@ func TestRawFirstCrypto(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap.newEntries[dr] = &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{{Participants: types.BitlistFromIndices([]uint64{0, 1}), Proof: child}}}
-	cache := xmss.NewPubKeyCache()
-	defer cache.Close()
+	scheme := xmss.NewScheme()
+	defer scheme.Close()
 	for _, overlap := range []bool{false, true} {
 		snap.attSigs[dr].Signatures = entries
 		wantRaw, wantChild := 3, 0
@@ -67,13 +68,13 @@ func TestRawFirstCrypto(t *testing.T) {
 			snap.attSigs[dr].Signatures = []store.AttestationSignatureEntry{entries[0], entries[2]}
 			wantRaw, wantChild = 1, 1
 		}
-		prove := func(rawPKs []xmss.CPubKey, rawSigs []xmss.CSig, children []xmss.ChildProof, msg [32]byte, s uint32) ([]byte, error) {
-			if len(rawSigs) != wantRaw || len(children) != wantChild {
-				t.Fatalf("raw=%d children=%d", len(rawSigs), len(children))
+		prove := func(raw []crypto.RawSignature, children []crypto.Proof, msg [32]byte, s uint32) ([]byte, error) {
+			if len(raw) != wantRaw || len(children) != wantChild {
+				t.Fatalf("raw=%d children=%d", len(raw), len(children))
 			}
-			return xmss.AggregateWithChildren(rawPKs, rawSigs, children, msg, s)
+			return scheme.Aggregate(raw, children, msg, s)
 		}
-		aggs, _, deletes, _, skips := aggregateFromSnapshotWithProver(nil, snap, cache, time.Now().Add(30*time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+		aggs, _, deletes, _, skips := aggregateFromSnapshot(nil, snap, time.Now().Add(30*time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
 		if len(aggs) != 1 {
 			t.Fatalf("no aggregate: %v", skips)
 		}

@@ -3,14 +3,12 @@ package blockprocessor
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto/insecure"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
 
 func TestVerifyBlockSignaturesRejectsMalformedBlocks(t *testing.T) {
-	pubKeys := xmss.NewPubKeyCache()
-	defer pubKeys.Close()
 
 	overflowAtt := processorAttestation()
 	overflowAtt.Data.Slot = ^uint64(0)
@@ -34,7 +32,7 @@ func TestVerifyBlockSignaturesRejectsMalformedBlocks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := verifyBlockSignatures(pubKeys, tt.block, tt.state)
+			err := verifyBlockSignatures(insecure.Scheme{}, tt.block, tt.state)
 			se, ok := err.(*store.StoreError)
 			if !ok || se.Kind != tt.want {
 				t.Fatalf("error=%v, want kind %v", err, tt.want)

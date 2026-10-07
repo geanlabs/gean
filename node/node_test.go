@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto/insecure"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/dutygate"
 	"github.com/geanlabs/gean/forkchoice"
@@ -47,7 +47,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
-	return New(Components{Store: s, ForkChoice: fc, PubKeys: xmss.NewPubKeyCache(), Aggregator: role.New(false), Clock: SystemClock{}}, Config{CommitteeCount: 1})
+	return New(Components{Store: s, ForkChoice: fc, Crypto: insecure.Scheme{}, Aggregator: role.New(false), Clock: SystemClock{}}, Config{CommitteeCount: 1})
 }
 
 func TestEngineCreation(t *testing.T) {

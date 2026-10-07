@@ -4,6 +4,7 @@ package testdriver
 
 import (
 	"encoding/json"
+	"github.com/geanlabs/gean/crypto/xmss"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -58,7 +59,7 @@ func runReplayCase(t *testing.T, caseRaw json.RawMessage) {
 		t.Fatalf("decode case: %v", err)
 	}
 
-	sess := NewSession()
+	sess := NewSession(xmss.NewScheme())
 
 	// Init.
 	genesisTime := pointerU64(caseRaw, "anchorState", "config", "genesisTime")

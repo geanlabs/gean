@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
+	"github.com/geanlabs/gean/crypto/insecure"
 	"github.com/geanlabs/gean/proving"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/store"
@@ -159,7 +160,7 @@ func proposalTestEngine(t *testing.T) *Engine {
 	s.SetHead(root)
 	s.InsertState(root, state)
 	s.InsertBlockHeader(root, state.LatestBlockHeader)
-	return &Engine{store: s, keys: &xmss.KeyManager{}, proposalCh: make(chan proposalDuty, 1), proposalResultCh: make(chan *proposalResult, 1)}
+	return &Engine{store: s, keys: insecure.NewKeys(), proposalCh: make(chan proposalDuty, 1), proposalResultCh: make(chan *proposalResult, 1)}
 }
 
 func TestProposalDutyReservedThroughCompletion(t *testing.T) {
@@ -288,8 +289,8 @@ func TestProposalGateCancellationReportsRetryableFailure(t *testing.T) {
 
 func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 	e := proposalTestEngine(t)
-	// A closed key reaches Sign and fails without native signing or real keys.
-	e.keys = xmss.NewKeyManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
+	// A signer that holds the key but fails to sign it.
+	e.keys = failingSigner{Signer: insecure.NewKeys(0)}
 	e.maybePropose(1, 0)
 	duty := <-e.proposalCh
 	result := e.buildProposal(duty.slot, duty.validatorID)
@@ -327,9 +328,10 @@ func TestBlockProofStopsBetweenStagesWhenParentChanges(t *testing.T) {
 			}
 			wrapCalls, mergeCalls := 0, 0
 			proofErr := errors.New("test prover failure")
-			wrap := func(pks []xmss.CPubKey, sigs []xmss.CSig, message [32]byte, slot uint32) ([]byte, error) {
+			scheme := &stageScheme{}
+			scheme.aggregate = func(raw []crypto.RawSignature, children []crypto.Proof, message [32]byte, slot uint32) ([]byte, error) {
 				wrapCalls++
-				if len(pks) != 1 || len(sigs) != 1 || message != root || slot != 1 {
+				if len(raw) != 1 || len(children) != 0 || message != root || slot != 1 {
 					t.Fatal("proposer binding changed")
 				}
 				if tc.staleAfterWrap {
@@ -340,7 +342,7 @@ func TestBlockProofStopsBetweenStagesWhenParentChanges(t *testing.T) {
 				}
 				return []byte{7}, nil
 			}
-			merge := func(inputs []xmss.Type1Input) ([]byte, error) {
+			scheme.merge = func(inputs []crypto.Proof) ([]byte, error) {
 				mergeCalls++
 				if len(inputs) != 1 || len(inputs[0].Proof) != 1 || inputs[0].Proof[0] != 7 {
 					t.Fatal("proposer proof missing from final merge")
@@ -350,7 +352,8 @@ func TestBlockProofStopsBetweenStagesWhenParentChanges(t *testing.T) {
 				}
 				return []byte{8}, nil
 			}
-			proof, err := e.mergeBlockProofWithProvers(block, nil, nil, [types.SignatureSize]byte{}, wrap, merge)
+			e.scheme = scheme
+			proof, err := e.mergeBlockProof(block, nil, crypto.Signature{})
 			if wrapCalls != tc.wantWrap || mergeCalls != tc.wantMerge {
 				t.Fatalf("wrap=%d merge=%d", wrapCalls, mergeCalls)
 			}
@@ -370,4 +373,26 @@ func TestBlockProofStopsBetweenStagesWhenParentChanges(t *testing.T) {
 			}
 		})
 	}
+}
+
+// failingSigner holds its validators' keys but every block signature fails.
+type failingSigner struct{ crypto.Signer }
+
+func (failingSigner) SignBlock(uint64, uint64, [32]byte) (crypto.Signature, error) {
+	return crypto.Signature{}, errors.New("test signing failure")
+}
+
+// stageScheme lets a test observe and fail each proof stage of a proposal.
+type stageScheme struct {
+	crypto.Scheme
+	aggregate func([]crypto.RawSignature, []crypto.Proof, [32]byte, uint32) ([]byte, error)
+	merge     func([]crypto.Proof) ([]byte, error)
+}
+
+func (s *stageScheme) Aggregate(raw []crypto.RawSignature, children []crypto.Proof, message [32]byte, slot uint32) ([]byte, error) {
+	return s.aggregate(raw, children, message, slot)
+}
+
+func (s *stageScheme) MergeBlockProof(inputs []crypto.Proof) ([]byte, error) {
+	return s.merge(inputs)
 }

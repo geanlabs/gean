@@ -8,7 +8,7 @@ import (
 
 	"github.com/geanlabs/gean/aggregation"
 	"github.com/geanlabs/gean/attestationproof"
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
@@ -104,7 +104,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 	if headState == nil || headState.LatestJustified == nil {
 		return
 	}
-	pubkeys, err := e.blockProofPubkeys(block, state)
+	pubkeys, err := blockProofPubkeys(block, state)
 	if err != nil {
 		return
 	}
@@ -142,7 +142,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 			return
 		}
 		started := time.Now()
-		proof, err := xmss.SplitType2Proof(signedBlock.Proof.Proof, pubkeys, candidate.root)
+		proof, err := e.scheme.SplitBlockProof(signedBlock.Proof.Proof, pubkeys, candidate.root)
 		var recovered *types.SingleMessageAggregate
 		if err == nil {
 			recovered = &types.SingleMessageAggregate{
@@ -155,7 +155,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 					candidate.att.Data,
 					append([]*types.SingleMessageAggregate{recovered}, locals...),
 					state,
-					aggregation.NewProofMerger(e.pubKeys),
+					aggregation.NewProofMerger(e.scheme),
 				)
 				if mergeErr == nil && coversParticipants(combined, candidate.att.AggregationBits) {
 					recovered = combined
@@ -233,30 +233,22 @@ func coversParticipants(proof *types.SingleMessageAggregate, participants []byte
 	return true
 }
 
-func (e *Engine) blockProofPubkeys(block *types.Block, state *types.State) ([][]xmss.CPubKey, error) {
-	groups := make([][]xmss.CPubKey, 0, len(block.Body.Attestations)+1)
+func blockProofPubkeys(block *types.Block, state *types.State) ([][]crypto.PublicKey, error) {
+	groups := make([][]crypto.PublicKey, 0, len(block.Body.Attestations)+1)
 	for _, att := range block.Body.Attestations {
-		keys := make([]xmss.CPubKey, 0, types.BitlistCount(att.AggregationBits))
+		keys := make([]crypto.PublicKey, 0, types.BitlistCount(att.AggregationBits))
 		for _, index := range types.BitlistIndices(att.AggregationBits) {
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
 				return nil, fmt.Errorf("validator %d out of range", index)
 			}
-			key, err := e.pubKeys.Get(state.Validators[index].AttestationPubkey)
-			if err != nil {
-				return nil, err
-			}
-			keys = append(keys, key)
+			keys = append(keys, state.Validators[index].AttestationPubkey)
 		}
 		groups = append(groups, keys)
 	}
 	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
 		return nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
 	}
-	key, err := e.pubKeys.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
-	if err != nil {
-		return nil, err
-	}
-	return append(groups, []xmss.CPubKey{key}), nil
+	return append(groups, []crypto.PublicKey{state.Validators[block.ProposerIndex].ProposalPubkey}), nil
 }
 
 func localCoverage(entries ...*store.PayloadEntry) map[uint64]bool {

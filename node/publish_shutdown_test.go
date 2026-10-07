@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto/insecure"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -26,13 +26,8 @@ func (n *blockingNetwork) PublishAttestation(ctx context.Context, _ *types.Signe
 // returns would keep Run from returning and shutdown from completing. It must
 // end with the engine's context.
 func TestAttestationPublishEndsWithEngineContext(t *testing.T) {
-	attKey, err := xmss.GenerateKeyPair("publish-shutdown-attestation", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
 	e := makeTestEngine()
-	e.keys = xmss.NewKeyManager(map[uint64]*xmss.ValidatorKeyPair{0: attKey}, nil)
-	defer e.keys.Close()
+	e.keys = insecure.NewKeys(0)
 	network := &blockingNetwork{published: make(chan struct{})}
 	e.network = network
 

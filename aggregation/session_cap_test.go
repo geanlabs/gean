@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/store"
@@ -34,17 +34,14 @@ func TestAggregateFromSnapshotCapsGroupsPerSession(t *testing.T) {
 				}
 			}
 
-			cache := xmss.NewPubKeyCache()
-			defer cache.Close()
-
 			calls := 0
-			prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+			prove := func([]crypto.RawSignature, []crypto.Proof, [32]byte, uint32) ([]byte, error) {
 				calls++
 				return []byte{1}, nil
 			}
 
-			aggs, _, _, truncated, skips := aggregateFromSnapshotWithProver(nil,
-				snap, cache, time.Now().Add(time.Hour), time.Now, tc.maxGroups, shadow.Rates{}, newUnitCostEstimator(), prove)
+			aggs, _, _, truncated, skips := aggregateFromSnapshot(nil,
+				snap, time.Now().Add(time.Hour), time.Now, tc.maxGroups, shadow.Rates{}, newUnitCostEstimator(), prove)
 
 			if calls != tc.wantProve {
 				t.Fatalf("prove calls = %d, want %d", calls, tc.wantProve)

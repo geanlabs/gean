@@ -8,7 +8,7 @@ import (
 
 	"github.com/geanlabs/gean/aggregation"
 	"github.com/geanlabs/gean/blockbuilder"
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/statetransition"
@@ -112,11 +112,6 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	}
 
 	signStart := time.Now()
-	propKey := e.keys.GetProposalKey(validatorID)
-	if propKey == nil {
-		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
-		return result
-	}
 	blockRoot, err := block.HashTreeRoot()
 	if err != nil {
 		logger.Error(logger.Validator, "block root failed: %v", err)
@@ -129,15 +124,21 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	}
 	// A signing error must not permit another candidate to use this duty.
 	result.retryable = false
-	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
+	blockSig, err := e.keys.SignBlock(validatorID, slot, blockRoot)
 	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
+	if errors.Is(err, crypto.ErrNoKey) {
+		// Nothing was signed, so the duty may still be taken by another attempt.
+		result.retryable = true
+		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
+		return result
+	}
 	if err != nil {
 		logger.Error(logger.Validator, "sign block failed: %v", err)
 		return result
 	}
 
 	mergeStart := time.Now()
-	proof, err := e.mergeBlockProof(block, attSigProofs, propKey, blockSig)
+	proof, err := e.mergeBlockProof(block, attSigProofs, blockSig)
 	metrics.ObserveProvingDuration("proposal", time.Since(mergeStart).Seconds())
 	if err != nil {
 		if errors.Is(err, errStaleProposal) {
@@ -202,22 +203,13 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		block.Slot, result.blockRoot, attestationCount)
 }
 
+// mergeBlockProof wraps the proposer's signature into a single-message proof
+// and merges it with the attestation proofs into the block proof. Proving is
+// slow, so it stops between stages once the head moves off the block's parent.
 func (e *Engine) mergeBlockProof(
 	block *types.Block,
 	attestationProofs []*types.SingleMessageAggregate,
-	proposerKey *xmss.ValidatorKeyPair,
-	proposerSignature [types.SignatureSize]byte,
-) ([]byte, error) {
-	return e.mergeBlockProofWithProvers(block, attestationProofs, proposerKey, proposerSignature, xmss.AggregateSignatures, xmss.MergeType1Proofs)
-}
-
-func (e *Engine) mergeBlockProofWithProvers(
-	block *types.Block,
-	attestationProofs []*types.SingleMessageAggregate,
-	proposerKey *xmss.ValidatorKeyPair,
-	proposerSignature [types.SignatureSize]byte,
-	wrap func([]xmss.CPubKey, []xmss.CSig, [32]byte, uint32) ([]byte, error),
-	merge func([]xmss.Type1Input) ([]byte, error),
+	proposerSignature crypto.Signature,
 ) ([]byte, error) {
 	if block == nil || block.Body == nil || len(block.Body.Attestations) != len(attestationProofs) {
 		return nil, fmt.Errorf("attestation proof count mismatch")
@@ -230,30 +222,25 @@ func (e *Engine) mergeBlockProofWithProvers(
 		return nil, fmt.Errorf("parent state missing")
 	}
 
-	inputs := make([]xmss.Type1Input, 0, len(attestationProofs)+1)
+	inputs := make([]crypto.Proof, 0, len(attestationProofs)+1)
 	for i, proof := range attestationProofs {
 		if proof == nil {
 			return nil, fmt.Errorf("attestation proof %d missing", i)
 		}
-		keys := make([]xmss.CPubKey, 0, types.BitlistCount(proof.Participants))
+		keys := make([]crypto.PublicKey, 0, types.BitlistCount(proof.Participants))
 		for _, index := range types.BitlistIndices(proof.Participants) {
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
 				return nil, fmt.Errorf("attestation proof %d validator %d out of range", i, index)
 			}
-			key, err := e.pubKeys.Get(state.Validators[index].AttestationPubkey)
-			if err != nil {
-				return nil, fmt.Errorf("attestation proof %d validator %d: %w", i, index, err)
-			}
-			keys = append(keys, key)
+			keys = append(keys, state.Validators[index].AttestationPubkey)
 		}
-		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof})
+		inputs = append(inputs, crypto.Proof{PublicKeys: keys, Proof: proof.Proof})
 	}
+	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
+		return nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
+	}
+	proposerKey := state.Validators[block.ProposerIndex].ProposalPubkey
 
-	signature, err := xmss.ParseSignature(proposerSignature[:])
-	if err != nil {
-		return nil, err
-	}
-	defer xmss.FreeSignature(signature)
 	blockRoot, err := block.HashTreeRoot()
 	if err != nil {
 		return nil, err
@@ -262,9 +249,9 @@ func (e *Engine) mergeBlockProofWithProvers(
 		return nil, errStaleProposal
 	}
 	wrapStart := time.Now()
-	proposerProof, err := wrap(
-		[]xmss.CPubKey{proposerKey.PublicKey()},
-		[]xmss.CSig{signature},
+	proposerProof, err := e.scheme.Aggregate(
+		[]crypto.RawSignature{{PublicKey: proposerKey, Signature: proposerSignature}},
+		nil,
 		blockRoot,
 		uint32(block.Slot),
 	)
@@ -272,15 +259,12 @@ func (e *Engine) mergeBlockProofWithProvers(
 	if err != nil {
 		return nil, err
 	}
-	inputs = append(inputs, xmss.Type1Input{
-		Pubkeys: []xmss.CPubKey{proposerKey.PublicKey()},
-		Proof:   proposerProof,
-	})
+	inputs = append(inputs, crypto.Proof{PublicKeys: []crypto.PublicKey{proposerKey}, Proof: proposerProof})
 	if e.store.Head() != block.ParentRoot {
 		return nil, errStaleProposal
 	}
 	mergeStart := time.Now()
-	proof, err := merge(inputs)
+	proof, err := e.scheme.MergeBlockProof(inputs)
 	metrics.ObserveProposalStageDuration("merge", time.Since(mergeStart).Seconds())
 	return proof, err
 }
@@ -309,7 +293,7 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		ParentRoot:      headRoot,
 		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.store.HasBlockHeader),
 		Payloads:        payloadsFromEntries(e.store.KnownPayloads().Entries()),
-		ProofMerger:     aggregation.NewProofMerger(e.pubKeys),
+		ProofMerger:     aggregation.NewProofMerger(e.scheme),
 	})
 	if err != nil {
 		metrics.IncBlockBuildingFailures()

@@ -7,7 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/proving"
 	"github.com/geanlabs/gean/shadow"
@@ -21,10 +21,8 @@ func TestAggregationYieldsToWaitingProposal(t *testing.T) {
 				t.Fatal("background acquire failed")
 			}
 			acquired := make(chan struct{})
-			cache := xmss.NewPubKeyCache()
-			defer cache.Close()
 			calls := 0
-			prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+			prove := func([]crypto.RawSignature, []crypto.Proof, [32]byte, uint32) ([]byte, error) {
 				calls++
 				go func() {
 					if gate.Acquire(context.Background(), true) {
@@ -42,7 +40,7 @@ func TestAggregationYieldsToWaitingProposal(t *testing.T) {
 				return []byte{1}, nil
 			}
 			snap := budgetTestSnapshot()
-			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshotWithProver(gate.ProposalPending, snap, cache, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(gate.ProposalPending, snap, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
 			if calls != 1 || !truncated || skips[metrics.AggGroupSkipProposalPending] != 1 {
 				t.Fatalf("calls=%d truncated=%v skips=%v", calls, truncated, skips)
 			}
@@ -78,15 +76,13 @@ func TestAggregationYieldsAfterPreparation(t *testing.T) {
 	snap := budgetTestSnapshot()
 	delete(snap.attSigs, rootByte(1))
 	delete(snap.attSigs, rootByte(3))
-	cache := xmss.NewPubKeyCache()
-	defer cache.Close()
 	checks := 0
 	shouldYield := func() bool { checks++; return checks == 2 }
-	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+	prove := func([]crypto.RawSignature, []crypto.Proof, [32]byte, uint32) ([]byte, error) {
 		t.Fatal("started proof after proposal became pending")
 		return nil, nil
 	}
-	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshotWithProver(shouldYield, snap, cache, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(shouldYield, snap, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
 	if !truncated || skips[metrics.AggGroupSkipProposalPending] != 1 || len(aggs)+len(payloads)+len(deletes) != 0 {
 		t.Fatalf("unexpected yield: %v %v", truncated, skips)
 	}

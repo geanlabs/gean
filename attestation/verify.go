@@ -1,14 +1,15 @@
 package attestation
 
 import (
+	"errors"
 	"fmt"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
 
-func VerifyGossipAttestation(s *store.ConsensusStore, validatorID uint64, attData *types.AttestationData, dataRoot [32]byte, signature []byte) error {
+func VerifyGossipAttestation(s *store.ConsensusStore, scheme crypto.Scheme, validatorID uint64, attData *types.AttestationData, dataRoot [32]byte, signature []byte) error {
 	if err := validateDataShape(attData); err != nil {
 		return err
 	}
@@ -27,22 +28,17 @@ func VerifyGossipAttestation(s *store.ConsensusStore, validatorID uint64, attDat
 	}
 	var sig [types.SignatureSize]byte
 	copy(sig[:], signature)
-	valid, err := xmss.VerifySignatureSSZ(
-		pubkey,
-		uint32(attData.Slot),
-		dataRoot,
-		sig,
-	)
+	err := scheme.VerifySignature(pubkey, uint32(attData.Slot), dataRoot, sig)
+	if errors.Is(err, crypto.ErrInvalidSignature) {
+		return fmt.Errorf("signature verification failed")
+	}
 	if err != nil {
 		return fmt.Errorf("signature verification error: %w", err)
-	}
-	if !valid {
-		return fmt.Errorf("signature verification failed")
 	}
 	return nil
 }
 
-func VerifyAggregatedGossipAttestation(s *store.ConsensusStore, attData *types.AttestationData, participants []byte, proofData []byte) error {
+func VerifyAggregatedGossipAttestation(s *store.ConsensusStore, scheme crypto.Scheme, attData *types.AttestationData, participants []byte, proofData []byte) error {
 	if err := validateDataShape(attData); err != nil {
 		return err
 	}
@@ -52,39 +48,28 @@ func VerifyAggregatedGossipAttestation(s *store.ConsensusStore, attData *types.A
 		return fmt.Errorf("target state not found in store: 0x%x", attData.Target.Root)
 	}
 	participantIDs := types.BitlistIndices(participants)
-	return verifyAggregatedProof(targetKeys, participantIDs, attData, proofData)
+	return verifyAggregatedProof(scheme, targetKeys, participantIDs, attData, proofData)
 }
 
 func verifyAggregatedProof(
+	scheme crypto.Scheme,
 	keys *store.ValidatorKeys,
 	participantIDs []uint64,
 	data *types.AttestationData,
 	proofData []byte,
 ) error {
-	parsedPubkeys := make([]xmss.CPubKey, len(participantIDs))
+	pubkeys := make([]crypto.PublicKey, len(participantIDs))
 	for i, vid := range participantIDs {
 		pubkey, ok := keys.AttestationPubkey(vid)
 		if !ok {
 			return fmt.Errorf("validator %d out of range (%d)", vid, keys.Len())
 		}
-		pk, err := xmss.ParsePublicKey(pubkey)
-		if err != nil {
-			for j := range i {
-				xmss.FreePublicKey(parsedPubkeys[j])
-			}
-			return fmt.Errorf("parse pubkey for validator %d: %w", vid, err)
-		}
-		parsedPubkeys[i] = pk
+		pubkeys[i] = pubkey
 	}
-	defer func() {
-		for _, pk := range parsedPubkeys {
-			xmss.FreePublicKey(pk)
-		}
-	}()
 
 	dataRoot, err := data.HashTreeRoot()
 	if err != nil {
 		return fmt.Errorf("hash tree root: %w", err)
 	}
-	return xmss.VerifyAggregatedSignature(proofData, parsedPubkeys, dataRoot, uint32(data.Slot))
+	return scheme.VerifyAggregate(proofData, pubkeys, dataRoot, uint32(data.Slot))
 }

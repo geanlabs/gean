@@ -185,7 +185,7 @@ func (sess *Session) applyAttestation(step *specfixtures.ForkChoiceStep) error {
 		return err
 	}
 	if !carriesMockedProof(signature) {
-		if err := attestation.VerifyGossipAttestation(sess.store, step.Attestation.ValidatorID, attData, dataRoot, signature); err != nil {
+		if err := attestation.VerifyGossipAttestation(sess.store, sess.scheme, step.Attestation.ValidatorID, attData, dataRoot, signature); err != nil {
 			return err
 		}
 	}
@@ -240,7 +240,7 @@ func (sess *Session) applyAggregatedAttestation(step *specfixtures.ForkChoiceSte
 		return err
 	}
 	if !carriesMockedProof(proofData) {
-		if err := attestation.VerifyAggregatedGossipAttestation(sess.store, attData, participants, proofData); err != nil {
+		if err := attestation.VerifyAggregatedGossipAttestation(sess.store, sess.scheme, attData, participants, proofData); err != nil {
 			return err
 		}
 	}

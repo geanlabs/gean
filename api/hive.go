@@ -3,6 +3,7 @@
 package api
 
 import (
+	"github.com/geanlabs/gean/crypto"
 	"net/http"
 
 	"github.com/geanlabs/gean/api/testdriver"
@@ -11,9 +12,10 @@ import (
 	"github.com/geanlabs/gean/store"
 )
 
-// NewHandlerWithTestDriver serves the node API plus the hive test-driver routes.
-func NewHandlerWithTestDriver(s *store.ConsensusStore, forkChoiceView func() *forkchoice.View, aggCtl *role.Controller) *http.ServeMux {
+// NewHandlerWithTestDriver serves the node API plus the hive test-driver routes,
+// which verify signatures with scheme.
+func NewHandlerWithTestDriver(s *store.ConsensusStore, forkChoiceView func() *forkchoice.View, aggCtl *role.Controller, scheme crypto.Scheme) *http.ServeMux {
 	mux := NewHandler(s, forkChoiceView, aggCtl)
-	testdriver.RegisterRoutes(mux, testdriver.NewSession())
+	testdriver.RegisterRoutes(mux, testdriver.NewSession(scheme))
 	return mux
 }

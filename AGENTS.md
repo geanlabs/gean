@@ -77,7 +77,10 @@ go test ./node -run TestName -v -count=1
 - `cmd/gean/`, `cmd/keygen/`: node binary and testnet/key generation.
 - `node/`: engine, tick-driven duties (`tick.go`), event dispatch, and workers, assembled from
   `node.Components` (store, fork choice, `Network`, keys, `Clock`).
-- `sim/`: in-process multi-node simulation on a simulated network and manual clock.
+- `crypto/`: the signature scheme contract consensus code uses; `crypto/xmss/` implements it over the
+  Rust FFI, `crypto/insecure/` is a fast forgeable scheme for simulations and tests only.
+- `sim/`: in-process multi-node simulation on a simulated network and manual clock; `sim/xmsssim/`
+  runs it on real XMSS keys.
 - `tasks/`: goroutine ownership; every component joins its work before releasing resources.
 - `internal/layering/`: the package dependency rules, enforced by `make test`. Change a rule only
   with the boundary it protects.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto/insecure"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/types"
 )
@@ -76,7 +76,7 @@ func waitForWorker(t *testing.T, done <-chan struct{}) {
 func TestSessionSkipsDispatchPastItsDeadline(t *testing.T) {
 	publisher := &recordingPublisher{}
 	now := time.Unix(1_000, 0)
-	worker := NewWorker(nil, xmss.NewPubKeyCache(), publisher, nil, shadow.Rates{}, func() time.Time { return now })
+	worker := NewWorker(nil, insecure.Scheme{}, publisher, nil, shadow.Rates{}, func() time.Time { return now })
 
 	worker.Session(context.Background(), Dispatch{
 		Slot:     1,

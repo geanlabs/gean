@@ -12,6 +12,7 @@ import (
 
 	"github.com/geanlabs/gean/attestation"
 	"github.com/geanlabs/gean/blockprocessor"
+	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
@@ -368,6 +369,8 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	// 2. Initialize store with in-memory backend.
 	backend := db.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
+	scheme := xmss.NewScheme()
+	defer scheme.Close()
 
 	// Store config from anchor state.
 	s.SetConfig(anchorState.Config)
@@ -556,7 +559,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			signature := parseHexBytes(att.Signature)
 			var validationErr error
 			if validationErr = attestation.ValidateAttestationData(s, attData); validationErr == nil && !carriesMockedProof(signature) {
-				validationErr = attestation.VerifyGossipAttestation(s, att.ValidatorID, attData, dataRoot, signature)
+				validationErr = attestation.VerifyGossipAttestation(s, scheme, att.ValidatorID, attData, dataRoot, signature)
 			}
 			if step.Valid && validationErr != nil {
 				t.Fatalf("step %d: expected valid attestation, got error: %v", i, validationErr)
@@ -640,7 +643,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			dataRoot, _ := attData.HashTreeRoot()
 			var validationErr error
 			if validationErr = attestation.ValidateAttestationData(s, attData); validationErr == nil && !carriesMockedProof(proofData) {
-				validationErr = attestation.VerifyAggregatedGossipAttestation(s, attData, participants, proofData)
+				validationErr = attestation.VerifyAggregatedGossipAttestation(s, scheme, attData, participants, proofData)
 			}
 			if step.Valid && validationErr != nil {
 				t.Fatalf("step %d: expected valid aggregated attestation, got error: %v", i, validationErr)

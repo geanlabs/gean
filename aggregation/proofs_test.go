@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
@@ -20,10 +20,10 @@ func TestSelectChildProofsSkipsOutOfRangeParticipant(t *testing.T) {
 		Validators: []*types.Validator{{Index: 0}},
 	}
 
-	var children []xmss.ChildProof
+	var children []crypto.Proof
 	covered := make(map[uint64]bool)
 	remaining := 8 * time.Second
-	selectChildProofs(entry, state, &children, covered, xmss.NewPubKeyCache(), &remaining, time.Second, 0)
+	selectChildProofs(entry, state, &children, covered, &remaining, time.Second, 0)
 
 	if len(children) != 0 {
 		t.Fatalf("children=%d, want 0", len(children))
@@ -55,13 +55,11 @@ func TestSelectChildProofsAdmitsFirstChildThenPricesTheRest(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry := &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(0), proof(1)}}
-			cache := xmss.NewPubKeyCache()
-			defer cache.Close()
 
-			var children []xmss.ChildProof
+			var children []crypto.Proof
 			covered := make(map[uint64]bool)
 			remaining := tc.remaining
-			selectChildProofs(entry, state, &children, covered, cache, &remaining, tc.childCost, 1)
+			selectChildProofs(entry, state, &children, covered, &remaining, tc.childCost, 1)
 
 			if len(children) != tc.want {
 				t.Fatalf("children=%d, want %d", len(children), tc.want)
@@ -84,15 +82,12 @@ func TestSelectChildProofsCapsChildrenPerGroup(t *testing.T) {
 	newEntry := &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(0, 1), proof(2, 3)}}
 	knownEntry := &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(4, 5)}}
 
-	cache := xmss.NewPubKeyCache()
-	defer cache.Close()
-
-	var children []xmss.ChildProof
+	var children []crypto.Proof
 	covered := map[uint64]bool{}
 	remaining := 100 * time.Second
 
-	selectChildProofs(newEntry, state, &children, covered, cache, &remaining, time.Second, 0)
-	selectChildProofs(knownEntry, state, &children, covered, cache, &remaining, time.Second, 0)
+	selectChildProofs(newEntry, state, &children, covered, &remaining, time.Second, 0)
+	selectChildProofs(knownEntry, state, &children, covered, &remaining, time.Second, 0)
 
 	if len(children) != maxChildProofsPerGroup {
 		t.Fatalf("children=%d, want %d", len(children), maxChildProofsPerGroup)

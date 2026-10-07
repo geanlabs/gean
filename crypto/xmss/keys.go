@@ -27,8 +27,10 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/geanlabs/gean/types"
 	"gopkg.in/yaml.v3"
+
+	"github.com/geanlabs/gean/crypto"
+	"github.com/geanlabs/gean/types"
 )
 
 type ValidatorKeyPair struct {
@@ -97,6 +99,8 @@ type KeyManager struct {
 	proposalKeys    map[uint64]*ValidatorKeyPair
 }
 
+var _ crypto.Signer = (*KeyManager)(nil)
+
 func NewKeyManager(attestationKeys, proposalKeys map[uint64]*ValidatorKeyPair) *KeyManager {
 	return &KeyManager{
 		attestationKeys: attestationKeys,
@@ -138,7 +142,7 @@ func (km *KeyManager) SignAttestation(validatorID uint64, data *types.Attestatio
 	}
 	kp := km.GetAttestationKey(validatorID)
 	if kp == nil || kp.handle == nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
+		return [types.SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d: %w", validatorID, crypto.ErrNoKey)
 	}
 	if data == nil {
 		return [types.SignatureSize]byte{}, fmt.Errorf("attestation data is nil")
@@ -163,7 +167,7 @@ func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]b
 	}
 	kp := km.GetProposalKey(validatorID)
 	if kp == nil || kp.handle == nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("proposal key for validator %d not found", validatorID)
+		return [types.SignatureSize]byte{}, fmt.Errorf("proposal key for validator %d: %w", validatorID, crypto.ErrNoKey)
 	}
 
 	s := uint32(slot)

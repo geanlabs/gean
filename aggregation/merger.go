@@ -4,18 +4,18 @@ import (
 	"fmt"
 
 	"github.com/geanlabs/gean/attestationproof"
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/types"
 )
 
 // ProofMerger merges attestation proofs for the same data into one recursive
-// XMSS proof. It implements attestationproof.MergeProvider.
+// proof. It implements attestationproof.MergeProvider.
 type ProofMerger struct {
-	cache *xmss.PubKeyCache
+	scheme crypto.Scheme
 }
 
-func NewProofMerger(cache *xmss.PubKeyCache) *ProofMerger {
-	return &ProofMerger{cache: cache}
+func NewProofMerger(scheme crypto.Scheme) *ProofMerger {
+	return &ProofMerger{scheme: scheme}
 }
 
 func (m *ProofMerger) Merge(
@@ -36,11 +36,11 @@ func (m *ProofMerger) Merge(
 	if state == nil {
 		return nil, fmt.Errorf("%w: state is nil", attestationproof.ErrMergeUnavailable)
 	}
-	if m == nil || m.cache == nil {
-		return nil, fmt.Errorf("%w: pubkey cache is nil", attestationproof.ErrMergeUnavailable)
+	if m == nil || m.scheme == nil {
+		return nil, fmt.Errorf("%w: scheme is nil", attestationproof.ErrMergeUnavailable)
 	}
 
-	children := make([]xmss.ChildProof, 0, len(proofs))
+	children := make([]crypto.Proof, 0, len(proofs))
 	allIDs := make([]uint64, 0)
 	seen := make(map[uint64]bool)
 	for _, proof := range proofs {
@@ -48,7 +48,7 @@ func (m *ProofMerger) Merge(
 			return nil, fmt.Errorf("%w: malformed child proof", attestationproof.ErrMergeUnavailable)
 		}
 
-		pubkeys := make([]xmss.CPubKey, 0, types.BitlistLen(proof.Participants))
+		pubkeys := make([]crypto.PublicKey, 0, types.BitlistLen(proof.Participants))
 		for vid := range types.BitlistLen(proof.Participants) {
 			if !types.BitlistGet(proof.Participants, vid) {
 				continue
@@ -66,20 +66,16 @@ func (m *ProofMerger) Merge(
 				return nil, fmt.Errorf("%w: validator %d is nil", attestationproof.ErrMergeUnavailable, vid)
 			}
 
-			pk, err := m.cache.Get(validator.AttestationPubkey)
-			if err != nil {
-				return nil, fmt.Errorf("%w: validator %d pubkey: %v", attestationproof.ErrMergeUnavailable, vid, err)
-			}
-			pubkeys = append(pubkeys, pk)
+			pubkeys = append(pubkeys, validator.AttestationPubkey)
 			allIDs = append(allIDs, vid)
 		}
 
 		if len(pubkeys) == 0 {
 			return nil, fmt.Errorf("%w: child proof has no known participants", attestationproof.ErrMergeUnavailable)
 		}
-		children = append(children, xmss.ChildProof{
-			Pubkeys: pubkeys,
-			Proof:   append([]byte(nil), proof.Proof...),
+		children = append(children, crypto.Proof{
+			PublicKeys: pubkeys,
+			Proof:      append([]byte(nil), proof.Proof...),
 		})
 	}
 
@@ -91,7 +87,7 @@ func (m *ProofMerger) Merge(
 	if err != nil {
 		return nil, fmt.Errorf("attestation data root: %w", err)
 	}
-	mergedBytes, err := xmss.AggregateWithChildren(nil, nil, children, dataRoot, slot)
+	mergedBytes, err := m.scheme.Aggregate(nil, children, dataRoot, slot)
 	if err != nil {
 		return nil, fmt.Errorf("aggregate child proofs: %w", err)
 	}

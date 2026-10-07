@@ -3,6 +3,7 @@
 package api
 
 import (
+	"github.com/geanlabs/gean/crypto/xmss"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 func TestBuildAPIMuxWithTestDriverRegistersRoutes(t *testing.T) {
 	s := store.NewConsensusStore(db.NewInMemoryBackend())
-	mux := NewHandlerWithTestDriver(s, nil, role.New(false))
+	mux := NewHandlerWithTestDriver(s, nil, role.New(false), xmss.NewScheme())
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/health", nil))

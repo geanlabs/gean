@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
 
-// OnBlock verifies a block's signatures against the public keys in pubKeys,
-// applies the state transition and persists the result.
-func OnBlock(s *store.ConsensusStore, pubKeys *xmss.PubKeyCache, signedBlock *types.SignedBlock) error {
-	return onBlockCore(s, pubKeys, signedBlock, true)
+// OnBlock verifies a block's signatures with scheme, applies the state
+// transition and persists the result.
+func OnBlock(s *store.ConsensusStore, scheme crypto.Scheme, signedBlock *types.SignedBlock) error {
+	return onBlockCore(s, scheme, signedBlock, true)
 }
 
 // OnBlockWithoutVerification imports a block without checking its signatures.
@@ -22,7 +22,7 @@ func OnBlockWithoutVerification(s *store.ConsensusStore, signedBlock *types.Sign
 	return onBlockCore(s, nil, signedBlock, false)
 }
 
-func onBlockCore(s *store.ConsensusStore, pubKeys *xmss.PubKeyCache, signedBlock *types.SignedBlock, verify bool) error {
+func onBlockCore(s *store.ConsensusStore, scheme crypto.Scheme, signedBlock *types.SignedBlock, verify bool) error {
 	start := time.Now()
 	if err := validateStore(s); err != nil {
 		return err
@@ -67,7 +67,7 @@ func onBlockCore(s *store.ConsensusStore, pubKeys *xmss.PubKeyCache, signedBlock
 
 	if verify {
 		verifyStart := time.Now()
-		err := verifyBlockSignatures(pubKeys, signedBlock, parentState)
+		err := verifyBlockSignatures(scheme, signedBlock, parentState)
 		metrics.ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
 		if err != nil {
 			return err

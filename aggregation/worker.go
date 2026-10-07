@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/proving"
@@ -46,7 +46,7 @@ const AcquirePatience = 750 * time.Millisecond
 // scheduling (a deterministic simulation) can order sessions itself.
 type Worker struct {
 	store       *store.ConsensusStore
-	pubKeys     *xmss.PubKeyCache
+	scheme      crypto.Scheme
 	publisher   Publisher
 	gate        *proving.Gate
 	shadowRates shadow.Rates
@@ -60,7 +60,7 @@ type Worker struct {
 
 func NewWorker(
 	consensusStore *store.ConsensusStore,
-	pubKeys *xmss.PubKeyCache,
+	scheme crypto.Scheme,
 	publisher Publisher,
 	gate *proving.Gate,
 	shadowRates shadow.Rates,
@@ -68,7 +68,7 @@ func NewWorker(
 ) *Worker {
 	return &Worker{
 		store:       consensusStore,
-		pubKeys:     pubKeys,
+		scheme:      scheme,
 		publisher:   publisher,
 		gate:        gate,
 		shadowRates: shadowRates,
@@ -141,7 +141,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 	// The window is what the dispatcher actually allowed, which is less
 	// than SessionBudget whenever the gate was held for a while.
 	budget := deadline.Sub(sessionStart)
-	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(w.gate.ProposalPending, dispatch.Snapshot, w.pubKeys, deadline, w.now, dispatch.MaxGroups, w.shadowRates, w.estimator)
+	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(w.gate.ProposalPending, dispatch.Snapshot, deadline, w.now, dispatch.MaxGroups, w.shadowRates, w.estimator, w.scheme.Aggregate)
 	workerElapsed := time.Since(workerStart)
 	if w.gate != nil {
 		w.gate.Release(false)

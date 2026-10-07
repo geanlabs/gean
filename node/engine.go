@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/aggregation"
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/dutygate"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
@@ -53,10 +53,9 @@ type Components struct {
 	// Network is nil for an engine that never publishes or fetches.
 	Network Network
 	// Keys signs this node's duties; nil runs the engine without validators.
-	Keys *xmss.KeyManager
-	// PubKeys caches decoded validator public keys for signature verification
-	// and proving.
-	PubKeys    *xmss.PubKeyCache
+	Keys crypto.Signer
+	// Crypto verifies and proves signatures.
+	Crypto     crypto.Scheme
 	Aggregator *role.Controller
 	Clock      Clock
 }
@@ -74,8 +73,8 @@ type Engine struct {
 	store              *store.ConsensusStore
 	forkChoice         *forkchoice.ForkChoice
 	network            Network
-	keys               *xmss.KeyManager
-	pubKeys            *xmss.PubKeyCache
+	keys               crypto.Signer
+	scheme             crypto.Scheme
 	aggregator         *role.Controller
 	dutyGate           *dutygate.Gate
 	committeeCount     uint64
@@ -165,7 +164,7 @@ func New(c Components, cfg Config) *Engine {
 		forkChoice:          c.ForkChoice,
 		network:             c.Network,
 		keys:                c.Keys,
-		pubKeys:             c.PubKeys,
+		scheme:              c.Crypto,
 		aggregator:          c.Aggregator,
 		dutyGate:            dutygate.New(logDutyGateEvent),
 		committeeCount:      cfg.CommitteeCount,
@@ -191,7 +190,7 @@ func New(c Components, cfg Config) *Engine {
 		clock:                 c.Clock,
 	}
 	e.publishForkChoiceView()
-	e.aggregationWorker = aggregation.NewWorker(e.store, e.pubKeys, e.network, e.provingGate, e.shadowRates, e.clock.Now)
+	e.aggregationWorker = aggregation.NewWorker(e.store, e.scheme, e.network, e.provingGate, e.shadowRates, e.clock.Now)
 	return e
 }
 

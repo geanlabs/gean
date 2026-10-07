@@ -225,9 +225,9 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	}
 
 	// 5. Call OnBlock WITH signature verification.
-	pubKeys := xmss.NewPubKeyCache()
-	defer pubKeys.Close()
-	err = blockprocessor.OnBlock(s, pubKeys, signedBlock)
+	scheme := xmss.NewScheme()
+	defer scheme.Close()
+	err = blockprocessor.OnBlock(s, scheme, signedBlock)
 
 	// 6. Check result against expectation.
 	expectFailure := tt.RejectionReason != nil

@@ -1,8 +1,9 @@
 // Package sim runs gean nodes in one process, on a simulated network and a
 // manual clock. Every node is assembled from the same library components the
-// gean binary uses; only the network and the clock are replaced. Time moves
-// only when the simulation advances it, and all work runs on the caller's
-// goroutine in a fixed order, so a scenario produces the same chain every run.
+// gean binary uses; only the network, the clock and, by default, the
+// signature scheme are replaced. Time moves only when the simulation advances
+// it, and all work runs on the caller's goroutine in a fixed order, so a
+// scenario produces the same chain every run.
 package sim
 
 import (
@@ -11,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/genesis"
 	"github.com/geanlabs/gean/node"
@@ -20,21 +21,30 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// keyLifetime is how many slots a simulated validator key can sign for. It is
-// far below a real key's lifetime, so generating keys takes seconds.
-const keyLifetime = 1 << 10
+// Crypto is the signature scheme and validator keys a cluster runs on.
+type Crypto interface {
+	Scheme() crypto.Scheme
+	// PublicKeys returns validator i's attestation and proposal keys.
+	PublicKeys(i uint64) (attestation, proposal crypto.PublicKey)
+	// Signer signs as the given validators. It stays owned by the Crypto.
+	Signer(validatorIDs []uint64) crypto.Signer
+	// Close releases the scheme and keys once every node has stopped.
+	Close()
+}
 
 // Config describes a simulated network.
 type Config struct {
 	// GenesisTime is the genesis time in seconds; the clock starts there.
 	GenesisTime uint64
-	// Validators is the validator count. Validator i signs with keys derived
-	// from i, so every run uses the same keys.
+	// Validators is the validator count.
 	Validators int
 	// Nodes lists, for each node, the validators whose keys it holds.
 	Nodes [][]uint64
 	// Aggregators lists the nodes that aggregate attestations.
 	Aggregators []int
+	// Crypto is the scheme the nodes sign and verify with. Nil uses Insecure,
+	// which is fast and needs no native code; sim/xmsssim provides XMSS.
+	Crypto Crypto
 }
 
 // Node is one simulated node.
@@ -44,51 +54,49 @@ type Node struct {
 	// Aggregator is the node's aggregator role; setting it switches
 	// aggregation on or off at runtime, as the admin API does.
 	Aggregator *role.Controller
-	keys       *xmss.KeyManager
-	pubKeys    *xmss.PubKeyCache
 }
 
 // Cluster is a set of nodes sharing a simulated network and clock.
 type Cluster struct {
-	clock Clock
-	nodes []*Node
+	clock  Clock
+	crypto Crypto
+	nodes  []*Node
 }
 
 // New builds every node from one genesis and runs their first tick at the
-// genesis time.
+// genesis time. It takes ownership of cfg.Crypto: Close releases it, and New
+// releases it itself if it fails.
 func New(ctx context.Context, cfg Config) (*Cluster, error) {
+	cryptoProvider := cfg.Crypto
+	if cryptoProvider == nil {
+		cryptoProvider = Insecure()
+	}
 	if err := cfg.validate(); err != nil {
+		cryptoProvider.Close()
 		return nil, err
 	}
-	attKeys, propKeys, entries, err := validatorKeys(cfg.Validators)
-	if err != nil {
-		return nil, err
+	entries := make([]genesis.GenesisValidatorEntry, cfg.Validators)
+	for i := range entries {
+		attestation, proposal := cryptoProvider.PublicKeys(uint64(i))
+		entries[i] = genesis.GenesisValidatorEntry{
+			AttestationPubkey: hex.EncodeToString(attestation[:]),
+			ProposalPubkey:    hex.EncodeToString(proposal[:]),
+		}
 	}
 	aggregators := make(map[int]bool, len(cfg.Aggregators))
 	for _, i := range cfg.Aggregators {
 		aggregators[i] = true
 	}
 
-	c := &Cluster{clock: Clock{now: time.Unix(int64(cfg.GenesisTime), 0)}}
-	owned := make(map[uint64]bool)
+	c := &Cluster{clock: Clock{now: time.Unix(int64(cfg.GenesisTime), 0)}, crypto: cryptoProvider}
 	for i, validators := range cfg.Nodes {
-		nodeAtt := make(map[uint64]*xmss.ValidatorKeyPair, len(validators))
-		nodeProp := make(map[uint64]*xmss.ValidatorKeyPair, len(validators))
-		for _, id := range validators {
-			nodeAtt[id], nodeProp[id] = attKeys[id], propKeys[id]
-		}
-		n, err := c.newNode(i, cfg, entries, nodeAtt, nodeProp, aggregators[i])
+		n, err := c.newNode(i, cfg, entries, validators, aggregators[i])
 		if err != nil {
 			c.Close()
-			closeKeys(attKeys, propKeys, owned)
 			return nil, fmt.Errorf("node %d: %w", i, err)
-		}
-		for _, id := range validators {
-			owned[id] = true
 		}
 		c.nodes = append(c.nodes, n)
 	}
-	closeKeys(attKeys, propKeys, owned)
 
 	for _, n := range c.nodes {
 		n.Engine.Tick(ctx)
@@ -118,7 +126,7 @@ func (cfg Config) validate() error {
 	return nil
 }
 
-func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValidatorEntry, attKeys, propKeys map[uint64]*xmss.ValidatorKeyPair, aggregator bool) (*Node, error) {
+func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValidatorEntry, validators []uint64, aggregator bool) (*Node, error) {
 	gc := &genesis.GenesisConfig{GenesisTime: cfg.GenesisTime, GenesisValidators: entries}
 	genesisState, err := gc.GenesisState()
 	if err != nil {
@@ -139,19 +147,19 @@ func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValida
 		return nil, err
 	}
 
-	n := &Node{Store: s, Aggregator: role.New(aggregator), pubKeys: xmss.NewPubKeyCache()}
-	if len(attKeys) > 0 {
-		n.keys = xmss.NewKeyManager(attKeys, propKeys)
-	}
-	n.Engine = node.New(node.Components{
+	n := &Node{Store: s, Aggregator: role.New(aggregator)}
+	components := node.Components{
 		Store:      s,
 		ForkChoice: fc,
 		Network:    &network{cluster: c, self: index},
-		Keys:       n.keys,
-		PubKeys:    n.pubKeys,
+		Crypto:     c.crypto.Scheme(),
 		Aggregator: n.Aggregator,
 		Clock:      &c.clock,
-	}, node.Config{CommitteeCount: types.AttestationCommitteeCount})
+	}
+	if len(validators) > 0 {
+		components.Keys = c.crypto.Signer(validators)
+	}
+	n.Engine = node.New(components, node.Config{CommitteeCount: types.AttestationCommitteeCount})
 	return n, nil
 }
 
@@ -197,61 +205,7 @@ func (c *Cluster) settle(ctx context.Context) {
 	}
 }
 
-// Close releases every node's keys and native caches.
+// Close releases the cluster's scheme and keys.
 func (c *Cluster) Close() {
-	for _, n := range c.nodes {
-		n.keys.Close()
-		n.pubKeys.Close()
-	}
-}
-
-// validatorKeys derives each validator's attestation and proposal keys from
-// its index and returns them with their genesis entries.
-func validatorKeys(count int) (att, prop map[uint64]*xmss.ValidatorKeyPair, entries []genesis.GenesisValidatorEntry, err error) {
-	att = make(map[uint64]*xmss.ValidatorKeyPair, count)
-	prop = make(map[uint64]*xmss.ValidatorKeyPair, count)
-	for i := range uint64(count) {
-		attKey, attHex, err := keyPair(fmt.Sprintf("gean-sim-validator-%d-attestation", i), i)
-		if err != nil {
-			closeKeys(att, prop, nil)
-			return nil, nil, nil, err
-		}
-		att[i] = attKey
-		propKey, propHex, err := keyPair(fmt.Sprintf("gean-sim-validator-%d-proposal", i), i)
-		if err != nil {
-			closeKeys(att, prop, nil)
-			return nil, nil, nil, err
-		}
-		prop[i] = propKey
-		entries = append(entries, genesis.GenesisValidatorEntry{AttestationPubkey: attHex, ProposalPubkey: propHex})
-	}
-	return att, prop, entries, nil
-}
-
-func keyPair(seed string, index uint64) (*xmss.ValidatorKeyPair, string, error) {
-	kp, err := xmss.GenerateKeyPair(seed, 0, keyLifetime)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate key %s: %w", seed, err)
-	}
-	kp.Index = index
-	pk, err := kp.PublicKeyBytes()
-	if err != nil {
-		kp.Close()
-		return nil, "", fmt.Errorf("public key %s: %w", seed, err)
-	}
-	return kp, hex.EncodeToString(pk[:]), nil
-}
-
-// closeKeys closes the generated keys no node took ownership of.
-func closeKeys(att, prop map[uint64]*xmss.ValidatorKeyPair, owned map[uint64]bool) {
-	for id, kp := range att {
-		if !owned[id] {
-			kp.Close()
-		}
-	}
-	for id, kp := range prop {
-		if !owned[id] {
-			kp.Close()
-		}
-	}
+	c.crypto.Close()
 }

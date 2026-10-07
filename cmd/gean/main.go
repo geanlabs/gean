@@ -108,14 +108,14 @@ func run(cfg config) error {
 		VerifySignature:            cfg.ShadowVerifySignatureRate,
 		VerifyAggregatedSignatures: cfg.ShadowVerifyAggregatedSignaturesRate,
 	}
-	pubKeys := xmss.NewPubKeyCache()
-	defer pubKeys.Close()
+	scheme := xmss.NewScheme()
+	defer scheme.Close()
 	n := node.New(node.Components{
 		Store:      s,
 		ForkChoice: fc,
 		Network:    p2pHost,
 		Keys:       inputs.keyManager,
-		PubKeys:    pubKeys,
+		Crypto:     scheme,
 		Aggregator: aggCtl,
 		Clock:      node.SystemClock{},
 	}, node.Config{
@@ -126,12 +126,12 @@ func run(cfg config) error {
 
 	// services owns the engine, sync driver and HTTP servers. Each returns only
 	// after its own work has finished, so once services.Wait returns the
-	// deferred closes can run: the pubkey cache, the p2p host (which joins its
+	// deferred closes can run: the signature scheme, the p2p host (which joins its
 	// handlers), storage, then the keys.
 	var services tasks.Group
 	startNodeNetworking(ctx, &services, n, s, p2pHost, inputs.bootnodes)
 
-	apiAddr, metricsAddr := startHTTPServers(ctx, &services, cfg, s, n.ForkChoiceView, aggCtl)
+	apiAddr, metricsAddr := startHTTPServers(ctx, &services, cfg, s, n.ForkChoiceView, aggCtl, scheme)
 	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", apiAddr, metricsAddr, cfg.IsAggregator)
 
 	waitForShutdown(cancel)

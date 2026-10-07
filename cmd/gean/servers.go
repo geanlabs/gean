@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/geanlabs/gean/api"
+	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/role"
@@ -11,12 +12,12 @@ import (
 	"github.com/geanlabs/gean/tasks"
 )
 
-func startHTTPServers(ctx context.Context, services *tasks.Group, cfg config, s *store.ConsensusStore, forkChoiceView func() *forkchoice.View, aggCtl *role.Controller) (string, string) {
+func startHTTPServers(ctx context.Context, services *tasks.Group, cfg config, s *store.ConsensusStore, forkChoiceView func() *forkchoice.View, aggCtl *role.Controller, scheme crypto.Scheme) (string, string) {
 	apiAddr := cfg.apiAddress()
 	metricsAddr := cfg.metricsAddress()
 
 	services.Go(func() {
-		if err := api.Serve(ctx, "api", apiAddr, apiHandler(s, forkChoiceView, aggCtl)); err != nil {
+		if err := api.Serve(ctx, "api", apiAddr, apiHandler(s, forkChoiceView, aggCtl, scheme)); err != nil {
 			logger.Error(logger.Node, "api server error: %v", err)
 		}
 	})
