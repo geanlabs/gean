@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/attestation"
-	"github.com/geanlabs/gean/internal/blockprocessor"
-	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/attestation"
+	"github.com/geanlabs/gean/blockprocessor"
+	"github.com/geanlabs/gean/db"
+	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/types"
 )
 
 type fcFixture map[string]fcTest
@@ -366,7 +366,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	}
 
 	// 2. Initialize store with in-memory backend.
-	backend := storage.NewInMemoryBackend()
+	backend := db.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 
 	// Store config from anchor state.

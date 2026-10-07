@@ -16,13 +16,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/api"
-	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/genesis"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/api"
+	"github.com/geanlabs/gean/db"
+	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/genesis"
+	"github.com/geanlabs/gean/role"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/types"
 )
 
 // Spec fixture directory for api endpoint tests.
@@ -121,7 +121,7 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 	}
 
 	// Seed store + fork choice from the genesis state.
-	backend := storage.NewInMemoryBackend()
+	backend := db.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 	s.SetConfig(state.Config)
 

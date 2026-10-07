@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 func TestParseHexRootRejectsTooLongInput(t *testing.T) {

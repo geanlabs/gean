@@ -13,7 +13,7 @@ fi
 
 # Hard-skip patterns from references/dont-touch.md. Read via ENVIRON so awk
 # does not process the backslashes.
-export SKIP='(_encoding\.go$|^xmss/rust/|\.py$|^internal/specfixtures/|^internal/spectests/fixture\.go$|^vendor/|^third_party/|^external/)'
+export SKIP='(_encoding\.go$|^crypto/xmss/rust/|\.py$|^internal/specfixtures/|^internal/spectests/fixture\.go$|^vendor/|^third_party/|^external/)'
 
 # Rows: source<TAB>added<TAB>removed<TAB>path. --no-renames lists a rename as
 # delete + add, so the path is always the fourth tab-separated field.

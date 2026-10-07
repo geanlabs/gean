@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/crypto/xmss"
 )
 
 // Single-message (Type-1) proof fixtures.

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 func loadOrGenerate(opts options, keysDir, manifestPath string) (manifest, bool, error) {

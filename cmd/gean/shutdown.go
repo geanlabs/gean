@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/logger"
 )
 
 func waitForShutdown(cancel context.CancelFunc) {

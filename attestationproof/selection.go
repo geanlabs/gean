@@ -1,0 +1,146 @@
+package attestationproof
+
+import (
+	"fmt"
+
+	"github.com/geanlabs/gean/types"
+)
+
+func Select(
+	data *types.AttestationData,
+	proofs []*types.SingleMessageAggregate,
+	state *types.State,
+	merger MergeProvider,
+) (*types.AggregatedAttestation, *types.SingleMessageAggregate, bool, error) {
+	if data == nil {
+		return nil, nil, false, nil
+	}
+
+	selected := selectProofs(proofs)
+	if len(selected) == 0 {
+		return nil, nil, false, ErrNoUsableProofs
+	}
+
+	if len(selected) == 1 {
+		return attestationForProof(data, selected[0]), copyProof(selected[0]), true, nil
+	}
+
+	if merger == nil {
+		return fallbackSelection(data, selected[0], ErrMergeUnavailable)
+	}
+
+	merged, err := merger.Merge(selected, data, state)
+	if err != nil {
+		return fallbackSelection(data, selected[0], fmt.Errorf("merge proofs: %w", err))
+	}
+	if !validProof(merged) {
+		return fallbackSelection(data, selected[0], ErrMergeUnavailable)
+	}
+	return attestationForProof(data, merged), copyProof(merged), true, nil
+}
+
+func fallbackSelection(
+	data *types.AttestationData,
+	proof *types.SingleMessageAggregate,
+	err error,
+) (*types.AggregatedAttestation, *types.SingleMessageAggregate, bool, error) {
+	return attestationForProof(data, proof), copyProof(proof), true, err
+}
+
+// maxMergedProofs bounds how many proofs one proposal merges. Merge builds a
+// proof from children alone, with no raw signatures to anchor it, so every proof
+// selected here is a recursive input and the merge is the most expensive shape
+// the prover handles. It also runs on the proposal path holding the proving gate
+// at priority, where an overrun delays the block itself.
+//
+// Two matches the cap aggregation applies to a group. Beyond that the marginal
+// coverage a third proof adds is not worth another recursive input.
+const maxMergedProofs = 2
+
+func selectProofs(proofs []*types.SingleMessageAggregate) []*types.SingleMessageAggregate {
+	proofs = usableProofs(proofs)
+	covered := make(map[uint64]bool)
+	remaining := make([]bool, len(proofs))
+	for i := range remaining {
+		remaining[i] = true
+	}
+
+	var selected []*types.SingleMessageAggregate
+	for len(selected) < maxMergedProofs {
+		bestIdx := -1
+		bestNew := 0
+		for idx, proof := range proofs {
+			if !remaining[idx] {
+				continue
+			}
+			if hasCoveredParticipant(proof.Participants, covered) {
+				continue
+			}
+			newCount := countNewCoverage(proof.Participants, covered)
+			if newCount > bestNew {
+				bestIdx = idx
+				bestNew = newCount
+			}
+		}
+
+		if bestIdx < 0 || bestNew == 0 {
+			break
+		}
+
+		proof := proofs[bestIdx]
+		selected = append(selected, proof)
+		remaining[bestIdx] = false
+		markParticipants(proof.Participants, covered)
+	}
+	return selected
+}
+
+func usableProofs(proofs []*types.SingleMessageAggregate) []*types.SingleMessageAggregate {
+	usable := make([]*types.SingleMessageAggregate, 0, len(proofs))
+	for _, proof := range proofs {
+		if validProof(proof) {
+			usable = append(usable, proof)
+		}
+	}
+	return usable
+}
+
+func attestationForProof(data *types.AttestationData, proof *types.SingleMessageAggregate) *types.AggregatedAttestation {
+	return &types.AggregatedAttestation{
+		AggregationBits: copyBytes(proof.Participants),
+		Data:            copyAttestationData(data),
+	}
+}
+
+func countNewCoverage(bits []byte, covered map[uint64]bool) int {
+	count := 0
+	for vid := range types.BitlistLen(bits) {
+		if types.BitlistGet(bits, vid) && !covered[vid] {
+			count++
+		}
+	}
+	return count
+}
+
+func hasCoveredParticipant(bits []byte, covered map[uint64]bool) bool {
+	for vid := range types.BitlistLen(bits) {
+		if types.BitlistGet(bits, vid) && covered[vid] {
+			return true
+		}
+	}
+	return false
+}
+
+func markParticipants(bits []byte, covered map[uint64]bool) {
+	for vid := range types.BitlistLen(bits) {
+		if types.BitlistGet(bits, vid) {
+			covered[vid] = true
+		}
+	}
+}
+
+func validProof(proof *types.SingleMessageAggregate) bool {
+	return proof != nil &&
+		len(proof.Proof) > 0 &&
+		types.BitlistCount(proof.Participants) > 0
+}

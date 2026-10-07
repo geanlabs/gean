@@ -15,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Rust FFI dependencies first for better caching
-COPY xmss/rust/ xmss/rust/
+COPY crypto/xmss/rust/ crypto/xmss/rust/
 
 # Detect the build-stage architecture: legacy builders do not populate TARGETARCH.
 # Match make ffi's Haswell/AVX2 baseline on x86_64; leave arm64 flags unchanged.
-RUN cd xmss/rust && \
+RUN cd crypto/xmss/rust && \
     if [ "$(uname -m)" = "x86_64" ]; then \
       CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked; \
     else \
@@ -48,7 +48,7 @@ COPY . .
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 RUN mkdir -p bin && \
-    go build -tags hive_testdriver -ldflags "-X github.com/geanlabs/gean/internal/node.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean && \
+    go build -tags hive_testdriver -ldflags "-X github.com/geanlabs/gean/node.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean && \
     go build -o bin/keygen ./cmd/keygen
 
 # Runtime stage

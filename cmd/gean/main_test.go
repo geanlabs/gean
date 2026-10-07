@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/db"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/types"
 )
 
 func TestMain(m *testing.M) {
@@ -18,7 +18,7 @@ func TestMain(m *testing.M) {
 }
 
 func newTestStore() *store.ConsensusStore {
-	return store.NewConsensusStore(storage.NewInMemoryBackend())
+	return store.NewConsensusStore(db.NewInMemoryBackend())
 }
 
 func TestRecoverStoreTime_PostGenesis(t *testing.T) {
@@ -142,15 +142,15 @@ var errTestWriteFailed = errors.New("write failed")
 
 type failingWriteBackend struct{}
 
-func (failingWriteBackend) BeginRead() (storage.ReadView, error) {
+func (failingWriteBackend) BeginRead() (db.ReadView, error) {
 	return nil, errTestWriteFailed
 }
 
-func (failingWriteBackend) BeginWrite() (storage.WriteBatch, error) {
+func (failingWriteBackend) BeginWrite() (db.WriteBatch, error) {
 	return nil, errTestWriteFailed
 }
 
-func (failingWriteBackend) EstimateTableBytes(storage.Table) uint64 {
+func (failingWriteBackend) EstimateTableBytes(db.Table) uint64 {
 	return 0
 }
 

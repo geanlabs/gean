@@ -1,0 +1,269 @@
+package node
+
+import (
+	"time"
+
+	"github.com/geanlabs/gean/aggregation"
+	"github.com/geanlabs/gean/metrics"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/types"
+)
+
+// aggregationDeadlineOffset is how far into a slot an aggregation session must
+// be finished: the interval-4 boundary, where new payloads are promoted to
+// known and gossiped. Anything still proving past it misses the promotion it
+// was produced for.
+const aggregationDeadlineOffset = 4 * types.MillisecondsPerInterval
+
+func (e *Engine) onTick() {
+	now := time.Now()
+	firstTick := e.lastTick.IsZero()
+	if !firstTick {
+		metrics.ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
+	}
+	e.lastTick = now
+	e.lastTickMs.Store(now.UnixMilli())
+
+	timestampMs := uint64(now.UnixMilli())
+
+	currentSlot := e.currentSlot(timestampMs)
+	currentInterval := e.currentInterval(timestampMs)
+
+	metrics.SetCurrentSlot(currentSlot)
+	e.updateSyncStatus(currentSlot)
+
+	isAgg := e.AggCtl != nil && e.AggCtl.Get()
+
+	hasProposal := false
+	var proposerValidatorID uint64
+	if currentInterval == 0 && currentSlot > 0 && !firstTick {
+		proposerValidatorID, hasProposal = e.getOurProposer(currentSlot)
+	}
+
+	// Capture before OnTick promotes new payloads into known, so the timely
+	// section reflects what had arrived by the promotion boundary.
+	if snap := snapshotNewPayloadParticipants(e.Store); snap != nil {
+		e.coveragePreMerge = snap
+	}
+
+	store.OnTick(e.Store, timestampMs, hasProposal)
+
+	if currentInterval == 2 {
+		e.reportAggStartNewCoverage()
+		// Dispatch unconditionally, matching leanSpec's interval-2 aggregation:
+		// a sole aggregator that also proposes next would otherwise never
+		// aggregate at all. The proving gate's proposal priority only defers
+		// next proof attempt. The session yields between proofs when a proposal
+		// is waiting, but a native proof already running cannot be interrupted.
+		e.dispatchAggregationCycle(timestampMs, currentSlot, isAgg)
+	}
+
+	if currentInterval == 0 || currentInterval == 4 {
+		e.updateHead()
+	}
+
+	if hasProposal {
+		e.maybePropose(currentSlot, proposerValidatorID)
+	}
+
+	if currentInterval == 1 {
+		e.runAttestationInterval(currentSlot)
+	}
+
+	if currentInterval == 3 {
+		e.updateSafeTarget()
+		finalizedSlot := e.Store.LatestFinalized().Slot
+		store.PruneStaleAttestationPools(e.Store, e.Store.HeadSlot(), finalizedSlot)
+		store.PeriodicPrune(e.Store, e.FC, currentSlot, finalizedSlot)
+	}
+}
+
+func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregator bool) {
+	if !isAggregator {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipNotAggregator)
+		return
+	}
+	// Dispatch at most once per slot: the early attestation-arrival path and the
+	// interval-2 fallback both route here, and the recursive proof is far too
+	// expensive to run twice for the same slot.
+	if currentSlot == e.aggregatedSlot {
+		return
+	}
+	// Aggregation is deliberately NOT behind the sync-lag duty gate, unlike block
+	// production and attestation.
+	//
+	// gean used to gate it, reasoning that aggregates built on a stale view get
+	// dropped anyway. That holds with several aggregators. It inverts with one:
+	// the sole aggregator withholds the aggregates the network is waiting on at
+	// exactly the moment it is furthest behind, so nothing justifies, nothing
+	// finalizes, finalization pruning never runs, and the lag that closed the
+	// gate gets worse. Observed on devnet-5 as not_synced climbing to ~4,100 per
+	// node with justification frozen; stopping two lagging nodes advanced
+	// justification 1,520 slots in five minutes.
+	//
+	// The spec agrees: leanSpec timeline.py gates interval 2 on `is_aggregator`
+	// alone. Gating it on anything else is gean's own addition, and the paragraph
+	// above is why it has to go.
+	//
+	// The work is bounded without the gate: a session has a slot-anchored
+	// deadline and MaxGroupsPerSession, so an aggregate built on a stale view
+	// costs one bounded proving budget and is dropped by peers — strictly better
+	// than not producing one at all.
+	if e.Store.AttestationSignatures.Len() == 0 && e.Store.NewPayloads.Len() == 0 {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
+		return
+	}
+	headState := e.Store.GetState(e.Store.Head())
+	if headState == nil {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipMissingState)
+		return
+	}
+
+	snap := aggregation.SnapshotInputs(e.Store, headState, currentSlot)
+	if snap == nil {
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
+		return
+	}
+	// A session holds the proving gate until it finishes, so a proposal duty
+	// next slot waits on it however the gate's priority flag is set. Prove one
+	// group in that case and leave the rest for the following session.
+	maxGroups := aggregation.MaxGroupsPerSession
+	if e.proposingAt(currentSlot+1, headState.NumValidators()) {
+		maxGroups = aggregation.MaxGroupsWhenProposing
+	}
+	select {
+	case e.AggregationDispatchCh <- aggregation.Dispatch{
+		Snapshot:  snap,
+		Slot:      currentSlot,
+		MaxGroups: maxGroups,
+		Deadline:  e.aggregationDeadline(nowMs),
+	}:
+		e.aggregatedSlot = currentSlot
+		metrics.SetProvingQueueDepth("aggregation", len(e.AggregationDispatchCh))
+	default:
+		metrics.IncAggregationDispatchDropped()
+		metrics.IncAggregatorSkipped(metrics.AggregatorSkipSpawnFailed)
+	}
+}
+
+// aggregationDeadline is the wall-clock instant a session dispatched now must
+// stop by: this slot's interval-4 boundary. Measuring a fixed span from when
+// the worker starts instead gives the early-interval-1 path a deadline earlier
+// than the boundary, taking back most of the head start that path exists to
+// create, and lets time spent waiting on the proving gate extend the session
+// past the promotion it was produced for rather than come out of its window.
+func (e *Engine) aggregationDeadline(nowMs uint64) time.Time {
+	intoSlot := e.millisIntoSlot(nowMs)
+	// Dispatch only runs at intervals 1 and 2, so a slot position at or past the
+	// boundary is unreachable in practice. Handle it before subtracting: these
+	// are unsigned milliseconds, so the difference would wrap rather than go
+	// negative. Hand back a usable window instead of an expired deadline, which
+	// the worker reads as "stop before the first group".
+	if intoSlot >= aggregationDeadlineOffset {
+		return time.UnixMilli(int64(nowMs)).Add(types.MillisecondsPerInterval * time.Millisecond)
+	}
+	window := time.Duration(aggregationDeadlineOffset-intoSlot) * time.Millisecond
+	// Anchored to the tick's own timestamp rather than a fresh clock read, so
+	// the deadline is the slot boundary itself and does not drift by however
+	// long the tick took to reach here.
+	return time.UnixMilli(int64(nowMs)).Add(window)
+}
+
+// maybeEarlyAggregate starts the aggregation session in late interval 1, once this
+// slot's votes have reached quorum — a partial-interval lead ahead of the interval-2
+// fallback — so the slow recursive proof gets a head start toward finishing inside
+// its budget instead of racing the interval boundary and truncating. Gating on the
+// slot's own vote count rather than a wall-clock lead keeps the timing tied to the
+// slot model. It only moves *when the proving starts*: the aggregate still covers
+// same-slot attestations and is gossiped within the slot, so it is spec-neutral.
+// dispatchAggregationCycle enforces the once-per-slot guard shared with the
+// interval-2 fallback.
+func (e *Engine) maybeEarlyAggregate(nowMs uint64) {
+	isAgg := e.AggCtl != nil && e.AggCtl.Get()
+	if !isAgg || e.currentInterval(nowMs) != 1 {
+		return
+	}
+	slot := e.currentSlot(nowMs)
+	if slot == e.aggregatedSlot {
+		return
+	}
+	// Validator set is fixed at genesis in lean devnet, so decode the head state
+	// once and cache the count rather than on every arrival.
+	if e.numValidators == 0 {
+		headState := e.Store.GetState(e.Store.Head())
+		if headState == nil {
+			return
+		}
+		e.numValidators = headState.NumValidators()
+		if e.numValidators == 0 {
+			return
+		}
+	}
+	// Only pull the session forward once a finalizing supermajority of *this slot's*
+	// votes is already collected. The count must be scoped to the current slot: a
+	// cross-slot backlog would satisfy the threshold at the very start of interval 1,
+	// before the slot's own attestations have propagated, and bundling then starves
+	// justification. Scoped to the slot, the threshold is reached only in late
+	// interval 1 once votes are in — a modest proving lead that still carries
+	// decisive weight, with the interval-2 dispatch as the fallback below quorum.
+	if e.Store.AttestationSignatures.SignatureCountForSlot(slot) < earlyAggregationQuorum(e.expectedVotersPerSlot()) {
+		return
+	}
+	e.dispatchAggregationCycle(nowMs, slot, isAgg)
+}
+
+// earlyAggregationQuorum is the 3SF supermajority ceil(2n/3) — the same threshold
+// the fork choice uses for justification. At that many collected votes an early
+// aggregate already carries finalizing weight, so proving it ahead of interval 2
+// is worthwhile.
+func earlyAggregationQuorum(voters uint64) int {
+	return int((2*voters + 2) / 3)
+}
+
+// expectedVotersPerSlot is how many validators this node can expect to hear from
+// in a slot: those assigned to the subnets it subscribes to. A validator votes on
+// subnet index % CommitteeCount, and the node only receives the subnets it joined.
+//
+// Measuring the quorum against the whole registry instead makes it unreachable
+// for any aggregator covering a subset of subnets, so the early path never fires
+// and the head start it exists to give is never taken. With one committee, or an
+// aggregator subscribed to every subnet, this is the whole registry as before.
+func (e *Engine) expectedVotersPerSlot() uint64 {
+	// Read once per verified attestation, so it is cached rather than recounted.
+	// The validator set is fixed at genesis in lean devnet and the subnet
+	// subscription is fixed at startup, so the answer cannot change.
+	if e.expectedVoters != 0 {
+		return e.expectedVoters
+	}
+	total := e.numValidators
+	committees := e.CommitteeCount
+	if committees <= 1 || len(e.AggregateSubnetIDs) == 0 || uint64(len(e.AggregateSubnetIDs)) >= committees {
+		e.expectedVoters = total
+		return total
+	}
+	subscribed := make(map[uint64]bool, len(e.AggregateSubnetIDs))
+	for _, id := range e.AggregateSubnetIDs {
+		subscribed[id] = true
+	}
+	var voters uint64
+	for vid := range total {
+		if subscribed[vid%committees] {
+			voters++
+		}
+	}
+	e.expectedVoters = voters
+	return voters
+}
+
+func (e *Engine) runAttestationInterval(currentSlot uint64) {
+	e.drainPendingBlocks()
+	e.updateHead()
+	e.produceAttestations(currentSlot)
+	// Report the previous round: by now the head normally carries the block
+	// proposed at currentSlot, which is the first block able to include votes
+	// for currentSlot-1.
+	if currentSlot > 0 {
+		e.reportPostBlockCoverage(currentSlot - 1)
+	}
+	e.logChainStatus(currentSlot)
+}

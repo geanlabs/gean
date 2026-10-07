@@ -6,13 +6,13 @@ import (
 	"flag"
 	"os"
 
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/metrics"
-	"github.com/geanlabs/gean/internal/node"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/shadow"
-	"github.com/geanlabs/gean/internal/tasks"
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
+	"github.com/geanlabs/gean/node"
+	"github.com/geanlabs/gean/role"
+	"github.com/geanlabs/gean/shadow"
+	"github.com/geanlabs/gean/tasks"
 )
 
 func main() {

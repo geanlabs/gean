@@ -31,8 +31,8 @@ expect() {
 
 new_repo excluded
 git -C "$TMP/excluded" checkout -q -b feat
-mkdir -p "$TMP/excluded/internal/types"
-echo x >"$TMP/excluded/internal/types/foo_encoding.go"
+mkdir -p "$TMP/excluded/types"
+echo x >"$TMP/excluded/types/foo_encoding.go"
 git -C "$TMP/excluded" add . && git -C "$TMP/excluded" commit -q -m gen
 expect "all-excluded diff" "$TMP/excluded" "Nothing to review"
 

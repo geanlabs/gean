@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/db"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/types"
 )
 
-func openStore(dataDir string) (*storage.PebbleBackend, *store.ConsensusStore, error) {
+func openStore(dataDir string) (*db.PebbleBackend, *store.ConsensusStore, error) {
 	absDataDir, err := filepath.Abs(dataDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve data dir: %w", err)
@@ -22,7 +22,7 @@ func openStore(dataDir string) (*storage.PebbleBackend, *store.ConsensusStore, e
 	}
 	logger.Info(logger.Node, "storage: %s", absDataDir)
 
-	backend, err := storage.NewPebbleBackend(absDataDir)
+	backend, err := db.NewPebbleBackend(absDataDir)
 	if err != nil {
 		return nil, nil, err
 	}

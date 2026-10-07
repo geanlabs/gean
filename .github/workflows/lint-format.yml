@@ -60,19 +60,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/rust/target
-          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
+            crypto/xmss/rust/target
+          key: cargo-lint-${{ runner.os }}-${{ hashFiles('crypto/xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-lint-${{ runner.os }}-
 
       - name: Check Rust formatting
-        working-directory: xmss/rust
+        working-directory: crypto/xmss/rust
         run: |
           rustup component add --toolchain 1.92.0-x86_64-unknown-linux-gnu rustfmt
           cargo fmt --check
 
       - name: Run Clippy
-        working-directory: xmss/rust
+        working-directory: crypto/xmss/rust
         run: |
           rustup component add --toolchain 1.92.0-x86_64-unknown-linux-gnu clippy
           cargo clippy -- -D warnings -A clippy::missing_safety_doc

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 var errInvalidConfig = errors.New("invalid gean configuration")

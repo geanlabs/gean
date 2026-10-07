@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // Sync fixtures cover the spec's verify_checkpoint_state operation. Each

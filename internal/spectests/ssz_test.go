@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // Spec fixture roots for SSZ conformance tests. Each directory holds fixtures

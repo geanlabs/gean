@@ -31,7 +31,7 @@ Simplicity and minimalism are our core values: code should be easy to read and u
   backward compatible with. Do not add fallback implementations, legacy code paths, compatibility shims,
   data migrations, or retries that mask a failure. Fail loudly and fix the cause. Not fallbacks:
   leanSpec-defined paths such as interval-2 aggregation, and bounded retries of transient failures where
-  repeating is safe and exhaustion returns the error (e.g. `internal/checkpoint`, peer retries).
+  repeating is safe and exhaustion returns the error (e.g. `checkpoint`, peer retries).
 - No defensive filler: no nil checks or defaults for impossible cases; never swallow errors.
 - Prove a case is unreachable before removing its guard. Trace input boundaries, callers, and state
   construction; do not assume an invariant from a type or a successful lookup alone.
@@ -68,19 +68,19 @@ make lint
 make test
 make test-ffi
 make test-spec
-go test ./internal/node -run TestName -v -count=1
+go test ./node -run TestName -v -count=1
 ```
 
 ## Architecture
 
 - `cmd/gean/`, `cmd/keygen/`: node binary and testnet/key generation.
-- `internal/node/`: engine, tick-driven duties (`tick.go`), event dispatch, and workers.
-- `internal/statetransition/`, `internal/forkchoice/`, `internal/types/`: spec logic, LMD-GHOST, and SSZ types.
-- `internal/blockprocessor/`, `internal/blockbuilder/`, `internal/attestation/`, `internal/aggregation/`,
-  `internal/proving/`: block import, proposal, attestations, and XMSS proof work.
-- `internal/store/`, `internal/storage/`: consensus store on Pebble (in-memory for tests).
-- `internal/p2p/`, `internal/syncer/`, `internal/pending/`, `internal/checkpoint/`: networking and sync.
-- `xmss/`, `xmss/rust/`: post-quantum XMSS signatures; Go bindings over Rust FFI crates.
+- `node/`: engine, tick-driven duties (`tick.go`), event dispatch, and workers.
+- `statetransition/`, `forkchoice/`, `types/`: spec logic, LMD-GHOST, and SSZ types.
+- `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`,
+  `proving/`: block import, proposal, attestations, and XMSS proof work.
+- `store/`, `db/`: consensus store on Pebble (in-memory for tests).
+- `p2p/`, `syncer/`, `pending/`, `checkpoint/`: networking and sync.
+- `crypto/xmss/`, `crypto/xmss/rust/`: post-quantum XMSS signatures; Go bindings over Rust FFI crates.
 
 ## Testing
 
@@ -105,7 +105,7 @@ when the right resolution of a conflict is unclear.
 ## Notes
 
 - **FFI**: Run `make ffi` before direct `go test`/`go vet`; `make test` and `make lint` do not build it.
-- **Testing**: Run `make test-ffi` for `xmss/` changes, `make test-spec` for consensus or SSZ changes, and
+- **Testing**: Run `make test-ffi` for `crypto/xmss/` changes, `make test-spec` for consensus or SSZ changes, and
   `go test -race` for concurrency changes. Use fuzz tests for SSZ and wire decoding.
 - **Spec**: leanSpec pinned at `LEAN_SPEC_COMMIT_HASH` in the Makefile is the source of truth; do not bump it silently.
 - **Tick loop**: Keep proving and blocking FFI work off `Engine.onTick`; hand it to a worker. Preserve the
@@ -113,11 +113,11 @@ when the right resolution of a conflict is unclear.
 - **Aggregation**: Interval 2 is the fallback; `maybeEarlyAggregate` may start it in interval 1 at quorum.
   It runs once per slot and is deliberately not behind the sync-lag duty gate.
 - **Fork choice**: `ForkChoice.Prune` must remap vote indices together with pruning nodes.
-- **Storage**: For `internal/store` or `internal/storage` changes, check write ordering and what a crash
+- **Storage**: For `store` or `db` changes, check write ordering and what a crash
   mid-write leaves on restart.
-- **Logging and metrics**: Use `internal/logger` component constants with `key=value` fields and `0x%x`
-  roots. Add metrics in `internal/metrics` with the `lean_` prefix.
-- **Generated code**: Do not edit `internal/types/*_encoding.go`; run `make sszgen`.
+- **Logging and metrics**: Use `logger` component constants with `key=value` fields and `0x%x`
+  roots. Add metrics in `metrics` with the `lean_` prefix.
+- **Generated code**: Do not edit `types/*_encoding.go`; run `make sszgen`.
   When SSZ definitions change, inspect the regenerated diff and verify that a second run produces no
   further changes. Keep generator upgrades separate unless required by the task.
 - **Build info**: `gitCommit` is injected via `-ldflags`; do not hardcode it.

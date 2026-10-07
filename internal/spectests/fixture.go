@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/geanlabs/gean/internal/specfixtures"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 type TestFixture map[string]StateTransitionTest

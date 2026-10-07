@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/geanlabs/gean/internal/api"
-	"github.com/geanlabs/gean/internal/api/testdriver"
-	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/store"
+	"github.com/geanlabs/gean/api"
+	"github.com/geanlabs/gean/api/testdriver"
+	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/role"
+	"github.com/geanlabs/gean/store"
 )
 
 func apiHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) http.Handler {

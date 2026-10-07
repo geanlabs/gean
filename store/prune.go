@@ -1,0 +1,216 @@
+package store
+
+import (
+	"github.com/geanlabs/gean/db"
+	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/logger"
+)
+
+const (
+	PruningIntervalSlots = 7200
+
+	// AttestationRetentionSlots is how far below the head the attestation-keyed
+	// pools are kept once finalization stops advancing. Roughly an hour at
+	// 4-second slots: long enough that a brief finality gap costs nothing, short
+	// enough that a sustained stall does not grow the pools without limit.
+	AttestationRetentionSlots = 1024
+)
+
+func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinalizedSlot, newFinalizedSlot uint64, newFinalizedRoot [32]byte) {
+	if s == nil || s.Backend == nil || fc == nil {
+		return
+	}
+	if newFinalizedSlot <= oldFinalizedSlot {
+		return
+	}
+
+	canonical, nonCanonical := fc.GetCanonicalAnalysis(newFinalizedRoot)
+
+	prunedStates := pruneStatesByRoots(s, nonCanonical)
+	prunedBlocks := pruneBlocksByRoots(s, nonCanonical)
+
+	if len(canonical) > 1 {
+		prunedStates += pruneStatesByRoots(s, canonical[1:])
+	}
+
+	prunedChain := pruneLiveChain(s, newFinalizedSlot)
+
+	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
+	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
+	prunedNew := s.NewPayloads.PruneBelow(newFinalizedSlot)
+
+	logger.Info(logger.Store, "pruning: finalized_slot=%d states=%d blocks=%d live_chain=%d gossip_sigs=%d payloads=%d non_canonical=%d",
+		newFinalizedSlot, prunedStates, prunedBlocks, prunedChain, prunedSigs,
+		prunedKnown+prunedNew, len(nonCanonical))
+}
+
+// PruneStaleAttestationPools clears the attestation-keyed pools against a
+// head-relative cutoff instead of the finalized slot.
+//
+// PruneOnFinalization is the only other path that touches these three pools, and
+// it runs on finalization alone. PeriodicPrune, the existing stall fallback,
+// prunes non-canonical states and blocks and none of the pools, needs
+// finalization to be more than two pruning intervals behind, and fires only on
+// exact multiples of that interval. So the one situation that makes the pools
+// grow without limit is also the one that switches off everything that empties
+// them.
+//
+// Below the finalized slot this is a no-op: PruneOnFinalization already covers
+// that range, and a cutoff at or under it would only repeat work.
+func PruneStaleAttestationPools(s *ConsensusStore, headSlot, finalizedSlot uint64) {
+	if s == nil || headSlot <= AttestationRetentionSlots {
+		return
+	}
+	cutoff := headSlot - AttestationRetentionSlots
+	if cutoff <= finalizedSlot {
+		return
+	}
+
+	// All three pools key on the same target slot, so a data root leaves them
+	// together and the order here does not matter.
+	prunedSigs := s.AttestationSignatures.PruneStaleBelow(cutoff)
+	prunedKnown := s.KnownPayloads.PruneStaleBelow(cutoff)
+	prunedNew := s.NewPayloads.PruneStaleBelow(cutoff)
+
+	if prunedSigs+prunedKnown+prunedNew == 0 {
+		return
+	}
+	logger.Warn(logger.Store, "finalization lagging, pruned stale attestation pools: cutoff=%d head=%d finalized=%d gossip_sigs=%d payloads=%d",
+		cutoff, headSlot, finalizedSlot, prunedSigs, prunedKnown+prunedNew)
+}
+
+func PeriodicPrune(s *ConsensusStore, fc *forkchoice.ForkChoice, currentSlot, finalizedSlot uint64) {
+	if s == nil || s.Backend == nil || fc == nil {
+		return
+	}
+	if currentSlot == 0 || currentSlot%PruningIntervalSlots != 0 {
+		return
+	}
+
+	if finalizedSlot+2*PruningIntervalSlots >= currentSlot {
+		return
+	}
+
+	logger.Warn(logger.Store, "finalization stalled: finalized_slot=%d current_slot=%d, running periodic pruning", finalizedSlot, currentSlot)
+
+	ancestorRoot, ancestorSlot, ok := fc.AncestorAtDepth(s.Head(), PruningIntervalSlots)
+	if !ok || ancestorSlot <= finalizedSlot {
+		return
+	}
+
+	_, nonCanonical := fc.GetCanonicalAnalysis(ancestorRoot)
+	prunedStates := pruneStatesByRoots(s, nonCanonical)
+	prunedBlocks := pruneBlocksByRoots(s, nonCanonical)
+
+	if prunedStates > 0 || prunedBlocks > 0 {
+		logger.Info(logger.Store, "periodic pruning: ancestor_slot=%d states=%d blocks=%d non_canonical=%d",
+			ancestorSlot, prunedStates, prunedBlocks, len(nonCanonical))
+	}
+}
+
+func pruneStatesByRoots(s *ConsensusStore, roots [][32]byte) int {
+	if len(roots) == 0 {
+		return 0
+	}
+
+	keys := make([][]byte, len(roots))
+	for i, root := range roots {
+		k := make([]byte, 32)
+		copy(k, root[:])
+		keys[i] = k
+	}
+
+	wb, err := s.beginWrite("prune states")
+	if err != nil {
+		logger.Error(logger.Store, "%v", err)
+		return 0
+	}
+	if err := wb.DeleteBatch(db.TableStates, keys); err != nil {
+		logger.Error(logger.Store, "prune states: delete failed: %v", err)
+		return 0
+	}
+	if !commitDeletes(wb, "prune states") {
+		return 0
+	}
+	return len(roots)
+}
+
+func pruneBlocksByRoots(s *ConsensusStore, roots [][32]byte) int {
+	if len(roots) == 0 {
+		return 0
+	}
+
+	keys := make([][]byte, len(roots))
+	for i, root := range roots {
+		k := make([]byte, 32)
+		copy(k, root[:])
+		keys[i] = k
+	}
+
+	wb, err := s.beginWrite("prune blocks")
+	if err != nil {
+		logger.Error(logger.Store, "%v", err)
+		return 0
+	}
+	if err := wb.DeleteBatch(db.TableBlockHeaders, keys); err != nil {
+		logger.Error(logger.Store, "prune blocks: delete headers failed: %v", err)
+		return 0
+	}
+	if err := wb.DeleteBatch(db.TableBlockBodies, keys); err != nil {
+		logger.Error(logger.Store, "prune blocks: delete bodies failed: %v", err)
+		return 0
+	}
+	if err := wb.DeleteBatch(db.TableSignedBlocks, keys); err != nil {
+		logger.Error(logger.Store, "prune blocks: delete signatures failed: %v", err)
+		return 0
+	}
+	if !commitDeletes(wb, "prune blocks") {
+		return 0
+	}
+	return len(roots)
+}
+
+func pruneLiveChain(s *ConsensusStore, finalizedSlot uint64) int {
+	rv, err := s.beginRead("prune live chain")
+	if err != nil {
+		return 0
+	}
+
+	iter, err := rv.PrefixIterator(db.TableLiveChain, nil)
+	if err != nil {
+		return 0
+	}
+	defer iter.Close()
+
+	var keysToDelete [][]byte
+	for iter.Next() {
+		key := iter.Key()
+		if len(key) < db.LiveChainKeySize {
+			continue
+		}
+		slot, _ := db.DecodeLiveChainKey(key)
+		if slot < finalizedSlot {
+			k := make([]byte, len(key))
+			copy(k, key)
+			keysToDelete = append(keysToDelete, k)
+		}
+	}
+
+	if len(keysToDelete) == 0 {
+		return 0
+	}
+
+	wb, err := s.beginWrite("prune live chain")
+	if err != nil {
+		logger.Error(logger.Store, "%v", err)
+		return 0
+	}
+	if err := wb.DeleteBatch(db.TableLiveChain, keysToDelete); err != nil {
+		logger.Error(logger.Store, "prune live chain: delete failed: %v", err)
+		return 0
+	}
+	if !commitDeletes(wb, "prune live chain") {
+		return 0
+	}
+	return len(keysToDelete)
+}

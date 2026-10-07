@@ -35,8 +35,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/rust/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
+            crypto/xmss/rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('crypto/xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 
@@ -50,4 +50,4 @@ jobs:
         run: make test
 
       - name: Run race tests
-        run: go test -race ./internal/node ./internal/store ./internal/proving -count=1
+        run: go test -race ./node ./store ./proving -count=1

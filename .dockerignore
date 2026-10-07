@@ -5,7 +5,7 @@ testnet
 output.log
 leanSpec
 lean-quickstart
-xmss/rust/target
+crypto/xmss/rust/target
 .claude
 .gocache
 *.log

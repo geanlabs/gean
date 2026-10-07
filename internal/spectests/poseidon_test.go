@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/crypto/xmss"
 )
 
 type poseidonCase struct {

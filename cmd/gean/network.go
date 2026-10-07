@@ -4,14 +4,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/node"
-	"github.com/geanlabs/gean/internal/p2p"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/syncer"
-	"github.com/geanlabs/gean/internal/tasks"
-	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/node"
+	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/syncer"
+	"github.com/geanlabs/gean/tasks"
+	"github.com/geanlabs/gean/types"
 	"github.com/multiformats/go-multiaddr"
 )
 

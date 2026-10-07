@@ -60,7 +60,7 @@ Put each finding in one category from `references/finding-categories.md`:
 
 Before reporting a finding:
 
-- Grep the package, `internal/types/`, `internal/storage/`, and `internal/logger/`
+- Grep the package, `types/`, `db/`, and `logger/`
   for an existing utility. "This could reuse `X` at `path:line`" is the
   highest-value finding.
 - Note which tests cover the code (`grep -rl <symbol> --include='*_test.go'`).

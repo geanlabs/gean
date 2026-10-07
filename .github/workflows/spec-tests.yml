@@ -4,10 +4,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "internal/statetransition/**"
-      - "internal/forkchoice/**"
+      - "statetransition/**"
+      - "forkchoice/**"
       - "internal/spectests/**"
-      - "internal/types/**"
+      - "types/**"
       - "Makefile"
 
 env:
@@ -15,7 +15,7 @@ env:
   # Fixture generation compiles the spec's prover toolchain (lean-multisig-py ->
   # leanMultisig -> Plonky3), which uses nightly-only features (e.g.
   # maybe_uninit_slice). This job builds no gean FFI — that stays pinned to
-  # 1.92 via xmss/rust/rust-toolchain.toml — so nightly here is isolated.
+  # 1.92 via crypto/xmss/rust/rust-toolchain.toml — so nightly here is isolated.
   RUST_VERSION: "nightly"
 
 jobs:
@@ -43,8 +43,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/rust/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
+            crypto/xmss/rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('crypto/xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 

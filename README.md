@@ -80,7 +80,7 @@ leanVM `e2592df4e30fdddbbf8ae26a333116c68cec7026`.
 
 `LEAN_SPEC_COMMIT_HASH` in the [`Makefile`](Makefile) is the source of truth for
 the spec version; the leanVM rev is pinned in
-[`xmss/rust/multisig-glue/Cargo.toml`](xmss/rust/multisig-glue/Cargo.toml).
+[`crypto/xmss/rust/multisig-glue/Cargo.toml`](crypto/xmss/rust/multisig-glue/Cargo.toml).
 
 ## Philosophy
 

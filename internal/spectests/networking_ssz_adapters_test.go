@@ -5,8 +5,8 @@ package spectests
 import (
 	ssz "github.com/ferranbt/fastssz"
 
-	"github.com/geanlabs/gean/internal/p2p"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/types"
 )
 
 // sszStatusAdapter wraps p2p.StatusMessage so the SSZ spec-test harness can

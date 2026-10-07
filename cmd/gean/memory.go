@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/logger"
 )
 
 // proverMemoryFloorBytes is the working-set budget a proving node needs: the

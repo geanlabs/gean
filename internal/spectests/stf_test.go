@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/statetransition"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/statetransition"
 )
 
 func TestSpecStateTransition(t *testing.T) {

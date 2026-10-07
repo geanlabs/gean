@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 
-	"github.com/geanlabs/gean/internal/checkpoint"
-	"github.com/geanlabs/gean/internal/genesis"
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/p2p"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/checkpoint"
+	"github.com/geanlabs/gean/crypto/xmss"
+	"github.com/geanlabs/gean/genesis"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/types"
 	"github.com/multiformats/go-multiaddr"
 )
 

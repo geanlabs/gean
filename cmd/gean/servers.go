@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 
-	"github.com/geanlabs/gean/internal/api"
-	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/tasks"
+	"github.com/geanlabs/gean/api"
+	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/role"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/tasks"
 )
 
 func startHTTPServers(ctx context.Context, services *tasks.Group, cfg config, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) (string, string) {

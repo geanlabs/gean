@@ -3,7 +3,7 @@ package specfixtures
 import (
 	"fmt"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 func (ta *TestAggregatedAttestation) ToAggregatedAttestation() (*types.AggregatedAttestation, error) {

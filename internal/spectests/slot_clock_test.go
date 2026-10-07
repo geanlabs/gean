@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/types"
 )
 
 // Slot-clock fixtures cover these five derivations:

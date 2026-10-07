@@ -27,4 +27,4 @@ output.log
 devnet.log
 
 # Rust build artifacts
-xmss/rust/target/
+crypto/xmss/rust/target/

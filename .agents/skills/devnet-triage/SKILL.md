@@ -169,7 +169,7 @@ curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=increase(lean_di
 docker logs "$c" 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | grep -E 'aggregation (worker|session|skipped|yielded)' | tail -20
 ```
 
-When a session starts: `maybeEarlyAggregate` (`internal/node/tick.go`) dispatches in interval 1
+When a session starts: `maybeEarlyAggregate` (`node/tick.go`) dispatches in interval 1
 once this slot's collected votes reach ceil(2n/3) of the voters the node expects on its subnets;
 below that, interval 2 is the fallback. Either path dispatches at most once per slot, and neither
 sits behind the sync-lag duty gate — a node marked syncing still aggregates. The

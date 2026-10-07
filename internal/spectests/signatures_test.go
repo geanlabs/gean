@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/blockprocessor"
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/blockprocessor"
+	"github.com/geanlabs/gean/db"
+	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/types"
 )
 
 // Fixture types for signature verification tests.
@@ -203,7 +203,7 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	}
 
 	// 3. Initialize store with in-memory backend.
-	backend := storage.NewInMemoryBackend()
+	backend := db.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 
 	s.SetConfig(anchorState.Config)
