@@ -67,6 +67,7 @@ make fmt
 make lint
 make test
 make test-ffi
+make test-sim
 make test-spec
 go test ./node -run TestName -v -count=1
 ```
@@ -74,7 +75,10 @@ go test ./node -run TestName -v -count=1
 ## Architecture
 
 - `cmd/gean/`, `cmd/keygen/`: node binary and testnet/key generation.
-- `node/`: engine, tick-driven duties (`tick.go`), event dispatch, and workers.
+- `node/`: engine, tick-driven duties (`tick.go`), event dispatch, and workers, assembled from
+  `node.Components` (store, fork choice, `Network`, keys, `Clock`).
+- `sim/`: in-process multi-node simulation on a simulated network and manual clock.
+- `tasks/`: goroutine ownership; every component joins its work before releasing resources.
 - `statetransition/`, `forkchoice/`, `types/`: spec logic, LMD-GHOST, and SSZ types.
 - `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`,
   `proving/`: block import, proposal, attestations, and XMSS proof work.
@@ -105,7 +109,8 @@ when the right resolution of a conflict is unclear.
 ## Notes
 
 - **FFI**: Run `make ffi` before direct `go test`/`go vet`; `make test` and `make lint` do not build it.
-- **Testing**: Run `make test-ffi` for `crypto/xmss/` changes, `make test-spec` for consensus or SSZ changes, and
+- **Testing**: Run `make test-ffi` for `crypto/xmss/` changes, `make test-sim` for `node/` or consensus
+  changes, `make test-spec` for consensus or SSZ changes, and
   `go test -race` for concurrency changes. Use fuzz tests for SSZ and wire decoding.
 - **Spec**: leanSpec pinned at `LEAN_SPEC_COMMIT_HASH` in the Makefile is the source of truth; do not bump it silently.
 - **Tick loop**: Keep proving and blocking FFI work off `Engine.onTick`; hand it to a worker. Preserve the

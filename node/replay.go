@@ -9,7 +9,9 @@ func (e *Engine) replayPendingAttestations(headRoot [32]byte) {
 	}
 	logger.Info(logger.Gossip, "replaying %d buffered attestations for newly arrived head=0x%x",
 		len(pending), headRoot)
+	// Replayed attestations re-enter through the gossip path, so they are
+	// verified by the same worker and dropped under the same overload.
 	for _, att := range pending {
-		e.workers.Go(func() { e.onGossipAttestation(att) })
+		e.OnGossipAttestation(att)
 	}
 }

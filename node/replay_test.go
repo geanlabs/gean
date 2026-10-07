@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/pending"
+	"github.com/geanlabs/gean/types"
 )
 
 func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 	e := &Engine{
 		PendingAttestations: pending.NewAttestationBuffer(8, 64),
+		AttestationCh:       make(chan *types.SignedAttestation, 8),
 	}
 
 	var head [32]byte
@@ -33,6 +35,9 @@ func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 	}
 	if e.PendingAttestations.Len() != 1 {
 		t.Fatalf("after replay: len=%d, want 1 bucket left", e.PendingAttestations.Len())
+	}
+	if got := len(e.AttestationCh); got != 3 {
+		t.Fatalf("replayed=%d, want 3 re-queued for verification", got)
 	}
 }
 

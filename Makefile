@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-sim test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -29,11 +29,14 @@ build: ffi ## Build gean and keygen binaries
 	@go build -ldflags "-X main.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
-test: ## Run unit tests (excludes crypto FFI and spec tests)
-	go test $(shell go list ./... | grep -v '/crypto/xmss$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
+test: ## Run unit tests (excludes crypto FFI, simulation and spec tests)
+	go test $(shell go list ./... | grep -v '/crypto/xmss$$' | grep -v '/sim$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
 
 test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
 	go test ./crypto/xmss/ -v -count=1
+
+test-sim: ffi ## Run multi-node simulation tests with real crypto (slow)
+	go test ./sim/ -v -count=1
 
 test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec fixture tests only (fast, excludes xmss FFI)
 	go test ./internal/spectests/  -count=1 -tags=spectests
