@@ -4,27 +4,29 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
 )
 
 // InitFromAnchor initializes an empty store at an anchor: the state and the
 // signed block it is the post-state of. The anchor becomes head, safe target,
-// justified and finalized. It returns the anchor block root.
+// justified and finalized. Everything is serialized first and written in one
+// batch, so a failure leaves the store untouched rather than holding a head
+// whose block is missing. It returns the anchor block root.
 func (s *ConsensusStore) InitFromAnchor(state *types.State, signedBlock *types.SignedBlock) ([32]byte, error) {
-	if state == nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: state is nil")
+	if state == nil || state.LatestBlockHeader == nil || state.Config == nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: malformed anchor state")
+	}
+	if signedBlock == nil || signedBlock.Block == nil || signedBlock.Block.Body == nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: malformed anchor block")
 	}
 	header := state.LatestBlockHeader
-	if header == nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: latest block header is nil")
-	}
 
 	stateRoot, err := state.HashTreeRoot()
 	if err != nil {
 		return types.ZeroRoot, fmt.Errorf("initialize store: state root: %w", err)
 	}
-
 	if header.StateRoot == types.ZeroRoot {
 		header.StateRoot = stateRoot
 	}
@@ -33,36 +35,75 @@ func (s *ConsensusStore) InitFromAnchor(state *types.State, signedBlock *types.S
 		return types.ZeroRoot, fmt.Errorf("initialize store: block root: %w", err)
 	}
 
+	block := signedBlock.Block
+	bodyRoot, err := block.Body.HashTreeRoot()
+	if err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: body root: %w", err)
+	}
+	blockHeader := &types.BlockHeader{
+		Slot:          block.Slot,
+		ProposerIndex: block.ProposerIndex,
+		ParentRoot:    block.ParentRoot,
+		StateRoot:     block.StateRoot,
+		BodyRoot:      bodyRoot,
+	}
 	anchor := &types.Checkpoint{Root: blockRoot, Slot: header.Slot}
 
-	if err := s.PutConfig(state.Config); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
+	configData, err := state.Config.MarshalSSZ()
+	if err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: marshal config: %w", err)
 	}
-	if err := s.PutHead(blockRoot); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
+	anchorData, err := anchor.MarshalSSZ()
+	if err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: marshal anchor: %w", err)
 	}
-	if err := s.PutSafeTarget(blockRoot); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
+	headerData, err := blockHeader.MarshalSSZ()
+	if err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: marshal header: %w", err)
 	}
-	if err := s.PutLatestJustified(anchor); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
+	stateData, err := state.MarshalSSZ()
+	if err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: marshal state: %w", err)
 	}
-	if err := s.PutLatestFinalized(anchor); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
+	bodyData, err := block.Body.MarshalSSZ()
+	if err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: marshal body: %w", err)
 	}
-	if err := s.PutBlockHeader(blockRoot, header); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutState(blockRoot, state); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutLiveChainEntry(state.Slot, blockRoot, header.ParentRoot); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
+	blockData, err := signedBlock.MarshalSSZ()
+	if err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: marshal signed block: %w", err)
 	}
 
-	if err := s.StorePendingBlock(blockRoot, signedBlock); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: anchor block: %w", err)
+	wb, err := s.beginWrite("initialize store")
+	if err != nil {
+		return types.ZeroRoot, err
 	}
+	// One batch is atomic, so the order of its puts does not matter.
+	entries := map[db.Table][]db.KV{
+		db.TableMetadata: {
+			{Key: db.KeyConfig, Value: configData},
+			{Key: db.KeyHead, Value: blockRoot[:]},
+			{Key: db.KeySafeTarget, Value: blockRoot[:]},
+			{Key: db.KeyLatestJustified, Value: anchorData},
+			{Key: db.KeyLatestFinalized, Value: anchorData},
+		},
+		db.TableBlockHeaders: {{Key: blockRoot[:], Value: headerData}},
+		db.TableStates:       {{Key: blockRoot[:], Value: stateData}},
+		db.TableLiveChain:    {{Key: db.EncodeLiveChainKey(state.Slot, blockRoot), Value: header.ParentRoot[:]}},
+		db.TableSignedBlocks: {{Key: blockRoot[:], Value: blockData}},
+	}
+	if len(bodyData) > 0 {
+		entries[db.TableBlockBodies] = []db.KV{{Key: blockRoot[:], Value: bodyData}}
+	}
+	for table, kvs := range entries {
+		if err := wb.PutBatch(table, kvs); err != nil {
+			return types.ZeroRoot, fmt.Errorf("initialize store: put %s: %w", table, err)
+		}
+	}
+	if err := wb.Commit(); err != nil {
+		return types.ZeroRoot, fmt.Errorf("initialize store: commit: %w", err)
+	}
+	s.ObserveStoredBlockSlot(max(header.Slot, block.Slot))
 
 	logger.Info(logger.Store, "store initialized from anchor: slot=%d head=%x parent_root=%x state_root=%x",
 		header.Slot, blockRoot, header.ParentRoot, stateRoot)

@@ -95,3 +95,25 @@ func TestRecoverTime(t *testing.T) {
 		t.Fatal("expected overflow error")
 	}
 }
+
+// A failure part-way through initialization must leave nothing behind: a head
+// and state without their signed block is a database startup then rejects.
+func TestInitFromGenesisIsAtomic(t *testing.T) {
+	s := store.NewConsensusStore(putFailingBackend{InMemoryBackend: db.NewInMemoryBackend()})
+	state := anchorState()
+	bodyRoot, err := (&types.BlockBody{}).HashTreeRoot()
+	if err != nil {
+		t.Fatalf("hash empty body: %v", err)
+	}
+	state.LatestBlockHeader.BodyRoot = bodyRoot
+
+	if _, err := s.InitFromGenesis(state); err == nil {
+		t.Fatal("expected write error")
+	}
+	if head := s.Head(); head != types.ZeroRoot {
+		t.Fatalf("head=%x persisted after a failed initialization", head)
+	}
+	if s.StatesCount() != 0 {
+		t.Fatal("state persisted after a failed initialization")
+	}
+}
