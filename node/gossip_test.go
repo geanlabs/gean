@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"testing"
 
 	"github.com/geanlabs/gean/types"
@@ -16,7 +17,7 @@ func TestOnGossipAggregatedAttestationRejectsMissingProof(t *testing.T) {
 		Head:   &types.Checkpoint{Root: head, Slot: 0},
 	}
 
-	e.onGossipAggregatedAttestation(&types.SignedAggregatedAttestation{
+	e.onGossipAggregatedAttestation(context.Background(), &types.SignedAggregatedAttestation{
 		Data:  attData,
 		Proof: nil,
 	})
@@ -24,7 +25,7 @@ func TestOnGossipAggregatedAttestationRejectsMissingProof(t *testing.T) {
 		t.Fatalf("payloads=%d, want 0 after nil proof", e.store.NewPayloads().Len())
 	}
 
-	e.onGossipAggregatedAttestation(&types.SignedAggregatedAttestation{
+	e.onGossipAggregatedAttestation(context.Background(), &types.SignedAggregatedAttestation{
 		Data: attData,
 		Proof: &types.SingleMessageAggregate{
 			Participants: types.NewBitlistSSZ(0),

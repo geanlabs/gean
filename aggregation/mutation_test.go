@@ -8,7 +8,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-func TestApplyAggregationMutationsTargetsNewPool(t *testing.T) {
+func TestResultApplyTargetsNewPool(t *testing.T) {
 	s := store.NewConsensusStore(db.NewInMemoryBackend())
 	participants := types.NewBitlistSSZ(1)
 	types.BitlistSet(participants, 0)
@@ -18,7 +18,7 @@ func TestApplyAggregationMutationsTargetsNewPool(t *testing.T) {
 		Proof:    &types.SingleMessageAggregate{Participants: participants, Proof: []byte{1}},
 	}}
 
-	applyAggregationMutations(s, payloads, nil)
+	Result{Payloads: payloads}.Apply(s)
 
 	if s.NewPayloads().Len() != 1 {
 		t.Fatalf("NewPayloads.Len() = %d, want 1 (aggregates must enter the new pool)", s.NewPayloads().Len())

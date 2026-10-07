@@ -17,6 +17,7 @@ import (
 const aggregationDeadlineOffset = 4 * types.MillisecondsPerInterval
 
 func (e *Engine) onTick(ctx context.Context) {
+	e.applyPendingResults()
 	now := e.clock.Now()
 	firstTick := e.lastTick.IsZero()
 	if !firstTick {

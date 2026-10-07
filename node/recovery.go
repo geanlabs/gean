@@ -170,7 +170,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		} else {
 			e.metrics.IncProofOperation("recovery", "success")
 			e.metrics.ObserveProofSize("type1", len(proof))
-			e.store.NewPayloads().Push(candidate.root, candidate.att.Data, recovered)
+			submit(ctx, e.newPayloadCh, newPayload{dataRoot: candidate.root, data: candidate.att.Data, proof: recovered})
 			if e.network != nil {
 				_ = e.network.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
 					Data:  candidate.att.Data,

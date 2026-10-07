@@ -39,11 +39,23 @@ func (e *Engine) processOne(ctx context.Context) bool {
 		return true
 	}
 	if att, ok := poll(e.attestationCh); ok {
-		e.onGossipAttestation(att)
+		e.onGossipAttestation(ctx, att)
 		return true
 	}
 	if agg, ok := poll(e.aggregationCh); ok {
-		e.onGossipAggregatedAttestation(agg)
+		e.onGossipAggregatedAttestation(ctx, agg)
+		return true
+	}
+	if att, ok := poll(e.verifiedAttestationCh); ok {
+		e.addVerifiedAttestation(att)
+		return true
+	}
+	if p, ok := poll(e.newPayloadCh); ok {
+		e.addNewPayload(p)
+		return true
+	}
+	if r, ok := poll(e.aggregationResultCh); ok {
+		r.Apply(e.store)
 		return true
 	}
 	if _, ok := poll(e.earlyAggregateCh); ok {
@@ -59,7 +71,7 @@ func (e *Engine) processOne(ctx context.Context) bool {
 		return true
 	}
 	if dispatch, ok := poll(e.aggregationDispatchCh); ok {
-		e.aggregationWorker.Session(ctx, dispatch)
+		e.aggregationWorker.Session(ctx, dispatch).Apply(e.store)
 		return true
 	}
 	if block, ok := poll(e.recoveryCh); ok {

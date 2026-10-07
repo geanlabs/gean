@@ -103,6 +103,12 @@ type Engine struct {
 	earlyAggregateCh chan struct{}
 
 	aggregationDispatchCh chan aggregation.Dispatch
+
+	// The dispatch loop is the only writer of the store's attestation pools.
+	// Workers verify and prove off the loop and hand their results here.
+	verifiedAttestationCh chan verifiedAttestation
+	newPayloadCh          chan newPayload
+	aggregationResultCh   chan aggregation.Result
 	proposalCh            chan proposalDuty
 	proposalResultCh      chan *proposalResult
 	recoveryCh            chan *types.SignedBlock
@@ -186,6 +192,9 @@ func New(c Components, cfg Config) *Engine {
 		fetchRootCh:           make(chan [32]byte, 256),
 		earlyAggregateCh:      make(chan struct{}, 1),
 		aggregationDispatchCh: make(chan aggregation.Dispatch, 1),
+		verifiedAttestationCh: make(chan verifiedAttestation, 256),
+		newPayloadCh:          make(chan newPayload, 64),
+		aggregationResultCh:   make(chan aggregation.Result, 1),
 		proposalCh:            make(chan proposalDuty, 1),
 		proposalResultCh:      make(chan *proposalResult, 1),
 		recoveryCh:            make(chan *types.SignedBlock, 8),
@@ -195,7 +204,7 @@ func New(c Components, cfg Config) *Engine {
 		metrics:               c.Metrics,
 	}
 	e.publishForkChoiceView()
-	e.aggregationWorker = aggregation.NewWorker(e.store, e.scheme, e.network, e.provingGate, e.shadowRates, e.clock.Now, e.metrics)
+	e.aggregationWorker = aggregation.NewWorker(e.scheme, e.network, e.provingGate, e.shadowRates, e.clock.Now, e.metrics)
 	return e
 }
 

@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"time"
 
 	"github.com/geanlabs/gean/attestation"
@@ -9,7 +10,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
+func (e *Engine) onGossipAttestation(ctx context.Context, att *types.SignedAttestation) {
 	if e.aggregator == nil || !e.aggregator.Get() || att == nil {
 		return
 	}
@@ -65,19 +66,16 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	e.metrics.IncAttestationsValid(1)
 
 	logger.Info(logger.Gossip, "attestation verified: validator=%d slot=%d dataRoot=%x", att.ValidatorID, att.Data.Slot, dataRoot)
-	e.store.AttestationSignatures().Insert(dataRoot, att.Data, att.ValidatorID, att.Signature)
 	success = true
-
-	// Nudge the dispatch loop to consider aggregating early now that another vote
-	// is in. The signal is best-effort and coalescing; the loop owns the actual
-	// timing and quorum decision.
-	select {
-	case e.earlyAggregateCh <- struct{}{}:
-	default:
-	}
+	submit(ctx, e.verifiedAttestationCh, verifiedAttestation{
+		dataRoot:    dataRoot,
+		data:        att.Data,
+		validatorID: att.ValidatorID,
+		signature:   att.Signature,
+	})
 }
 
-func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
+func (e *Engine) onGossipAggregatedAttestation(ctx context.Context, agg *types.SignedAggregatedAttestation) {
 	if agg == nil {
 		return
 	}
@@ -105,5 +103,5 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 		logger.Error(logger.Signature, "aggregated attestation root failed: %v", err)
 		return
 	}
-	e.store.NewPayloads().Push(dataRoot, agg.Data, agg.Proof)
+	submit(ctx, e.newPayloadCh, newPayload{dataRoot: dataRoot, data: agg.Data, proof: agg.Proof})
 }

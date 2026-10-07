@@ -124,6 +124,8 @@ when the right resolution of a conflict is unclear.
 - **Aggregation**: Interval 2 is the fallback; `maybeEarlyAggregate` may start it in interval 1 at quorum.
   It runs once per slot and is deliberately not behind the sync-lag duty gate.
 - **Fork choice**: `ForkChoice.Prune` must remap vote indices together with pruning nodes.
+- **Attestation pools**: only the dispatch loop writes the store's signature and payload pools.
+  Workers verify, prove and publish, then hand results to the loop; ticks apply them first.
 - **Storage**: For `store` or `db` changes, check write ordering and what a crash
   mid-write leaves on restart.
 - **Logging and metrics**: Use `logger` component constants with `key=value` fields and `0x%x`

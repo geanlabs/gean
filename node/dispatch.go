@@ -38,6 +38,15 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 
 		case root := <-e.failedRootCh:
 			e.timeEvent("failed_root", func() { e.onFailedRoot(root) })
+
+		case att := <-e.verifiedAttestationCh:
+			e.addVerifiedAttestation(att)
+
+		case p := <-e.newPayloadCh:
+			e.addNewPayload(p)
+
+		case result := <-e.aggregationResultCh:
+			e.timeEvent("aggregation_result", func() { result.Apply(e.store) })
 		}
 	}
 }

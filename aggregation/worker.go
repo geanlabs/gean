@@ -9,7 +9,6 @@ import (
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/proving"
 	"github.com/geanlabs/gean/shadow"
-	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -41,11 +40,11 @@ const SessionBudget = 2 * types.MillisecondsPerInterval * time.Millisecond
 // giving up on the slot's aggregate.
 const AcquirePatience = 750 * time.Millisecond
 
-// Worker runs aggregation sessions. Run drives it from a dispatch channel;
-// Session runs one dispatch on the calling goroutine, so a caller that owns
-// scheduling (a deterministic simulation) can order sessions itself.
+// Worker runs aggregation sessions. It proves and publishes but never writes
+// the store: each session returns a Result for the store's owner to apply.
+// Run drives it from a dispatch channel; Session runs one dispatch on the
+// calling goroutine, so a caller that owns scheduling can order sessions.
 type Worker struct {
-	store       *store.ConsensusStore
 	scheme      crypto.Scheme
 	publisher   Publisher
 	gate        *proving.Gate
@@ -60,7 +59,6 @@ type Worker struct {
 }
 
 func NewWorker(
-	consensusStore *store.ConsensusStore,
 	scheme crypto.Scheme,
 	publisher Publisher,
 	gate *proving.Gate,
@@ -69,7 +67,6 @@ func NewWorker(
 	m *metrics.Metrics,
 ) *Worker {
 	return &Worker{
-		store:       consensusStore,
 		scheme:      scheme,
 		publisher:   publisher,
 		gate:        gate,
@@ -80,8 +77,9 @@ func NewWorker(
 	}
 }
 
-// Run runs a session for each dispatch until ctx ends or dispatches closes.
-func (w *Worker) Run(ctx context.Context, dispatches <-chan Dispatch) {
+// Run runs a session for each dispatch until ctx ends or dispatches closes,
+// sending each session's result on results.
+func (w *Worker) Run(ctx context.Context, dispatches <-chan Dispatch, results chan<- Result) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -91,16 +89,22 @@ func (w *Worker) Run(ctx context.Context, dispatches <-chan Dispatch) {
 				return
 			}
 			w.metrics.SetProvingQueueDepth("aggregation", len(dispatches))
-			w.Session(ctx, dispatch)
+			result := w.Session(ctx, dispatch)
+			select {
+			case results <- result:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
 
 // Session acquires the prover, aggregates the dispatched snapshot within its
-// deadline, applies the results to the store and publishes them.
-func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
+// deadline and publishes the aggregates. It returns what the store must
+// apply; a session that produced nothing returns an empty Result.
+func (w *Worker) Session(ctx context.Context, dispatch Dispatch) Result {
 	if dispatch.Snapshot == nil {
-		return
+		return Result{}
 	}
 	acquireCtx, cancelAcquire := context.WithTimeout(ctx, AcquirePatience)
 	if w.gate != nil && !w.gate.Acquire(acquireCtx, false) {
@@ -109,7 +113,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 		// A lost prover costs this slot its aggregate and slows justification;
 		// without this line the loss shows only in metrics, a silent gap in the logs.
 		logger.Warn(logger.Signature, "aggregation skipped: prover unavailable slot=%d", dispatch.Slot)
-		return
+		return Result{}
 	}
 	cancelAcquire()
 
@@ -139,7 +143,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 		if w.gate != nil {
 			w.gate.Release(false)
 		}
-		return
+		return Result{}
 	}
 	// The window is what the dispatcher actually allowed, which is less
 	// than SessionBudget whenever the gate was held for a while.
@@ -167,7 +171,6 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 			logger.Info(logger.Signature, "aggregation session truncated after partial output: slot=%d produced=%d duration=%v budget=%v", dispatch.Slot, len(aggs), workerElapsed, budget)
 		}
 	}
-	applyAggregationMutations(w.store, payloads, deletes)
 	publishCtx, cancelPublish := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
 	publishAggregates(publishCtx, w.publisher, aggs)
 	cancelPublish()
@@ -192,4 +195,5 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 	}
 	logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v%s",
 		dispatch.Slot, len(aggs), workerElapsed, skipSummary)
+	return Result{Payloads: payloads, Deletes: deletes}
 }
