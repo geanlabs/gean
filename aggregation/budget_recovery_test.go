@@ -119,3 +119,31 @@ func TestAggregationBudgetDeadline(t *testing.T) {
 		})
 	}
 }
+
+// The estimator must learn on the session clock the deadline uses. With a
+// clock that does not advance while proving, as in a deterministic
+// simulation, learning from wall time would compare real proving cost with a
+// window that never shrinks, so how many groups a session proves would depend
+// on how fast the host is.
+func TestAggregationBudgetUsesSessionClock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cache := xmss.NewPubKeyCache()
+		defer cache.Close()
+		frozen := time.Now()
+		calls := 0
+		prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+			calls++
+			time.Sleep(2 * time.Second) // wall time passes; the session clock does not
+			return []byte{1}, nil
+		}
+		e := newUnitCostEstimator()
+		before := e.nextGroupDuration()
+		_, _, _, truncated, skips := aggregateFromSnapshotWithProver(nil, budgetTestSnapshot(), cache, frozen.Add(SessionBudget), func() time.Time { return frozen }, MaxGroupsPerSession, shadow.Rates{}, e, prove)
+		if calls != 2 || truncated {
+			t.Fatalf("calls=%d truncated=%v skips=%v, want both groups proven", calls, truncated, skips)
+		}
+		if e.nextGroupDuration() != before {
+			t.Fatal("estimator learned from wall time instead of the session clock")
+		}
+	})
+}

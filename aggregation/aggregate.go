@@ -206,7 +206,7 @@ func (e *unitCostEstimator) nextGroupDuration() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
-// observeGroup folds a completed group's realized wall time into the estimates.
+// observeGroup folds a completed group's realized duration into the estimates.
 // A raw-only group prices the fixed per-proof cost directly. A group carrying
 // children charges whatever the fixed cost does not explain to those children,
 // which is well conditioned because raw-only groups are the common case once
@@ -302,7 +302,10 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			}
 		}
 		dataRoot := group.dataRoot
-		groupStart := time.Now()
+		// Measured on the session clock, the same one the deadline is: a
+		// manual clock that does not advance while proving leaves the
+		// estimator at its seed, so budget decisions stay host-independent.
+		groupStart := now()
 		provedBefore := len(newAggregates)
 		// Captured from inside the group closure so the estimate can tell a
 		// raw-only group from one that carried children.
@@ -511,7 +514,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 		// Only groups that actually proved inform the wall-time estimate; skipped
 		// groups (too few signatures) return fast and would bias it low.
 		if len(newAggregates) > provedBefore {
-			estimator.observeGroup(time.Since(groupStart), groupChildren)
+			estimator.observeGroup(now().Sub(groupStart), groupChildren)
 		}
 	}
 
