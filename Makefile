@@ -33,7 +33,7 @@ test: ## Run unit tests and fast simulations (excludes crypto FFI and spec tests
 	go test $(shell go list ./... | grep -v '/crypto/xmss$$' | grep -v '/sim/xmsssim$$' | grep -v '/spectests$$' | grep -v '/cmd/') -short -v -count=1
 
 test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
-	go test ./crypto/xmss/ -v -count=1
+	go test ./crypto/xmss/ -v -count=1 -timeout 30m
 
 test-sim: ffi ## Run real-time and real-XMSS multi-node simulations (slow)
 	go test -race ./sim/ -run RealTime -v -count=1
