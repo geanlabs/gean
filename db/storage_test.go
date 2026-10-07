@@ -323,13 +323,13 @@ func TestInMemoryWriteBatchClosedAfterCommit(t *testing.T) {
 	if err := wb.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := wb.PutBatch(TableMetadata, []KV{{Key: []byte("next"), Value: []byte("value")}}); err != errBatchClosed {
-		t.Fatalf("PutBatch after commit error=%v, want %v", err, errBatchClosed)
+	if err := wb.PutBatch(TableMetadata, []KV{{Key: []byte("next"), Value: []byte("value")}}); err != ErrBatchClosed {
+		t.Fatalf("PutBatch after commit error=%v, want %v", err, ErrBatchClosed)
 	}
-	if err := wb.DeleteBatch(TableMetadata, [][]byte{[]byte("key")}); err != errBatchClosed {
-		t.Fatalf("DeleteBatch after commit error=%v, want %v", err, errBatchClosed)
+	if err := wb.DeleteBatch(TableMetadata, [][]byte{[]byte("key")}); err != ErrBatchClosed {
+		t.Fatalf("DeleteBatch after commit error=%v, want %v", err, ErrBatchClosed)
 	}
-	if err := wb.Commit(); err != errBatchClosed {
-		t.Fatalf("Commit after commit error=%v, want %v", err, errBatchClosed)
+	if err := wb.Commit(); err != ErrBatchClosed {
+		t.Fatalf("Commit after commit error=%v, want %v", err, ErrBatchClosed)
 	}
 }

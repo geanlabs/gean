@@ -105,7 +105,7 @@ type batchOp struct {
 
 func (b *inMemoryWriteBatch) PutBatch(table Table, entries []KV) error {
 	if b.closed {
-		return errBatchClosed
+		return ErrBatchClosed
 	}
 	for _, e := range entries {
 		b.ops = append(b.ops, batchOp{table: table, key: string(e.Key), value: bytes.Clone(e.Value)})
@@ -115,7 +115,7 @@ func (b *inMemoryWriteBatch) PutBatch(table Table, entries []KV) error {
 
 func (b *inMemoryWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
 	if b.closed {
-		return errBatchClosed
+		return ErrBatchClosed
 	}
 	for _, k := range keys {
 		b.ops = append(b.ops, batchOp{table: table, key: string(k), delete: true})
@@ -125,7 +125,7 @@ func (b *inMemoryWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
 
 func (b *inMemoryWriteBatch) Commit() error {
 	if b.closed {
-		return errBatchClosed
+		return ErrBatchClosed
 	}
 	b.backend.mu.Lock()
 	defer b.backend.mu.Unlock()

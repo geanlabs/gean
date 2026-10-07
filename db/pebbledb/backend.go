@@ -1,4 +1,4 @@
-package db
+package pebbledb
 
 import (
 	"bytes"
@@ -6,25 +6,27 @@ import (
 	"path/filepath"
 
 	"github.com/cockroachdb/pebble"
+
+	"github.com/geanlabs/gean/db"
 )
 
-type PebbleBackend struct {
+type Backend struct {
 	db *pebble.DB
 }
 
-func NewPebbleBackend(dir string) (*PebbleBackend, error) {
+func Open(dir string) (*Backend, error) {
 	db, err := pebble.Open(filepath.Clean(dir), &pebble.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("pebble open: %w", err)
 	}
-	return &PebbleBackend{db: db}, nil
+	return &Backend{db: db}, nil
 }
 
-func (p *PebbleBackend) BeginRead() (ReadView, error) {
+func (p *Backend) BeginRead() (db.ReadView, error) {
 	return &pebbleReadView{db: p.db}, nil
 }
 
-func (p *PebbleBackend) BeginWrite() (WriteBatch, error) {
+func (p *Backend) BeginWrite() (db.WriteBatch, error) {
 	return &pebbleWriteBatch{batch: p.db.NewBatch()}, nil
 }
 
@@ -39,7 +41,7 @@ func (p *PebbleBackend) BeginWrite() (WriteBatch, error) {
 // The number this returns is not the same number: it is compressed SST bytes
 // for the range, not logical live bytes, and it excludes anything still in the
 // memtable. For a size gauge that is the more useful figure anyway.
-func (p *PebbleBackend) EstimateTableBytes(table Table) uint64 {
+func (p *Backend) EstimateTableBytes(table db.Table) uint64 {
 	lower := tableKey(table, nil)
 	upper := prefixUpperBound(lower)
 	if upper == nil {
@@ -52,11 +54,11 @@ func (p *PebbleBackend) EstimateTableBytes(table Table) uint64 {
 	return total
 }
 
-func (p *PebbleBackend) Close() error {
+func (p *Backend) Close() error {
 	return p.db.Close()
 }
 
-func tableKey(table Table, key []byte) []byte {
+func tableKey(table db.Table, key []byte) []byte {
 	prefix := []byte(table)
 	result := make([]byte, len(prefix)+1+len(key))
 	copy(result, prefix)
@@ -65,7 +67,7 @@ func tableKey(table Table, key []byte) []byte {
 	return result
 }
 
-func stripTablePrefix(table Table, fullKey []byte) []byte {
+func stripTablePrefix(table db.Table, fullKey []byte) []byte {
 	prefixLen := len([]byte(table)) + 1
 	if len(fullKey) < prefixLen {
 		return nil
@@ -77,7 +79,7 @@ type pebbleReadView struct {
 	db *pebble.DB
 }
 
-func (v *pebbleReadView) Get(table Table, key []byte) ([]byte, error) {
+func (v *pebbleReadView) Get(table db.Table, key []byte) ([]byte, error) {
 	val, closer, err := v.db.Get(tableKey(table, key))
 	if err == pebble.ErrNotFound {
 		return nil, nil
@@ -89,7 +91,7 @@ func (v *pebbleReadView) Get(table Table, key []byte) ([]byte, error) {
 	return bytes.Clone(val), nil
 }
 
-func (v *pebbleReadView) PrefixIterator(table Table, prefix []byte) (Iterator, error) {
+func (v *pebbleReadView) PrefixIterator(table db.Table, prefix []byte) (db.Iterator, error) {
 	fullPrefix := tableKey(table, prefix)
 	iter, err := v.db.NewIter(&pebble.IterOptions{
 		LowerBound: fullPrefix,
@@ -122,9 +124,9 @@ type pebbleWriteBatch struct {
 	closed bool
 }
 
-func (b *pebbleWriteBatch) PutBatch(table Table, entries []KV) error {
+func (b *pebbleWriteBatch) PutBatch(table db.Table, entries []db.KV) error {
 	if b.closed {
-		return errBatchClosed
+		return db.ErrBatchClosed
 	}
 	for _, e := range entries {
 		if err := b.batch.Set(tableKey(table, e.Key), e.Value, nil); err != nil {
@@ -134,9 +136,9 @@ func (b *pebbleWriteBatch) PutBatch(table Table, entries []KV) error {
 	return nil
 }
 
-func (b *pebbleWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
+func (b *pebbleWriteBatch) DeleteBatch(table db.Table, keys [][]byte) error {
 	if b.closed {
-		return errBatchClosed
+		return db.ErrBatchClosed
 	}
 	for _, k := range keys {
 		if err := b.batch.Delete(tableKey(table, k), nil); err != nil {
@@ -148,7 +150,7 @@ func (b *pebbleWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
 
 func (b *pebbleWriteBatch) Commit() error {
 	if b.closed {
-		return errBatchClosed
+		return db.ErrBatchClosed
 	}
 	err := b.batch.Commit(pebble.NoSync)
 	closeErr := b.batch.Close()
@@ -161,7 +163,7 @@ func (b *pebbleWriteBatch) Commit() error {
 
 type pebbleIterator struct {
 	iter    *pebble.Iterator
-	table   Table
+	table   db.Table
 	started bool
 }
 

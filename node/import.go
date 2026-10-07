@@ -89,7 +89,7 @@ func (e *Engine) importKnownParentBlock(
 //
 // This used to run on the import path, once per block. Both halves of that were
 // wrong: the backend estimate was a full scan of every table (see
-// db.PebbleBackend.EstimateTableBytes), and the import path is the dispatch
+// pebbledb.Backend.EstimateTableBytes), and the import path is the dispatch
 // goroutine, so the cost landed directly on the slot clock. A storage-size gauge
 // is coarse by nature and does not need per-block resolution; it is sampled on
 // its own goroutine now, like the gossip-mesh gauge.

@@ -82,7 +82,8 @@ go test ./node -run TestName -v -count=1
 - `statetransition/`, `forkchoice/`, `types/`: spec logic, LMD-GHOST, and SSZ types.
 - `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`,
   `proving/`: block import, proposal, attestations, and XMSS proof work.
-- `store/`, `db/`: consensus store on Pebble (in-memory for tests).
+- `store/`: consensus store over `db/`, the storage contract with an in-memory backend;
+  `db/pebbledb/` is the Pebble backend the binary uses.
 - `p2p/`, `syncer/`, `pending/`, `checkpoint/`: networking and sync.
 - `crypto/xmss/`, `crypto/xmss/rust/`: post-quantum XMSS signatures; Go bindings over Rust FFI crates.
 

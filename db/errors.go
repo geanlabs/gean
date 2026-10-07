@@ -2,4 +2,5 @@ package db
 
 import "errors"
 
-var errBatchClosed = errors.New("storage write batch is closed")
+// ErrBatchClosed is returned by a WriteBatch used after Commit.
+var ErrBatchClosed = errors.New("storage write batch is closed")
