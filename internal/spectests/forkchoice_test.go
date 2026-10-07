@@ -465,7 +465,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// Process block through store (no signature verification).
-			if err := blockprocessor.OnBlockWithoutVerification(s, signedBlock); err != nil {
+			if err := blockprocessor.OnBlockWithoutVerification(s, nil, signedBlock); err != nil {
 				if step.Valid {
 					t.Fatalf("step %d: OnBlockWithoutVerification failed: %v", i, err)
 				}

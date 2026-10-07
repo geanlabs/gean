@@ -257,7 +257,7 @@ type proveFunc func(raw []crypto.RawSignature, children []crypto.Proof, message 
 
 // aggregateFromSnapshot proves the snapshot's groups until deadline, measured
 // by now, or until it must yield to a pending proposal.
-func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, deadline time.Time, now func() time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove proveFunc) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, deadline time.Time, now func() time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove proveFunc, m *metrics.Metrics) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
 	if snap == nil || snap.headState == nil {
 		return nil, nil, nil, false, skips
@@ -410,7 +410,7 @@ func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, deadline tim
 				return
 			}
 
-			metrics.ObserveAggregationPrepTime(time.Since(prepStart).Seconds())
+			m.ObserveAggregationPrepTime(time.Since(prepStart).Seconds())
 
 			// Preparation can consume the remaining time. Once started, proving
 			// cannot be interrupted by this deadline.
@@ -453,10 +453,10 @@ func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, deadline tim
 			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
 				slot, len(rawIDs), len(children), len(allIDs), len(proofBytes), aggDuration)
 
-			metrics.ObservePqSigAggBuildingTime(aggDuration.Seconds())
-			metrics.ObserveCommitteeSignaturesAggregationTime(aggDuration.Seconds())
-			metrics.IncPqSigAggregatedTotal()
-			metrics.IncPqSigAttestationsInAggregated(len(allIDs))
+			m.ObservePqSigAggBuildingTime(aggDuration.Seconds())
+			m.ObserveCommitteeSignaturesAggregationTime(aggDuration.Seconds())
+			m.IncPqSigAggregatedTotal()
+			m.IncPqSigAttestationsInAggregated(len(allIDs))
 
 			newAggregates = append(newAggregates, &types.SignedAggregatedAttestation{
 				Data:  attData,

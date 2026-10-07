@@ -3,7 +3,6 @@ package node
 import (
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
@@ -41,20 +40,20 @@ func (e *Engine) updateHead() {
 
 			isReorg := newHeader.ParentRoot != oldHead
 
-			metrics.SetHeadSlot(newHeader.Slot)
-			metrics.SetLatestJustifiedSlot(justified.Slot)
-			metrics.SetLatestFinalizedSlot(finalized.Slot)
-			metrics.SetJustifiedSlot(justified.Slot)
-			metrics.SetFinalizedSlot(finalized.Slot)
-			metrics.SetGossipSignatures(e.store.AttestationSignatures().Len())
-			metrics.SetNewAggregatedPayloads(e.store.NewPayloads().Len())
-			metrics.SetKnownAggregatedPayloads(e.store.KnownPayloads().Len())
-			metrics.SetPendingAttestationsTotal(e.pendingAttestations.Total())
+			e.metrics.SetHeadSlot(newHeader.Slot)
+			e.metrics.SetLatestJustifiedSlot(justified.Slot)
+			e.metrics.SetLatestFinalizedSlot(finalized.Slot)
+			e.metrics.SetJustifiedSlot(justified.Slot)
+			e.metrics.SetFinalizedSlot(finalized.Slot)
+			e.metrics.SetGossipSignatures(e.store.AttestationSignatures().Len())
+			e.metrics.SetNewAggregatedPayloads(e.store.NewPayloads().Len())
+			e.metrics.SetKnownAggregatedPayloads(e.store.KnownPayloads().Len())
+			e.metrics.SetPendingAttestationsTotal(e.pendingAttestations.Total())
 
 			if isReorg {
-				metrics.IncForkChoiceReorgs()
+				e.metrics.IncForkChoiceReorgs()
 				depth := e.forkChoice.ReorgDepth(oldHead, newHead)
-				metrics.ObserveForkChoiceReorgDepth(float64(depth))
+				e.metrics.ObserveForkChoiceReorgDepth(float64(depth))
 				logger.Warn(logger.Forkchoice, "REORG depth=%d slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
 					depth, newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
 					justified.Slot, justified.Root,
@@ -99,7 +98,7 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 	// Pruning is irreversible, so it only runs when finalization genuinely
 	// advances; a downward move keeps the existing pruned horizon.
 	if derived.Slot > oldSlot {
-		metrics.IncFinalization("success")
+		e.metrics.IncFinalization("success")
 		logger.Info(logger.Forkchoice, "finalized advanced slot=%d root=0x%x", derived.Slot, derived.Root)
 		// Order matters and is not interchangeable. PruneOnFinalization asks fork
 		// choice which roots to delete (GetCanonicalAnalysis: the ancestors below
@@ -137,7 +136,7 @@ func (e *Engine) updateSafeTarget() {
 
 	safeHeader := e.store.GetBlockHeader(safeTarget)
 	if safeHeader != nil {
-		metrics.SetSafeTargetSlot(safeHeader.Slot)
+		e.metrics.SetSafeTargetSlot(safeHeader.Slot)
 	}
 }
 

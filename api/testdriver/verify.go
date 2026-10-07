@@ -59,7 +59,7 @@ func (sess *Session) VerifySignaturesHandler() http.HandlerFunc {
 			return
 		}
 
-		if err := blockprocessor.OnBlock(consensusStore, sess.scheme, signedBlock); err != nil {
+		if err := blockprocessor.OnBlock(consensusStore, sess.scheme, nil, signedBlock); err != nil {
 			writeVerifyFailure(w, err.Error())
 			return
 		}

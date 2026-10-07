@@ -10,4 +10,9 @@ type Hooks struct {
 	PeerDisconnected      func(direction, reason string)
 	PeerCount             func(count int)
 	PeerStatus            func(peerID peer.ID)
+	// ReqRespTimeout reports a req/resp read or write that hit its deadline.
+	ReqRespTimeout func(protocol, direction string)
+	// ReqRespRequestSize and ReqRespResponseChunkSize report encoded sizes.
+	ReqRespRequestSize       func(protocol string, bytes int)
+	ReqRespResponseChunkSize func(protocol string, bytes int)
 }

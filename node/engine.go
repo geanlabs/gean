@@ -10,6 +10,7 @@ import (
 	"github.com/geanlabs/gean/dutygate"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/pending"
 	"github.com/geanlabs/gean/proving"
 	"github.com/geanlabs/gean/role"
@@ -58,6 +59,8 @@ type Components struct {
 	Crypto     crypto.Scheme
 	Aggregator *role.Controller
 	Clock      Clock
+	// Metrics records this node's metrics; nil records nothing.
+	Metrics *metrics.Metrics
 }
 
 // Config holds the engine's network parameters.
@@ -106,6 +109,7 @@ type Engine struct {
 	provingGate           *proving.Gate
 	aggregationWorker     *aggregation.Worker
 	clock                 Clock
+	metrics               *metrics.Metrics
 
 	// Dispatch-owned reservation survives dequeue and result acceptance.
 	lastProposalDuty proposalDuty
@@ -188,9 +192,10 @@ func New(c Components, cfg Config) *Engine {
 		provingGate:           proving.NewGate(),
 		fetchInFlight:         make(map[[32]byte]bool),
 		clock:                 c.Clock,
+		metrics:               c.Metrics,
 	}
 	e.publishForkChoiceView()
-	e.aggregationWorker = aggregation.NewWorker(e.store, e.scheme, e.network, e.provingGate, e.shadowRates, e.clock.Now)
+	e.aggregationWorker = aggregation.NewWorker(e.store, e.scheme, e.network, e.provingGate, e.shadowRates, e.clock.Now, e.metrics)
 	return e
 }
 

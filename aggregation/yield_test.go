@@ -40,7 +40,7 @@ func TestAggregationYieldsToWaitingProposal(t *testing.T) {
 				return []byte{1}, nil
 			}
 			snap := budgetTestSnapshot()
-			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(gate.ProposalPending, snap, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(gate.ProposalPending, snap, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove, nil)
 			if calls != 1 || !truncated || skips[metrics.AggGroupSkipProposalPending] != 1 {
 				t.Fatalf("calls=%d truncated=%v skips=%v", calls, truncated, skips)
 			}
@@ -82,7 +82,7 @@ func TestAggregationYieldsAfterPreparation(t *testing.T) {
 		t.Fatal("started proof after proposal became pending")
 		return nil, nil
 	}
-	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(shouldYield, snap, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(shouldYield, snap, time.Now().Add(time.Hour), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove, nil)
 	if !truncated || skips[metrics.AggGroupSkipProposalPending] != 1 || len(aggs)+len(payloads)+len(deletes) != 0 {
 		t.Fatalf("unexpected yield: %v %v", truncated, skips)
 	}

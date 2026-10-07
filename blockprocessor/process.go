@@ -12,17 +12,18 @@ import (
 )
 
 // OnBlock verifies a block's signatures with scheme, applies the state
-// transition and persists the result.
-func OnBlock(s *store.ConsensusStore, scheme crypto.Scheme, signedBlock *types.SignedBlock) error {
-	return onBlockCore(s, scheme, signedBlock, true)
+// transition and persists the result, recording timings in m (nil records
+// nothing).
+func OnBlock(s *store.ConsensusStore, scheme crypto.Scheme, m *metrics.Metrics, signedBlock *types.SignedBlock) error {
+	return onBlockCore(s, scheme, m, signedBlock, true)
 }
 
 // OnBlockWithoutVerification imports a block without checking its signatures.
-func OnBlockWithoutVerification(s *store.ConsensusStore, signedBlock *types.SignedBlock) error {
-	return onBlockCore(s, nil, signedBlock, false)
+func OnBlockWithoutVerification(s *store.ConsensusStore, m *metrics.Metrics, signedBlock *types.SignedBlock) error {
+	return onBlockCore(s, nil, m, signedBlock, false)
 }
 
-func onBlockCore(s *store.ConsensusStore, scheme crypto.Scheme, signedBlock *types.SignedBlock, verify bool) error {
+func onBlockCore(s *store.ConsensusStore, scheme crypto.Scheme, m *metrics.Metrics, signedBlock *types.SignedBlock, verify bool) error {
 	start := time.Now()
 	if err := validateStore(s); err != nil {
 		return err
@@ -68,18 +69,18 @@ func onBlockCore(s *store.ConsensusStore, scheme crypto.Scheme, signedBlock *typ
 	if verify {
 		verifyStart := time.Now()
 		err := verifyBlockSignatures(scheme, signedBlock, parentState)
-		metrics.ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
+		m.ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
 		if err != nil {
 			return err
 		}
 	}
 
 	stfStart := time.Now()
-	postState, err := transitionState(parentState, block)
+	postState, err := transitionState(m, parentState, block)
 	if err != nil {
 		return &store.StoreError{Kind: store.ErrStateTransitionFailed, Message: fmt.Sprintf("state transition: %v", err)}
 	}
-	metrics.ObserveSTFTime(time.Since(stfStart).Seconds())
+	m.ObserveSTFTime(time.Since(stfStart).Seconds())
 
 	postState.LatestBlockHeader.StateRoot = block.StateRoot
 	if err := s.PutImportedBlock(blockRoot, signedBlock, postState); err != nil {
@@ -87,11 +88,11 @@ func onBlockCore(s *store.ConsensusStore, scheme crypto.Scheme, signedBlock *typ
 	}
 	importBlockAttestations(s, signedBlock)
 
-	logBlockProcessed(s, block, blockRoot, time.Since(start))
+	logBlockProcessed(s, m, block, blockRoot, time.Since(start))
 	return nil
 }
 
-func logBlockProcessed(s *store.ConsensusStore, block *types.Block, blockRoot [32]byte, elapsed time.Duration) {
+func logBlockProcessed(s *store.ConsensusStore, m *metrics.Metrics, block *types.Block, blockRoot [32]byte, elapsed time.Duration) {
 	attCount := 0
 	if block.Body != nil {
 		attCount = len(block.Body.Attestations)
@@ -101,5 +102,5 @@ func logBlockProcessed(s *store.ConsensusStore, block *types.Block, blockRoot [3
 		block.Slot, blockRoot, block.ParentRoot, block.ProposerIndex, attCount,
 		s.LatestJustified().Slot, s.LatestFinalized().Slot,
 		elapsed.Round(time.Millisecond))
-	metrics.ObserveBlockProcessingTime(elapsed.Seconds())
+	m.ObserveBlockProcessingTime(elapsed.Seconds())
 }

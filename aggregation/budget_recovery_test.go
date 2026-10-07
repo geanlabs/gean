@@ -57,7 +57,7 @@ func TestAggregationBudgetRecovery(t *testing.T) {
 						}
 						return []byte{1}, nil
 					}
-					aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, e, prove)
+					aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, e, prove, nil)
 					if calls != 1 || !truncated || skips[metrics.AggGroupSkipBudget] != 1 || skips[metrics.AggGroupSkipTooFewSigners] != 1 {
 						t.Fatalf("session=%d calls=%d truncated=%v skips=%v", session, calls, truncated, skips)
 					}
@@ -107,7 +107,7 @@ func TestAggregationBudgetDeadline(t *testing.T) {
 					time.Sleep(tc.proofTime)
 					return []byte{1}, nil
 				}
-				aggs, _, _, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), time.Now().Add(tc.deadline), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+				aggs, _, _, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), time.Now().Add(tc.deadline), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove, nil)
 				if calls != tc.wantCalls || len(aggs) != calls || truncated != tc.wantTruncated {
 					t.Fatalf("calls=%d aggs=%d truncated=%v skips=%v", calls, len(aggs), truncated, skips)
 				}
@@ -132,7 +132,7 @@ func TestAggregationBudgetUsesSessionClock(t *testing.T) {
 		}
 		e := newUnitCostEstimator()
 		before := e.nextGroupDuration()
-		_, _, _, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), frozen.Add(SessionBudget), func() time.Time { return frozen }, MaxGroupsPerSession, shadow.Rates{}, e, prove)
+		_, _, _, truncated, skips := aggregateFromSnapshot(nil, budgetTestSnapshot(), frozen.Add(SessionBudget), func() time.Time { return frozen }, MaxGroupsPerSession, shadow.Rates{}, e, prove, nil)
 		if calls != 2 || truncated {
 			t.Fatalf("calls=%d truncated=%v skips=%v, want both groups proven", calls, truncated, skips)
 		}

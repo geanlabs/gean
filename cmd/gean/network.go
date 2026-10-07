@@ -16,7 +16,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-func setupP2P(ctx context.Context, cfg config, keyManager *xmss.KeyManager) (*p2p.Host, error) {
+func setupP2P(ctx context.Context, cfg config, keyManager *xmss.KeyManager, m *metrics.Metrics) (*p2p.Host, error) {
 	var validatorIDs []uint64
 	if keyManager != nil {
 		validatorIDs = keyManager.ValidatorIDs()
@@ -28,23 +28,26 @@ func setupP2P(ctx context.Context, cfg config, keyManager *xmss.KeyManager) (*p2
 	}
 
 	logger.Info(logger.Network, "p2p: peer_id=%s listen_port=%d", p2pHost.PeerID(), cfg.GossipPort)
-	instrumentP2P(p2pHost)
+	instrumentP2P(p2pHost, m)
 	return p2pHost, nil
 }
 
-func instrumentP2P(p2pHost *p2p.Host) {
-	p2pHost.Hooks.GossipBlockSize = metrics.ObserveGossipBlockSize
-	p2pHost.Hooks.GossipAttestationSize = metrics.ObserveGossipAttestationSize
-	p2pHost.Hooks.GossipAggregationSize = metrics.ObserveGossipAggregationSize
+func instrumentP2P(p2pHost *p2p.Host, m *metrics.Metrics) {
+	p2pHost.Hooks.GossipBlockSize = m.ObserveGossipBlockSize
+	p2pHost.Hooks.GossipAttestationSize = m.ObserveGossipAttestationSize
+	p2pHost.Hooks.GossipAggregationSize = m.ObserveGossipAggregationSize
 	p2pHost.Hooks.PeerConnected = func(direction string) {
-		metrics.IncPeerConnection(direction, "success")
+		m.IncPeerConnection(direction, "success")
 	}
 	p2pHost.Hooks.PeerDisconnected = func(direction, reason string) {
-		metrics.IncPeerDisconnection(direction, reason)
+		m.IncPeerDisconnection(direction, reason)
 	}
 	p2pHost.Hooks.PeerCount = func(count int) {
-		metrics.SetConnectedPeers("unknown", count)
+		m.SetConnectedPeers("unknown", count)
 	}
+	p2pHost.Hooks.ReqRespTimeout = m.IncReqRespTimeout
+	p2pHost.Hooks.ReqRespRequestSize = m.ObserveReqRespRequestSize
+	p2pHost.Hooks.ReqRespResponseChunkSize = m.ObserveReqRespResponseChunkSize
 }
 
 // The prover owns a multi-GB resident arena; nodes that never prove (no

@@ -10,7 +10,6 @@ import (
 	"github.com/geanlabs/gean/blockbuilder"
 	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
@@ -41,14 +40,14 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		return
 	}
 	if e.dutyGate != nil && !e.dutyGate.Decide("block", slot, e.store.HeadSlot(), e.networkSeenSlot()) {
-		metrics.IncBlocksSkippedLag()
+		e.metrics.IncBlocksSkippedLag()
 		return
 	}
 	select {
 	case e.proposalCh <- proposalDuty{slot: slot, validatorID: validatorID}:
 		e.lastProposalDuty = proposalDuty{slot: slot, validatorID: validatorID}
 		e.proposalReserved = true
-		metrics.SetProvingQueueDepth("proposal", len(e.proposalCh))
+		e.metrics.SetProvingQueueDepth("proposal", len(e.proposalCh))
 	default:
 		logger.Warn(logger.Validator, "proposal worker busy slot=%d", slot)
 	}
@@ -60,7 +59,7 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case duty := <-e.proposalCh:
-			metrics.SetProvingQueueDepth("proposal", len(e.proposalCh))
+			e.metrics.SetProvingQueueDepth("proposal", len(e.proposalCh))
 			result := e.proveProposal(ctx, duty)
 			select {
 			case e.proposalResultCh <- result:
@@ -75,7 +74,7 @@ func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposal
 	failed := &proposalResult{duty: duty, retryable: true}
 	if head := e.store.HeadSlot(); head >= duty.slot {
 		logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", duty.slot, head)
-		metrics.IncProofOperation("proposal", "skipped_stale")
+		e.metrics.IncProofOperation("proposal", "skipped_stale")
 		return failed
 	}
 	deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
@@ -83,9 +82,9 @@ func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposal
 	if e.provingGate != nil {
 		waitStart := time.Now()
 		acquired := e.provingGate.Acquire(deadline, true)
-		metrics.ObserveProposalStageDuration("gate", time.Since(waitStart).Seconds())
+		e.metrics.ObserveProposalStageDuration("gate", time.Since(waitStart).Seconds())
 		if !acquired {
-			metrics.IncProofOperation("proposal", "canceled")
+			e.metrics.IncProofOperation("proposal", "canceled")
 			logger.Error(logger.Validator, "proposal prover unavailable slot=%d", duty.slot)
 			return failed
 		}
@@ -104,7 +103,7 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 		var stale *statetransition.StateSlotIsNewerError
 		if errors.As(err, &stale) {
 			logger.Warn(logger.Validator, "skipping stale proposal slot=%d head=%d", slot, e.store.HeadSlot())
-			metrics.IncProofOperation("proposal", "skipped_stale")
+			e.metrics.IncProofOperation("proposal", "skipped_stale")
 			return result
 		}
 		logger.Error(logger.Validator, "produce block failed: %v", err)
@@ -118,14 +117,14 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 		return result
 	}
 	if e.store.Head() != block.ParentRoot {
-		metrics.IncProofOperation("proposal", "skipped_stale")
+		e.metrics.IncProofOperation("proposal", "skipped_stale")
 		logger.Info(logger.Validator, "skipping stale proposal before signing slot=%d", slot)
 		return result
 	}
 	// A signing error must not permit another candidate to use this duty.
 	result.retryable = false
 	blockSig, err := e.keys.SignBlock(validatorID, slot, blockRoot)
-	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
+	e.metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if errors.Is(err, crypto.ErrNoKey) {
 		// Nothing was signed, so the duty may still be taken by another attempt.
 		result.retryable = true
@@ -139,19 +138,19 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 
 	mergeStart := time.Now()
 	proof, err := e.mergeBlockProof(block, attSigProofs, blockSig)
-	metrics.ObserveProvingDuration("proposal", time.Since(mergeStart).Seconds())
+	e.metrics.ObserveProvingDuration("proposal", time.Since(mergeStart).Seconds())
 	if err != nil {
 		if errors.Is(err, errStaleProposal) {
-			metrics.IncProofOperation("proposal", "skipped_stale")
+			e.metrics.IncProofOperation("proposal", "skipped_stale")
 			logger.Info(logger.Validator, "stopped stale proposal before next proof stage slot=%d", slot)
 			return result
 		}
-		metrics.IncProofOperation("proposal", "error")
+		e.metrics.IncProofOperation("proposal", "error")
 		logger.Error(logger.Validator, "merge block proof failed: %v", err)
 		return result
 	}
-	metrics.ObserveProofMergeComponents(len(attSigProofs) + 1)
-	metrics.ObserveProofSize("type2", len(proof))
+	e.metrics.ObserveProofMergeComponents(len(attSigProofs) + 1)
+	e.metrics.ObserveProofSize("type2", len(proof))
 	return &proposalResult{
 		duty:      result.duty,
 		blockRoot: blockRoot,
@@ -174,17 +173,17 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 	// unless the head moved past it; fork choice accepts late blocks, while
 	// discarding one here can permanently halt a stalled chain.
 	if e.store.HeadSlot() >= block.Slot || e.store.Head() != block.ParentRoot {
-		metrics.IncProofOperation("proposal", "canceled")
+		e.metrics.IncProofOperation("proposal", "canceled")
 		logger.Warn(logger.Validator, "discarding proposal slot=%d: head moved head_slot=%d head=0x%x parent=0x%x",
 			block.Slot, e.store.HeadSlot(), e.store.Head(), block.ParentRoot)
 		return
 	}
 	e.onBlock(result.signedBlock)
 	if !e.store.HasState(result.blockRoot) {
-		metrics.IncProofOperation("proposal", "error")
+		e.metrics.IncProofOperation("proposal", "error")
 		return
 	}
-	metrics.IncProofOperation("proposal", "success")
+	e.metrics.IncProofOperation("proposal", "success")
 
 	if e.network != nil {
 		publishCtx, cancel := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
@@ -255,7 +254,7 @@ func (e *Engine) mergeBlockProof(
 		blockRoot,
 		uint32(block.Slot),
 	)
-	metrics.ObserveProposalStageDuration("signature_proof", time.Since(wrapStart).Seconds())
+	e.metrics.ObserveProposalStageDuration("signature_proof", time.Since(wrapStart).Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -265,24 +264,24 @@ func (e *Engine) mergeBlockProof(
 	}
 	mergeStart := time.Now()
 	proof, err := e.scheme.MergeBlockProof(inputs)
-	metrics.ObserveProposalStageDuration("merge", time.Since(mergeStart).Seconds())
+	e.metrics.ObserveProposalStageDuration("merge", time.Since(mergeStart).Seconds())
 	return proof, err
 }
 
 func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types.Block, []*types.SingleMessageAggregate, error) {
 	buildStart := time.Now()
-	defer func() { metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds()) }()
+	defer func() { e.metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds()) }()
 
 	headRoot := e.store.Head()
 	headState := e.store.GetState(headRoot)
 	if headState == nil {
-		metrics.IncBlockBuildingFailures()
+		e.metrics.IncBlockBuildingFailures()
 		return nil, nil, fmt.Errorf("head state missing for slot %d", slot)
 	}
 
 	numValidators := headState.NumValidators()
 	if !types.IsProposer(slot, validatorIndex, numValidators) {
-		metrics.IncBlockBuildingFailures()
+		e.metrics.IncBlockBuildingFailures()
 		return nil, nil, fmt.Errorf("validator %d not proposer for slot %d", validatorIndex, slot)
 	}
 
@@ -294,9 +293,10 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.store.HasBlockHeader),
 		Payloads:        payloadsFromEntries(e.store.KnownPayloads().Entries()),
 		ProofMerger:     aggregation.NewProofMerger(e.scheme),
+		Metrics:         e.metrics,
 	})
 	if err != nil {
-		metrics.IncBlockBuildingFailures()
+		e.metrics.IncBlockBuildingFailures()
 		return nil, nil, err
 	}
 	for _, payloadErr := range result.PayloadErrors {
@@ -306,9 +306,9 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		logger.Warn(logger.Validator, "block payload issue root=0x%x: %v", payloadErr.DataRoot, payloadErr.Err)
 	}
 
-	metrics.IncBlockBuildingSuccess()
+	e.metrics.IncBlockBuildingSuccess()
 	if result.Block != nil && result.Block.Body != nil {
-		metrics.ObserveBlockAggregatedPayloads(len(result.Block.Body.Attestations))
+		e.metrics.ObserveBlockAggregatedPayloads(len(result.Block.Body.Attestations))
 	}
 	return result.Block, result.AttestationProofs, nil
 }

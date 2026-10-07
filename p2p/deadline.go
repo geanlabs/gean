@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
-
-	"github.com/geanlabs/gean/metrics"
 )
 
 // Req/resp streams are bounded by an idle deadline, reset before every read and
@@ -40,11 +38,13 @@ func isStreamTimeout(err error) bool {
 
 // readReqRespChunk arms the idle read deadline, decodes one response frame, and on a
 // deadline expiry records the stall and returns a clear error.
-func readReqRespChunk(s network.Stream, r io.Reader, protocol string) (byte, []byte, error) {
+func (h *Host) readReqRespChunk(s network.Stream, r io.Reader, protocol string) (byte, []byte, error) {
 	armReadDeadline(s)
 	code, data, err := DecodeResponse(r)
 	if err != nil && isStreamTimeout(err) {
-		metrics.IncReqRespTimeout(protocol, "read")
+		if h.Hooks.ReqRespTimeout != nil {
+			h.Hooks.ReqRespTimeout(protocol, "read")
+		}
 		return code, data, fmt.Errorf("%s: response read stalled beyond %s: %w", protocol, ReqRespTimeout, err)
 	}
 	return code, data, err

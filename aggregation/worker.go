@@ -51,7 +51,8 @@ type Worker struct {
 	gate        *proving.Gate
 	shadowRates shadow.Rates
 	// now is the consensus clock that session deadlines are measured against.
-	now func() time.Time
+	now     func() time.Time
+	metrics *metrics.Metrics
 	// One estimator lives across sessions so it keeps calibrating to this
 	// node's real per-unit prover cost. Sessions never overlap, so it needs no
 	// locking.
@@ -65,6 +66,7 @@ func NewWorker(
 	gate *proving.Gate,
 	shadowRates shadow.Rates,
 	now func() time.Time,
+	m *metrics.Metrics,
 ) *Worker {
 	return &Worker{
 		store:       consensusStore,
@@ -73,6 +75,7 @@ func NewWorker(
 		gate:        gate,
 		shadowRates: shadowRates,
 		now:         now,
+		metrics:     m,
 		estimator:   newUnitCostEstimator(),
 	}
 }
@@ -87,7 +90,7 @@ func (w *Worker) Run(ctx context.Context, dispatches <-chan Dispatch) {
 			if !ok {
 				return
 			}
-			metrics.SetProvingQueueDepth("aggregation", len(dispatches))
+			w.metrics.SetProvingQueueDepth("aggregation", len(dispatches))
 			w.Session(ctx, dispatch)
 		}
 	}
@@ -102,7 +105,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 	acquireCtx, cancelAcquire := context.WithTimeout(ctx, AcquirePatience)
 	if w.gate != nil && !w.gate.Acquire(acquireCtx, false) {
 		cancelAcquire()
-		metrics.IncProofOperation("aggregation", "canceled")
+		w.metrics.IncProofOperation("aggregation", "canceled")
 		// A lost prover costs this slot its aggregate and slows justification;
 		// without this line the loss shows only in metrics, a silent gap in the logs.
 		logger.Warn(logger.Signature, "aggregation skipped: prover unavailable slot=%d", dispatch.Slot)
@@ -131,7 +134,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 	// and raise the starvation warning, which is meant for a session that
 	// had time and still produced nothing.
 	if !sessionStart.Before(deadline) {
-		metrics.IncProofOperation("aggregation", "expired")
+		w.metrics.IncProofOperation("aggregation", "expired")
 		logger.Warn(logger.Signature, "aggregation skipped: past the promotion boundary slot=%d late_by=%v", dispatch.Slot, sessionStart.Sub(deadline))
 		if w.gate != nil {
 			w.gate.Release(false)
@@ -141,13 +144,13 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 	// The window is what the dispatcher actually allowed, which is less
 	// than SessionBudget whenever the gate was held for a while.
 	budget := deadline.Sub(sessionStart)
-	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(w.gate.ProposalPending, dispatch.Snapshot, deadline, w.now, dispatch.MaxGroups, w.shadowRates, w.estimator, w.scheme.Aggregate)
+	aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(w.gate.ProposalPending, dispatch.Snapshot, deadline, w.now, dispatch.MaxGroups, w.shadowRates, w.estimator, w.scheme.Aggregate, w.metrics)
 	workerElapsed := time.Since(workerStart)
 	if w.gate != nil {
 		w.gate.Release(false)
 	}
 	if truncated {
-		metrics.IncProofOperation("aggregation", "truncated")
+		w.metrics.IncProofOperation("aggregation", "truncated")
 		switch {
 		case skips[metrics.AggGroupSkipProposalPending] > 0:
 			logger.Info(logger.Signature, "aggregation yielded to proposal: slot=%d produced=%d duration=%v", dispatch.Slot, len(aggs), workerElapsed)
@@ -172,14 +175,14 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) {
 	// as one is what let an aggregator produce nothing for 355
 	// consecutive slots on devnet-5 while the success rate read 100%.
 	if len(aggs) > 0 {
-		metrics.IncProofOperation("aggregation", "success")
+		w.metrics.IncProofOperation("aggregation", "success")
 	} else {
-		metrics.IncProofOperation("aggregation", "empty")
+		w.metrics.IncProofOperation("aggregation", "empty")
 	}
-	metrics.ObserveProvingDuration("aggregation", workerElapsed.Seconds())
-	metrics.ObserveAggregationWorkerTotalTime(workerElapsed.Seconds())
+	w.metrics.ObserveProvingDuration("aggregation", workerElapsed.Seconds())
+	w.metrics.ObserveAggregationWorkerTotalTime(workerElapsed.Seconds())
 	for reason, n := range skips {
-		metrics.IncAggregationGroupSkipped(reason, n)
+		w.metrics.IncAggregationGroupSkipped(reason, n)
 	}
 	// Report why a session produced little or nothing. produced=0 alone
 	// cannot distinguish an idle aggregator from one dropping every group.

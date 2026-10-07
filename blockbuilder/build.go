@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -15,12 +14,12 @@ func Build(input Input) (*Result, error) {
 
 	aggStart := time.Now()
 	plan, err := planAttestations(input)
-	metrics.ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds())
+	input.Metrics.ObserveBlockBuildingPayloadAggregationTime(time.Since(aggStart).Seconds())
 	if err != nil {
 		return nil, err
 	}
-	metrics.ObserveBlockProposalAttestationDataSelected(len(plan.attestations))
-	metrics.ObserveBlockProposalAggregatesSelected(len(plan.proofs))
+	input.Metrics.ObserveBlockProposalAttestationDataSelected(len(plan.attestations))
+	input.Metrics.ObserveBlockProposalAggregatesSelected(len(plan.proofs))
 
 	finalBlock := newBlock(input.Slot, input.ProposerIndex, input.ParentRoot, plan.attestations)
 	stateRoot, err := plan.postState.HashTreeRoot()

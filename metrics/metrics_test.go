@@ -10,21 +10,23 @@ import (
 )
 
 func TestCountCounterWrappersIgnoreNonPositiveValues(t *testing.T) {
-	before := metricValue(t, metricAttestationsBufferEvicted)
+	m := New(prometheus.NewRegistry())
+	before := metricValue(t, m.metricAttestationsBufferEvicted)
 
-	IncAttestationsBufferEvicted(-2)
-	IncAttestationsBufferEvicted(0)
-	if got := metricValue(t, metricAttestationsBufferEvicted); got != before {
+	m.IncAttestationsBufferEvicted(-2)
+	m.IncAttestationsBufferEvicted(0)
+	if got := metricValue(t, m.metricAttestationsBufferEvicted); got != before {
 		t.Fatalf("counter changed after nonpositive adds: got %v want %v", got, before)
 	}
 
-	IncAttestationsBufferEvicted(3)
-	if got, want := metricValue(t, metricAttestationsBufferEvicted)-before, float64(3); got != want {
+	m.IncAttestationsBufferEvicted(3)
+	if got, want := metricValue(t, m.metricAttestationsBufferEvicted)-before, float64(3); got != want {
 		t.Fatalf("counter delta=%v, want %v", got, want)
 	}
 }
 
 func TestIncAggregatorSkippedUsesBoundedReasons(t *testing.T) {
+	m := New(prometheus.NewRegistry())
 	reasons := []string{
 		AggregatorSkipNotAggregator,
 		AggregatorSkipMissingState,
@@ -32,66 +34,69 @@ func TestIncAggregatorSkippedUsesBoundedReasons(t *testing.T) {
 		AggregatorSkipOther,
 	}
 	for _, reason := range reasons {
-		before := metricValue(t, metricAggregatorSkipped.WithLabelValues(reason))
-		IncAggregatorSkipped(reason)
-		if got := metricValue(t, metricAggregatorSkipped.WithLabelValues(reason)); got != before+1 {
+		before := metricValue(t, m.metricAggregatorSkipped.WithLabelValues(reason))
+		m.IncAggregatorSkipped(reason)
+		if got := metricValue(t, m.metricAggregatorSkipped.WithLabelValues(reason)); got != before+1 {
 			t.Fatalf("aggregator skipped %s=%v, want %v", reason, got, before+1)
 		}
 	}
 
-	beforeOther := metricValue(t, metricAggregatorSkipped.WithLabelValues(AggregatorSkipOther))
-	IncAggregatorSkipped("unexpected")
-	if got := metricValue(t, metricAggregatorSkipped.WithLabelValues(AggregatorSkipOther)); got != beforeOther+1 {
+	beforeOther := metricValue(t, m.metricAggregatorSkipped.WithLabelValues(AggregatorSkipOther))
+	m.IncAggregatorSkipped("unexpected")
+	if got := metricValue(t, m.metricAggregatorSkipped.WithLabelValues(AggregatorSkipOther)); got != beforeOther+1 {
 		t.Fatalf("unexpected reason did not map to other: got %v want %v", got, beforeOther+1)
 	}
 }
 
 func TestGaugeWrappersClampNegativeCounts(t *testing.T) {
-	SetValidatorsCount(-1)
-	if got := metricValue(t, metricValidatorsCount); got != 0 {
+	m := New(prometheus.NewRegistry())
+	m.SetValidatorsCount(-1)
+	if got := metricValue(t, m.metricValidatorsCount); got != 0 {
 		t.Fatalf("validators gauge=%v, want 0", got)
 	}
 
-	SetGossipMeshPeers(-5)
-	if got := metricValue(t, metricGossipMeshPeers); got != 0 {
+	m.SetGossipMeshPeers(-5)
+	if got := metricValue(t, m.metricGossipMeshPeers); got != 0 {
 		t.Fatalf("mesh peers gauge=%v, want 0", got)
 	}
 
-	SetConnectedPeers("", -3)
-	if got := metricValue(t, metricConnectedPeers.WithLabelValues(unknownLabel)); got != 0 {
+	m.SetConnectedPeers("", -3)
+	if got := metricValue(t, m.metricConnectedPeers.WithLabelValues(unknownLabel)); got != 0 {
 		t.Fatalf("connected peers gauge=%v, want 0", got)
 	}
 
-	SetConnectedPeers("", 4)
-	if got := metricValue(t, metricConnectedPeers.WithLabelValues(unknownLabel)); got != 4 {
+	m.SetConnectedPeers("", 4)
+	if got := metricValue(t, m.metricConnectedPeers.WithLabelValues(unknownLabel)); got != 4 {
 		t.Fatalf("connected peers gauge=%v, want 4", got)
 	}
 }
 
 func TestSetIsAggregatorUsesBooleanGauge(t *testing.T) {
-	SetIsAggregator(true)
-	if got := metricValue(t, metricIsAggregator); got != 1 {
+	m := New(prometheus.NewRegistry())
+	m.SetIsAggregator(true)
+	if got := metricValue(t, m.metricIsAggregator); got != 1 {
 		t.Fatalf("aggregator gauge=%v, want 1", got)
 	}
 
-	SetIsAggregator(false)
-	if got := metricValue(t, metricIsAggregator); got != 0 {
+	m.SetIsAggregator(false)
+	if got := metricValue(t, m.metricIsAggregator); got != 0 {
 		t.Fatalf("aggregator gauge=%v, want 0", got)
 	}
 }
 
 func TestSetSyncStatusActivatesSingleStatus(t *testing.T) {
-	SetSyncStatus("syncing")
-	assertSyncStatus(t, "idle", 0)
-	assertSyncStatus(t, "syncing", 1)
-	assertSyncStatus(t, "synced", 0)
-	assertSyncStatus(t, unknownLabel, 0)
+	m := New(prometheus.NewRegistry())
+	m.SetSyncStatus("syncing")
+	assertSyncStatus(t, m, "idle", 0)
+	assertSyncStatus(t, m, "syncing", 1)
+	assertSyncStatus(t, m, "synced", 0)
+	assertSyncStatus(t, m, unknownLabel, 0)
 
-	SetSyncStatus("unexpected")
-	assertSyncStatus(t, "idle", 0)
-	assertSyncStatus(t, "syncing", 0)
-	assertSyncStatus(t, "synced", 0)
-	assertSyncStatus(t, unknownLabel, 1)
+	m.SetSyncStatus("unexpected")
+	assertSyncStatus(t, m, "idle", 0)
+	assertSyncStatus(t, m, "syncing", 0)
+	assertSyncStatus(t, m, "synced", 0)
+	assertSyncStatus(t, m, unknownLabel, 1)
 }
 
 func TestLabelOrUnknownNormalizesDynamicLabels(t *testing.T) {
@@ -114,36 +119,38 @@ func TestLabelOrUnknownNormalizesDynamicLabels(t *testing.T) {
 }
 
 func TestHistogramWrappersIgnoreInvalidObservations(t *testing.T) {
-	before := histogramCount(t, metricBlockProcessingTime)
+	m := New(prometheus.NewRegistry())
+	before := histogramCount(t, m.metricBlockProcessingTime)
 
-	ObserveBlockProcessingTime(-1)
-	ObserveBlockProcessingTime(math.NaN())
-	ObserveBlockProcessingTime(math.Inf(1))
-	if got := histogramCount(t, metricBlockProcessingTime); got != before {
+	m.ObserveBlockProcessingTime(-1)
+	m.ObserveBlockProcessingTime(math.NaN())
+	m.ObserveBlockProcessingTime(math.Inf(1))
+	if got := histogramCount(t, m.metricBlockProcessingTime); got != before {
 		t.Fatalf("histogram count changed after invalid observations: got %d want %d", got, before)
 	}
 
-	ObserveBlockProcessingTime(0.25)
-	if got := histogramCount(t, metricBlockProcessingTime); got != before+1 {
+	m.ObserveBlockProcessingTime(0.25)
+	if got := histogramCount(t, m.metricBlockProcessingTime); got != before+1 {
 		t.Fatalf("histogram count after valid observation=%d, want %d", got, before+1)
 	}
 }
 
 func TestSetNodeStartTimeIgnoresInvalidValues(t *testing.T) {
-	SetNodeStartTime(100)
-	before := metricValue(t, metricNodeStartTime)
+	m := New(prometheus.NewRegistry())
+	m.SetNodeStartTime(100)
+	before := metricValue(t, m.metricNodeStartTime)
 
-	SetNodeStartTime(-1)
-	SetNodeStartTime(math.NaN())
-	SetNodeStartTime(math.Inf(1))
-	if got := metricValue(t, metricNodeStartTime); got != before {
+	m.SetNodeStartTime(-1)
+	m.SetNodeStartTime(math.NaN())
+	m.SetNodeStartTime(math.Inf(1))
+	if got := metricValue(t, m.metricNodeStartTime); got != before {
 		t.Fatalf("node start time changed after invalid values: got %v want %v", got, before)
 	}
 }
 
-func assertSyncStatus(t *testing.T, status string, want float64) {
+func assertSyncStatus(t *testing.T, m *Metrics, status string, want float64) {
 	t.Helper()
-	if got := metricValue(t, metricNodeSyncStatus.WithLabelValues(status)); got != want {
+	if got := metricValue(t, m.metricNodeSyncStatus.WithLabelValues(status)); got != want {
 		t.Fatalf("sync status %q=%v, want %v", status, got, want)
 	}
 }

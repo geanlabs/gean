@@ -5,7 +5,6 @@ import (
 
 	"github.com/geanlabs/gean/attestation"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
@@ -19,7 +18,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	success := false
 	defer func() {
 		if success {
-			metrics.ObserveAttestationValidationTime(time.Since(start).Seconds())
+			e.metrics.ObserveAttestationValidationTime(time.Since(start).Seconds())
 		}
 	}()
 
@@ -33,7 +32,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 				}
 			}
 			if dropped > 0 {
-				metrics.IncAttestationsBufferEvicted(dropped)
+				e.metrics.IncAttestationsBufferEvicted(dropped)
 			}
 		}
 		return
@@ -52,18 +51,18 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 		return
 	}
 
-	metrics.IncPqSigAttestationSigsTotal()
+	e.metrics.IncPqSigAttestationSigsTotal()
 	verifyStart := time.Now()
 	err = attestation.VerifyGossipAttestation(e.store, e.scheme, att.ValidatorID, att.Data, dataRoot, att.Signature[:])
 	e.shadowRates.SleepVerify()
-	metrics.ObservePqSigVerificationTime(time.Since(verifyStart).Seconds())
+	e.metrics.ObservePqSigVerificationTime(time.Since(verifyStart).Seconds())
 	if err != nil {
-		metrics.IncPqSigAttestationSigsInvalid()
-		metrics.IncAttestationsInvalid()
+		e.metrics.IncPqSigAttestationSigsInvalid()
+		e.metrics.IncAttestationsInvalid()
 		return
 	}
-	metrics.IncPqSigAttestationSigsValid()
-	metrics.IncAttestationsValid(1)
+	e.metrics.IncPqSigAttestationSigsValid()
+	e.metrics.IncAttestationsValid(1)
 
 	logger.Info(logger.Gossip, "attestation verified: validator=%d slot=%d dataRoot=%x", att.ValidatorID, att.Data.Slot, dataRoot)
 	e.store.AttestationSignatures().Insert(dataRoot, att.Data, att.ValidatorID, att.Signature)
@@ -93,13 +92,13 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 	verifyStart := time.Now()
 	err := attestation.VerifyAggregatedGossipAttestation(e.store, e.scheme, agg.Data, agg.Proof.Participants, agg.Proof.Proof)
 	e.shadowRates.SleepVerifyAggregated(int(types.BitlistCount(agg.Proof.Participants)))
-	metrics.ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
+	e.metrics.ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
 	if err != nil {
-		metrics.IncPqSigAggregatedInvalid()
+		e.metrics.IncPqSigAggregatedInvalid()
 		logger.Error(logger.Signature, "aggregated attestation verification failed: %v", err)
 		return
 	}
-	metrics.IncPqSigAggregatedValid()
+	e.metrics.IncPqSigAggregatedValid()
 
 	dataRoot, err := agg.Data.HashTreeRoot()
 	if err != nil {

@@ -20,7 +20,7 @@ func (e *Engine) onTick(ctx context.Context) {
 	now := e.clock.Now()
 	firstTick := e.lastTick.IsZero()
 	if !firstTick {
-		metrics.ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
+		e.metrics.ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
 	}
 	e.lastTick = now
 	e.lastTickMs.Store(now.UnixMilli())
@@ -30,7 +30,7 @@ func (e *Engine) onTick(ctx context.Context) {
 	currentSlot := e.currentSlot(timestampMs)
 	currentInterval := e.currentInterval(timestampMs)
 
-	metrics.SetCurrentSlot(currentSlot)
+	e.metrics.SetCurrentSlot(currentSlot)
 	e.updateSyncStatus(currentSlot)
 
 	isAgg := e.aggregator != nil && e.aggregator.Get()
@@ -81,7 +81,7 @@ func (e *Engine) onTick(ctx context.Context) {
 
 func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregator bool) {
 	if !isAggregator {
-		metrics.IncAggregatorSkipped(metrics.AggregatorSkipNotAggregator)
+		e.metrics.IncAggregatorSkipped(metrics.AggregatorSkipNotAggregator)
 		return
 	}
 	// Dispatch at most once per slot: the early attestation-arrival path and the
@@ -111,18 +111,18 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 	// costs one bounded proving budget and is dropped by peers — strictly better
 	// than not producing one at all.
 	if e.store.AttestationSignatures().Len() == 0 && e.store.NewPayloads().Len() == 0 {
-		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
+		e.metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
 	}
 	headState := e.store.GetState(e.store.Head())
 	if headState == nil {
-		metrics.IncAggregatorSkipped(metrics.AggregatorSkipMissingState)
+		e.metrics.IncAggregatorSkipped(metrics.AggregatorSkipMissingState)
 		return
 	}
 
 	snap := aggregation.SnapshotInputs(e.store, headState, currentSlot)
 	if snap == nil {
-		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
+		e.metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
 	}
 	// A session holds the proving gate until it finishes, so a proposal duty
@@ -140,10 +140,10 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 		Deadline:  e.aggregationDeadline(nowMs),
 	}:
 		e.aggregatedSlot = currentSlot
-		metrics.SetProvingQueueDepth("aggregation", len(e.aggregationDispatchCh))
+		e.metrics.SetProvingQueueDepth("aggregation", len(e.aggregationDispatchCh))
 	default:
-		metrics.IncAggregationDispatchDropped()
-		metrics.IncAggregatorSkipped(metrics.AggregatorSkipSpawnFailed)
+		e.metrics.IncAggregationDispatchDropped()
+		e.metrics.IncAggregatorSkipped(metrics.AggregatorSkipSpawnFailed)
 	}
 }
 

@@ -196,14 +196,14 @@ func TestResponseEncoding(t *testing.T) {
 }
 
 func TestWriteResponseReportsWriteFailure(t *testing.T) {
-	if writeResponse(stubStream{writeErr: os.ErrClosed}, "test", RespSuccess, []byte("payload")) {
+	if (&Host{}).writeResponse(stubStream{writeErr: os.ErrClosed}, "test", RespSuccess, []byte("payload")) {
 		t.Fatal("expected writeResponse to report failure")
 	}
 }
 
 func TestWriteResponseWritesEncodedResponse(t *testing.T) {
 	var buf bytes.Buffer
-	if !writeResponse(stubStream{w: &buf}, "test", RespSuccess, []byte("payload")) {
+	if !(&Host{}).writeResponse(stubStream{w: &buf}, "test", RespSuccess, []byte("payload")) {
 		t.Fatal("expected writeResponse success")
 	}
 	code, payload, err := DecodeResponse(&buf)

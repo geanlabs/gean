@@ -27,7 +27,7 @@ func TestRunWorkerReturnsWhenDispatchChannelCloses(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		NewWorker(nil, nil, nil, nil, shadow.Rates{}, time.Now).Run(context.Background(), dispatches)
+		NewWorker(nil, nil, nil, nil, shadow.Rates{}, time.Now, nil).Run(context.Background(), dispatches)
 		close(done)
 	}()
 
@@ -41,7 +41,7 @@ func TestRunWorkerSkipsNilSnapshot(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		NewWorker(nil, nil, nil, nil, shadow.Rates{}, time.Now).Run(context.Background(), dispatches)
+		NewWorker(nil, nil, nil, nil, shadow.Rates{}, time.Now, nil).Run(context.Background(), dispatches)
 		close(done)
 	}()
 
@@ -76,7 +76,7 @@ func waitForWorker(t *testing.T, done <-chan struct{}) {
 func TestSessionSkipsDispatchPastItsDeadline(t *testing.T) {
 	publisher := &recordingPublisher{}
 	now := time.Unix(1_000, 0)
-	worker := NewWorker(nil, insecure.Scheme{}, publisher, nil, shadow.Rates{}, func() time.Time { return now })
+	worker := NewWorker(nil, insecure.Scheme{}, publisher, nil, shadow.Rates{}, func() time.Time { return now }, nil)
 
 	worker.Session(context.Background(), Dispatch{
 		Slot:     1,

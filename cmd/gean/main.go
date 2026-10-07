@@ -15,6 +15,7 @@ import (
 	"github.com/geanlabs/gean/role"
 	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/tasks"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // gitCommit is injected at build time with -ldflags "-X main.gitCommit=...".
@@ -37,7 +38,8 @@ func main() {
 func run(cfg config) error {
 	logger.Info(logger.Node, "gean consensus client starting")
 	p2p.SetClientGitCommit(gitCommit)
-	metrics.SetNodeInfo("gean", gitCommit)
+	nodeMetrics := metrics.New(prometheus.DefaultRegisterer)
+	nodeMetrics.SetNodeInfo("gean", gitCommit)
 
 	inputs, err := loadStartupInputs(cfg)
 	if err != nil {
@@ -83,7 +85,7 @@ func run(cfg config) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	p2pHost, err := setupP2P(ctx, cfg, inputs.keyManager)
+	p2pHost, err := setupP2P(ctx, cfg, inputs.keyManager, nodeMetrics)
 	if err != nil {
 		logger.Error(logger.Network, "create p2p host: %v", err)
 		return err
@@ -102,7 +104,7 @@ func run(cfg config) error {
 		return err
 	}
 
-	aggCtl := role.NewWithHook(cfg.IsAggregator, metrics.SetIsAggregator)
+	aggCtl := role.NewWithHook(cfg.IsAggregator, nodeMetrics.SetIsAggregator)
 	shadowRates := shadow.Rates{
 		AggregateSignatures:        cfg.ShadowAggregateSignaturesRate,
 		VerifySignature:            cfg.ShadowVerifySignatureRate,
@@ -118,6 +120,7 @@ func run(cfg config) error {
 		Crypto:     scheme,
 		Aggregator: aggCtl,
 		Clock:      node.SystemClock{},
+		Metrics:    nodeMetrics,
 	}, node.Config{
 		CommitteeCount:     cfg.CommitteeCount,
 		AggregateSubnetIDs: cfg.AggregateSubnetIDs,

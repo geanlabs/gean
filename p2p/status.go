@@ -11,7 +11,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 )
 
 const statusMessageSize = 80
@@ -43,7 +42,7 @@ func (s *StatusMessage) UnmarshalSSZ(buf []byte) error {
 	return nil
 }
 
-func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) {
+func (h *Host) handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) {
 	armReadDeadline(stream)
 	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(MaxCompressedPayloadSize)))
 	if err != nil {
@@ -51,21 +50,21 @@ func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) 
 		return
 	}
 	if len(reqBuf) == 0 {
-		writeResponse(stream, "status", RespInvalidRequest, []byte("empty status request"))
+		h.writeResponse(stream, "status", RespInvalidRequest, []byte("empty status request"))
 		return
 	}
 
 	payload, err := DecodeReqRespPayload(reqBuf)
 	if err != nil {
 		logger.Warn(logger.Network, "status: decode request failed: %v", err)
-		writeResponse(stream, "status", RespInvalidRequest, []byte("decode failed"))
+		h.writeResponse(stream, "status", RespInvalidRequest, []byte("decode failed"))
 		return
 	}
 
 	peerStatus := &StatusMessage{}
 	if err := peerStatus.UnmarshalSSZ(payload); err != nil {
 		logger.Warn(logger.Network, "status: ssz unmarshal failed: %v", err)
-		writeResponse(stream, "status", RespInvalidRequest, []byte("ssz unmarshal failed"))
+		h.writeResponse(stream, "status", RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return
 	}
 
@@ -73,10 +72,10 @@ func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) 
 
 	status := statusFn()
 	if status == nil {
-		writeResponse(stream, "status", RespServerError, []byte("status unavailable"))
+		h.writeResponse(stream, "status", RespServerError, []byte("status unavailable"))
 		return
 	}
-	writeResponse(stream, "status", RespSuccess, status.MarshalSSZ())
+	h.writeResponse(stream, "status", RespSuccess, status.MarshalSSZ())
 }
 
 func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus *StatusMessage) (*StatusMessage, error) {
@@ -95,13 +94,15 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 
 	armWriteDeadline(stream)
 	reqBytes := EncodeReqRespPayload(ourStatus.MarshalSSZ())
-	metrics.ObserveReqRespRequestSize("status", len(reqBytes))
+	if h.Hooks.ReqRespRequestSize != nil {
+		h.Hooks.ReqRespRequestSize("status", len(reqBytes))
+	}
 	if _, err := stream.Write(reqBytes); err != nil {
 		return nil, fmt.Errorf("write status request: %w", err)
 	}
 	stream.CloseWrite()
 
-	code, respData, err := readReqRespChunk(stream, stream, "status")
+	code, respData, err := h.readReqRespChunk(stream, stream, "status")
 	if err != nil {
 		return nil, fmt.Errorf("read status response: %w", err)
 	}

@@ -64,7 +64,7 @@ func (c *coverageSet) or(other *coverageSet) {
 
 // record publishes one section: the combined validator count, the per-subnet
 // split, and how many subnets were covered at all.
-func (c *coverageSet) record(section string) {
+func (c *coverageSet) record(m *metrics.Metrics, section string) {
 	if c == nil {
 		return
 	}
@@ -78,9 +78,9 @@ func (c *coverageSet) record(section string) {
 		total++
 		subnetCounts[vid%committeeCount]++
 	}
-	metrics.SetAttestationAggregateCoverageValidators(section, metrics.CoverageSubnetCombined, total)
+	m.SetAttestationAggregateCoverageValidators(section, metrics.CoverageSubnetCombined, total)
 	for subnet, count := range subnetCounts {
-		metrics.SetAttestationAggregateCoverageValidators(section, "subnet_"+strconv.Itoa(subnet), count)
+		m.SetAttestationAggregateCoverageValidators(section, "subnet_"+strconv.Itoa(subnet), count)
 	}
 	covered := 0
 	for _, has := range c.hasSubnet {
@@ -88,7 +88,7 @@ func (c *coverageSet) record(section string) {
 			covered++
 		}
 	}
-	metrics.SetAttestationAggregateCoverageSubnets(section, covered)
+	m.SetAttestationAggregateCoverageSubnets(section, covered)
 }
 
 // validatorCount reads the head state's registry size, which is what every
@@ -167,10 +167,10 @@ func (e *Engine) reportPostBlockCoverage(reportingSlot uint64) {
 	// A genuine all-zero reading is real information — an empty slot, or a
 	// proposer that dropped every attestation — and reads as a dip rather than
 	// a gauge silently holding its last value. Always record the four sections.
-	timely.record(metrics.CoverageSectionTimely)
-	late.record(metrics.CoverageSectionLate)
-	block.record(metrics.CoverageSectionBlock)
-	combined.record(metrics.CoverageSectionCombined)
+	timely.record(e.metrics, metrics.CoverageSectionTimely)
+	late.record(e.metrics, metrics.CoverageSectionLate)
+	block.record(e.metrics, metrics.CoverageSectionBlock)
+	combined.record(e.metrics, metrics.CoverageSectionCombined)
 
 	// The diff is only meaningful once a block has actually reported this round.
 	// Without that guard a missed slot reports block_only=0, timely_only=N,
@@ -196,8 +196,8 @@ func (e *Engine) reportPostBlockCoverage(reportingSlot uint64) {
 			timelyOnly++
 		}
 	}
-	metrics.SetAttestationAggregateCoverageDiffValidators(metrics.CoverageDiffBlockOnly, blockOnly)
-	metrics.SetAttestationAggregateCoverageDiffValidators(metrics.CoverageDiffTimelyOnly, timelyOnly)
+	e.metrics.SetAttestationAggregateCoverageDiffValidators(metrics.CoverageDiffBlockOnly, blockOnly)
+	e.metrics.SetAttestationAggregateCoverageDiffValidators(metrics.CoverageDiffTimelyOnly, timelyOnly)
 }
 
 // reportAggStartNewCoverage emits what the aggregation session is about to work
@@ -213,7 +213,7 @@ func (e *Engine) reportAggStartNewCoverage() {
 			set.add(participants)
 		}
 	}
-	set.record(metrics.CoverageSectionAggregateStartNew)
+	set.record(e.metrics, metrics.CoverageSectionAggregateStartNew)
 }
 
 // reportProposalCoverage emits the validators covered by the aggregates we are
@@ -229,5 +229,5 @@ func (e *Engine) reportProposalCoverage(attestations []*types.AggregatedAttestat
 			set.add(att.AggregationBits)
 		}
 	}
-	set.record(metrics.CoverageSectionProposalCombined)
+	set.record(e.metrics, metrics.CoverageSectionProposalCombined)
 }

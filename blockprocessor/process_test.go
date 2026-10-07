@@ -12,7 +12,7 @@ import (
 )
 
 func TestOnBlockRejectsNilStore(t *testing.T) {
-	if err := OnBlock(nil, nil, nil); err == nil {
+	if err := OnBlock(nil, nil, nil, nil); err == nil {
 		t.Fatal("expected nil store error")
 	}
 }
@@ -21,7 +21,7 @@ func TestOnBlockWithoutVerificationPersistsBlock(t *testing.T) {
 	s, parentState, parentRoot := processorStoreWithParent(t)
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
 
-	if err := OnBlockWithoutVerification(s, &types.SignedBlock{
+	if err := OnBlockWithoutVerification(s, nil, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	}); err != nil {
@@ -53,7 +53,7 @@ func TestOnBlockWithoutVerificationReturnsPersistenceError(t *testing.T) {
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
 	backend.failWrites = true
 
-	err := OnBlockWithoutVerification(s, &types.SignedBlock{
+	err := OnBlockWithoutVerification(s, nil, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	})

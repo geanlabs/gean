@@ -103,7 +103,7 @@ func (sess *Session) applyBlock(step *specfixtures.ForkChoiceStep) error {
 		}
 	}
 
-	if err := blockprocessor.OnBlockWithoutVerification(sess.store, signedBlock); err != nil {
+	if err := blockprocessor.OnBlockWithoutVerification(sess.store, nil, signedBlock); err != nil {
 		return err
 	}
 

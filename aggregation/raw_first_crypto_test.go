@@ -74,7 +74,7 @@ func TestRawFirstCrypto(t *testing.T) {
 			}
 			return scheme.Aggregate(raw, children, msg, s)
 		}
-		aggs, _, deletes, _, skips := aggregateFromSnapshot(nil, snap, time.Now().Add(30*time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+		aggs, _, deletes, _, skips := aggregateFromSnapshot(nil, snap, time.Now().Add(30*time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove, nil)
 		if len(aggs) != 1 {
 			t.Fatalf("no aggregate: %v", skips)
 		}

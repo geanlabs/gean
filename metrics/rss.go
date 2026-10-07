@@ -10,13 +10,16 @@ import (
 // lean_node_rss_bytes gauge. The prover arena lives outside the Go heap, so
 // Go runtime metrics alone understate real memory pressure; RSS is what the
 // kernel OOM killer judges. No-op where /proc is unavailable.
-func SampleProcessRSS() {
+func (m *Metrics) SampleProcessRSS() {
+	if m == nil {
+		return
+	}
 	data, err := os.ReadFile("/proc/self/status")
 	if err != nil {
 		return
 	}
 	if rss := parseVmRSSBytes(data); rss > 0 {
-		metricProcessRSSBytes.Set(float64(rss))
+		m.metricProcessRSSBytes.Set(float64(rss))
 	}
 }
 

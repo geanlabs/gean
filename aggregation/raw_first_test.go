@@ -63,7 +63,7 @@ func TestRawFirstSelection(t *testing.T) {
 				}
 				return []byte{1}, nil
 			}
-			aggs, payloads, deletes, _, _ := aggregateFromSnapshot(nil, snap, time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, estimator, prove)
+			aggs, payloads, deletes, _, _ := aggregateFromSnapshot(nil, snap, time.Now().Add(SessionBudget), time.Now, MaxGroupsPerSession, shadow.Rates{}, estimator, prove, nil)
 			if calls != 1 {
 				t.Fatalf("calls=%d", calls)
 			}

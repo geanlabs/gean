@@ -6,7 +6,6 @@ import (
 
 	"github.com/geanlabs/gean/attestation"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -16,7 +15,7 @@ func (e *Engine) produceAttestations(ctx context.Context, slot uint64) {
 	}
 
 	if e.dutyGate != nil && !e.dutyGate.Decide("attestation", slot, e.store.HeadSlot(), e.networkSeenSlot()) {
-		metrics.IncAttestationsSkippedLag()
+		e.metrics.IncAttestationsSkippedLag()
 		return
 	}
 
@@ -30,7 +29,7 @@ func (e *Engine) produceAttestations(ctx context.Context, slot uint64) {
 
 		sStart := time.Now()
 		sig, err := e.keys.SignAttestation(vid, attData)
-		metrics.ObservePqSigSigningTime(time.Since(sStart).Seconds())
+		e.metrics.ObservePqSigSigningTime(time.Since(sStart).Seconds())
 		if err != nil {
 			logger.Error(logger.Validator, "sign attestation failed validator=%d: %v", vid, err)
 			continue
@@ -66,7 +65,7 @@ func (e *Engine) produceAttestations(ctx context.Context, slot uint64) {
 			}
 		}
 
-		metrics.ObserveAttestationsProductionTime(time.Since(prodStart).Seconds())
+		e.metrics.ObserveAttestationsProductionTime(time.Since(prodStart).Seconds())
 	}
 }
 

@@ -78,7 +78,7 @@ func aggregateTestSnapshot(slots ...uint64) *Snapshot {
 func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
 
-	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(nil, snap, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate)
+	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(nil, snap, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate, nil)
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")
@@ -91,7 +91,7 @@ func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 func TestAggregateFromSnapshotZeroDeadlineProcessesAll(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
 
-	_, _, _, truncated, _ := aggregateFromSnapshot(nil, snap, time.Time{}, time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate)
+	_, _, _, truncated, _ := aggregateFromSnapshot(nil, snap, time.Time{}, time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate, nil)
 
 	if truncated {
 		t.Fatal("zero deadline must never truncate")
@@ -156,7 +156,7 @@ func TestUnitCostEstimatorChargesChildrenTheResidual(t *testing.T) {
 func TestAggregateFromSnapshotBudgetStopCountsEveryDeferredGroup(t *testing.T) {
 	snap := aggregateTestSnapshot(5, 6, 7)
 
-	_, _, _, truncated, skips := aggregateFromSnapshot(nil, snap, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate)
+	_, _, _, truncated, skips := aggregateFromSnapshot(nil, snap, time.Now().Add(-time.Second), time.Now, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), insecure.Scheme{}.Aggregate, nil)
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")

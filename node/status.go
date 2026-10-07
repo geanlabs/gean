@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -26,7 +25,7 @@ const storageSizeSampleInterval = time.Minute
 
 func (e *Engine) updateSyncStatus(currentSlot uint64) {
 	status := e.computeSyncStatus(currentSlot)
-	metrics.SetSyncStatus(status.String())
+	e.metrics.SetSyncStatus(status.String())
 }
 
 func (e *Engine) computeSyncStatus(currentSlot uint64) types.SyncStatus {
@@ -45,7 +44,7 @@ func (e *Engine) GetSyncStatus() types.SyncStatus {
 }
 
 func (e *Engine) logChainStatus(currentSlot uint64) {
-	metrics.SampleProcessRSS()
+	e.metrics.SampleProcessRSS()
 	headRoot := e.store.Head()
 	headHeader := e.store.GetBlockHeader(headRoot)
 	justified := e.store.LatestJustified()
@@ -138,7 +137,7 @@ func (e *Engine) runTickAgeGauge(ctx context.Context) {
 			if age < 0 {
 				age = 0
 			}
-			metrics.SetTickAge(age)
+			e.metrics.SetTickAge(age)
 		}
 	}
 }
@@ -161,7 +160,7 @@ func (e *Engine) runStorageSizeGauge(ctx context.Context) {
 }
 
 func (e *Engine) sampleGossipMesh() {
-	metrics.SetGossipMeshPeers(e.network.MeshPeerCount())
+	e.metrics.SetGossipMeshPeers(e.network.MeshPeerCount())
 	sizes := e.network.TopicMeshSizes()
 	e.topicMeshSizes.Store(&sizes)
 }

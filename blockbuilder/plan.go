@@ -21,6 +21,7 @@ type planner struct {
 	parentRoot    [32]byte
 	knownRoots    KnownRoots
 	proofMerger   proofMerger
+	metrics       *metrics.Metrics
 	payloads      []AttestationPayload
 	processed     map[[32]byte]bool
 	attestations  []*types.AggregatedAttestation
@@ -52,6 +53,7 @@ func planAttestations(input Input) (planResult, error) {
 		parentRoot:    input.ParentRoot,
 		knownRoots:    input.KnownBlockRoots,
 		proofMerger:   input.ProofMerger,
+		metrics:       input.Metrics,
 		payloads:      sorted,
 		processed:     make(map[[32]byte]bool),
 		state:         workingState,
@@ -117,7 +119,7 @@ func (p *planner) tryPayload(payload AttestationPayload) bool {
 
 	p.attestations = append(p.attestations, att)
 	p.proofs = append(p.proofs, sig)
-	metrics.IncBlockProposalAttestationBuilds()
+	p.metrics.IncBlockProposalAttestationBuilds()
 	return true
 }
 

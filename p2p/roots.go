@@ -13,11 +13,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
-func handleBlocksByRootRequest(stream network.Stream, blockByRootFn func(root [32]byte) *types.SignedBlock) {
+func (h *Host) handleBlocksByRootRequest(stream network.Stream, blockByRootFn func(root [32]byte) *types.SignedBlock) {
 	armReadDeadline(stream)
 	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(MaxCompressedPayloadSize)))
 	if err != nil {
@@ -28,18 +27,18 @@ func handleBlocksByRootRequest(stream network.Stream, blockByRootFn func(root [3
 	payload, err := DecodeReqRespPayload(reqBuf)
 	if err != nil {
 		logger.Error(logger.Network, "blocks_by_root: decode request failed: %v", err)
-		writeResponse(stream, "blocks_by_root", RespInvalidRequest, []byte("decode failed"))
+		h.writeResponse(stream, "blocks_by_root", RespInvalidRequest, []byte("decode failed"))
 		return
 	}
 
 	roots, err := DecodeBlocksByRootRequest(payload)
 	if err != nil {
 		logger.Error(logger.Network, "blocks_by_root: %v", err)
-		writeResponse(stream, "blocks_by_root", RespInvalidRequest, []byte("ssz unmarshal failed"))
+		h.writeResponse(stream, "blocks_by_root", RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return
 	}
 	if err := validateRootCount(len(roots)); err != nil {
-		writeResponse(stream, "blocks_by_root", RespInvalidRequest, []byte("invalid root count"))
+		h.writeResponse(stream, "blocks_by_root", RespInvalidRequest, []byte("invalid root count"))
 		return
 	}
 
@@ -55,13 +54,13 @@ func handleBlocksByRootRequest(stream network.Stream, blockByRootFn func(root [3
 		blockData, err := block.MarshalSSZ()
 		if err != nil {
 			logger.Warn(logger.Network, "blocks_by_root: marshal failed root=0x%x: %v", root, err)
-			if !writeResponse(stream, "blocks_by_root", RespServerError, []byte("marshal failed")) {
+			if !h.writeResponse(stream, "blocks_by_root", RespServerError, []byte("marshal failed")) {
 				return
 			}
 			continue
 		}
 
-		if !writeResponse(stream, "blocks_by_root", RespSuccess, blockData) {
+		if !h.writeResponse(stream, "blocks_by_root", RespSuccess, blockData) {
 			return
 		}
 		logger.Info(logger.Network, "blocks_by_root: served block slot=%d root=0x%x", block.Block.Slot, root)
@@ -84,7 +83,9 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 
 	armWriteDeadline(stream)
 	reqBytes := EncodeReqRespPayload(EncodeBlocksByRootRequest(roots))
-	metrics.ObserveReqRespRequestSize("blocks_by_root", len(reqBytes))
+	if h.Hooks.ReqRespRequestSize != nil {
+		h.Hooks.ReqRespRequestSize("blocks_by_root", len(reqBytes))
+	}
 	if _, err := stream.Write(reqBytes); err != nil {
 		return nil, fmt.Errorf("write blocks request: %w", err)
 	}
@@ -95,7 +96,7 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 	seenRoots := make(map[[32]byte]bool, len(roots))
 	reader := bufio.NewReader(io.LimitReader(stream, int64(MaxCompressedPayloadSize)*int64(len(roots))))
 	for {
-		code, blockData, err := readReqRespChunk(stream, reader, "blocks_by_root")
+		code, blockData, err := h.readReqRespChunk(stream, reader, "blocks_by_root")
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break

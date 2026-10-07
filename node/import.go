@@ -6,7 +6,6 @@ import (
 	"github.com/geanlabs/gean/blockprocessor"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -70,7 +69,7 @@ func (e *Engine) importKnownParentBlock(
 	queue *[]*types.SignedBlock,
 ) {
 	block := signedBlock.Block
-	err := blockprocessor.OnBlock(e.store, e.scheme, signedBlock)
+	err := blockprocessor.OnBlock(e.store, e.scheme, e.metrics, signedBlock)
 	if err != nil {
 		logger.Error(logger.Chain, "block processing failed slot=%d block_root=0x%x: %v", block.Slot, blockRoot, err)
 		return
@@ -101,6 +100,6 @@ func (e *Engine) recordTableBytes(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		metrics.SetTableBytes(string(table), e.store.EstimateTableBytes(table))
+		e.metrics.SetTableBytes(string(table), e.store.EstimateTableBytes(table))
 	}
 }

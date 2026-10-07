@@ -1,104 +1,212 @@
 package metrics
 
-func ObserveBlockProcessingTime(seconds float64) {
-	observeNonNegative(metricBlockProcessingTime, seconds)
+func (m *Metrics) ObserveBlockProcessingTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricBlockProcessingTime, seconds)
 }
-func ObservePqSigSigningTime(seconds float64) { observeNonNegative(metricPqSigSigningTime, seconds) }
-func ObservePqSigVerificationTime(seconds float64) {
-	observeNonNegative(metricPqSigVerificationTime, seconds)
+func (m *Metrics) ObservePqSigSigningTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricPqSigSigningTime, seconds)
 }
-func ObservePqSigAggBuildingTime(seconds float64) {
-	observeNonNegative(metricPqSigAggBuildingTime, seconds)
+func (m *Metrics) ObservePqSigVerificationTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricPqSigVerificationTime, seconds)
 }
-func ObservePqSigAggVerificationTime(seconds float64) {
-	observeNonNegative(metricPqSigAggVerificationTime, seconds)
+func (m *Metrics) ObservePqSigAggBuildingTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricPqSigAggBuildingTime, seconds)
 }
-func ObserveCommitteeSignaturesAggregationTime(seconds float64) {
-	observeNonNegative(metricCommitteeSignaturesAggregationTime, seconds)
+func (m *Metrics) ObservePqSigAggVerificationTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricPqSigAggVerificationTime, seconds)
 }
-func ObserveAggregationPrepTime(seconds float64) {
-	observeNonNegative(metricAggregationPrepTime, seconds)
+func (m *Metrics) ObserveCommitteeSignaturesAggregationTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricCommitteeSignaturesAggregationTime, seconds)
 }
-func ObserveForkChoiceReorgDepth(depth float64) {
-	observeNonNegative(metricForkChoiceReorgDepth, depth)
+func (m *Metrics) ObserveAggregationPrepTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricAggregationPrepTime, seconds)
 }
-func ObserveTickIntervalDuration(seconds float64) {
-	observeNonNegative(metricTickIntervalDuration, seconds)
+func (m *Metrics) ObserveForkChoiceReorgDepth(depth float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricForkChoiceReorgDepth, depth)
+}
+func (m *Metrics) ObserveTickIntervalDuration(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricTickIntervalDuration, seconds)
 }
 
 // ObserveDispatchEvent records how long one dispatch-loop event took.
-func ObserveDispatchEvent(event string, seconds float64) {
+func (m *Metrics) ObserveDispatchEvent(event string, seconds float64) {
+	if m == nil {
+		return
+	}
 	if seconds < 0 {
 		return
 	}
-	metricDispatchEventDuration.WithLabelValues(event).Observe(seconds)
+	m.metricDispatchEventDuration.WithLabelValues(event).Observe(seconds)
 }
 
-func ObserveSTFTime(seconds float64)      { observeNonNegative(metricSTFTime, seconds) }
-func ObserveSTFSlotsTime(seconds float64) { observeNonNegative(metricSTFSlotsTime, seconds) }
-func ObserveSTFBlockTime(seconds float64) { observeNonNegative(metricSTFBlockTime, seconds) }
-func ObserveSTFAttestationsTime(seconds float64) {
-	observeNonNegative(metricSTFAttestationsTime, seconds)
+func (m *Metrics) ObserveSTFTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricSTFTime, seconds)
 }
-func ObserveBlockBuildingTime(seconds float64) { observeNonNegative(metricBlockBuildingTime, seconds) }
-func ObserveBlockBuildingPayloadAggregationTime(seconds float64) {
-	observeNonNegative(metricBlockBuildingPayloadAggregationTime, seconds)
+func (m *Metrics) ObserveSTFSlotsTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricSTFSlotsTime, seconds)
 }
-func ObserveBlockAggregatedPayloads(n int) {
-	observeNonNegative(metricBlockAggregatedPayloads, countValue(n))
+func (m *Metrics) ObserveSTFBlockTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricSTFBlockTime, seconds)
 }
-func ObserveGossipBlockSize(bytes int) { observeNonNegative(metricGossipBlockSize, countValue(bytes)) }
-func ObserveGossipAttestationSize(bytes int) {
-	observeNonNegative(metricGossipAttestationSize, countValue(bytes))
+func (m *Metrics) ObserveSTFAttestationsTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricSTFAttestationsTime, seconds)
 }
-func ObserveGossipAggregationSize(bytes int) {
-	observeNonNegative(metricGossipAggregationSize, countValue(bytes))
+func (m *Metrics) ObserveBlockBuildingTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricBlockBuildingTime, seconds)
 }
-
-func ObserveAttestationValidationTime(seconds float64) {
-	observeNonNegative(metricAttestationValidationTime, seconds)
+func (m *Metrics) ObserveBlockBuildingPayloadAggregationTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricBlockBuildingPayloadAggregationTime, seconds)
 }
-
-func ObserveAttestationsProductionTime(seconds float64) {
-	observeNonNegative(metricAttestationsProductionTime, seconds)
+func (m *Metrics) ObserveBlockAggregatedPayloads(n int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricBlockAggregatedPayloads, countValue(n))
 }
-
-func ObserveAggregationWorkerTotalTime(seconds float64) {
-	observeNonNegative(metricAggregationWorkerTotalTime, seconds)
+func (m *Metrics) ObserveGossipBlockSize(bytes int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricGossipBlockSize, countValue(bytes))
 }
-
-func ObserveBlockSignatureVerificationTime(seconds float64) {
-	observeNonNegative(metricBlockSignatureVerificationTime, seconds)
+func (m *Metrics) ObserveGossipAttestationSize(bytes int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricGossipAttestationSize, countValue(bytes))
 }
-
-func ObserveProvingDuration(operation string, seconds float64) {
-	observeNonNegative(metricProvingDuration.WithLabelValues(labelOrUnknown(operation)), seconds)
-}
-
-func ObserveProofSize(proofType string, bytes int) {
-	observeNonNegative(metricProofSize.WithLabelValues(labelOrUnknown(proofType)), countValue(bytes))
-}
-
-func ObserveProofMergeComponents(n int) {
-	observeNonNegative(metricProofMergeComponents, countValue(n))
-}
-
-func ObserveReqRespRequestSize(protocol string, bytes int) {
-	observeNonNegative(metricReqRespRequestSize.WithLabelValues(labelOrUnknown(protocol)), countValue(bytes))
-}
-
-func ObserveReqRespResponseChunkSize(protocol string, bytes int) {
-	observeNonNegative(metricReqRespResponseChunkSize.WithLabelValues(labelOrUnknown(protocol)), countValue(bytes))
-}
-
-func ObserveBlockProposalAttestationDataSelected(n int) {
-	observeNonNegative(metricBlockProposalAttestationDataSelected, countValue(n))
-}
-
-func ObserveBlockProposalAggregatesSelected(n int) {
-	observeNonNegative(metricBlockProposalAggregatesSelected, countValue(n))
+func (m *Metrics) ObserveGossipAggregationSize(bytes int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricGossipAggregationSize, countValue(bytes))
 }
 
-func ObserveProposalStageDuration(stage string, seconds float64) {
-	observeNonNegative(metricProposalStageDuration.WithLabelValues(labelOrUnknown(stage)), seconds)
+func (m *Metrics) ObserveAttestationValidationTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricAttestationValidationTime, seconds)
+}
+
+func (m *Metrics) ObserveAttestationsProductionTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricAttestationsProductionTime, seconds)
+}
+
+func (m *Metrics) ObserveAggregationWorkerTotalTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricAggregationWorkerTotalTime, seconds)
+}
+
+func (m *Metrics) ObserveBlockSignatureVerificationTime(seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricBlockSignatureVerificationTime, seconds)
+}
+
+func (m *Metrics) ObserveProvingDuration(operation string, seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricProvingDuration.WithLabelValues(labelOrUnknown(operation)), seconds)
+}
+
+func (m *Metrics) ObserveProofSize(proofType string, bytes int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricProofSize.WithLabelValues(labelOrUnknown(proofType)), countValue(bytes))
+}
+
+func (m *Metrics) ObserveProofMergeComponents(n int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricProofMergeComponents, countValue(n))
+}
+
+func (m *Metrics) ObserveReqRespRequestSize(protocol string, bytes int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricReqRespRequestSize.WithLabelValues(labelOrUnknown(protocol)), countValue(bytes))
+}
+
+func (m *Metrics) ObserveReqRespResponseChunkSize(protocol string, bytes int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricReqRespResponseChunkSize.WithLabelValues(labelOrUnknown(protocol)), countValue(bytes))
+}
+
+func (m *Metrics) ObserveBlockProposalAttestationDataSelected(n int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricBlockProposalAttestationDataSelected, countValue(n))
+}
+
+func (m *Metrics) ObserveBlockProposalAggregatesSelected(n int) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricBlockProposalAggregatesSelected, countValue(n))
+}
+
+func (m *Metrics) ObserveProposalStageDuration(stage string, seconds float64) {
+	if m == nil {
+		return
+	}
+	observeNonNegative(m.metricProposalStageDuration.WithLabelValues(labelOrUnknown(stage)), seconds)
 }

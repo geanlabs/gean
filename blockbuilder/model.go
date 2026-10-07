@@ -2,6 +2,7 @@ package blockbuilder
 
 import (
 	"github.com/geanlabs/gean/attestationproof"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -46,6 +47,8 @@ type Input struct {
 	KnownBlockRoots KnownRoots
 	Payloads        []AttestationPayload
 	ProofMerger     attestationproof.MergeProvider
+	// Metrics records block-building metrics; nil records nothing.
+	Metrics *metrics.Metrics
 }
 
 type Result struct {

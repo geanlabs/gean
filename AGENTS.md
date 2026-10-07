@@ -127,7 +127,8 @@ when the right resolution of a conflict is unclear.
 - **Storage**: For `store` or `db` changes, check write ordering and what a crash
   mid-write leaves on restart.
 - **Logging and metrics**: Use `logger` component constants with `key=value` fields and `0x%x`
-  roots. Add metrics in `metrics` with the `lean_` prefix.
+  roots. Add metrics as `metrics.Metrics` collectors with the `lean_` prefix, recorded through the
+  node's own instance, never a package-level collector.
 - **Generated code**: Do not edit `types/*_encoding.go`; run `make sszgen`.
   When SSZ definitions change, inspect the regenerated diff and verify that a second run produces no
   further changes. Keep generator upgrades separate unless required by the task.

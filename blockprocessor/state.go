@@ -8,7 +8,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-func transitionState(parentState *types.State, block *types.Block) (*types.State, error) {
+func transitionState(m *metrics.Metrics, parentState *types.State, block *types.Block) (*types.State, error) {
 	state, err := parentState.Clone()
 	if err != nil {
 		return nil, err
@@ -25,9 +25,9 @@ func transitionState(parentState *types.State, block *types.Block) (*types.State
 	if err := statetransition.ProcessSlots(state, block.Slot); err != nil {
 		return nil, err
 	}
-	metrics.ObserveSTFSlotsTime(time.Since(slotsStart).Seconds())
+	m.ObserveSTFSlotsTime(time.Since(slotsStart).Seconds())
 	if block.Slot > slotsBefore {
-		metrics.IncSTFSlotsProcessed(block.Slot - slotsBefore)
+		m.IncSTFSlotsProcessed(block.Slot - slotsBefore)
 	}
 
 	blockStart := time.Now()
@@ -39,9 +39,9 @@ func transitionState(parentState *types.State, block *types.Block) (*types.State
 	if err := statetransition.ProcessAttestations(state, attestations); err != nil {
 		return nil, err
 	}
-	metrics.ObserveSTFAttestationsTime(time.Since(attStart).Seconds())
-	metrics.IncSTFAttestationsProcessed(len(attestations))
-	metrics.ObserveSTFBlockTime(time.Since(blockStart).Seconds())
+	m.ObserveSTFAttestationsTime(time.Since(attStart).Seconds())
+	m.IncSTFAttestationsProcessed(len(attestations))
+	m.ObserveSTFBlockTime(time.Since(blockStart).Seconds())
 
 	if err := statetransition.VerifyStateRoot(state, block); err != nil {
 		return nil, err

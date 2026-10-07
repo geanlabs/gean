@@ -9,7 +9,6 @@ import (
 	"github.com/geanlabs/gean/aggregation"
 	"github.com/geanlabs/gean/attestationproof"
 	"github.com/geanlabs/gean/crypto"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
@@ -59,9 +58,9 @@ func (e *Engine) dispatchRecovery(block *types.SignedBlock) {
 	}
 	select {
 	case e.recoveryCh <- block:
-		metrics.SetProvingQueueDepth("recovery", len(e.recoveryCh))
+		e.metrics.SetProvingQueueDepth("recovery", len(e.recoveryCh))
 	default:
-		metrics.IncProofOperation("recovery", "canceled")
+		e.metrics.IncProofOperation("recovery", "canceled")
 	}
 }
 
@@ -71,7 +70,7 @@ func (e *Engine) runRecoveryWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case block := <-e.recoveryCh:
-			metrics.SetProvingQueueDepth("recovery", len(e.recoveryCh))
+			e.metrics.SetProvingQueueDepth("recovery", len(e.recoveryCh))
 			e.recoverBlockProofs(ctx, block)
 		}
 	}
@@ -123,11 +122,11 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 			return
 		}
 		if !e.splitFitsBeforeAggregation(now) {
-			metrics.IncProofOperation("recovery", "canceled")
+			e.metrics.IncProofOperation("recovery", "canceled")
 			return
 		}
 		if e.provingGate != nil && !e.provingGate.Acquire(ctx, false) {
-			metrics.IncProofOperation("recovery", "canceled")
+			e.metrics.IncProofOperation("recovery", "canceled")
 			return
 		}
 		// Acquire blocks for as long as the current holder keeps the prover, so the
@@ -138,7 +137,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 			if e.provingGate != nil {
 				e.provingGate.Release(false)
 			}
-			metrics.IncProofOperation("recovery", "canceled")
+			e.metrics.IncProofOperation("recovery", "canceled")
 			return
 		}
 		started := time.Now()
@@ -165,12 +164,12 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		if e.provingGate != nil {
 			e.provingGate.Release(false)
 		}
-		metrics.ObserveProvingDuration("recovery", time.Since(started).Seconds())
+		e.metrics.ObserveProvingDuration("recovery", time.Since(started).Seconds())
 		if err != nil {
-			metrics.IncProofOperation("recovery", "error")
+			e.metrics.IncProofOperation("recovery", "error")
 		} else {
-			metrics.IncProofOperation("recovery", "success")
-			metrics.ObserveProofSize("type1", len(proof))
+			e.metrics.IncProofOperation("recovery", "success")
+			e.metrics.ObserveProofSize("type1", len(proof))
 			e.store.NewPayloads().Push(candidate.root, candidate.att.Data, recovered)
 			if e.network != nil {
 				_ = e.network.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{

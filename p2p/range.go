@@ -13,11 +13,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/types"
 )
 
-func handleBlocksByRangeRequest(
+func (h *Host) handleBlocksByRangeRequest(
 	stream network.Stream,
 	currentSlotFn func() uint64,
 	blocksInRangeFn func(startSlot, count uint64) ([]*types.SignedBlock, bool),
@@ -32,18 +31,18 @@ func handleBlocksByRangeRequest(
 	payload, err := DecodeReqRespPayload(reqBuf)
 	if err != nil {
 		logger.Error(logger.Network, "blocks_by_range: decode request failed: %v", err)
-		writeResponse(stream, "blocks_by_range", RespInvalidRequest, []byte("decode failed"))
+		h.writeResponse(stream, "blocks_by_range", RespInvalidRequest, []byte("decode failed"))
 		return
 	}
 
 	req := &types.BlocksByRangeRequest{}
 	if err := req.UnmarshalSSZ(payload); err != nil {
 		logger.Error(logger.Network, "blocks_by_range: ssz unmarshal failed: %v", err)
-		writeResponse(stream, "blocks_by_range", RespInvalidRequest, []byte("ssz unmarshal failed"))
+		h.writeResponse(stream, "blocks_by_range", RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return
 	}
 	if err := validateRangeRequest(req.StartSlot, req.Count); err != nil {
-		writeResponse(stream, "blocks_by_range", RespInvalidRequest, []byte("invalid count"))
+		h.writeResponse(stream, "blocks_by_range", RespInvalidRequest, []byte("invalid count"))
 		return
 	}
 
@@ -53,7 +52,7 @@ func handleBlocksByRangeRequest(
 		historyFloor = currentSlot - types.MinSlotsForBlockRequests
 	}
 	if req.StartSlot < historyFloor {
-		writeResponse(stream, "blocks_by_range", RespResourceUnavailable, []byte("start_slot below history horizon"))
+		h.writeResponse(stream, "blocks_by_range", RespResourceUnavailable, []byte("start_slot below history horizon"))
 		return
 	}
 
@@ -65,7 +64,7 @@ func handleBlocksByRangeRequest(
 	// empty stream tells the requester this range does not exist, so it stops
 	// instead of asking a peer that can answer.
 	if !complete {
-		writeResponse(stream, "blocks_by_range", RespResourceUnavailable, []byte("history below stored chain"))
+		h.writeResponse(stream, "blocks_by_range", RespResourceUnavailable, []byte("history below stored chain"))
 		return
 	}
 
@@ -76,12 +75,12 @@ func handleBlocksByRangeRequest(
 		blockData, err := block.MarshalSSZ()
 		if err != nil {
 			logger.Warn(logger.Network, "blocks_by_range: marshal block at slot %d failed: %v", block.Block.Slot, err)
-			if !writeResponse(stream, "blocks_by_range", RespServerError, []byte("marshal failed")) {
+			if !h.writeResponse(stream, "blocks_by_range", RespServerError, []byte("marshal failed")) {
 				return
 			}
 			continue
 		}
-		if !writeResponse(stream, "blocks_by_range", RespSuccess, blockData) {
+		if !h.writeResponse(stream, "blocks_by_range", RespSuccess, blockData) {
 			return
 		}
 		logger.Info(logger.Network, "blocks_by_range: served slot=%d", block.Block.Slot)
@@ -114,7 +113,9 @@ func (h *Host) FetchBlocksByRange(
 	}
 	armWriteDeadline(stream)
 	reqBytes := EncodeReqRespPayload(reqSSZ)
-	metrics.ObserveReqRespRequestSize("blocks_by_range", len(reqBytes))
+	if h.Hooks.ReqRespRequestSize != nil {
+		h.Hooks.ReqRespRequestSize("blocks_by_range", len(reqBytes))
+	}
 	if _, err := stream.Write(reqBytes); err != nil {
 		return nil, fmt.Errorf("write blocks_by_range request: %w", err)
 	}
@@ -126,7 +127,7 @@ func (h *Host) FetchBlocksByRange(
 
 	reader := bufio.NewReader(io.LimitReader(stream, int64(MaxCompressedPayloadSize)*int64(count)))
 	for {
-		code, blockData, err := readReqRespChunk(stream, reader, "blocks_by_range")
+		code, blockData, err := h.readReqRespChunk(stream, reader, "blocks_by_range")
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break

@@ -227,7 +227,7 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	// 5. Call OnBlock WITH signature verification.
 	scheme := xmss.NewScheme()
 	defer scheme.Close()
-	err = blockprocessor.OnBlock(s, scheme, signedBlock)
+	err = blockprocessor.OnBlock(s, scheme, nil, signedBlock)
 
 	// 6. Check result against expectation.
 	expectFailure := tt.RejectionReason != nil

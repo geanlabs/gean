@@ -15,10 +15,12 @@ import (
 	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/genesis"
+	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/node"
 	"github.com/geanlabs/gean/role"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Crypto is the signature scheme and validator keys a cluster runs on.
@@ -54,6 +56,8 @@ type Node struct {
 	// Aggregator is the node's aggregator role; setting it switches
 	// aggregation on or off at runtime, as the admin API does.
 	Aggregator *role.Controller
+	// Metrics is the node's own metrics registry.
+	Metrics *prometheus.Registry
 }
 
 // Cluster is a set of nodes sharing a simulated network and clock.
@@ -147,7 +151,7 @@ func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValida
 		return nil, err
 	}
 
-	n := &Node{Store: s, Aggregator: role.New(aggregator)}
+	n := &Node{Store: s, Aggregator: role.New(aggregator), Metrics: prometheus.NewRegistry()}
 	components := node.Components{
 		Store:      s,
 		ForkChoice: fc,
@@ -155,6 +159,7 @@ func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValida
 		Crypto:     c.crypto.Scheme(),
 		Aggregator: n.Aggregator,
 		Clock:      &c.clock,
+		Metrics:    metrics.New(n.Metrics),
 	}
 	if len(validators) > 0 {
 		components.Keys = c.crypto.Signer(validators)

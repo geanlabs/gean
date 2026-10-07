@@ -112,3 +112,40 @@ func TestRuntimeAggregatorRestartsFinality(t *testing.T) {
 		}
 	}
 }
+
+// Nodes in one process must keep separate observations: only the aggregator
+// produces aggregates, so only its registry may count them.
+func TestNodeMetricsAreIsolated(t *testing.T) {
+	ctx := context.Background()
+	c, err := New(ctx, Config{
+		GenesisTime: 1_000_000,
+		Validators:  4,
+		Nodes:       [][]uint64{{0, 1}, {2, 3}},
+		Aggregators: []int{0},
+	})
+	if err != nil {
+		t.Fatalf("new cluster: %v", err)
+	}
+	defer c.Close()
+	c.AdvanceSlots(ctx, 8) // aggregates first appear at slot 5
+
+	aggregates := func(n *Node) float64 {
+		t.Helper()
+		families, err := n.Metrics.Gather()
+		if err != nil {
+			t.Fatalf("gather: %v", err)
+		}
+		for _, family := range families {
+			if family.GetName() == "lean_pq_sig_aggregated_signatures_total" {
+				return family.GetMetric()[0].GetCounter().GetValue()
+			}
+		}
+		return 0
+	}
+	if got := aggregates(c.Nodes()[0]); got == 0 {
+		t.Fatal("aggregator recorded no aggregates")
+	}
+	if got := aggregates(c.Nodes()[1]); got != 0 {
+		t.Fatalf("non-aggregator recorded %v aggregates from the aggregator's work", got)
+	}
+}

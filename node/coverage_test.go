@@ -92,7 +92,7 @@ func TestNewCoverageSetRejectsDegenerateShapes(t *testing.T) {
 	// A nil set must absorb both calls rather than panic.
 	var nilSet *coverageSet
 	nilSet.add(types.BitlistFromIndices([]uint64{1}))
-	nilSet.record("timely")
+	nilSet.record(nil, "timely")
 }
 
 func TestCoverageSetOrUnionsBothDimensions(t *testing.T) {
