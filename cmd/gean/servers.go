@@ -11,12 +11,12 @@ import (
 	"github.com/geanlabs/gean/tasks"
 )
 
-func startHTTPServers(ctx context.Context, services *tasks.Group, cfg config, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) (string, string) {
+func startHTTPServers(ctx context.Context, services *tasks.Group, cfg config, s *store.ConsensusStore, forkChoiceView func() *forkchoice.View, aggCtl *role.Controller) (string, string) {
 	apiAddr := cfg.apiAddress()
 	metricsAddr := cfg.metricsAddress()
 
 	services.Go(func() {
-		if err := api.Serve(ctx, "api", apiAddr, apiHandler(s, fc, aggCtl)); err != nil {
+		if err := api.Serve(ctx, "api", apiAddr, apiHandler(s, forkChoiceView, aggCtl)); err != nil {
 			logger.Error(logger.Node, "api server error: %v", err)
 		}
 	})

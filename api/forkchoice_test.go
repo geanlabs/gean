@@ -30,7 +30,7 @@ func TestForkChoiceHandler(t *testing.T) {
 	fc := forkchoice.New(9, root, parent)
 
 	rec := httptest.NewRecorder()
-	ForkChoiceHandler(s, fc)(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/fork_choice", nil))
+	ForkChoiceHandler(s, viewOf(s, fc))(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/fork_choice", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d, want 200", rec.Code)
@@ -50,5 +50,18 @@ func TestForkChoiceHandler(t *testing.T) {
 	}
 	if body.Nodes[0].ProposerIndex != 3 {
 		t.Fatalf("proposer_index=%d, want 3", body.Nodes[0].ProposerIndex)
+	}
+}
+
+// viewOf builds the fork choice view the engine would publish for s and fc.
+func viewOf(s *store.ConsensusStore, fc *forkchoice.ForkChoice) func() *forkchoice.View {
+	return func() *forkchoice.View {
+		return &forkchoice.View{
+			Nodes:      fc.Nodes(),
+			Head:       s.Head(),
+			Justified:  *s.LatestJustified(),
+			Finalized:  *s.LatestFinalized(),
+			SafeTarget: s.SafeTarget(),
+		}
 	}
 }

@@ -25,28 +25,31 @@ type forkChoiceNode struct {
 	Weight        int64  `json:"weight"`
 }
 
-func ForkChoiceHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice) http.HandlerFunc {
+// ForkChoiceHandler serves the latest fork choice view. Everything else it
+// reports is read from the store by root, which never changes once written, so
+// the response is consistent with the view.
+func ForkChoiceHandler(s *store.ConsensusStore, view func() *forkchoice.View) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		head := s.Head()
-		justified := s.LatestJustified()
-		finalized := s.LatestFinalized()
-		safeTarget := s.SafeTarget()
+		v := view()
+		if v == nil {
+			http.Error(w, "fork choice not available", http.StatusServiceUnavailable)
+			return
+		}
+		head, justified, finalized, safeTarget := v.Head, v.Justified, v.Finalized, v.SafeTarget
 
-		nodes := make([]forkChoiceNode, 0)
-		if fc != nil {
-			for _, pn := range fc.Nodes() {
-				var proposerIndex uint64
-				if hdr := s.GetBlockHeader(pn.Root); hdr != nil {
-					proposerIndex = hdr.ProposerIndex
-				}
-				nodes = append(nodes, forkChoiceNode{
-					Root:          fmt.Sprintf("0x%x", pn.Root),
-					Slot:          pn.Slot,
-					ParentRoot:    fmt.Sprintf("0x%x", pn.ParentRoot),
-					ProposerIndex: proposerIndex,
-					Weight:        pn.Weight,
-				})
+		nodes := make([]forkChoiceNode, 0, len(v.Nodes))
+		for _, pn := range v.Nodes {
+			var proposerIndex uint64
+			if hdr := s.GetBlockHeader(pn.Root); hdr != nil {
+				proposerIndex = hdr.ProposerIndex
 			}
+			nodes = append(nodes, forkChoiceNode{
+				Root:          fmt.Sprintf("0x%x", pn.Root),
+				Slot:          pn.Slot,
+				ParentRoot:    fmt.Sprintf("0x%x", pn.ParentRoot),
+				ProposerIndex: proposerIndex,
+				Weight:        pn.Weight,
+			})
 		}
 
 		var validatorCount uint64

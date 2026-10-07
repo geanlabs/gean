@@ -11,6 +11,6 @@ import (
 	"github.com/geanlabs/gean/store"
 )
 
-func apiHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) http.Handler {
-	return api.NewHandler(s, fc, aggCtl)
+func apiHandler(s *store.ConsensusStore, forkChoiceView func() *forkchoice.View, aggCtl *role.Controller) http.Handler {
+	return api.NewHandler(s, forkChoiceView, aggCtl)
 }

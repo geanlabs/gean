@@ -1,6 +1,7 @@
 package node
 
 import (
+	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/store"
@@ -8,6 +9,7 @@ import (
 )
 
 func (e *Engine) updateHead() {
+	defer e.publishForkChoiceView()
 	attestations := e.Store.ExtractLatestKnownAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
@@ -116,6 +118,7 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 }
 
 func (e *Engine) updateSafeTarget() {
+	defer e.publishForkChoiceView()
 	attestations := e.Store.ExtractLatestNewAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
@@ -136,4 +139,20 @@ func (e *Engine) updateSafeTarget() {
 	if safeHeader != nil {
 		metrics.SetSafeTargetSlot(safeHeader.Slot)
 	}
+}
+
+// ForkChoiceView returns the fork choice view published after the latest head
+// or safe-target update. It is safe to call from any goroutine.
+func (e *Engine) ForkChoiceView() *forkchoice.View {
+	return e.forkChoiceView.Load()
+}
+
+func (e *Engine) publishForkChoiceView() {
+	e.forkChoiceView.Store(&forkchoice.View{
+		Nodes:      e.FC.Nodes(),
+		Head:       e.Store.Head(),
+		Justified:  *e.Store.LatestJustified(),
+		Finalized:  *e.Store.LatestFinalized(),
+		SafeTarget: e.Store.SafeTarget(),
+	})
 }

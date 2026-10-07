@@ -131,7 +131,7 @@ func run(cfg config) error {
 	var services tasks.Group
 	startNodeNetworking(ctx, &services, n, s, p2pHost, inputs.bootnodes)
 
-	apiAddr, metricsAddr := startHTTPServers(ctx, &services, cfg, s, fc, aggCtl)
+	apiAddr, metricsAddr := startHTTPServers(ctx, &services, cfg, s, n.ForkChoiceView, aggCtl)
 	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", apiAddr, metricsAddr, cfg.IsAggregator)
 
 	waitForShutdown(cancel)

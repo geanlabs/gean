@@ -125,6 +125,10 @@ type Engine struct {
 
 	warnedMissingJustified [32]byte
 
+	// forkChoiceView is the latest consistent picture of fork choice for
+	// readers off the dispatch loop; see ForkChoiceView.
+	forkChoiceView atomic.Pointer[forkchoice.View]
+
 	// maxSeenGossipSlot is the highest plausible slot heard on gossip, whether
 	// or not the block was admitted. Written from the p2p goroutine, read on
 	// the tick loop by the duty gate.
@@ -186,6 +190,7 @@ func New(c Components, cfg Config) *Engine {
 		fetchInFlight:         make(map[[32]byte]bool),
 		clock:                 c.Clock,
 	}
+	e.publishForkChoiceView()
 	e.aggregator = aggregation.NewWorker(e.Store, e.PubKeys, e.Network, e.ProvingGate, e.Shadow, e.clock.Now)
 	return e
 }

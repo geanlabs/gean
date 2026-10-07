@@ -219,7 +219,15 @@ func lookupAPIHandler(method, endpoint string, s *store.ConsensusStore, fc *fork
 	case "GET /lean/v0/checkpoints/justified":
 		return api.JustifiedCheckpointHandler(s)
 	case "GET /lean/v0/fork_choice":
-		return api.ForkChoiceHandler(s, fc)
+		return api.ForkChoiceHandler(s, func() *forkchoice.View {
+			return &forkchoice.View{
+				Nodes:      fc.Nodes(),
+				Head:       s.Head(),
+				Justified:  *s.LatestJustified(),
+				Finalized:  *s.LatestFinalized(),
+				SafeTarget: s.SafeTarget(),
+			}
+		})
 	case "GET /lean/v0/states/finalized":
 		return api.FinalizedStateHandler(s)
 	case "GET /lean/v0/admin/aggregator":
