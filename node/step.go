@@ -8,8 +8,8 @@ import (
 
 // Tick runs the slot-interval tick at the clock's current time. With
 // ProcessPending it drives the engine deterministically in place of Run.
-func (e *Engine) Tick() {
-	e.onTick()
+func (e *Engine) Tick(ctx context.Context) {
+	e.onTick(ctx)
 }
 
 // ProcessPending handles every queued event and worker job on the calling

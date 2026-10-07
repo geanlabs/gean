@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"time"
 
 	"github.com/geanlabs/gean/aggregation"
@@ -15,7 +16,7 @@ import (
 // was produced for.
 const aggregationDeadlineOffset = 4 * types.MillisecondsPerInterval
 
-func (e *Engine) onTick() {
+func (e *Engine) onTick(ctx context.Context) {
 	now := e.clock.Now()
 	firstTick := e.lastTick.IsZero()
 	if !firstTick {
@@ -67,7 +68,7 @@ func (e *Engine) onTick() {
 	}
 
 	if currentInterval == 1 {
-		e.runAttestationInterval(currentSlot)
+		e.runAttestationInterval(ctx, currentSlot)
 	}
 
 	if currentInterval == 3 {
@@ -255,10 +256,10 @@ func (e *Engine) expectedVotersPerSlot() uint64 {
 	return voters
 }
 
-func (e *Engine) runAttestationInterval(currentSlot uint64) {
+func (e *Engine) runAttestationInterval(ctx context.Context, currentSlot uint64) {
 	e.drainPendingBlocks()
 	e.updateHead()
-	e.produceAttestations(currentSlot)
+	e.produceAttestations(ctx, currentSlot)
 	// Report the previous round: by now the head normally carries the block
 	// proposed at currentSlot, which is the first block able to include votes
 	// for currentSlot-1.

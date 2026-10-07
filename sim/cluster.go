@@ -91,7 +91,7 @@ func New(ctx context.Context, cfg Config) (*Cluster, error) {
 	closeKeys(attKeys, propKeys, owned)
 
 	for _, n := range c.nodes {
-		n.Engine.Tick()
+		n.Engine.Tick(ctx)
 	}
 	c.settle(ctx)
 	return c, nil
@@ -168,7 +168,7 @@ func (c *Cluster) Slot() uint64 {
 func (c *Cluster) AdvanceInterval(ctx context.Context) {
 	c.clock.advance(types.MillisecondsPerInterval * time.Millisecond)
 	for _, n := range c.nodes {
-		n.Engine.Tick()
+		n.Engine.Tick(ctx)
 	}
 	c.settle(ctx)
 }

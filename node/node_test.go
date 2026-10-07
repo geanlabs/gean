@@ -322,7 +322,7 @@ func TestOnTickNilAggregationController(t *testing.T) {
 	e := makeTestEngine()
 	e.aggregator = nil
 
-	e.onTick()
+	e.onTick(context.Background())
 }
 
 func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {

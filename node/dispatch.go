@@ -26,7 +26,7 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 			return
 
 		case <-ticks:
-			timeEvent("tick", e.onTick)
+			timeEvent("tick", func() { e.onTick(ctx) })
 
 		case <-e.earlyAggregateCh:
 			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(e.nowMs()) })

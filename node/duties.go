@@ -10,7 +10,7 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-func (e *Engine) produceAttestations(slot uint64) {
+func (e *Engine) produceAttestations(ctx context.Context, slot uint64) {
 	if e.keys == nil {
 		return
 	}
@@ -54,7 +54,12 @@ func (e *Engine) produceAttestations(slot uint64) {
 		}
 
 		if e.network != nil {
-			if err := e.network.PublishAttestation(context.Background(), signedAtt, e.committeeCount); err != nil {
+			// Publishing runs on the dispatch loop, so it is bounded like a
+			// proposal publish and ends when the engine shuts down.
+			publishCtx, cancel := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
+			err := e.network.PublishAttestation(publishCtx, signedAtt, e.committeeCount)
+			cancel()
+			if err != nil {
 				logger.Error(logger.Network, "publish attestation failed validator=%d: %v", vid, err)
 			} else {
 				logger.Info(logger.Network, "published attestation to network slot=%d validator=%d", slot, vid)

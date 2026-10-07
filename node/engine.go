@@ -207,7 +207,7 @@ func (e *Engine) Run(ctx context.Context) {
 	e.startWorkers(ctx)
 
 	logger.Info(logger.Node, "started")
-	e.onTick()
+	e.onTick(ctx)
 	e.dispatch(ctx, ticker.C)
 	e.workers.Wait()
 }
