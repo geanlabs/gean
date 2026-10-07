@@ -1,22 +1,16 @@
-package blockprocessor
+package store
 
 import (
 	"fmt"
 
 	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )
 
-func persistBlock(
-	s *store.ConsensusStore,
-	blockRoot [32]byte,
-	signedBlock *types.SignedBlock,
-	postState *types.State,
-) error {
-	if err := validateStore(s); err != nil {
-		return err
-	}
+// PutImportedBlock persists an imported block: its header, body, signed block,
+// post-state, live-chain entry and, when it advances, the justified checkpoint.
+// Everything goes in one batch, so a crash mid-write leaves all of it or none.
+func (s *ConsensusStore) PutImportedBlock(blockRoot [32]byte, signedBlock *types.SignedBlock, postState *types.State) error {
 	if signedBlock == nil || signedBlock.Block == nil || signedBlock.Block.Body == nil {
 		return fmt.Errorf("persist block: malformed signed block")
 	}
@@ -53,14 +47,14 @@ func persistBlock(
 	if err != nil {
 		return fmt.Errorf("marshal body: %w", err)
 	}
-	checkpointEntries, err := justifiedCheckpointChange(s, postState)
+	checkpointEntries, err := s.justifiedCheckpointChange(postState)
 	if err != nil {
 		return err
 	}
 
-	wb, err := s.Backend.BeginWrite()
+	wb, err := s.beginWrite("persist block")
 	if err != nil {
-		return fmt.Errorf("persist block: begin write: %w", err)
+		return err
 	}
 	if err := putImportBatch(wb, storage.TableBlockHeaders, []storage.KV{{Key: blockRoot[:], Value: headerData}}, "block header"); err != nil {
 		return err
@@ -91,8 +85,7 @@ func persistBlock(
 		return fmt.Errorf("persist block: commit: %w", err)
 	}
 	// The header is now stored, so the duty gate's stored-block high-water mark
-	// has to see it. This is the import path's equivalent of what
-	// ConsensusStore.PutBlockHeader does for pending blocks.
+	// has to see it, as PutBlockHeader does for pending blocks.
 	s.ObserveStoredBlockSlot(block.Slot)
 	return nil
 }
@@ -102,4 +95,34 @@ func putImportBatch(wb storage.WriteBatch, table storage.Table, entries []storag
 		return fmt.Errorf("persist block: put %s: %w", label, err)
 	}
 	return nil
+}
+
+// justifiedCheckpointChange persists the post-state justified checkpoint when it
+// advances. The finalized checkpoint is deliberately not advanced here: it is
+// re-derived from the canonical head's chain during head selection, so a losing
+// fork that finalized a higher slot cannot latch finalization above the head.
+func (s *ConsensusStore) justifiedCheckpointChange(postState *types.State) ([]storage.KV, error) {
+	if !checkpointAdvanced(postState.LatestJustified, s.LatestJustified()) {
+		return nil, nil
+	}
+	entry, err := checkpointEntry(storage.KeyLatestJustified, postState.LatestJustified)
+	if err != nil {
+		return nil, err
+	}
+	return []storage.KV{entry}, nil
+}
+
+func checkpointAdvanced(candidate, current *types.Checkpoint) bool {
+	if candidate == nil {
+		return false
+	}
+	return current == nil || candidate.Slot > current.Slot
+}
+
+func checkpointEntry(key []byte, checkpoint *types.Checkpoint) (storage.KV, error) {
+	data, err := checkpoint.MarshalSSZ()
+	if err != nil {
+		return storage.KV{}, fmt.Errorf("marshal checkpoint: %w", err)
+	}
+	return storage.KV{Key: key, Value: data}, nil
 }
