@@ -148,11 +148,31 @@ func (e *Engine) ForkChoiceView() *forkchoice.View {
 }
 
 func (e *Engine) publishForkChoiceView() {
+	// A block's proposer never changes, so carry it over from the previous
+	// view and read headers only for nodes added since.
+	known := make(map[[32]byte]uint64)
+	if prev := e.forkChoiceView.Load(); prev != nil {
+		for _, n := range prev.Nodes {
+			known[n.Root] = n.ProposerIndex
+		}
+	}
+	protoNodes := e.forkChoice.Nodes()
+	nodes := make([]forkchoice.ViewNode, len(protoNodes))
+	for i, pn := range protoNodes {
+		proposer, ok := known[pn.Root]
+		if !ok {
+			if header := e.store.GetBlockHeader(pn.Root); header != nil {
+				proposer = header.ProposerIndex
+			}
+		}
+		nodes[i] = forkchoice.ViewNode{ProtoNode: pn, ProposerIndex: proposer}
+	}
 	e.forkChoiceView.Store(&forkchoice.View{
-		Nodes:      e.forkChoice.Nodes(),
-		Head:       e.store.Head(),
-		Justified:  *e.store.LatestJustified(),
-		Finalized:  *e.store.LatestFinalized(),
-		SafeTarget: e.store.SafeTarget(),
+		Nodes:          nodes,
+		Head:           e.store.Head(),
+		Justified:      *e.store.LatestJustified(),
+		Finalized:      *e.store.LatestFinalized(),
+		SafeTarget:     e.store.SafeTarget(),
+		ValidatorCount: e.validatorCount(),
 	})
 }

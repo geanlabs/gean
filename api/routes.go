@@ -17,7 +17,7 @@ func NewHandler(s *store.ConsensusStore, forkChoiceView func() *forkchoice.View,
 	mux.HandleFunc("GET /lean/v0/states/finalized", FinalizedStateHandler(s))
 	mux.HandleFunc("GET /lean/v0/blocks/finalized", FinalizedBlockHandler(s))
 	mux.HandleFunc("GET /lean/v0/checkpoints/justified", JustifiedCheckpointHandler(s))
-	mux.HandleFunc("GET /lean/v0/fork_choice", ForkChoiceHandler(s, forkChoiceView))
+	mux.HandleFunc("GET /lean/v0/fork_choice", ForkChoiceHandler(forkChoiceView))
 	mux.HandleFunc("GET /lean/v0/admin/aggregator", AggregatorStatusHandler(aggCtl))
 	mux.HandleFunc("POST /lean/v0/admin/aggregator", AggregatorToggleHandler(aggCtl))
 

@@ -49,7 +49,7 @@ func TestCheckpointSyncReachesNonGenesisFinalizedForkChoice(t *testing.T) {
 	fc := forkchoice.New(anchorState.Slot, s.Head(), anchorState.LatestBlockHeader.ParentRoot)
 
 	rec := httptest.NewRecorder()
-	ForkChoiceHandler(s, viewOf(s, fc))(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/fork_choice", nil))
+	ForkChoiceHandler(viewOf(s, fc))(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/fork_choice", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("fork_choice status=%d body=%s", rec.Code, rec.Body.String())

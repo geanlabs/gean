@@ -188,17 +188,8 @@ func (e *Engine) maybeEarlyAggregate(nowMs uint64) {
 	if slot == e.aggregatedSlot {
 		return
 	}
-	// Validator set is fixed at genesis in lean devnet, so decode the head state
-	// once and cache the count rather than on every arrival.
-	if e.numValidators == 0 {
-		headState := e.store.GetState(e.store.Head())
-		if headState == nil {
-			return
-		}
-		e.numValidators = headState.NumValidators()
-		if e.numValidators == 0 {
-			return
-		}
+	if e.validatorCount() == 0 {
+		return
 	}
 	// Only pull the session forward once a finalizing supermajority of *this slot's*
 	// votes is already collected. The count must be scoped to the current slot: a
@@ -267,4 +258,16 @@ func (e *Engine) runAttestationInterval(ctx context.Context, currentSlot uint64)
 		e.reportPostBlockCoverage(currentSlot - 1)
 	}
 	e.logChainStatus(currentSlot)
+}
+
+// validatorCount is the validator-set size. The set is fixed at genesis in lean
+// devnet, so the head state is decoded once and the count cached; it stays
+// zero, and is retried, until a head state is available.
+func (e *Engine) validatorCount() uint64 {
+	if e.numValidators == 0 {
+		if headState := e.store.GetState(e.store.Head()); headState != nil {
+			e.numValidators = headState.NumValidators()
+		}
+	}
+	return e.numValidators
 }

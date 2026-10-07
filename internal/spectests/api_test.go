@@ -219,13 +219,26 @@ func lookupAPIHandler(method, endpoint string, s *store.ConsensusStore, fc *fork
 	case "GET /lean/v0/checkpoints/justified":
 		return api.JustifiedCheckpointHandler(s)
 	case "GET /lean/v0/fork_choice":
-		return api.ForkChoiceHandler(s, func() *forkchoice.View {
+		return api.ForkChoiceHandler(func() *forkchoice.View {
+			nodes := make([]forkchoice.ViewNode, 0)
+			for _, pn := range fc.Nodes() {
+				n := forkchoice.ViewNode{ProtoNode: pn}
+				if header := s.GetBlockHeader(pn.Root); header != nil {
+					n.ProposerIndex = header.ProposerIndex
+				}
+				nodes = append(nodes, n)
+			}
+			var validatorCount uint64
+			if headState := s.GetState(s.Head()); headState != nil {
+				validatorCount = headState.NumValidators()
+			}
 			return &forkchoice.View{
-				Nodes:      fc.Nodes(),
-				Head:       s.Head(),
-				Justified:  *s.LatestJustified(),
-				Finalized:  *s.LatestFinalized(),
-				SafeTarget: s.SafeTarget(),
+				Nodes:          nodes,
+				Head:           s.Head(),
+				Justified:      *s.LatestJustified(),
+				Finalized:      *s.LatestFinalized(),
+				SafeTarget:     s.SafeTarget(),
+				ValidatorCount: validatorCount,
 			}
 		})
 	case "GET /lean/v0/states/finalized":

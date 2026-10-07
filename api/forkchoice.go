@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/geanlabs/gean/forkchoice"
-	"github.com/geanlabs/gean/store"
 )
 
 type forkChoiceResponse struct {
@@ -25,51 +24,41 @@ type forkChoiceNode struct {
 	Weight        int64  `json:"weight"`
 }
 
-// ForkChoiceHandler serves the latest fork choice view. Everything else it
-// reports is read from the store by root, which never changes once written, so
-// the response is consistent with the view.
-func ForkChoiceHandler(s *store.ConsensusStore, view func() *forkchoice.View) http.HandlerFunc {
+// ForkChoiceHandler serves the latest published fork choice view. It reads
+// nothing else, so the response is consistent even while pruning deletes the
+// blocks and states the view refers to.
+func ForkChoiceHandler(view func() *forkchoice.View) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		v := view()
 		if v == nil {
 			http.Error(w, "fork choice not available", http.StatusServiceUnavailable)
 			return
 		}
-		head, justified, finalized, safeTarget := v.Head, v.Justified, v.Finalized, v.SafeTarget
 
 		nodes := make([]forkChoiceNode, 0, len(v.Nodes))
-		for _, pn := range v.Nodes {
-			var proposerIndex uint64
-			if hdr := s.GetBlockHeader(pn.Root); hdr != nil {
-				proposerIndex = hdr.ProposerIndex
-			}
+		for _, n := range v.Nodes {
 			nodes = append(nodes, forkChoiceNode{
-				Root:          fmt.Sprintf("0x%x", pn.Root),
-				Slot:          pn.Slot,
-				ParentRoot:    fmt.Sprintf("0x%x", pn.ParentRoot),
-				ProposerIndex: proposerIndex,
-				Weight:        pn.Weight,
+				Root:          fmt.Sprintf("0x%x", n.Root),
+				Slot:          n.Slot,
+				ParentRoot:    fmt.Sprintf("0x%x", n.ParentRoot),
+				ProposerIndex: n.ProposerIndex,
+				Weight:        n.Weight,
 			})
-		}
-
-		var validatorCount uint64
-		if headState := s.GetState(head); headState != nil {
-			validatorCount = headState.NumValidators()
 		}
 
 		writeJSON(w, http.StatusOK, forkChoiceResponse{
 			Nodes: nodes,
-			Head:  fmt.Sprintf("0x%x", head),
+			Head:  fmt.Sprintf("0x%x", v.Head),
 			Justified: checkpointResponse{
-				Slot: justified.Slot,
-				Root: fmt.Sprintf("0x%x", justified.Root),
+				Slot: v.Justified.Slot,
+				Root: fmt.Sprintf("0x%x", v.Justified.Root),
 			},
 			Finalized: checkpointResponse{
-				Slot: finalized.Slot,
-				Root: fmt.Sprintf("0x%x", finalized.Root),
+				Slot: v.Finalized.Slot,
+				Root: fmt.Sprintf("0x%x", v.Finalized.Root),
 			},
-			SafeTarget:     fmt.Sprintf("0x%x", safeTarget),
-			ValidatorCount: validatorCount,
+			SafeTarget:     fmt.Sprintf("0x%x", v.SafeTarget),
+			ValidatorCount: v.ValidatorCount,
 		})
 	}
 }

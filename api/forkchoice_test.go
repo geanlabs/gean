@@ -30,7 +30,7 @@ func TestForkChoiceHandler(t *testing.T) {
 	fc := forkchoice.New(9, root, parent)
 
 	rec := httptest.NewRecorder()
-	ForkChoiceHandler(s, viewOf(s, fc))(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/fork_choice", nil))
+	ForkChoiceHandler(viewOf(s, fc))(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/fork_choice", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d, want 200", rec.Code)
@@ -56,12 +56,25 @@ func TestForkChoiceHandler(t *testing.T) {
 // viewOf builds the fork choice view the engine would publish for s and fc.
 func viewOf(s *store.ConsensusStore, fc *forkchoice.ForkChoice) func() *forkchoice.View {
 	return func() *forkchoice.View {
+		nodes := make([]forkchoice.ViewNode, 0)
+		for _, pn := range fc.Nodes() {
+			n := forkchoice.ViewNode{ProtoNode: pn}
+			if header := s.GetBlockHeader(pn.Root); header != nil {
+				n.ProposerIndex = header.ProposerIndex
+			}
+			nodes = append(nodes, n)
+		}
+		var validatorCount uint64
+		if headState := s.GetState(s.Head()); headState != nil {
+			validatorCount = headState.NumValidators()
+		}
 		return &forkchoice.View{
-			Nodes:      fc.Nodes(),
-			Head:       s.Head(),
-			Justified:  *s.LatestJustified(),
-			Finalized:  *s.LatestFinalized(),
-			SafeTarget: s.SafeTarget(),
+			Nodes:          nodes,
+			Head:           s.Head(),
+			Justified:      *s.LatestJustified(),
+			Finalized:      *s.LatestFinalized(),
+			SafeTarget:     s.SafeTarget(),
+			ValidatorCount: validatorCount,
 		}
 	}
 }
