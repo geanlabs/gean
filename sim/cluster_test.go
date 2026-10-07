@@ -77,3 +77,38 @@ func TestClusterAgreesAndFinalizesDeterministically(t *testing.T) {
 		}
 	}
 }
+
+// Aggregation can be switched on at runtime through the admin API, so a node
+// built without the role must still be able to take it on. Without an
+// aggregator no votes are aggregated and justification stalls; enabling the
+// role on a running node must restart justification at once and finality once
+// a justifiable slot distance allows it.
+func TestRuntimeAggregatorRestartsFinality(t *testing.T) {
+	ctx := context.Background()
+	c, err := New(ctx, Config{
+		GenesisTime: 1_000_000,
+		Validators:  4,
+		Nodes:       [][]uint64{{0, 1}, {2, 3}},
+	})
+	if err != nil {
+		t.Fatalf("new cluster: %v", err)
+	}
+	defer c.Close()
+
+	c.AdvanceSlots(ctx, 6)
+	if got := c.Nodes()[0].Store.LatestJustified().Slot; got != 0 {
+		t.Fatalf("justified slot %d without an aggregator, want 0", got)
+	}
+
+	c.Nodes()[1].Engine.AggCtl.Set(true)
+	c.AdvanceSlots(ctx, 1)
+	if got := c.Nodes()[0].Store.LatestJustified().Slot; got == 0 {
+		t.Fatal("justification did not resume in the slot after enabling an aggregator")
+	}
+	c.AdvanceSlots(ctx, 7)
+	for i, n := range c.Nodes() {
+		if got := n.Store.LatestFinalized().Slot; got == 0 {
+			t.Fatalf("node %d: finality did not resume within 8 slots of enabling an aggregator", i)
+		}
+	}
+}
