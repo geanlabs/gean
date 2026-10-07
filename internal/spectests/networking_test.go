@@ -15,7 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/net/p2p"
 )
 
 // Spec fixture directory root.

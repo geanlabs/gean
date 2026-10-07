@@ -1,11 +1,10 @@
 package main
 
 import (
-
+	"github.com/geanlabs/gean/consensus/genesis"
 	"github.com/geanlabs/gean/crypto/xmss"
-	"github.com/geanlabs/gean/genesis"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/net/p2p"
 	"github.com/multiformats/go-multiaddr"
 )
 

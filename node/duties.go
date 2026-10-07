@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/geanlabs/gean/attestation"
+	"github.com/geanlabs/gean/consensus/attestation"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/types"
 )

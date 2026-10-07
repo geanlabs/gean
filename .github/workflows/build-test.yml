@@ -50,7 +50,7 @@ jobs:
         run: make test
 
       - name: Run race tests
-        run: go test -race ./node ./store ./proving ./tasks ./syncer ./p2p ./aggregation -count=1
+        run: go test -race ./node ./storage/store ./proving ./tasks ./net/syncer ./net/p2p ./consensus/aggregation -count=1
 
       - name: Run simulation tests
         run: make test-sim

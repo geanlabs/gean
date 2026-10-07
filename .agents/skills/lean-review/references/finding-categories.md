@@ -54,7 +54,7 @@ The highest-value category; reviewers miss these most.
   (`IsZeroRoot`, `ProposerIndex`, `IsProposer`, `ShortRoot`).
 - Log formatting that bypasses `logger.Info/Warn/Error` with a component
   constant (`logger.Node`, `logger.Chain`, …) from `logger`.
-- Storage key construction that bypasses `db/keys.go`
+- Storage key construction that bypasses `storage/db/keys.go`
   (`EncodeLiveChainKey`, `DecodeLiveChainKey`).
 - A hand-written or hand-edited SSZ codec. Always a finding: delete it, edit
   the struct and tags, run `make sszgen`. If `make sszgen` fails, report the
@@ -83,10 +83,10 @@ such as "mirrors `process_attestations`".
 
 ## 6. `over-validated-boundary`
 
-**Looks like:** `statetransition/` re-checking fields of a block the
-engine already verified; `forkchoice/` re-validating a root just read
+**Looks like:** `consensus/statetransition/` re-checking fields of a block the
+engine already verified; `consensus/forkchoice/` re-validating a root just read
 from the store; a storage backend validating a key built by
-`db/keys.go`.
+`storage/db/keys.go`.
 
 **Proof:** every caller is internal and the value comes from a trusted source,
 with no external boundary in between.

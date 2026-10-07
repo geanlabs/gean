@@ -4,8 +4,8 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "statetransition/**"
-      - "forkchoice/**"
+      - "consensus/statetransition/**"
+      - "consensus/forkchoice/**"
       - "internal/spectests/**"
       - "types/**"
       - "Makefile"

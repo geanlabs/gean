@@ -5,7 +5,7 @@ package spectests
 import (
 	ssz "github.com/ferranbt/fastssz"
 
-	"github.com/geanlabs/gean/p2p"
+	"github.com/geanlabs/gean/net/p2p"
 	"github.com/geanlabs/gean/types"
 )
 

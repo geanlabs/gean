@@ -3,7 +3,7 @@ package node
 import (
 	"context"
 
-	"github.com/geanlabs/gean/aggregation"
+	"github.com/geanlabs/gean/consensus/aggregation"
 
 	"github.com/geanlabs/gean/types"
 )

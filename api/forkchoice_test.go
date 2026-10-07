@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/geanlabs/gean/db"
-	"github.com/geanlabs/gean/forkchoice"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/consensus/forkchoice"
+	"github.com/geanlabs/gean/storage/db"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

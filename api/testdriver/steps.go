@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/geanlabs/gean/attestation"
-	"github.com/geanlabs/gean/blockprocessor"
+	"github.com/geanlabs/gean/consensus/attestation"
+	"github.com/geanlabs/gean/consensus/blockprocessor"
 	"github.com/geanlabs/gean/internal/specfixtures"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

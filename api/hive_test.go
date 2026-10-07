@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/role"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/db"
+	"github.com/geanlabs/gean/storage/store"
 )
 
 func TestBuildAPIMuxWithTestDriverRegistersRoutes(t *testing.T) {

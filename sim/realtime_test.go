@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -33,15 +33,20 @@ func TestRealTimeClusterFinalizes(t *testing.T) {
 		}
 	}()
 
+	// Each node's view subscription reports finality as it happens.
 	deadline := time.After(20 * types.SecondsPerSlot * time.Second)
-	poll := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
-	defer poll.Stop()
-	for !allFinalized(r.Nodes()) {
-		select {
-		case <-deadline:
-			t.Fatalf("no finality within 20 slots: finalized %v", finalizedSlots(r.Nodes()))
-		case <-poll.C:
+	for i, n := range r.Nodes() {
+		views, unsubscribe := n.Engine.SubscribeViews(16)
+		for finalized := false; !finalized; {
+			select {
+			case view := <-views:
+				finalized = view.Finalized.Slot > 0
+			case <-deadline:
+				unsubscribe()
+				t.Fatalf("node %d saw no finality within 20 slots", i)
+			}
 		}
+		unsubscribe()
 	}
 
 	r.Stop()
@@ -70,21 +75,4 @@ func onChain(s *store.ConsensusStore, head [32]byte, checkpoint *types.Checkpoin
 		}
 		root = header.ParentRoot
 	}
-}
-
-func allFinalized(nodes []*Node) bool {
-	for _, n := range nodes {
-		if n.Store.LatestFinalized().Slot == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func finalizedSlots(nodes []*Node) []uint64 {
-	slots := make([]uint64, len(nodes))
-	for i, n := range nodes {
-		slots[i] = n.Store.LatestFinalized().Slot
-	}
-	return slots
 }

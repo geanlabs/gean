@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/geanlabs/gean/forkchoice"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/consensus/forkchoice"
+	"github.com/geanlabs/gean/storage/store"
 )
 
 // ForkChoiceFromStore anchors fork choice at the latest justified block and

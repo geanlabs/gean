@@ -31,7 +31,7 @@ Simplicity and minimalism are our core values: code should be easy to read and u
   backward compatible with. Do not add fallback implementations, legacy code paths, compatibility shims,
   data migrations, or retries that mask a failure. Fail loudly and fix the cause. Not fallbacks:
   leanSpec-defined paths such as interval-2 aggregation, and bounded retries of transient failures where
-  repeating is safe and exhaustion returns the error (e.g. `checkpoint`, peer retries).
+  repeating is safe and exhaustion returns the error (e.g. `net/checkpoint`, peer retries).
 - No defensive filler: no nil checks or defaults for impossible cases; never swallow errors.
 - Prove a case is unreachable before removing its guard. Trace input boundaries, callers, and state
   construction; do not assume an invariant from a type or a successful lookup alone.
@@ -86,12 +86,12 @@ go test ./node -run TestName -v -count=1
 - `tasks/`: goroutine ownership; every component joins its work before releasing resources.
 - `internal/layering/`: the package dependency rules, enforced by `make test`. Every package needs a
   rule; change one only with the boundary it protects.
-- `statetransition/`, `forkchoice/`, `types/`: spec logic, LMD-GHOST, and SSZ types.
-- `blockprocessor/`, `blockbuilder/`, `attestation/`, `aggregation/`,
+- `consensus/statetransition/`, `consensus/forkchoice/`, `types/`: spec logic, LMD-GHOST, and SSZ types.
+- `consensus/blockprocessor/`, `consensus/blockbuilder/`, `consensus/attestation/`, `consensus/aggregation/`,
   `proving/`: block import, proposal, attestations, and XMSS proof work.
-- `store/`: consensus store over `db/`, the storage contract with an in-memory backend;
-  `db/pebbledb/` is the Pebble backend the binary uses.
-- `p2p/`, `syncer/`, `pending/`, `checkpoint/`: networking and sync.
+- `storage/store/`: consensus store over `storage/db/`, the storage contract with an in-memory backend;
+  `storage/db/pebbledb/` is the Pebble backend the binary uses.
+- `net/p2p/`, `net/syncer/`, `pending/`, `net/checkpoint/`: networking and sync.
 - `crypto/xmss/`, `crypto/xmss/rust/`: post-quantum XMSS signatures; Go bindings over Rust FFI crates.
 
 ## Testing
@@ -128,7 +128,7 @@ when the right resolution of a conflict is unclear.
 - **Fork choice**: `ForkChoice.Prune` must remap vote indices together with pruning nodes.
 - **Attestation pools**: only the dispatch loop writes the store's signature and payload pools.
   Workers verify, prove and publish, then hand results to the loop; ticks apply them first.
-- **Storage**: For `store` or `db` changes, check write ordering and what a crash
+- **Storage**: For `storage/store` or `storage/db` changes, check write ordering and what a crash
   mid-write leaves on restart.
 - **Logging and metrics**: Use `logger` component constants with `key=value` fields and `0x%x`
   roots. Add metrics as `metrics.Metrics` collectors with the `lean_` prefix, recorded through the

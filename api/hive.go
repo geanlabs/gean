@@ -7,9 +7,9 @@ import (
 	"net/http"
 
 	"github.com/geanlabs/gean/api/testdriver"
-	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/consensus/forkchoice"
 	"github.com/geanlabs/gean/role"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 )
 
 // NewHandlerWithTestDriver serves the node API plus the hive test-driver routes,

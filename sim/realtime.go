@@ -3,8 +3,8 @@ package sim
 import (
 	"context"
 
+	"github.com/geanlabs/gean/net/syncer"
 	"github.com/geanlabs/gean/node"
-	"github.com/geanlabs/gean/syncer"
 	"github.com/geanlabs/gean/tasks"
 )
 

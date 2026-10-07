@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 )
 
 type checkpointResponse struct {

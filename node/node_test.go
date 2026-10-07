@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/consensus/forkchoice"
 	"github.com/geanlabs/gean/crypto/insecure"
-	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/dutygate"
-	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/role"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/db"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

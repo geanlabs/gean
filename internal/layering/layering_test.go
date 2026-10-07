@@ -18,13 +18,13 @@ const (
 	schemeTest   = module + "crypto/schemetest"
 	simulation   = module + "sim"
 	testDriver   = module + "api/testdriver"
-	dbTest       = module + "db/dbtest"
+	dbTest       = module + "storage/db/dbtest"
 	libp2p       = "github.com/libp2p/go-libp2p"
 	pebble       = "github.com/cockroachdb/pebble"
-	pebbleDB     = module + "db/pebbledb"
+	pebbleDB     = module + "storage/db/pebbledb"
 	engine       = module + "node"
-	p2p          = module + "p2p"
-	syncer       = module + "syncer"
+	p2p          = module + "net/p2p"
+	syncer       = module + "net/syncer"
 	api          = module + "api"
 )
 
@@ -34,37 +34,37 @@ const (
 var rules = map[string][]string{
 	// Consensus logic: pure, so it builds and runs without native crypto, a
 	// network, or a database engine.
-	"types":            {module},
-	"statetransition":  {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"forkchoice":       {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"attestationproof": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"blockbuilder":     {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"genesis":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"pending":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"dutygate":         {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"proving":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"role":             {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"tasks":            {module},
-	"logger":           {module},
-	"metrics":          {module},
-	"shadow":           {module},
+	"types":                      {module},
+	"consensus/statetransition":  {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"consensus/forkchoice":       {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"consensus/attestationproof": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"consensus/blockbuilder":     {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"consensus/genesis":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"pending":                    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"dutygate":                   {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"proving":                    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"role":                       {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"tasks":                      {module},
+	"logger":                     {module},
+	"metrics":                    {module},
+	"shadow":                     {module},
 	// The signature scheme contract depends only on consensus types; its
 	// implementations and conformance suite never reach node code.
-	"crypto":            {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
-	"crypto/xmss":       {fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
-	"crypto/insecure":   {nativeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
-	"crypto/schemetest": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
-	"checkpoint":        {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
+	"crypto":            {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "storage/store"},
+	"crypto/xmss":       {fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "storage/store"},
+	"crypto/insecure":   {nativeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "storage/store"},
+	"crypto/schemetest": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "storage/store"},
+	"net/checkpoint":    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "storage/store"},
 	// Storage: the consensus store is independent of the database engine.
-	"db":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "store"},
-	"db/pebbledb": {nativeCrypto, fakeCrypto, libp2p, engine, module + "store"},
-	"db/dbtest":   {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "store"},
-	"store":       {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"storage/db":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "storage/store"},
+	"storage/db/pebbledb": {nativeCrypto, fakeCrypto, libp2p, engine, module + "storage/store"},
+	"storage/db/dbtest":   {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "storage/store"},
+	"storage/store":       {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
 	// Signature-checking consensus steps use the crypto contract, never a
 	// particular scheme, and never reach the network or the engine.
-	"aggregation":    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"attestation":    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
-	"blockprocessor": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"consensus/aggregation":    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"consensus/attestation":    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"consensus/blockprocessor": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
 	// The engine depends on node.Network, db and the crypto contract, never on
 	// an implementation.
 	"node": {nativeCrypto, fakeCrypto, libp2p, pebble, p2p, syncer, api},
@@ -72,8 +72,8 @@ var rules = map[string][]string{
 	"sim":         {nativeCrypto, libp2p, pebble, p2p, api},
 	"sim/xmsssim": {libp2p, pebble, p2p, api},
 	// Networking and serving sit beside the engine, not on top of it.
-	"p2p":            {nativeCrypto, fakeCrypto, pebble, engine, syncer, api, module + "store"},
-	"syncer":         {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, api},
+	"net/p2p":        {nativeCrypto, fakeCrypto, pebble, engine, syncer, api, module + "storage/store"},
+	"net/syncer":     {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, api},
 	"api":            {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 	"api/testdriver": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 	// Production code never links test code: not the forgeable scheme, the

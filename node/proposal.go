@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/aggregation"
-	"github.com/geanlabs/gean/blockbuilder"
+	"github.com/geanlabs/gean/consensus/aggregation"
+	"github.com/geanlabs/gean/consensus/blockbuilder"
+	"github.com/geanlabs/gean/consensus/statetransition"
 	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/statetransition"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

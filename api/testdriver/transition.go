@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/geanlabs/gean/consensus/statetransition"
 	"github.com/geanlabs/gean/internal/specfixtures"
-	"github.com/geanlabs/gean/statetransition"
 	"github.com/geanlabs/gean/types"
 )
 

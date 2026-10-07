@@ -3,9 +3,9 @@ package node
 import (
 	"context"
 
-	"github.com/geanlabs/gean/blockprocessor"
-	"github.com/geanlabs/gean/db"
+	"github.com/geanlabs/gean/consensus/blockprocessor"
 	"github.com/geanlabs/gean/logger"
+	"github.com/geanlabs/gean/storage/db"
 	"github.com/geanlabs/gean/types"
 )
 

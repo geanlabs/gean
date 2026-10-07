@@ -2,20 +2,21 @@ package node
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/geanlabs/gean/aggregation"
+	"github.com/geanlabs/gean/consensus/aggregation"
+	"github.com/geanlabs/gean/consensus/forkchoice"
 	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/dutygate"
-	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/metrics"
 	"github.com/geanlabs/gean/pending"
 	"github.com/geanlabs/gean/proving"
 	"github.com/geanlabs/gean/role"
 	"github.com/geanlabs/gean/shadow"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/tasks"
 	"github.com/geanlabs/gean/types"
 )
@@ -47,7 +48,9 @@ type Network interface {
 }
 
 // Components are the parts an Engine is assembled from. The caller builds and
-// owns each one; the engine only uses them.
+// owns each one; the engine only uses them. Store, ForkChoice, Crypto and Clock
+// are required. Network, Keys, Aggregator and Metrics may be nil, which leaves
+// the engine without that capability, so a partial engine needs no stand-ins.
 type Components struct {
 	Store      *store.ConsensusStore
 	ForkChoice *forkchoice.ForkChoice
@@ -56,7 +59,8 @@ type Components struct {
 	// Keys signs this node's duties; nil runs the engine without validators.
 	Keys crypto.Signer
 	// Crypto verifies and proves signatures.
-	Crypto     crypto.Scheme
+	Crypto crypto.Scheme
+	// Aggregator turns aggregation on and off; nil never aggregates.
 	Aggregator *role.Controller
 	Clock      Clock
 	// Metrics records this node's metrics; nil records nothing.
@@ -137,6 +141,9 @@ type Engine struct {
 	// forkChoiceView is the latest consistent picture of fork choice for
 	// readers off the dispatch loop; see ForkChoiceView.
 	forkChoiceView atomic.Pointer[forkchoice.View]
+	// viewSubscribers receive each published view; see SubscribeViews.
+	viewSubscribersMu sync.Mutex
+	viewSubscribers   map[chan *forkchoice.View]struct{}
 
 	// maxSeenGossipSlot is the highest plausible slot heard on gossip, whether
 	// or not the block was admitted. Written from the p2p goroutine, read on
@@ -200,6 +207,7 @@ func New(c Components, cfg Config) *Engine {
 		recoveryCh:            make(chan *types.SignedBlock, 8),
 		provingGate:           proving.NewGate(),
 		fetchInFlight:         make(map[[32]byte]bool),
+		viewSubscribers:       make(map[chan *forkchoice.View]struct{}),
 		clock:                 c.Clock,
 		metrics:               c.Metrics,
 	}

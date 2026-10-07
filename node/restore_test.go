@@ -3,8 +3,8 @@ package node
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/db"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/db"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

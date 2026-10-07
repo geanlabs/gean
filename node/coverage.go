@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"github.com/geanlabs/gean/metrics"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

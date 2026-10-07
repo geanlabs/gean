@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/consensus/statetransition"
 	"github.com/geanlabs/gean/crypto"
 	"github.com/geanlabs/gean/crypto/insecure"
 	"github.com/geanlabs/gean/proving"
-	"github.com/geanlabs/gean/statetransition"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

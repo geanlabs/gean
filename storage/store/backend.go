@@ -1,0 +1,35 @@
+package store
+
+import (
+	"fmt"
+
+	"github.com/geanlabs/gean/storage/db"
+)
+
+func (s *ConsensusStore) beginRead(label string) (db.ReadView, error) {
+	if s == nil || s.backend == nil {
+		return nil, fmt.Errorf("%s: store backend is nil", label)
+	}
+	rv, err := s.backend.BeginRead()
+	if err != nil {
+		return nil, fmt.Errorf("%s: begin read: %w", label, err)
+	}
+	if rv == nil {
+		return nil, fmt.Errorf("%s: read view is nil", label)
+	}
+	return rv, nil
+}
+
+func (s *ConsensusStore) beginWrite(label string) (db.WriteBatch, error) {
+	if s == nil || s.backend == nil {
+		return nil, fmt.Errorf("%s: store backend is nil", label)
+	}
+	wb, err := s.backend.BeginWrite()
+	if err != nil {
+		return nil, fmt.Errorf("%s: begin write: %w", label, err)
+	}
+	if wb == nil {
+		return nil, fmt.Errorf("%s: write batch is nil", label)
+	}
+	return wb, nil
+}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/consensus/forkchoice"
 )
 
 type forkChoiceResponse struct {

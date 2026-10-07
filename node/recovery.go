@@ -6,10 +6,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/geanlabs/gean/aggregation"
-	"github.com/geanlabs/gean/attestationproof"
+	"github.com/geanlabs/gean/consensus/aggregation"
+	"github.com/geanlabs/gean/consensus/attestationproof"
 	"github.com/geanlabs/gean/crypto"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

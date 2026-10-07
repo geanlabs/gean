@@ -1,9 +1,9 @@
 package node
 
 import (
-	"github.com/geanlabs/gean/forkchoice"
+	"github.com/geanlabs/gean/consensus/forkchoice"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -174,4 +174,34 @@ func (e *Engine) publishForkChoiceView() {
 		SafeTarget:     e.store.SafeTarget(),
 		ValidatorCount: e.validatorCount(),
 	})
+	e.notifyViewSubscribers(e.forkChoiceView.Load())
+}
+
+// SubscribeViews delivers every fork choice view the engine publishes after a
+// head or safe-target update, for consumers that react to the chain instead
+// of polling it. Delivery is best-effort: a view that does not fit in the
+// channel's buffer is dropped rather than delay the engine, and a consumer
+// that missed views reads the latest with ForkChoiceView. Call the returned
+// function to unsubscribe.
+func (e *Engine) SubscribeViews(buffer int) (<-chan *forkchoice.View, func()) {
+	ch := make(chan *forkchoice.View, buffer)
+	e.viewSubscribersMu.Lock()
+	e.viewSubscribers[ch] = struct{}{}
+	e.viewSubscribersMu.Unlock()
+	return ch, func() {
+		e.viewSubscribersMu.Lock()
+		delete(e.viewSubscribers, ch)
+		e.viewSubscribersMu.Unlock()
+	}
+}
+
+func (e *Engine) notifyViewSubscribers(view *forkchoice.View) {
+	e.viewSubscribersMu.Lock()
+	defer e.viewSubscribersMu.Unlock()
+	for ch := range e.viewSubscribers {
+		select {
+		case ch <- view:
+		default:
+		}
+	}
 }

@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/blockprocessor"
+	"github.com/geanlabs/gean/consensus/blockprocessor"
 	"github.com/geanlabs/gean/crypto/xmss"
-	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/store"
+	"github.com/geanlabs/gean/storage/db"
+	"github.com/geanlabs/gean/storage/store"
 	"github.com/geanlabs/gean/types"
 )
 

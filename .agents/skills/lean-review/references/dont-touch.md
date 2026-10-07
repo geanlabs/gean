@@ -19,19 +19,19 @@ treat unfamiliar code as soft-skip.
 
 ## Soft skip — report as `consensus-critical`, never apply without per-finding confirmation
 
-- **Spec logic:** `statetransition/`, `forkchoice/`, and
+- **Spec logic:** `consensus/statetransition/`, `consensus/forkchoice/`, and
   `types/` (non-generated). Names and structure mirror leanSpec so a
   reviewer can read gean's `ProcessAttestations` beside `process_attestations`.
   Constants such as `SecondsPerSlot` are network-wide. `ForkChoice.Prune` must
-  remap vote indices (`forkchoice/votes.go`) together with pruning nodes.
+  remap vote indices (`consensus/forkchoice/votes.go`) together with pruning nodes.
 - **Engine and duties:** `node/` (single-writer engine, tick loop,
   gossip, import, proposal), `pending/`, `dutygate/`,
   `role/`. Even inlining a helper can change scheduling under load.
-- **Block and attestation processing:** `blockprocessor/`,
-  `blockbuilder/`, `attestation/`, `attestationproof/`,
-  `aggregation/`, `proving/`.
-- **Consensus store:** `store/` (write ordering and crash recovery).
-- **P2P wire and gossip:** `p2p/host.go` (gossipsub parameters shared
+- **Block and attestation processing:** `consensus/blockprocessor/`,
+  `consensus/blockbuilder/`, `consensus/attestation/`, `consensus/attestationproof/`,
+  `consensus/aggregation/`, `proving/`.
+- **Consensus store:** `storage/store/` (write ordering and crash recovery).
+- **P2P wire and gossip:** `net/p2p/host.go` (gossipsub parameters shared
   with other clients), `topics.go`, `msgid.go`, and req/resp in `protocol.go`,
   `handlers.go`, `status.go`, `roots.go`, `range.go`, `encoding.go`,
   `response.go`. Wire formats must match other clients exactly.
@@ -44,6 +44,6 @@ treat unfamiliar code as soft-skip.
 ## Always review
 
 Everything else, with normal risk classification: `cmd/`, `api/`,
-`syncer/`, `checkpoint/`, `db/`,
-`genesis/`, `logger/`, `metrics/`, `shadow/`,
-other `p2p/` files, and new tests outside `internal/spectests/`.
+`net/syncer/`, `net/checkpoint/`, `storage/db/`,
+`consensus/genesis/`, `logger/`, `metrics/`, `shadow/`,
+other `net/p2p/` files, and new tests outside `internal/spectests/`.

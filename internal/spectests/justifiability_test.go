@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/statetransition"
+	"github.com/geanlabs/gean/consensus/statetransition"
 )
 
 // Justifiability fixtures live under the lstar/state_transition path tree.

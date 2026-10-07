@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/geanlabs/gean/syncer"
+	"github.com/geanlabs/gean/net/syncer"
 	"github.com/geanlabs/gean/types"
 )
 
