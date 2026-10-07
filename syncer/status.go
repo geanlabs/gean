@@ -7,11 +7,5 @@ func (sd *SyncDriver) makeStatusMessage() *types.Status {
 		return nil
 	}
 
-	finalized := sd.store.LatestFinalized()
-	return &types.Status{
-		FinalizedRoot: finalized.Root,
-		FinalizedSlot: finalized.Slot,
-		HeadRoot:      sd.store.Head(),
-		HeadSlot:      sd.store.HeadSlot(),
-	}
+	return sd.store.Status()
 }

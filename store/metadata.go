@@ -213,3 +213,14 @@ func (s *ConsensusStore) putMetadataCheckpoint(key []byte, cp *types.Checkpoint,
 func (s *ConsensusStore) putMetadata(key, value []byte, label string) error {
 	return s.putOne(db.TableMetadata, key, value, label)
 }
+
+// Status is this store's req/resp status: its finalized checkpoint and head.
+func (s *ConsensusStore) Status() *types.Status {
+	finalized := s.LatestFinalized()
+	return &types.Status{
+		FinalizedRoot: finalized.Root,
+		FinalizedSlot: finalized.Slot,
+		HeadRoot:      s.Head(),
+		HeadSlot:      s.HeadSlot(),
+	}
+}

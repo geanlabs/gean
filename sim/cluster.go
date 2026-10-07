@@ -58,6 +58,7 @@ type Node struct {
 	Aggregator *role.Controller
 	// Metrics is the node's own metrics registry.
 	Metrics *prometheus.Registry
+	network *network
 }
 
 // Cluster is a set of nodes sharing a simulated network and clock.
@@ -147,31 +148,18 @@ func (cfg Config) validate() error {
 }
 
 func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValidatorEntry, validators []uint64, aggregator bool) (*Node, error) {
-	gc := &genesis.GenesisConfig{GenesisTime: cfg.GenesisTime, GenesisValidators: entries}
-	genesisState, err := gc.GenesisState()
-	if err != nil {
-		return nil, err
-	}
 	s := store.NewConsensusStore(db.NewInMemoryBackend())
-	if _, err := s.InitFromGenesis(genesisState); err != nil {
-		return nil, err
-	}
-	if err := s.RecoverTime(cfg.GenesisTime, c.clock.Now()); err != nil {
-		return nil, err
-	}
-	if err := s.SeedMaxStoredBlockSlot(); err != nil {
-		return nil, err
-	}
-	fc, err := node.ForkChoiceFromStore(s)
+	gc := &genesis.GenesisConfig{GenesisTime: cfg.GenesisTime, GenesisValidators: entries}
+	fc, err := node.OpenChain(s, gc, "", c.clock.Now())
 	if err != nil {
 		return nil, err
 	}
 
-	n := &Node{Store: s, Aggregator: role.New(aggregator), Metrics: prometheus.NewRegistry()}
+	n := &Node{Store: s, Aggregator: role.New(aggregator), Metrics: prometheus.NewRegistry(), network: &network{cluster: c, self: index}}
 	components := node.Components{
 		Store:      s,
 		ForkChoice: fc,
-		Network:    &network{cluster: c, self: index},
+		Network:    n.network,
 		Crypto:     c.crypto.Scheme(),
 		Aggregator: n.Aggregator,
 		Clock:      c.clock,

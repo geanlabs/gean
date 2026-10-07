@@ -1,6 +1,9 @@
 package tasks
 
 import (
+	"errors"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -27,5 +30,28 @@ func TestWaitJoinsRunningWorkAndRefusesNewWork(t *testing.T) {
 	}
 	if g.Do(func() {}) {
 		t.Fatal("Do accepted work after Wait")
+	}
+}
+
+func TestGoCriticalReportsErrorsAndPanics(t *testing.T) {
+	var g Group
+	failures := make(chan error, 2)
+	g.GoCritical("returns", func() error { return errors.New("boom") }, func(err error) { failures <- err })
+	g.GoCritical("panics", func() error { panic("bang") }, func(err error) { failures <- err })
+	g.GoCritical("succeeds", func() error { return nil }, func(err error) { failures <- err })
+	g.Wait()
+	close(failures)
+
+	var got []string
+	for err := range failures {
+		got = append(got, err.Error())
+	}
+	if len(got) != 2 {
+		t.Fatalf("failures=%q, want one each from the error and the panic", got)
+	}
+	for _, want := range []string{"returns: boom", "panics panicked: bang"} {
+		if !slices.ContainsFunc(got, func(s string) bool { return strings.HasPrefix(s, want) }) {
+			t.Fatalf("failures=%q, missing %q", got, want)
+		}
 	}
 }

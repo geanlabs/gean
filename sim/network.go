@@ -2,7 +2,10 @@ package sim
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 
+	"github.com/geanlabs/gean/syncer"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -90,3 +93,41 @@ func (n *network) ConnectedPeers() int { return len(n.cluster.nodes) - 1 }
 func (n *network) MeshPeerCount() int { return len(n.cluster.nodes) - 1 }
 
 func (n *network) TopicMeshSizes() map[string]int { return nil }
+
+// Peers, SendStatusRequest and FetchBlocksByRange make the network a
+// syncer.SyncDriverP2P too, so real-time clusters run the real sync driver.
+// A peer's ID is its node index.
+func (n *network) Peers() []syncer.PeerID {
+	var ids []syncer.PeerID
+	for i := range n.cluster.nodes {
+		if i != n.self {
+			ids = append(ids, syncer.PeerID(strconv.Itoa(i)))
+		}
+	}
+	return ids
+}
+
+func (n *network) SendStatusRequest(_ context.Context, id syncer.PeerID, _ *types.Status) (*types.Status, error) {
+	peer, err := n.peer(id)
+	if err != nil {
+		return nil, err
+	}
+	return peer.Store.Status(), nil
+}
+
+func (n *network) FetchBlocksByRange(_ context.Context, id syncer.PeerID, startSlot, count uint64) ([]*types.SignedBlock, error) {
+	peer, err := n.peer(id)
+	if err != nil {
+		return nil, err
+	}
+	blocks, _ := peer.Store.GetCanonicalBlocksInRange(startSlot, count)
+	return blocks, nil
+}
+
+func (n *network) peer(id syncer.PeerID) (*Node, error) {
+	i, err := strconv.Atoi(string(id))
+	if err != nil || i < 0 || i >= len(n.cluster.nodes) || i == n.self {
+		return nil, fmt.Errorf("unknown peer %q", id)
+	}
+	return n.cluster.nodes[i], nil
+}

@@ -15,6 +15,9 @@ const module = "github.com/geanlabs/gean/"
 const (
 	nativeCrypto = module + "crypto/xmss"
 	fakeCrypto   = module + "crypto/insecure"
+	schemeTest   = module + "crypto/schemetest"
+	simulation   = module + "sim"
+	testDriver   = module + "api/testdriver"
 	libp2p       = "github.com/libp2p/go-libp2p"
 	pebble       = "github.com/cockroachdb/pebble"
 	pebbleDB     = module + "db/pebbledb"
@@ -24,8 +27,9 @@ const (
 	api          = module + "api"
 )
 
-// rules maps each package to the dependencies it must never reach, directly or
-// transitively. A dependency matches by import-path prefix.
+// rules maps every package to the dependencies it must never reach, directly or
+// transitively. A dependency matches by import-path prefix. A package without
+// a rule fails the test, so a new package must declare its layer.
 var rules = map[string][]string{
 	// Consensus logic: pure, so it builds and runs without native crypto, a
 	// network, or a database engine.
@@ -40,11 +44,20 @@ var rules = map[string][]string{
 	"proving":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
 	"role":             {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
 	"tasks":            {module},
-	// The signature scheme contract depends only on consensus types.
-	"crypto": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
+	"logger":           {module},
+	"metrics":          {module},
+	"shadow":           {module},
+	// The signature scheme contract depends only on consensus types; its
+	// implementations and conformance suite never reach node code.
+	"crypto":            {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
+	"crypto/xmss":       {fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
+	"crypto/insecure":   {nativeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
+	"crypto/schemetest": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
+	"checkpoint":        {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api, module + "store"},
 	// Storage: the consensus store is independent of the database engine.
-	"db":    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "store"},
-	"store": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
+	"db":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "store"},
+	"db/pebbledb": {nativeCrypto, fakeCrypto, libp2p, engine, module + "store"},
+	"store":       {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
 	// Signature-checking consensus steps use the crypto contract, never a
 	// particular scheme, and never reach the network or the engine.
 	"aggregation":    {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
@@ -54,15 +67,21 @@ var rules = map[string][]string{
 	// an implementation.
 	"node": {nativeCrypto, fakeCrypto, libp2p, pebble, p2p, syncer, api},
 	// The simulation picks its scheme; the core never links native crypto.
-	"sim": {nativeCrypto, libp2p, pebble, p2p, syncer, api},
+	"sim":         {nativeCrypto, libp2p, pebble, p2p, api},
+	"sim/xmsssim": {libp2p, pebble, p2p, api},
 	// Networking and serving sit beside the engine, not on top of it.
 	"p2p":            {nativeCrypto, fakeCrypto, pebble, engine, syncer, api, module + "store"},
 	"syncer":         {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, api},
 	"api":            {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 	"api/testdriver": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
-	// The binaries never run on the forgeable scheme.
-	"cmd/gean":   {fakeCrypto},
-	"cmd/keygen": {fakeCrypto},
+	// Production code never links test code: not the forgeable scheme, the
+	// conformance suite, the simulation or the hive test driver.
+	"launch":     {fakeCrypto, schemeTest, simulation, testDriver},
+	"cmd/gean":   {fakeCrypto, schemeTest, simulation, testDriver},
+	"cmd/keygen": {fakeCrypto, schemeTest, simulation, testDriver},
+	// Test infrastructure.
+	"internal/layering":     {module},
+	"internal/specfixtures": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 }
 
 func TestPackageLayering(t *testing.T) {
@@ -76,6 +95,11 @@ func TestPackageLayering(t *testing.T) {
 		deps[strings.TrimPrefix(fields[0], module)] = fields[1:]
 	}
 
+	for pkg := range deps {
+		if _, ok := rules[pkg]; !ok {
+			t.Errorf("package %s has no layering rule; add one for its layer", pkg)
+		}
+	}
 	for pkg, forbidden := range rules {
 		pkgDeps, ok := deps[pkg]
 		if !ok {

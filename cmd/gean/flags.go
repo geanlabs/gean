@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/geanlabs/gean/shadow"
 	"io"
 	"net"
 	"os"
@@ -228,4 +229,12 @@ func (c config) apiAddress() string {
 
 func (c config) metricsAddress() string {
 	return net.JoinHostPort(c.HTTPAddr, strconv.Itoa(c.MetricsPort))
+}
+
+func (c config) shadowRates() shadow.Rates {
+	return shadow.Rates{
+		AggregateSignatures:        c.ShadowAggregateSignaturesRate,
+		VerifySignature:            c.ShadowVerifySignatureRate,
+		VerifyAggregatedSignatures: c.ShadowVerifyAggregatedSignaturesRate,
+	}
 }

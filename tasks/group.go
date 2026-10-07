@@ -2,7 +2,11 @@
 // of them before releasing the resources they use.
 package tasks
 
-import "sync"
+import (
+	"fmt"
+	"runtime/debug"
+	"sync"
+)
 
 // Group tracks goroutines and synchronous calls started on behalf of one owner.
 // Once Wait begins, the group is closed: Go and Do refuse new work, so nothing
@@ -24,6 +28,22 @@ func (g *Group) Go(fn func()) bool {
 		fn()
 	}()
 	return true
+}
+
+// GoCritical runs fn like Go for a service its owner cannot run without. If
+// fn returns an error or panics, fail is called with the cause so the owner
+// can shut down rather than keep running without the service.
+func (g *Group) GoCritical(name string, fn func() error, fail func(error)) bool {
+	return g.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fail(fmt.Errorf("%s panicked: %v\n%s", name, r, debug.Stack()))
+			}
+		}()
+		if err := fn(); err != nil {
+			fail(fmt.Errorf("%s: %w", name, err))
+		}
+	})
 }
 
 // Do runs fn on the calling goroutine, tracked by the group, for work started
