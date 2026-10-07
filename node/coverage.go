@@ -110,7 +110,7 @@ func (e *Engine) coverageValidatorCount() int {
 // snapshot: a node that saw nothing this tick should still report the round it
 // last observed.
 func snapshotNewPayloadParticipants(s *store.ConsensusStore) map[uint64][][]byte {
-	entries := s.NewPayloads.Entries()
+	entries := s.NewPayloads().Entries()
 	if len(entries) == 0 {
 		return nil
 	}

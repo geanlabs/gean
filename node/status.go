@@ -71,8 +71,8 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 		peerCount = e.P2P.ConnectedPeers()
 	}
 
-	gossipSigs := e.Store.AttestationSignatures.Len()
-	knownPayloads := e.Store.KnownPayloads.Len()
+	gossipSigs := e.Store.AttestationSignatures().Len()
+	knownPayloads := e.Store.KnownPayloads().Len()
 	fcNodesCount := 0
 	if e.FC != nil {
 		fcNodesCount = e.FC.Len()
@@ -148,9 +148,6 @@ func (e *Engine) runTickAgeGauge(ctx context.Context) {
 // loop. Even with a metadata-based estimate this is not work the dispatch
 // goroutine should carry, and a size gauge loses nothing to a slow cadence.
 func (e *Engine) runStorageSizeGauge(ctx context.Context) {
-	if e.Store == nil || e.Store.Backend == nil {
-		return
-	}
 	ticker := time.NewTicker(storageSizeSampleInterval)
 	defer ticker.Stop()
 	e.recordTableBytes(ctx)

@@ -48,7 +48,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	// A duplicate arrival cannot change the answer, and verification is the
 	// expensive step. The store's own record of what it holds serves as the
 	// seen set, so it is pruned along with the signatures themselves.
-	if e.Store.AttestationSignatures.Has(dataRoot, att.ValidatorID) {
+	if e.Store.AttestationSignatures().Has(dataRoot, att.ValidatorID) {
 		return
 	}
 
@@ -66,7 +66,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	metrics.IncAttestationsValid(1)
 
 	logger.Info(logger.Gossip, "attestation verified: validator=%d slot=%d dataRoot=%x", att.ValidatorID, att.Data.Slot, dataRoot)
-	e.Store.AttestationSignatures.Insert(dataRoot, att.Data, att.ValidatorID, att.Signature)
+	e.Store.AttestationSignatures().Insert(dataRoot, att.Data, att.ValidatorID, att.Signature)
 	success = true
 
 	// Nudge the dispatch loop to consider aggregating early now that another vote
@@ -106,5 +106,5 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 		logger.Error(logger.Signature, "aggregated attestation root failed: %v", err)
 		return
 	}
-	e.Store.NewPayloads.Push(dataRoot, agg.Data, agg.Proof)
+	e.Store.NewPayloads().Push(dataRoot, agg.Data, agg.Proof)
 }

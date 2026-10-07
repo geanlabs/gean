@@ -20,10 +20,10 @@ func TestApplyAggregationMutationsTargetsNewPool(t *testing.T) {
 
 	applyAggregationMutations(s, payloads, nil)
 
-	if s.NewPayloads.Len() != 1 {
-		t.Fatalf("NewPayloads.Len() = %d, want 1 (aggregates must enter the new pool)", s.NewPayloads.Len())
+	if s.NewPayloads().Len() != 1 {
+		t.Fatalf("NewPayloads.Len() = %d, want 1 (aggregates must enter the new pool)", s.NewPayloads().Len())
 	}
-	if s.KnownPayloads.Len() != 0 {
-		t.Fatalf("KnownPayloads.Len() = %d, want 0 (must wait for accept-attestations promotion)", s.KnownPayloads.Len())
+	if s.KnownPayloads().Len() != 0 {
+		t.Fatalf("KnownPayloads.Len() = %d, want 0 (must wait for accept-attestations promotion)", s.KnownPayloads().Len())
 	}
 }

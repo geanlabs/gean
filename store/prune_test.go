@@ -33,12 +33,12 @@ func TestPruneStaleAttestationPools(t *testing.T) {
 		s := newStore()
 		head := uint64(5000)
 		stale, fresh := root(1), root(2)
-		s.AttestationSignatures.Insert(stale, data(100), 0, [types.SignatureSize]byte{})
-		s.AttestationSignatures.Insert(fresh, data(4900), 0, [types.SignatureSize]byte{})
+		s.AttestationSignatures().Insert(stale, data(100), 0, [types.SignatureSize]byte{})
+		s.AttestationSignatures().Insert(fresh, data(4900), 0, [types.SignatureSize]byte{})
 
 		store.PruneStaleAttestationPools(s, head, 50)
 
-		snap := s.AttestationSignatures.Snapshot()
+		snap := s.AttestationSignatures().Snapshot()
 		if _, ok := snap[stale]; ok {
 			t.Fatal("stale root survived the sweep")
 		}
@@ -50,10 +50,10 @@ func TestPruneStaleAttestationPools(t *testing.T) {
 	t.Run("takes a root's payload with its signatures", func(t *testing.T) {
 		s := newStore()
 		stale := root(3)
-		s.AttestationSignatures.Insert(stale, data(100), 0, [types.SignatureSize]byte{})
+		s.AttestationSignatures().Insert(stale, data(100), 0, [types.SignatureSize]byte{})
 		participants := types.NewBitlistSSZ(1)
 		types.BitlistSet(participants, 0)
-		s.NewPayloads.Push(stale, data(100), &types.SingleMessageAggregate{
+		s.NewPayloads().Push(stale, data(100), &types.SingleMessageAggregate{
 			Participants: participants,
 			Proof:        []byte{1},
 		})
@@ -64,10 +64,10 @@ func TestPruneStaleAttestationPools(t *testing.T) {
 		// share a target slot and go stale together. Neither can outlive the
 		// other, which is why the sweep needs no exemption for payload-bearing
 		// roots.
-		if _, ok := s.AttestationSignatures.Snapshot()[stale]; ok {
+		if _, ok := s.AttestationSignatures().Snapshot()[stale]; ok {
 			t.Fatal("stale signatures survived")
 		}
-		if s.NewPayloads.Len() != 0 {
+		if s.NewPayloads().Len() != 0 {
 			t.Fatal("stale payload survived alongside its signatures")
 		}
 	})
@@ -75,13 +75,13 @@ func TestPruneStaleAttestationPools(t *testing.T) {
 	t.Run("no-op below the finalized slot", func(t *testing.T) {
 		s := newStore()
 		old := root(4)
-		s.AttestationSignatures.Insert(old, data(100), 0, [types.SignatureSize]byte{})
+		s.AttestationSignatures().Insert(old, data(100), 0, [types.SignatureSize]byte{})
 
 		// Finalization is healthy and past the cutoff, so PruneOnFinalization
 		// owns this range and repeating it here would be wasted work.
 		store.PruneStaleAttestationPools(s, 5000, 4900)
 
-		if _, ok := s.AttestationSignatures.Snapshot()[old]; !ok {
+		if _, ok := s.AttestationSignatures().Snapshot()[old]; !ok {
 			t.Fatal("swept below the finalized slot")
 		}
 	})

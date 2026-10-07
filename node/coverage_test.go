@@ -133,7 +133,7 @@ func TestSnapshotNewPayloadParticipantsGroupsBySlot(t *testing.T) {
 	} {
 		var dr [32]byte
 		dr[0] = tc.root
-		s.NewPayloads.Push(dr,
+		s.NewPayloads().Push(dr,
 			&types.AttestationData{Slot: tc.slot, Target: &types.Checkpoint{}},
 			&types.SingleMessageAggregate{Participants: types.BitlistFromIndices(tc.ids), Proof: []byte{0x01}},
 		)

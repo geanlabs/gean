@@ -12,20 +12,8 @@ import (
 )
 
 func TestOnBlockRejectsNilStore(t *testing.T) {
-	if err := OnBlock(nil, nil); err == nil {
+	if err := OnBlock(nil, nil, nil); err == nil {
 		t.Fatal("expected nil store error")
-	}
-}
-
-func TestOnBlockRejectsNilStoreBackend(t *testing.T) {
-	err := OnBlockWithoutVerification(&store.ConsensusStore{}, &types.SignedBlock{
-		Block: &types.Block{Body: &types.BlockBody{}},
-	})
-	if err == nil {
-		t.Fatal("expected nil backend error")
-	}
-	if !strings.Contains(err.Error(), "backend") {
-		t.Fatalf("error=%v, want backend context", err)
 	}
 }
 
@@ -60,9 +48,10 @@ func TestOnBlockWithoutVerificationPersistsBlock(t *testing.T) {
 }
 
 func TestOnBlockWithoutVerificationReturnsPersistenceError(t *testing.T) {
-	s, parentState, parentRoot := processorStoreWithParent(t)
+	backend := &writeFailingBackend{InMemoryBackend: db.NewInMemoryBackend()}
+	s, parentState, parentRoot := processorStoreOnBackend(t, backend)
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
-	s.Backend = failingProcessorWriteBackend{InMemoryBackend: s.Backend.(*db.InMemoryBackend)}
+	backend.failWrites = true
 
 	err := OnBlockWithoutVerification(s, &types.SignedBlock{
 		Block: block,
@@ -76,15 +65,26 @@ func TestOnBlockWithoutVerificationReturnsPersistenceError(t *testing.T) {
 	}
 }
 
-type failingProcessorWriteBackend struct {
+// writeFailingBackend fails every write once failWrites is set, so a test can
+// build a store normally and then make persistence fail.
+type writeFailingBackend struct {
 	*db.InMemoryBackend
+	failWrites bool
 }
 
-func (b failingProcessorWriteBackend) BeginWrite() (db.WriteBatch, error) {
-	return nil, errors.New("write failed")
+func (b *writeFailingBackend) BeginWrite() (db.WriteBatch, error) {
+	if b.failWrites {
+		return nil, errors.New("write failed")
+	}
+	return b.InMemoryBackend.BeginWrite()
 }
 
 func processorStoreWithParent(t *testing.T) (*store.ConsensusStore, *types.State, [32]byte) {
+	t.Helper()
+	return processorStoreOnBackend(t, db.NewInMemoryBackend())
+}
+
+func processorStoreOnBackend(t *testing.T, backend db.Backend) (*store.ConsensusStore, *types.State, [32]byte) {
 	t.Helper()
 
 	parentState := &types.State{
@@ -109,7 +109,7 @@ func processorStoreWithParent(t *testing.T) (*store.ConsensusStore, *types.State
 		t.Fatalf("hash parent header: %v", err)
 	}
 
-	s := store.NewConsensusStore(db.NewInMemoryBackend())
+	s := store.NewConsensusStore(backend)
 	s.InsertState(parentRoot, parentState)
 	s.InsertBlockHeader(parentRoot, parentState.LatestBlockHeader)
 	s.SetHead(parentRoot)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/geanlabs/gean/blockprocessor"
+	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/internal/specfixtures"
 	"github.com/geanlabs/gean/store"
@@ -59,7 +60,9 @@ func VerifySignaturesHandler() http.HandlerFunc {
 			return
 		}
 
-		if err := blockprocessor.OnBlock(consensusStore, signedBlock); err != nil {
+		pubKeys := xmss.NewPubKeyCache()
+		defer pubKeys.Close()
+		if err := blockprocessor.OnBlock(consensusStore, pubKeys, signedBlock); err != nil {
 			writeVerifyFailure(w, err.Error())
 			return
 		}

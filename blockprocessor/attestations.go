@@ -6,7 +6,7 @@ import (
 )
 
 func importBlockAttestations(s *store.ConsensusStore, signedBlock *types.SignedBlock) {
-	if s == nil || s.KnownPayloads == nil || signedBlock == nil ||
+	if s == nil || signedBlock == nil ||
 		signedBlock.Block == nil || signedBlock.Block.Body == nil {
 		return
 	}
@@ -16,7 +16,7 @@ func importBlockAttestations(s *store.ConsensusStore, signedBlock *types.SignedB
 		}
 		root, err := att.Data.HashTreeRoot()
 		if err == nil {
-			s.KnownPayloads.PushData(root, att.Data)
+			s.KnownPayloads().PushData(root, att.Data)
 		}
 	}
 }

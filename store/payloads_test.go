@@ -235,20 +235,20 @@ func TestPromoteNewToKnown(t *testing.T) {
 	types.BitlistSet(bits, 0)
 	proof := &types.SingleMessageAggregate{Participants: bits, Proof: []byte{0x01}}
 
-	s.NewPayloads.Push(dr, data, proof)
-	if s.NewPayloads.Len() != 1 {
+	s.NewPayloads().Push(dr, data, proof)
+	if s.NewPayloads().Len() != 1 {
 		t.Fatal("expected 1 new payload")
 	}
-	if s.KnownPayloads.Len() != 0 {
+	if s.KnownPayloads().Len() != 0 {
 		t.Fatal("known should be empty")
 	}
 
 	s.PromoteNewToKnown()
 
-	if s.NewPayloads.Len() != 0 {
+	if s.NewPayloads().Len() != 0 {
 		t.Fatal("new should be empty after promote")
 	}
-	if s.KnownPayloads.Len() != 1 {
+	if s.KnownPayloads().Len() != 1 {
 		t.Fatal("known should have 1 entry")
 	}
 }
@@ -260,13 +260,13 @@ func TestExtractLatestNewAttestations(t *testing.T) {
 	dr1[0] = 1
 	bits1 := types.NewBitlistSSZ(2)
 	types.BitlistSet(bits1, 0)
-	s.KnownPayloads.Push(dr1, &types.AttestationData{Slot: 5}, &types.SingleMessageAggregate{Participants: bits1, Proof: []byte{0x01}})
+	s.KnownPayloads().Push(dr1, &types.AttestationData{Slot: 5}, &types.SingleMessageAggregate{Participants: bits1, Proof: []byte{0x01}})
 
 	var dr2 [32]byte
 	dr2[0] = 2
 	bits2 := types.NewBitlistSSZ(2)
 	types.BitlistSet(bits2, 1)
-	s.NewPayloads.Push(dr2, &types.AttestationData{Slot: 8}, &types.SingleMessageAggregate{Participants: bits2, Proof: []byte{0x01}})
+	s.NewPayloads().Push(dr2, &types.AttestationData{Slot: 8}, &types.SingleMessageAggregate{Participants: bits2, Proof: []byte{0x01}})
 
 	got := s.ExtractLatestNewAttestations()
 	if _, found := got[0]; found {

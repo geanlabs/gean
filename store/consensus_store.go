@@ -4,7 +4,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/db"
 )
 
@@ -40,11 +39,10 @@ const (
 )
 
 type ConsensusStore struct {
-	Backend               db.Backend
-	NewPayloads           *PayloadBuffer
-	KnownPayloads         *PayloadBuffer
-	AttestationSignatures AttestationSignatureMap
-	PubKeyCache           *xmss.PubKeyCache
+	backend               db.Backend
+	newPayloads           *PayloadBuffer
+	knownPayloads         *PayloadBuffer
+	attestationSignatures AttestationSignatureMap
 
 	// maxBlockSlot is the highest slot of any block header this store has
 	// written: a high-water mark, not a live maximum over the table. It answers
@@ -81,6 +79,25 @@ type ConsensusStore struct {
 	validatorKeysOrder [][32]byte
 }
 
+// NewPayloads holds aggregated attestation proofs received this slot, before
+// the interval-4 promotion makes them known.
+func (s *ConsensusStore) NewPayloads() *PayloadBuffer { return s.newPayloads }
+
+// KnownPayloads holds aggregated attestation proofs eligible for fork choice
+// and block building.
+func (s *ConsensusStore) KnownPayloads() *PayloadBuffer { return s.knownPayloads }
+
+// AttestationSignatures holds verified gossip attestation signatures awaiting
+// aggregation.
+func (s *ConsensusStore) AttestationSignatures() *AttestationSignatureMap {
+	return &s.attestationSignatures
+}
+
+// EstimateTableBytes reports the approximate on-disk size of one table.
+func (s *ConsensusStore) EstimateTableBytes(table db.Table) uint64 {
+	return s.backend.EstimateTableBytes(table)
+}
+
 // ObserveStoredBlockSlot raises the stored-block high-water mark. Safe from any
 // goroutine: block import runs on the dispatch loop, but pending-block writes
 // and the test driver do not.
@@ -101,11 +118,10 @@ func (s *ConsensusStore) ObserveStoredBlockSlot(slot uint64) {
 
 func NewConsensusStore(backend db.Backend) *ConsensusStore {
 	return &ConsensusStore{
-		Backend:               backend,
-		NewPayloads:           NewPayloadBuffer(newPayloadCap),
-		KnownPayloads:         NewPayloadBuffer(aggregatedPayloadCap),
-		AttestationSignatures: NewAttestationSignatureMap(gossipSignatureCap),
-		PubKeyCache:           xmss.NewPubKeyCache(),
+		backend:               backend,
+		newPayloads:           NewPayloadBuffer(newPayloadCap),
+		knownPayloads:         NewPayloadBuffer(aggregatedPayloadCap),
+		attestationSignatures: NewAttestationSignatureMap(gossipSignatureCap),
 		validatorKeys:         make(map[[32]byte]*ValidatorKeys, validatorKeysCacheSize),
 	}
 }

@@ -70,7 +70,7 @@ func (e *Engine) importKnownParentBlock(
 	queue *[]*types.SignedBlock,
 ) {
 	block := signedBlock.Block
-	err := blockprocessor.OnBlock(e.Store, signedBlock)
+	err := blockprocessor.OnBlock(e.Store, e.PubKeys, signedBlock)
 	if err != nil {
 		logger.Error(logger.Chain, "block processing failed slot=%d block_root=0x%x: %v", block.Slot, blockRoot, err)
 		return
@@ -94,16 +94,13 @@ func (e *Engine) importKnownParentBlock(
 // is coarse by nature and does not need per-block resolution; it is sampled on
 // its own goroutine now, like the gossip-mesh gauge.
 func (e *Engine) recordTableBytes(ctx context.Context) {
-	if e.Store == nil || e.Store.Backend == nil {
-		return
-	}
 	for _, table := range db.AllTables {
 		// Bail between tables so a cancelled shutdown does not spend a whole
 		// round on a database that is about to close. Responsiveness only:
-		// Engine.WaitForStorageWorkers is what actually makes Close safe.
+		// Run waiting for its workers is what makes Close safe.
 		if ctx.Err() != nil {
 			return
 		}
-		metrics.SetTableBytes(string(table), e.Store.Backend.EstimateTableBytes(table))
+		metrics.SetTableBytes(string(table), e.Store.EstimateTableBytes(table))
 	}
 }

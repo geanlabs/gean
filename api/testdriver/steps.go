@@ -130,7 +130,7 @@ func (sess *Session) applyBlock(step *specfixtures.ForkChoiceStep) error {
 			if err != nil {
 				continue
 			}
-			sess.store.KnownPayloads.Push(dataRoot, att.Data, &types.SingleMessageAggregate{
+			sess.store.KnownPayloads().Push(dataRoot, att.Data, &types.SingleMessageAggregate{
 				Participants: att.AggregationBits,
 				Proof:        []byte{0x01},
 			})
@@ -191,11 +191,11 @@ func (sess *Session) applyAttestation(step *specfixtures.ForkChoiceStep) error {
 	}
 
 	participants := types.BitlistFromIndices([]uint64{step.Attestation.ValidatorID})
-	sess.store.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants})
+	sess.store.NewPayloads().Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants})
 
 	var sig [types.SignatureSize]byte
 	copy(sig[:], signature)
-	sess.store.AttestationSignatures.Insert(dataRoot, attData, step.Attestation.ValidatorID, sig)
+	sess.store.AttestationSignatures().Insert(dataRoot, attData, step.Attestation.ValidatorID, sig)
 
 	sess.fc.SetNewVote(step.Attestation.ValidatorID, attData.Head.Root, attData.Slot, attData)
 
@@ -245,7 +245,7 @@ func (sess *Session) applyAggregatedAttestation(step *specfixtures.ForkChoiceSte
 		}
 	}
 
-	sess.store.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants, Proof: proofData})
+	sess.store.NewPayloads().Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants, Proof: proofData})
 
 	for _, vid := range types.BitlistIndices(participants) {
 		sess.fc.SetNewVote(vid, attData.Head.Root, attData.Slot, attData)

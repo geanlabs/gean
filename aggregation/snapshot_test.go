@@ -34,7 +34,7 @@ func TestSnapshotInputsCapturesPayloadAndTargetState(t *testing.T) {
 	dataRoot, _ := attData.HashTreeRoot()
 	participants := types.NewBitlistSSZ(1)
 	types.BitlistSet(participants, 0)
-	s.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{
+	s.NewPayloads().Push(dataRoot, attData, &types.SingleMessageAggregate{
 		Participants: participants,
 		Proof:        []byte{1},
 	})

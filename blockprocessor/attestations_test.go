@@ -18,10 +18,10 @@ func TestImportBlockAttestationsAddsKnownPayload(t *testing.T) {
 		Proof: &types.MultiMessageAggregate{},
 	})
 
-	if s.KnownPayloads.Len() != 1 {
-		t.Fatalf("known payloads=%d, want 1", s.KnownPayloads.Len())
+	if s.KnownPayloads().Len() != 1 {
+		t.Fatalf("known payloads=%d, want 1", s.KnownPayloads().Len())
 	}
-	if s.KnownPayloads.TotalProofs() != 0 {
+	if s.KnownPayloads().TotalProofs() != 0 {
 		t.Fatal("block attestation must not gain head weight at import")
 	}
 }
@@ -34,7 +34,7 @@ func TestImportBlockAttestationsSkipsMalformedEntries(t *testing.T) {
 		Proof: &types.MultiMessageAggregate{},
 	})
 
-	if s.KnownPayloads.Len() != 0 {
-		t.Fatalf("known payloads=%d, want 0", s.KnownPayloads.Len())
+	if s.KnownPayloads().Len() != 0 {
+		t.Fatalf("known payloads=%d, want 0", s.KnownPayloads().Len())
 	}
 }

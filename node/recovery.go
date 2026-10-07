@@ -110,8 +110,8 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		return
 	}
 
-	newEntries := e.Store.NewPayloads.Entries()
-	knownEntries := e.Store.KnownPayloads.Entries()
+	newEntries := e.Store.NewPayloads().Entries()
+	knownEntries := e.Store.KnownPayloads().Entries()
 	candidates := selectRecoveryCandidates(block.Body.Attestations, headState.LatestJustified, newEntries, knownEntries)
 
 	for _, candidate := range candidates {
@@ -156,7 +156,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 					candidate.att.Data,
 					append([]*types.SingleMessageAggregate{recovered}, locals...),
 					state,
-					aggregation.NewProofMerger(e.Store.PubKeyCache),
+					aggregation.NewProofMerger(e.PubKeys),
 				)
 				if mergeErr == nil && coversParticipants(combined, candidate.att.AggregationBits) {
 					recovered = combined
@@ -172,7 +172,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		} else {
 			metrics.IncProofOperation("recovery", "success")
 			metrics.ObserveProofSize("type1", len(proof))
-			e.Store.NewPayloads.Push(candidate.root, candidate.att.Data, recovered)
+			e.Store.NewPayloads().Push(candidate.root, candidate.att.Data, recovered)
 			if e.P2P != nil {
 				_ = e.P2P.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
 					Data:  candidate.att.Data,
@@ -242,7 +242,7 @@ func (e *Engine) blockProofPubkeys(block *types.Block, state *types.State) ([][]
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
 				return nil, fmt.Errorf("validator %d out of range", index)
 			}
-			key, err := e.Store.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
+			key, err := e.PubKeys.Get(state.Validators[index].AttestationPubkey)
 			if err != nil {
 				return nil, err
 			}
@@ -253,7 +253,7 @@ func (e *Engine) blockProofPubkeys(block *types.Block, state *types.State) ([][]
 	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
 		return nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
 	}
-	key, err := e.Store.PubKeyCache.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
+	key, err := e.PubKeys.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
 	if err != nil {
 		return nil, err
 	}

@@ -11,9 +11,6 @@ func validateStore(s *store.ConsensusStore) error {
 	if s == nil {
 		return fmt.Errorf("consensus store is nil")
 	}
-	if s.Backend == nil {
-		return fmt.Errorf("consensus store backend is nil")
-	}
 	return nil
 }
 

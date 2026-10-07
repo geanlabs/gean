@@ -7,10 +7,10 @@ import (
 )
 
 func (s *ConsensusStore) beginRead(label string) (db.ReadView, error) {
-	if s == nil || s.Backend == nil {
+	if s == nil || s.backend == nil {
 		return nil, fmt.Errorf("%s: store backend is nil", label)
 	}
-	rv, err := s.Backend.BeginRead()
+	rv, err := s.backend.BeginRead()
 	if err != nil {
 		return nil, fmt.Errorf("%s: begin read: %w", label, err)
 	}
@@ -21,10 +21,10 @@ func (s *ConsensusStore) beginRead(label string) (db.ReadView, error) {
 }
 
 func (s *ConsensusStore) beginWrite(label string) (db.WriteBatch, error) {
-	if s == nil || s.Backend == nil {
+	if s == nil || s.backend == nil {
 		return nil, fmt.Errorf("%s: store backend is nil", label)
 	}
-	wb, err := s.Backend.BeginWrite()
+	wb, err := s.backend.BeginWrite()
 	if err != nil {
 		return nil, fmt.Errorf("%s: begin write: %w", label, err)
 	}

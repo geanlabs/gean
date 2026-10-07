@@ -101,7 +101,7 @@ func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlock {
 }
 
 func WriteBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedBlock) error {
-	if s == nil || s.Backend == nil {
+	if s == nil || s.backend == nil {
 		return fmt.Errorf("write block data: store backend is nil")
 	}
 	if signedBlock == nil {

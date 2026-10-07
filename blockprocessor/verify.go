@@ -9,7 +9,7 @@ import (
 )
 
 func verifyBlockSignatures(
-	s *store.ConsensusStore,
+	pubKeys *xmss.PubKeyCache,
 	signedBlock *types.SignedBlock,
 	state *types.State,
 ) error {
@@ -20,7 +20,7 @@ func verifyBlockSignatures(
 	if state == nil {
 		return &store.StoreError{Kind: store.ErrMissingParentState, Message: "parent state missing"}
 	}
-	if s.PubKeyCache == nil {
+	if pubKeys == nil {
 		return &store.StoreError{Kind: store.ErrPubkeyDecodingFailed, Message: "pubkey cache missing"}
 	}
 
@@ -37,7 +37,7 @@ func verifyBlockSignatures(
 			if err != nil {
 				return err
 			}
-			key, err := s.PubKeyCache.Get(validator.AttestationPubkey)
+			key, err := pubKeys.Get(validator.AttestationPubkey)
 			if err != nil {
 				return &store.StoreError{Kind: store.ErrPubkeyDecodingFailed, Message: fmt.Sprintf("validator %d: %v", index, err)}
 			}
@@ -59,7 +59,7 @@ func verifyBlockSignatures(
 	if err != nil {
 		return err
 	}
-	proposerKey, err := s.PubKeyCache.Get(proposer.ProposalPubkey)
+	proposerKey, err := pubKeys.Get(proposer.ProposalPubkey)
 	if err != nil {
 		return &store.StoreError{Kind: store.ErrPubkeyDecodingFailed, Message: fmt.Sprintf("proposer %d: %v", block.ProposerIndex, err)}
 	}

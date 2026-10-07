@@ -493,7 +493,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				if err != nil {
 					continue
 				}
-				s.KnownPayloads.Push(dataRoot, att.Data, &types.SingleMessageAggregate{
+				s.KnownPayloads().Push(dataRoot, att.Data, &types.SingleMessageAggregate{
 					Participants: att.AggregationBits,
 					Proof:        []byte{0x01},
 				})
@@ -579,13 +579,13 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				Participants: participants,
 				Proof:        nil,
 			}
-			s.NewPayloads.Push(dataRoot, attData, proof)
+			s.NewPayloads().Push(dataRoot, attData, proof)
 
 			// Record the raw per-validator signature, mirroring the spec's
 			// attestation_signatures pool that the "signatures" check reads.
 			var sig [types.SignatureSize]byte
 			copy(sig[:], signature)
-			s.AttestationSignatures.Insert(dataRoot, attData, att.ValidatorID, sig)
+			s.AttestationSignatures().Insert(dataRoot, attData, att.ValidatorID, sig)
 
 			// Feed vote to fork choice so attestation weight is reflected.
 			fc.SetNewVote(att.ValidatorID, attData.Head.Root, attData.Slot, attData)
@@ -659,7 +659,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				Participants: participants,
 				Proof:        proofData,
 			}
-			s.NewPayloads.Push(dataRoot, attData, proof)
+			s.NewPayloads().Push(dataRoot, attData, proof)
 
 			// Feed per-validator votes to fork choice from participant bits.
 			participantIDs := types.BitlistIndices(participants)
@@ -915,8 +915,8 @@ func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []s
 			}
 		}
 	}
-	scan(s.NewPayloads.Entries())
-	scan(s.KnownPayloads.Entries())
+	scan(s.NewPayloads().Entries())
+	scan(s.KnownPayloads().Entries())
 
 	var winner string
 	var winnerRoot [32]byte
@@ -991,7 +991,7 @@ func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore
 // when the validator has no signature recorded.
 func latestSignatureVote(s *store.ConsensusStore, validator uint64) *forkchoice.VoteTarget {
 	var latest *types.AttestationData
-	for _, entry := range s.AttestationSignatures.Snapshot() {
+	for _, entry := range s.AttestationSignatures().Snapshot() {
 		for _, sig := range entry.Signatures {
 			if sig.ValidatorID != validator {
 				continue

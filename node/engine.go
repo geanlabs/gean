@@ -32,16 +32,38 @@ const (
 	PendingAttestationsTotalCap   = 512
 )
 
-type Engine struct {
-	Store          *store.ConsensusStore
-	FC             *forkchoice.ForkChoice
-	P2P            *p2p.Host
-	Keys           *xmss.KeyManager
-	AggCtl         *role.Controller
-	DutyGate       *dutygate.Gate
+// Components are the parts an Engine is assembled from. The caller builds and
+// owns each one; the engine only uses them.
+type Components struct {
+	Store      *store.ConsensusStore
+	ForkChoice *forkchoice.ForkChoice
+	P2P        *p2p.Host
+	// Keys signs this node's duties; nil runs the engine without validators.
+	Keys *xmss.KeyManager
+	// PubKeys caches decoded validator public keys for signature verification
+	// and proving.
+	PubKeys    *xmss.PubKeyCache
+	Aggregator *role.Controller
+}
+
+// Config holds the engine's network parameters.
+type Config struct {
 	CommitteeCount uint64
 	// AggregateSubnetIDs are the attestation subnets this node subscribes to as
-	// an aggregator. Empty means every subnet. Set by the caller after New.
+	// an aggregator. Empty means every subnet.
+	AggregateSubnetIDs []uint64
+	Shadow             shadow.Rates
+}
+
+type Engine struct {
+	Store              *store.ConsensusStore
+	FC                 *forkchoice.ForkChoice
+	P2P                *p2p.Host
+	Keys               *xmss.KeyManager
+	PubKeys            *xmss.PubKeyCache
+	AggCtl             *role.Controller
+	DutyGate           *dutygate.Gate
+	CommitteeCount     uint64
 	AggregateSubnetIDs []uint64
 	// expectedVoters caches how many validators this node can hear from in a
 	// slot. Its inputs are fixed once the registry is known, and it is read on
@@ -115,25 +137,20 @@ type Engine struct {
 	numValidators uint64
 }
 
-func New(
-	s *store.ConsensusStore,
-	fc *forkchoice.ForkChoice,
-	p2pHost *p2p.Host,
-	keys *xmss.KeyManager,
-	aggCtl *role.Controller,
-	committeeCount uint64,
-	shadowRates shadow.Rates,
-) *Engine {
+// New assembles an engine from its components.
+func New(c Components, cfg Config) *Engine {
 	p2p.SetClientGitCommit(gitCommit)
 	e := &Engine{
-		Store:               s,
-		FC:                  fc,
-		P2P:                 p2pHost,
-		Keys:                keys,
-		AggCtl:              aggCtl,
+		Store:               c.Store,
+		FC:                  c.ForkChoice,
+		P2P:                 c.P2P,
+		Keys:                c.Keys,
+		PubKeys:             c.PubKeys,
+		AggCtl:              c.Aggregator,
 		DutyGate:            dutygate.New(logDutyGateEvent),
-		CommitteeCount:      committeeCount,
-		Shadow:              shadowRates,
+		CommitteeCount:      cfg.CommitteeCount,
+		AggregateSubnetIDs:  cfg.AggregateSubnetIDs,
+		Shadow:              cfg.Shadow,
 		Pending:             pending.NewBlockBuffer(),
 		PendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		// Sized so gossip keeps flowing while the dispatch loop chews through a

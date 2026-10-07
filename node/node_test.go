@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/dutygate"
 	"github.com/geanlabs/gean/forkchoice"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/role"
-	"github.com/geanlabs/gean/shadow"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/syncer"
 	"github.com/geanlabs/gean/types"
@@ -48,7 +48,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
-	return New(s, fc, nil, nil, role.New(false), 1, shadow.Rates{})
+	return New(Components{Store: s, ForkChoice: fc, PubKeys: xmss.NewPubKeyCache(), Aggregator: role.New(false)}, Config{CommitteeCount: 1})
 }
 
 func TestEngineCreation(t *testing.T) {
@@ -243,7 +243,7 @@ func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 		genesis := e.Store.Head()
 
 		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
-		e.Store.KnownPayloads.Push(dataRoot, data, proof)
+		e.Store.KnownPayloads().Push(dataRoot, data, proof)
 
 		e.updateSafeTarget()
 
@@ -257,7 +257,7 @@ func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 		e, block2 := makeSafeTargetEngine(t, numValidators)
 
 		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
-		e.Store.NewPayloads.Push(dataRoot, data, proof)
+		e.Store.NewPayloads().Push(dataRoot, data, proof)
 
 		e.updateSafeTarget()
 

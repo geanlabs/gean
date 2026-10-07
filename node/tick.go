@@ -109,7 +109,7 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 	// deadline and MaxGroupsPerSession, so an aggregate built on a stale view
 	// costs one bounded proving budget and is dropped by peers — strictly better
 	// than not producing one at all.
-	if e.Store.AttestationSignatures.Len() == 0 && e.Store.NewPayloads.Len() == 0 {
+	if e.Store.AttestationSignatures().Len() == 0 && e.Store.NewPayloads().Len() == 0 {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
 	}
@@ -206,7 +206,7 @@ func (e *Engine) maybeEarlyAggregate(nowMs uint64) {
 	// justification. Scoped to the slot, the threshold is reached only in late
 	// interval 1 once votes are in — a modest proving lead that still carries
 	// decisive weight, with the interval-2 dispatch as the fallback below quorum.
-	if e.Store.AttestationSignatures.SignatureCountForSlot(slot) < earlyAggregationQuorum(e.expectedVotersPerSlot()) {
+	if e.Store.AttestationSignatures().SignatureCountForSlot(slot) < earlyAggregationQuorum(e.expectedVotersPerSlot()) {
 		return
 	}
 	e.dispatchAggregationCycle(nowMs, slot, isAgg)

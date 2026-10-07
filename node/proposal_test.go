@@ -57,7 +57,7 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash attestation data: %v", err)
 	}
-	s.NewPayloads.Push(dataRoot, data, &types.SingleMessageAggregate{
+	s.NewPayloads().Push(dataRoot, data, &types.SingleMessageAggregate{
 		Participants: types.BitlistFromIndices([]uint64{0}),
 		Proof:        []byte{0x01},
 	})
@@ -73,8 +73,8 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	if len(sigs) != 0 {
 		t.Fatalf("signature proofs=%d, want 0", len(sigs))
 	}
-	if s.NewPayloads.Len() != 1 || s.KnownPayloads.Len() != 0 {
-		t.Fatalf("payload promotion changed buffers: new=%d known=%d", s.NewPayloads.Len(), s.KnownPayloads.Len())
+	if s.NewPayloads().Len() != 1 || s.KnownPayloads().Len() != 0 {
+		t.Fatalf("payload promotion changed buffers: new=%d known=%d", s.NewPayloads().Len(), s.KnownPayloads().Len())
 	}
 }
 

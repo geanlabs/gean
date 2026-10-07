@@ -50,7 +50,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 				logger.Error(logger.Validator, "attestation root failed validator=%d: %v", vid, err)
 				continue
 			}
-			e.Store.AttestationSignatures.Insert(dataRoot, attData, vid, sig)
+			e.Store.AttestationSignatures().Insert(dataRoot, attData, vid, sig)
 		}
 
 		if e.P2P != nil {

@@ -17,7 +17,7 @@ const (
 )
 
 func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinalizedSlot, newFinalizedSlot uint64, newFinalizedRoot [32]byte) {
-	if s == nil || s.Backend == nil || fc == nil {
+	if s == nil || s.backend == nil || fc == nil {
 		return
 	}
 	if newFinalizedSlot <= oldFinalizedSlot {
@@ -35,9 +35,9 @@ func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinali
 
 	prunedChain := pruneLiveChain(s, newFinalizedSlot)
 
-	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
-	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
-	prunedNew := s.NewPayloads.PruneBelow(newFinalizedSlot)
+	prunedSigs := s.attestationSignatures.PruneBelow(newFinalizedSlot)
+	prunedKnown := s.knownPayloads.PruneBelow(newFinalizedSlot)
+	prunedNew := s.newPayloads.PruneBelow(newFinalizedSlot)
 
 	logger.Info(logger.Store, "pruning: finalized_slot=%d states=%d blocks=%d live_chain=%d gossip_sigs=%d payloads=%d non_canonical=%d",
 		newFinalizedSlot, prunedStates, prunedBlocks, prunedChain, prunedSigs,
@@ -68,9 +68,9 @@ func PruneStaleAttestationPools(s *ConsensusStore, headSlot, finalizedSlot uint6
 
 	// All three pools key on the same target slot, so a data root leaves them
 	// together and the order here does not matter.
-	prunedSigs := s.AttestationSignatures.PruneStaleBelow(cutoff)
-	prunedKnown := s.KnownPayloads.PruneStaleBelow(cutoff)
-	prunedNew := s.NewPayloads.PruneStaleBelow(cutoff)
+	prunedSigs := s.attestationSignatures.PruneStaleBelow(cutoff)
+	prunedKnown := s.knownPayloads.PruneStaleBelow(cutoff)
+	prunedNew := s.newPayloads.PruneStaleBelow(cutoff)
 
 	if prunedSigs+prunedKnown+prunedNew == 0 {
 		return
@@ -80,7 +80,7 @@ func PruneStaleAttestationPools(s *ConsensusStore, headSlot, finalizedSlot uint6
 }
 
 func PeriodicPrune(s *ConsensusStore, fc *forkchoice.ForkChoice, currentSlot, finalizedSlot uint64) {
-	if s == nil || s.Backend == nil || fc == nil {
+	if s == nil || s.backend == nil || fc == nil {
 		return
 	}
 	if currentSlot == 0 || currentSlot%PruningIntervalSlots != 0 {

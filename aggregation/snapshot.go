@@ -21,14 +21,14 @@ func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64
 	if headState == nil {
 		return nil
 	}
-	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
+	if s.AttestationSignatures().Len() == 0 && s.NewPayloads().Len() == 0 {
 		return nil
 	}
 
 	snap := &Snapshot{
 		headState:    headState,
 		slot:         slot,
-		attSigs:      s.AttestationSignatures.Snapshot(),
+		attSigs:      s.AttestationSignatures().Snapshot(),
 		newEntries:   make(map[[32]byte]*store.PayloadEntry),
 		knownEntries: make(map[[32]byte]*store.PayloadEntry),
 	}
@@ -37,11 +37,11 @@ func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64
 	for dr := range snap.attSigs {
 		dataRoots[dr] = true
 	}
-	for dr, entry := range s.NewPayloads.Entries() {
+	for dr, entry := range s.NewPayloads().Entries() {
 		dataRoots[dr] = true
 		snap.newEntries[dr] = entry
 	}
-	knownEntries := s.KnownPayloads.Entries()
+	knownEntries := s.KnownPayloads().Entries()
 	for dr := range dataRoots {
 		if entry := knownEntries[dr]; entry != nil {
 			snap.knownEntries[dr] = entry

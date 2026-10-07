@@ -240,7 +240,7 @@ func (e *Engine) mergeBlockProofWithProvers(
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
 				return nil, fmt.Errorf("attestation proof %d validator %d out of range", i, index)
 			}
-			key, err := e.Store.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
+			key, err := e.PubKeys.Get(state.Validators[index].AttestationPubkey)
 			if err != nil {
 				return nil, fmt.Errorf("attestation proof %d validator %d: %w", i, index, err)
 			}
@@ -308,8 +308,8 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		ProposerIndex:   validatorIndex,
 		ParentRoot:      headRoot,
 		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
-		Payloads:        payloadsFromEntries(e.Store.KnownPayloads.Entries()),
-		ProofMerger:     aggregation.NewProofMerger(e.Store.PubKeyCache),
+		Payloads:        payloadsFromEntries(e.Store.KnownPayloads().Entries()),
+		ProofMerger:     aggregation.NewProofMerger(e.PubKeys),
 	})
 	if err != nil {
 		metrics.IncBlockBuildingFailures()

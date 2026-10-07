@@ -101,8 +101,20 @@ func run(cfg config) error {
 		VerifySignature:            cfg.ShadowVerifySignatureRate,
 		VerifyAggregatedSignatures: cfg.ShadowVerifyAggregatedSignaturesRate,
 	}
-	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
-	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
+	pubKeys := xmss.NewPubKeyCache()
+	defer pubKeys.Close()
+	n := node.New(node.Components{
+		Store:      s,
+		ForkChoice: fc,
+		P2P:        p2pHost,
+		Keys:       inputs.keyManager,
+		PubKeys:    pubKeys,
+		Aggregator: aggCtl,
+	}, node.Config{
+		CommitteeCount:     cfg.CommitteeCount,
+		AggregateSubnetIDs: cfg.AggregateSubnetIDs,
+		Shadow:             shadowRates,
+	})
 
 	// services owns the engine, sync driver and HTTP servers. Each returns only
 	// after its own work has finished, so once services.Wait returns the

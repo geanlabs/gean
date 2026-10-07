@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/blockprocessor"
+	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/db"
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/store"
@@ -224,7 +225,9 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	}
 
 	// 5. Call OnBlock WITH signature verification.
-	err = blockprocessor.OnBlock(s, signedBlock)
+	pubKeys := xmss.NewPubKeyCache()
+	defer pubKeys.Close()
+	err = blockprocessor.OnBlock(s, pubKeys, signedBlock)
 
 	// 6. Check result against expectation.
 	expectFailure := tt.RejectionReason != nil

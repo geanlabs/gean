@@ -277,24 +277,24 @@ type PayloadKV struct {
 }
 
 func (s *ConsensusStore) PromoteNewToKnown() {
-	if s == nil || s.NewPayloads == nil || s.KnownPayloads == nil {
+	if s == nil || s.newPayloads == nil || s.knownPayloads == nil {
 		return
 	}
-	s.KnownPayloads.PushBatch(s.NewPayloads.Drain())
+	s.knownPayloads.PushBatch(s.newPayloads.Drain())
 }
 
 func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.AttestationData {
-	if s == nil || s.KnownPayloads == nil {
+	if s == nil || s.knownPayloads == nil {
 		return map[uint64]*types.AttestationData{}
 	}
-	return s.KnownPayloads.ExtractLatestAttestations()
+	return s.knownPayloads.ExtractLatestAttestations()
 }
 
 func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.AttestationData {
-	if s == nil || s.NewPayloads == nil {
+	if s == nil || s.newPayloads == nil {
 		return map[uint64]*types.AttestationData{}
 	}
-	return s.NewPayloads.ExtractLatestAttestations()
+	return s.newPayloads.ExtractLatestAttestations()
 }
 
 func validPayloadEntry(entry *PayloadEntry) bool {

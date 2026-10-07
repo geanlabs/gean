@@ -44,9 +44,9 @@ func (e *Engine) updateHead() {
 			metrics.SetLatestFinalizedSlot(finalized.Slot)
 			metrics.SetJustifiedSlot(justified.Slot)
 			metrics.SetFinalizedSlot(finalized.Slot)
-			metrics.SetGossipSignatures(e.Store.AttestationSignatures.Len())
-			metrics.SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
-			metrics.SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
+			metrics.SetGossipSignatures(e.Store.AttestationSignatures().Len())
+			metrics.SetNewAggregatedPayloads(e.Store.NewPayloads().Len())
+			metrics.SetKnownAggregatedPayloads(e.Store.KnownPayloads().Len())
 			metrics.SetPendingAttestationsTotal(e.PendingAttestations.Total())
 
 			if isReorg {
