@@ -6,6 +6,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/p2p"
+	"github.com/geanlabs/gean/internal/types"
 )
 
 const fetchBatchGracePeriod = 50 * time.Millisecond
@@ -83,6 +84,10 @@ func (e *Engine) notifyFailedRoots(ctx context.Context, roots [][32]byte) {
 
 func (e *Engine) queueMissingBlockFetch(root [32]byte) {
 	if e.P2P == nil {
+		return
+	}
+	// The zero root is genesis's parent: there is no such block to fetch.
+	if types.IsZeroRoot(root) {
 		return
 	}
 	// A missing parent is re-derived on every child that arrives referencing it, so the
