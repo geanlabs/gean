@@ -89,22 +89,23 @@ func (w *Worker) Run(ctx context.Context, dispatches <-chan Dispatch, results ch
 				return
 			}
 			w.metrics.SetProvingQueueDepth("aggregation", len(dispatches))
-			result := w.Session(ctx, dispatch)
-			select {
-			case results <- result:
-			case <-ctx.Done():
-				return
-			}
+			w.Session(ctx, dispatch, func(result Result) {
+				select {
+				case results <- result:
+				case <-ctx.Done():
+				}
+			})
 		}
 	}
 }
 
 // Session acquires the prover, aggregates the dispatched snapshot within its
-// deadline and publishes the aggregates. It returns what the store must
-// apply; a session that produced nothing returns an empty Result.
-func (w *Worker) Session(ctx context.Context, dispatch Dispatch) Result {
+// deadline, hands the result to apply and then publishes the aggregates.
+// apply runs first because publishing can take an interval: a session that
+// finishes just before the promotion boundary must reach the store in time.
+func (w *Worker) Session(ctx context.Context, dispatch Dispatch, apply func(Result)) {
 	if dispatch.Snapshot == nil {
-		return Result{}
+		return
 	}
 	acquireCtx, cancelAcquire := context.WithTimeout(ctx, AcquirePatience)
 	if w.gate != nil && !w.gate.Acquire(acquireCtx, false) {
@@ -113,7 +114,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) Result {
 		// A lost prover costs this slot its aggregate and slows justification;
 		// without this line the loss shows only in metrics, a silent gap in the logs.
 		logger.Warn(logger.Signature, "aggregation skipped: prover unavailable slot=%d", dispatch.Slot)
-		return Result{}
+		return
 	}
 	cancelAcquire()
 
@@ -143,7 +144,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) Result {
 		if w.gate != nil {
 			w.gate.Release(false)
 		}
-		return Result{}
+		return
 	}
 	// The window is what the dispatcher actually allowed, which is less
 	// than SessionBudget whenever the gate was held for a while.
@@ -171,6 +172,7 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) Result {
 			logger.Info(logger.Signature, "aggregation session truncated after partial output: slot=%d produced=%d duration=%v budget=%v", dispatch.Slot, len(aggs), workerElapsed, budget)
 		}
 	}
+	apply(Result{Payloads: payloads, Deletes: deletes})
 	publishCtx, cancelPublish := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
 	publishAggregates(publishCtx, w.publisher, aggs)
 	cancelPublish()
@@ -195,5 +197,4 @@ func (w *Worker) Session(ctx context.Context, dispatch Dispatch) Result {
 	}
 	logger.Info(logger.Signature, "aggregation worker: slot=%d produced=%d duration=%v%s",
 		dispatch.Slot, len(aggs), workerElapsed, skipSummary)
-	return Result{Payloads: payloads, Deletes: deletes}
 }

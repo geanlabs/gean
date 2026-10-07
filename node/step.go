@@ -3,6 +3,8 @@ package node
 import (
 	"context"
 
+	"github.com/geanlabs/gean/aggregation"
+
 	"github.com/geanlabs/gean/types"
 )
 
@@ -20,7 +22,7 @@ func (e *Engine) Tick(ctx context.Context) {
 //
 // It reports whether it handled anything. Sync delivery and failed-root
 // notification block when their channels are full, so the caller must not
-// queue more than they hold between calls.
+// queue more than those hold between calls.
 func (e *Engine) ProcessPending(ctx context.Context) bool {
 	handled := false
 	for e.processOne(ctx) {
@@ -30,6 +32,21 @@ func (e *Engine) ProcessPending(ctx context.Context) bool {
 }
 
 func (e *Engine) processOne(ctx context.Context) bool {
+	// Worker results come first: each job below yields at most one result, so
+	// draining them before any producer runs keeps every result channel from
+	// filling while the single stepping goroutine is the one sending to it.
+	if att, ok := poll(e.verifiedAttestationCh); ok {
+		e.addVerifiedAttestation(att)
+		return true
+	}
+	if p, ok := poll(e.newPayloadCh); ok {
+		e.addNewPayload(p)
+		return true
+	}
+	if r, ok := poll(e.aggregationResultCh); ok {
+		r.Apply(e.store)
+		return true
+	}
 	if block, ok := poll(e.blockCh); ok {
 		e.onBlock(block)
 		return true
@@ -46,18 +63,6 @@ func (e *Engine) processOne(ctx context.Context) bool {
 		e.onGossipAggregatedAttestation(ctx, agg)
 		return true
 	}
-	if att, ok := poll(e.verifiedAttestationCh); ok {
-		e.addVerifiedAttestation(att)
-		return true
-	}
-	if p, ok := poll(e.newPayloadCh); ok {
-		e.addNewPayload(p)
-		return true
-	}
-	if r, ok := poll(e.aggregationResultCh); ok {
-		r.Apply(e.store)
-		return true
-	}
 	if _, ok := poll(e.earlyAggregateCh); ok {
 		e.maybeEarlyAggregate(e.nowMs())
 		return true
@@ -71,7 +76,7 @@ func (e *Engine) processOne(ctx context.Context) bool {
 		return true
 	}
 	if dispatch, ok := poll(e.aggregationDispatchCh); ok {
-		e.aggregationWorker.Session(ctx, dispatch).Apply(e.store)
+		e.aggregationWorker.Session(ctx, dispatch, func(r aggregation.Result) { r.Apply(e.store) })
 		return true
 	}
 	if block, ok := poll(e.recoveryCh); ok {

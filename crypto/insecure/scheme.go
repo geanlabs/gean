@@ -41,8 +41,9 @@ func (Scheme) VerifySignature(pubkey crypto.PublicKey, slot uint32, message [32]
 }
 
 func (s Scheme) Aggregate(raw []crypto.RawSignature, children []crypto.Proof, message [32]byte, slot uint32) ([]byte, error) {
-	if len(raw)+len(children) == 0 {
-		return nil, errors.New("nothing to aggregate")
+	// As in XMSS: a lone child proof is already the aggregate, not an input.
+	if len(raw) == 0 && len(children) < 2 {
+		return nil, errors.New("need raw signatures or at least two child proofs")
 	}
 	var signers []crypto.PublicKey
 	for i, r := range raw {
@@ -56,6 +57,10 @@ func (s Scheme) Aggregate(raw []crypto.RawSignature, children []crypto.Proof, me
 			return nil, fmt.Errorf("child proof %d: %w", i, err)
 		}
 		signers = append(signers, child.PublicKeys...)
+	}
+	sorted := sortedKeys(signers)
+	if len(slices.Compact(slices.Clone(sorted))) != len(sorted) {
+		return nil, errors.New("a signer appears more than once")
 	}
 	return singleProof(signers, message, slot), nil
 }
@@ -137,11 +142,16 @@ func sign(pubkey crypto.PublicKey, slot uint32, message [32]byte) crypto.Signatu
 	return sig
 }
 
-// singleProof commits to the signer set regardless of order.
-func singleProof(pubkeys []crypto.PublicKey, message [32]byte, slot uint32) []byte {
+func sortedKeys(pubkeys []crypto.PublicKey) []crypto.PublicKey {
 	sorted := slices.Clone(pubkeys)
 	slices.SortFunc(sorted, func(a, b crypto.PublicKey) int { return bytes.Compare(a[:], b[:]) })
-	sorted = slices.Compact(sorted)
+	return sorted
+}
+
+// singleProof commits to the signers regardless of order. Duplicates are kept,
+// so a proof over [A] does not verify against [A, A].
+func singleProof(pubkeys []crypto.PublicKey, message [32]byte, slot uint32) []byte {
+	sorted := sortedKeys(pubkeys)
 
 	h := sha256.New()
 	h.Write([]byte("gean-insecure-proof"))

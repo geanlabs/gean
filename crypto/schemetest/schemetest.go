@@ -57,6 +57,12 @@ func Run(t *testing.T, scheme crypto.Scheme, signer SignerFunc) {
 		}
 	})
 
+	t.Run("lone child", func(t *testing.T) {
+		if _, err := scheme.Aggregate(nil, []crypto.Proof{{PublicKeys: keys[:2], Proof: child}}, message, slot); err == nil {
+			t.Fatal("aggregated a single child proof with no raw signatures")
+		}
+	})
+
 	t.Run("aggregate with child", func(t *testing.T) {
 		merged, err := scheme.Aggregate(raw[2:], []crypto.Proof{{PublicKeys: keys[:2], Proof: child}}, message, slot)
 		if err != nil {

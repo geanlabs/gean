@@ -3,6 +3,7 @@ package aggregation
 import (
 	"context"
 	"errors"
+	"github.com/geanlabs/gean/crypto"
 	"testing"
 	"time"
 
@@ -82,9 +83,51 @@ func TestSessionSkipsDispatchPastItsDeadline(t *testing.T) {
 		Slot:     1,
 		Snapshot: aggregateTestSnapshot(1),
 		Deadline: now.Add(-time.Second),
-	})
+	}, func(Result) {})
 
 	if publisher.count != 0 {
 		t.Fatalf("published=%d, want 0 for a dispatch past its deadline", publisher.count)
+	}
+}
+
+// orderPublisher fails the test if an aggregate is published before the
+// session's result reached the store's owner.
+type orderPublisher struct {
+	t       *testing.T
+	applied *bool
+	count   int
+}
+
+func (p *orderPublisher) PublishAggregatedAttestation(context.Context, *types.SignedAggregatedAttestation) error {
+	if !*p.applied {
+		p.t.Fatal("aggregate published before its result was applied")
+	}
+	p.count++
+	return nil
+}
+
+// provingScheme proves every group, so a session always has aggregates.
+type provingScheme struct{ crypto.Scheme }
+
+func (provingScheme) Aggregate([]crypto.RawSignature, []crypto.Proof, [32]byte, uint32) ([]byte, error) {
+	return []byte{1}, nil
+}
+
+// Publishing can take a whole interval, so a session that finishes just
+// before the promotion boundary must hand its result to the store first or
+// the aggregates miss the promotion they were produced for.
+func TestSessionAppliesResultBeforePublishing(t *testing.T) {
+	applied := false
+	publisher := &orderPublisher{t: t, applied: &applied}
+	worker := NewWorker(provingScheme{}, publisher, nil, shadow.Rates{}, time.Now, nil)
+
+	worker.Session(context.Background(), Dispatch{Slot: 6, Snapshot: budgetTestSnapshot()}, func(r Result) {
+		if len(r.Payloads) == 0 {
+			t.Fatal("session applied no aggregates")
+		}
+		applied = true
+	})
+	if publisher.count == 0 {
+		t.Fatal("session published nothing")
 	}
 }
