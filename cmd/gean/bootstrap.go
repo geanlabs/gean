@@ -9,7 +9,6 @@ import (
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/store"
-	"github.com/geanlabs/gean/types"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -93,16 +92,12 @@ func bootstrapFromCheckpoint(s *store.ConsensusStore, genesisConfig *genesis.Gen
 		return fmt.Errorf("checkpoint sync failed: %w", err)
 	}
 
-	canonicalRoot, err := initStoreFromState(s, state)
+	canonicalRoot, err := s.InitFromAnchor(state, signedBlock)
 	if err != nil {
 		return err
 	}
-	stateRoot := state.LatestBlockHeader.StateRoot
 	logger.Info(logger.Sync, "checkpoint sync: slot=%d finalized_root=%x justified_root=%x head_root=%x parent_root=%x state_root=%x",
-		state.Slot, state.LatestFinalized.Root, state.LatestJustified.Root, canonicalRoot, state.LatestBlockHeader.ParentRoot, stateRoot)
-	if err := s.StorePendingBlock(canonicalRoot, signedBlock); err != nil {
-		return fmt.Errorf("store checkpoint block: %w", err)
-	}
+		state.Slot, state.LatestFinalized.Root, state.LatestJustified.Root, canonicalRoot, state.LatestBlockHeader.ParentRoot, state.LatestBlockHeader.StateRoot)
 	return nil
 }
 
@@ -112,22 +107,6 @@ func bootstrapFromGenesis(s *store.ConsensusStore, genesisConfig *genesis.Genesi
 	if err != nil {
 		return fmt.Errorf("build genesis state: %w", err)
 	}
-	canonicalRoot, err := initStoreFromState(s, genesisState)
-	if err != nil {
-		return err
-	}
-	genesisSignedBlock := &types.SignedBlock{
-		Block: &types.Block{
-			Slot:          genesisState.LatestBlockHeader.Slot,
-			ProposerIndex: genesisState.LatestBlockHeader.ProposerIndex,
-			ParentRoot:    genesisState.LatestBlockHeader.ParentRoot,
-			StateRoot:     genesisState.LatestBlockHeader.StateRoot,
-			Body:          &types.BlockBody{},
-		},
-		Proof: &types.MultiMessageAggregate{},
-	}
-	if err := s.StorePendingBlock(canonicalRoot, genesisSignedBlock); err != nil {
-		return fmt.Errorf("store genesis block: %w", err)
-	}
-	return nil
+	_, err = s.InitFromGenesis(genesisState)
+	return err
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/geanlabs/gean/crypto/xmss"
 	"github.com/geanlabs/gean/logger"
@@ -55,7 +56,7 @@ func run(cfg config) error {
 		return err
 	}
 
-	if err := recoverStoreTime(s, inputs.genesisConfig.GenesisTime); err != nil {
+	if err := s.RecoverTime(inputs.genesisConfig.GenesisTime, time.Now()); err != nil {
 		return err
 	}
 
