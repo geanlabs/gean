@@ -43,12 +43,6 @@ func (b *InMemoryBackend) EstimateTableBytes(table Table) uint64 {
 
 func (b *InMemoryBackend) Close() error { return nil }
 
-func (b *InMemoryBackend) CountEntries(table Table) int {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return len(b.tables[table])
-}
-
 type inMemoryReadView struct {
 	backend *InMemoryBackend
 }

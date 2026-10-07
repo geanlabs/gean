@@ -18,6 +18,7 @@ const (
 	schemeTest   = module + "crypto/schemetest"
 	simulation   = module + "sim"
 	testDriver   = module + "api/testdriver"
+	dbTest       = module + "db/dbtest"
 	libp2p       = "github.com/libp2p/go-libp2p"
 	pebble       = "github.com/cockroachdb/pebble"
 	pebbleDB     = module + "db/pebbledb"
@@ -57,6 +58,7 @@ var rules = map[string][]string{
 	// Storage: the consensus store is independent of the database engine.
 	"db":          {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "store"},
 	"db/pebbledb": {nativeCrypto, fakeCrypto, libp2p, engine, module + "store"},
+	"db/dbtest":   {nativeCrypto, fakeCrypto, libp2p, pebble, engine, module + "store"},
 	"store":       {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer, api},
 	// Signature-checking consensus steps use the crypto contract, never a
 	// particular scheme, and never reach the network or the engine.
@@ -75,10 +77,10 @@ var rules = map[string][]string{
 	"api":            {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 	"api/testdriver": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 	// Production code never links test code: not the forgeable scheme, the
-	// conformance suite, the simulation or the hive test driver.
-	"launch":     {fakeCrypto, schemeTest, simulation, testDriver},
-	"cmd/gean":   {fakeCrypto, schemeTest, simulation, testDriver},
-	"cmd/keygen": {fakeCrypto, schemeTest, simulation, testDriver},
+	// conformance suites, the simulation or the hive test driver.
+	"launch":     {fakeCrypto, schemeTest, simulation, testDriver, dbTest},
+	"cmd/gean":   {fakeCrypto, schemeTest, simulation, testDriver, dbTest},
+	"cmd/keygen": {fakeCrypto, schemeTest, simulation, testDriver, dbTest},
 	// Test infrastructure.
 	"internal/layering":     {module},
 	"internal/specfixtures": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
