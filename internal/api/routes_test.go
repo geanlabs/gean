@@ -14,7 +14,7 @@ import (
 
 func TestBuildAPIMuxRegistersRuntimeRoutes(t *testing.T) {
 	s := store.NewConsensusStore(storage.NewInMemoryBackend())
-	mux := buildAPIMux(s, nil, role.New(false))
+	mux := NewHandler(s, nil, role.New(false))
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/health", nil))

@@ -7,22 +7,17 @@ import (
 )
 
 func (e *Engine) startWorkers(ctx context.Context) {
-	go e.runFetchBatcher(ctx)
-	go aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
-	go e.runProposalWorker(ctx)
-	go e.runRecoveryWorker(ctx)
-	go e.runAttestationWorker(ctx)
-	go e.runAggregationWorker(ctx)
-	go e.runGossipMeshGauge(ctx)
-	go e.runTickAgeGauge(ctx)
-
-	// The storage-size sampler reads the backend, so shutdown has to join it
-	// before Close: see Engine.WaitForStorageWorkers.
-	e.storageWorkers.Add(1)
-	go func() {
-		defer e.storageWorkers.Done()
-		e.runStorageSizeGauge(ctx)
-	}()
+	e.workers.Go(func() { e.runFetchBatcher(ctx) })
+	e.workers.Go(func() {
+		aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
+	})
+	e.workers.Go(func() { e.runProposalWorker(ctx) })
+	e.workers.Go(func() { e.runRecoveryWorker(ctx) })
+	e.workers.Go(func() { e.runAttestationWorker(ctx) })
+	e.workers.Go(func() { e.runAggregationWorker(ctx) })
+	e.workers.Go(func() { e.runGossipMeshGauge(ctx) })
+	e.workers.Go(func() { e.runTickAgeGauge(ctx) })
+	e.workers.Go(func() { e.runStorageSizeGauge(ctx) })
 }
 
 func (e *Engine) runAttestationWorker(ctx context.Context) {
@@ -31,7 +26,7 @@ func (e *Engine) runAttestationWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case att := <-e.AttestationCh:
-			go e.onGossipAttestation(att)
+			e.workers.Go(func() { e.onGossipAttestation(att) })
 		}
 	}
 }

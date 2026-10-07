@@ -11,6 +11,7 @@ import (
 	"github.com/geanlabs/gean/internal/node"
 	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/shadow"
+	"github.com/geanlabs/gean/internal/tasks"
 	"github.com/geanlabs/gean/xmss"
 )
 
@@ -102,17 +103,18 @@ func run(cfg config) error {
 	}
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
-	startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes)
 
-	apiAddr, metricsAddr := startHTTPServers(cfg, s, fc, aggCtl)
+	// services owns the engine, sync driver and HTTP servers. Each returns only
+	// after its own work has finished, so once services.Wait returns the
+	// deferred closes can run: the p2p host (which joins its handlers), then
+	// storage, then the keys.
+	var services tasks.Group
+	startNodeNetworking(ctx, &services, n, s, p2pHost, inputs.bootnodes)
+
+	apiAddr, metricsAddr := startHTTPServers(ctx, &services, cfg, s, fc, aggCtl)
 	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", apiAddr, metricsAddr, cfg.IsAggregator)
 
 	waitForShutdown(cancel)
-
-	// Join the storage-size sampler before the deferred backend.Close runs.
-	// Cancellation alone is not enough: a sampler mid-round when the database
-	// closes calls into a closed Pebble instance, which panics. Other workers
-	// that read storage are still not joined — a pre-existing gap.
-	n.WaitForStorageWorkers()
+	services.Wait()
 	return nil
 }

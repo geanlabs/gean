@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/geanlabs/gean/internal/logger"
 )
@@ -20,6 +21,21 @@ func (h *Host) JoinTopic(topic string) error {
 	return nil
 }
 
+// ReannounceSubscriptionsAfter re-announces every subscription once delay has
+// passed, unless the host closes first.
+func (h *Host) ReannounceSubscriptionsAfter(delay time.Duration) {
+	h.tasks.Go(func() {
+		select {
+		case <-time.After(delay):
+		case <-h.ctx.Done():
+			return
+		}
+		if err := h.ReannounceSubscriptions(); err != nil {
+			logger.Error(logger.Network, "re-announce subscriptions failed: %v", err)
+		}
+	})
+}
+
 func (h *Host) ReannounceSubscriptions() error {
 	if h.gossipHandler == nil {
 		return fmt.Errorf("reannounce: gossip listeners not started yet")
@@ -35,7 +51,7 @@ func (h *Host) ReannounceSubscriptions() error {
 			return fmt.Errorf("reannounce: subscribe %s: %w", topic, err)
 		}
 		h.subs[topic] = newSub
-		go h.listenTopic(h.ctx, topic, newSub, h.gossipHandler)
+		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, newSub, h.gossipHandler) })
 		logger.Info(logger.Network, "re-announced subscription topic=%s", topic)
 	}
 	return nil

@@ -13,9 +13,11 @@ func (sd *SyncDriver) OnPeerConnected(peerID libp2ppeer.ID) {
 	if !sd.ready() {
 		return
 	}
-	ctx, cancel := context.WithTimeout(sd.ctx, peerStatusTimeout)
-	defer cancel()
-	sd.pollPeer(ctx, peerID, sd.makeStatusMessage())
+	sd.tasks.Do(func() {
+		ctx, cancel := context.WithTimeout(sd.ctx, peerStatusTimeout)
+		defer cancel()
+		sd.pollPeer(ctx, peerID, sd.makeStatusMessage())
+	})
 }
 
 func (sd *SyncDriver) refreshSyncFromPeers(ctx context.Context) {
@@ -31,7 +33,7 @@ func (sd *SyncDriver) refreshSyncFromPeers(ctx context.Context) {
 
 	ourStatus := sd.makeStatusMessage()
 	for _, peerID := range peers {
-		go sd.pollPeer(ctx, peerID, ourStatus)
+		sd.tasks.Go(func() { sd.pollPeer(ctx, peerID, ourStatus) })
 	}
 }
 

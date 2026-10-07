@@ -3,6 +3,7 @@
 package main
 
 import (
+	"net/http"
 	"os"
 
 	"github.com/geanlabs/gean/internal/api"
@@ -13,10 +14,10 @@ import (
 	"github.com/geanlabs/gean/internal/store"
 )
 
-func startAPIServer(address string, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) error {
+func apiHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) http.Handler {
 	if testdriver.IsEnabled(os.Getenv(testdriver.EnvVar)) {
 		logger.Info(logger.Node, "%s=1: enabling test-driver routes", testdriver.EnvVar)
-		return api.StartAPIServerWithTestDriver(address, s, fc, aggCtl)
+		return api.NewHandlerWithTestDriver(s, fc, aggCtl)
 	}
-	return api.StartAPIServer(address, s, fc, aggCtl)
+	return api.NewHandler(s, fc, aggCtl)
 }

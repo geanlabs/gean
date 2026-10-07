@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/geanlabs/gean/internal/logger"
 )
@@ -18,5 +17,4 @@ func waitForShutdown(cancel context.CancelFunc) {
 
 	logger.Info(logger.Node, "shutting down...")
 	cancel()
-	time.Sleep(500 * time.Millisecond)
 }

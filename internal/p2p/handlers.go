@@ -15,16 +15,16 @@ func (h *Host) RegisterReqRespHandlers(
 ) {
 	h.host.SetStreamHandler(protocol.ID(StatusProtocol), func(s network.Stream) {
 		defer s.Close()
-		handleStatusRequest(s, statusFn)
+		h.tasks.Do(func() { handleStatusRequest(s, statusFn) })
 	})
 
 	h.host.SetStreamHandler(protocol.ID(BlocksByRootProtocol), func(s network.Stream) {
 		defer s.Close()
-		handleBlocksByRootRequest(s, blockByRootFn)
+		h.tasks.Do(func() { handleBlocksByRootRequest(s, blockByRootFn) })
 	})
 
 	h.host.SetStreamHandler(protocol.ID(BlocksByRangeProtocol), func(s network.Stream) {
 		defer s.Close()
-		handleBlocksByRangeRequest(s, currentSlotFn, blocksInRangeFn)
+		h.tasks.Do(func() { handleBlocksByRangeRequest(s, currentSlotFn, blocksInRangeFn) })
 	})
 }

@@ -44,10 +44,14 @@ func (h *Host) LibP2PHost() libp2phost.Host {
 	return h.host
 }
 
+// Close stops the host and returns once every goroutine and handler it owns has
+// finished.
 func (h *Host) Close() {
 	h.cancel()
+	h.host.Close()
+	// Join before touching subs: a delayed re-announce may still be replacing them.
+	h.tasks.Wait()
 	for _, sub := range h.subs {
 		sub.Cancel()
 	}
-	h.host.Close()
 }

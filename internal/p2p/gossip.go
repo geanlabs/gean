@@ -23,7 +23,7 @@ func (h *Host) StartGossipListeners(handler MessageHandler) {
 	}
 	h.gossipHandler = handler
 	for topic, sub := range h.subs {
-		go h.listenTopic(h.ctx, topic, sub, handler)
+		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, sub, handler) })
 	}
 }
 

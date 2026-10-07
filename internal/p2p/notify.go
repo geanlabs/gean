@@ -23,7 +23,7 @@ func (h *Host) installPeerNotifier() {
 				h.Hooks.PeerCount(count)
 			}
 			if isNew && h.Hooks.PeerStatus != nil && conn.Stat().Direction == network.DirOutbound {
-				go h.Hooks.PeerStatus(peerID)
+				h.tasks.Go(func() { h.Hooks.PeerStatus(peerID) })
 			}
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {

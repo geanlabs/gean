@@ -8,7 +8,8 @@ import (
 	"github.com/geanlabs/gean/internal/store"
 )
 
-func buildAPIMux(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.ServeMux {
+// NewHandler serves the node API over the consensus store and fork choice.
+func NewHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /lean/v0/health", HealthHandler)

@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/store"
+	"github.com/geanlabs/gean/internal/tasks"
 	"github.com/geanlabs/gean/internal/types"
 	"github.com/geanlabs/gean/xmss"
 )
@@ -73,17 +73,10 @@ type Engine struct {
 	lastProposalDuty proposalDuty
 	proposalReserved bool
 
-	// storageWorkers tracks the storage-size sampler so shutdown can join it
-	// before the database is closed: a sampler still running after Close calls
-	// into a closed Pebble instance, which panics rather than erroring.
-	//
-	// Scope is deliberately narrow. Other workers read storage too — the
-	// aggregation, proposal, recovery and attestation workers, and the fetch
-	// batcher — and none of them is joined either. That is a pre-existing
-	// shutdown weakness, not one this sampler introduced, and closing it means
-	// deciding how long shutdown may block on in-flight proving work. Tracked
-	// separately; do not read this WaitGroup as covering them.
-	storageWorkers sync.WaitGroup
+	// workers owns every goroutine the engine starts: the long-running workers
+	// and the per-message verification goroutines. Run waits for all of them
+	// before returning, so the caller may release storage and keys afterwards.
+	workers tasks.Group
 
 	lastTick time.Time
 
@@ -163,16 +156,9 @@ func New(
 	return e
 }
 
-// WaitForStorageWorkers blocks until the storage-size sampler has returned.
-// Callers must invoke it after cancelling the context and before closing the
-// backend.
-//
-// It does not cover every storage-reading goroutine — see the storageWorkers
-// field for what is and is not tracked.
-func (e *Engine) WaitForStorageWorkers() {
-	e.storageWorkers.Wait()
-}
-
+// Run drives the engine until ctx is cancelled. It returns only after every
+// goroutine the engine started has finished, including in-flight proving and
+// verification, so the caller can then close storage and release keys.
 func (e *Engine) Run(ctx context.Context) {
 	e.initMetrics()
 
@@ -184,4 +170,5 @@ func (e *Engine) Run(ctx context.Context) {
 	logger.Info(logger.Node, "started")
 	e.onTick()
 	e.dispatch(ctx, ticker.C)
+	e.workers.Wait()
 }

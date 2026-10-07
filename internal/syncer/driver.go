@@ -9,6 +9,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/store"
+	"github.com/geanlabs/gean/internal/tasks"
 )
 
 type SyncDriver struct {
@@ -16,6 +17,10 @@ type SyncDriver struct {
 	store *store.ConsensusStore
 	p2p   SyncDriverP2P
 	ctx   context.Context
+
+	// tasks owns the peer polls Run starts and the peer-connect callbacks the
+	// network delivers; Run waits for all of them before returning.
+	tasks tasks.Group
 
 	mu       sync.Mutex
 	inFlight map[libp2ppeer.ID]bool
@@ -37,10 +42,14 @@ func NewSyncDriver(ctx context.Context, node LocalNode, store *store.ConsensusSt
 	}
 }
 
+// Run polls peers until the driver's context is cancelled. It returns only after
+// every peer poll and peer-connect callback has finished, so the caller can then
+// close storage.
 func (sd *SyncDriver) Run() {
 	if !sd.ready() {
 		return
 	}
+	defer sd.tasks.Wait()
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()

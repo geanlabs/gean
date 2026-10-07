@@ -30,7 +30,7 @@ func (h *Host) ConnectBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr
 }
 
 func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multiaddr) {
-	go func() {
+	h.tasks.Go(func() {
 		ticker := time.NewTicker(BootnodeRedialSecs * time.Second)
 		defer ticker.Stop()
 		for {
@@ -41,7 +41,7 @@ func (h *Host) StartBootnodeRedial(ctx context.Context, addrs []multiaddr.Multia
 				h.redialBootnodes(ctx, addrs)
 			}
 		}
-	}()
+	})
 }
 
 func (h *Host) redialBootnodes(ctx context.Context, addrs []multiaddr.Multiaddr) {
