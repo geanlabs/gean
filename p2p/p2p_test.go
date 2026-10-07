@@ -506,7 +506,7 @@ func messageIDDigest(domain [4]byte, topic string, data []byte) []byte {
 }
 
 func TestStatusMessageSSZRoundtrip(t *testing.T) {
-	status := &StatusMessage{
+	status := &types.Status{
 		FinalizedRoot: [32]byte{0xab},
 		FinalizedSlot: 42,
 		HeadRoot:      [32]byte{0xcd},
@@ -517,7 +517,7 @@ func TestStatusMessageSSZRoundtrip(t *testing.T) {
 		t.Fatalf("status SSZ should be 80 bytes, got %d", len(data))
 	}
 
-	decoded := &StatusMessage{}
+	decoded := &types.Status{}
 	if err := decoded.UnmarshalSSZ(data); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

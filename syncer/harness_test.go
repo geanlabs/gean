@@ -7,10 +7,7 @@ import (
 	"testing"
 	"time"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/geanlabs/gean/db"
-	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/types"
 )
@@ -18,9 +15,9 @@ import (
 type mockSyncP2P struct {
 	mu sync.Mutex
 
-	peers []libp2ppeer.ID
+	peers []PeerID
 
-	statusResp *p2p.StatusMessage
+	statusResp *types.Status
 	statusErr  error
 
 	rangeBatches   [][]*types.SignedBlock
@@ -34,17 +31,17 @@ type mockSyncP2P struct {
 	rootCalls  atomic.Int32
 }
 
-func (m *mockSyncP2P) Peers() []libp2ppeer.ID {
+func (m *mockSyncP2P) Peers() []PeerID {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.peers
 }
 
-func (m *mockSyncP2P) SendStatusRequest(ctx context.Context, peerID libp2ppeer.ID, ourStatus *p2p.StatusMessage) (*p2p.StatusMessage, error) {
+func (m *mockSyncP2P) SendStatusRequest(ctx context.Context, peerID PeerID, ourStatus *types.Status) (*types.Status, error) {
 	return m.statusResp, m.statusErr
 }
 
-func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.ID, startSlot, count uint64) ([]*types.SignedBlock, error) {
+func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID PeerID, startSlot, count uint64) ([]*types.SignedBlock, error) {
 	m.rangeCalls.Add(1)
 	m.mu.Lock()
 	m.lastRangeCount = count

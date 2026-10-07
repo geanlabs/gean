@@ -13,6 +13,7 @@ import (
 	"github.com/geanlabs/gean/syncer"
 	"github.com/geanlabs/gean/tasks"
 	"github.com/geanlabs/gean/types"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -69,9 +70,9 @@ func preinitializeXMSS(proving bool) error {
 
 func registerReqRespHandlers(p2pHost *p2p.Host, s *store.ConsensusStore) {
 	p2pHost.RegisterReqRespHandlers(
-		func() *p2p.StatusMessage {
+		func() *types.Status {
 			finalized := s.LatestFinalized()
-			return &p2p.StatusMessage{
+			return &types.Status{
 				FinalizedRoot: finalized.Root,
 				FinalizedSlot: finalized.Slot,
 				HeadRoot:      s.Head(),
@@ -97,11 +98,31 @@ func startNodeNetworking(ctx context.Context, services *tasks.Group, n *node.Eng
 	p2pHost.StartGossipListeners(n)
 	services.Go(func() { n.Run(ctx) })
 
-	syncDriver := syncer.NewSyncDriver(ctx, n, s, p2pHost)
-	p2pHost.Hooks.PeerStatus = syncDriver.OnPeerConnected
+	syncDriver := syncer.NewSyncDriver(ctx, n, s, syncNetwork{p2pHost})
+	p2pHost.Hooks.PeerStatus = func(id peer.ID) { syncDriver.OnPeerConnected(syncer.PeerID(id)) }
 	services.Go(syncDriver.Run)
 
 	p2pHost.ConnectBootnodes(ctx, bootnodes)
 	p2pHost.StartBootnodeRedial(ctx, bootnodes)
 	p2pHost.ReannounceSubscriptionsAfter(5 * time.Second)
+}
+
+// syncNetwork adapts the libp2p host to the sync driver's peer-neutral port.
+type syncNetwork struct{ *p2p.Host }
+
+func (n syncNetwork) Peers() []syncer.PeerID {
+	peers := n.Host.Peers()
+	ids := make([]syncer.PeerID, len(peers))
+	for i, p := range peers {
+		ids[i] = syncer.PeerID(p)
+	}
+	return ids
+}
+
+func (n syncNetwork) SendStatusRequest(ctx context.Context, id syncer.PeerID, ours *types.Status) (*types.Status, error) {
+	return n.Host.SendStatusRequest(ctx, peer.ID(id), ours)
+}
+
+func (n syncNetwork) FetchBlocksByRange(ctx context.Context, id syncer.PeerID, startSlot, count uint64) ([]*types.SignedBlock, error) {
+	return n.Host.FetchBlocksByRange(ctx, peer.ID(id), startSlot, count)
 }

@@ -4,9 +4,6 @@ import (
 	"context"
 	"testing"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
-	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -40,7 +37,7 @@ func TestSyncDriver_BeyondHistoryHorizon(t *testing.T) {
 			sd := NewSyncDriver(context.Background(), n, st, &mockSyncP2P{})
 			setHeadAtSlot(t, sd, tt.ourHead)
 
-			got := sd.beyondHistoryHorizon(&p2p.StatusMessage{HeadSlot: tt.peerHead})
+			got := sd.beyondHistoryHorizon(&types.Status{HeadSlot: tt.peerHead})
 			if got != tt.want {
 				t.Errorf("beyondHistoryHorizon(our=%d peer=%d) = %v, want %v",
 					tt.ourHead, tt.peerHead, got, tt.want)
@@ -57,7 +54,7 @@ func TestSyncDriver_BeyondHistoryHorizon_NilInputs(t *testing.T) {
 		t.Error("nil peer status must not report beyond-horizon")
 	}
 	var nilDriver *SyncDriver
-	if nilDriver.beyondHistoryHorizon(&p2p.StatusMessage{HeadSlot: 1 << 20}) {
+	if nilDriver.beyondHistoryHorizon(&types.Status{HeadSlot: 1 << 20}) {
 		t.Error("nil driver must not report beyond-horizon")
 	}
 }
@@ -70,9 +67,9 @@ func TestSyncDriver_CheckAndBackfill_SkipsRequestBeyondHorizon(t *testing.T) {
 	sd := NewSyncDriver(context.Background(), n, st, mock)
 	setHeadAtSlot(t, sd, 97861)
 
-	peerStatus := &p2p.StatusMessage{HeadSlot: 103265, FinalizedSlot: 92908}
+	peerStatus := &types.Status{HeadSlot: 103265, FinalizedSlot: 92908}
 	for i := 0; i < 3; i++ {
-		sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
+		sd.checkAndBackfill(context.Background(), PeerID("p1"), peerStatus)
 	}
 
 	if got := mock.rangeCalls.Load(); got != 0 {
@@ -90,20 +87,20 @@ func TestSyncDriver_BeyondHorizonReportLatch(t *testing.T) {
 	sd := NewSyncDriver(context.Background(), n, st, &mockSyncP2P{})
 	setHeadAtSlot(t, sd, 100)
 
-	far := &p2p.StatusMessage{HeadSlot: 100 + types.MinSlotsForBlockRequests + 1}
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), far)
+	far := &types.Status{HeadSlot: 100 + types.MinSlotsForBlockRequests + 1}
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), far)
 	if !sd.horizonReported {
 		t.Fatal("expected beyond-horizon condition to latch")
 	}
 
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p2"), far)
+	sd.checkAndBackfill(context.Background(), PeerID("p2"), far)
 	if !sd.horizonReported {
 		t.Fatal("latch must stay set while the condition holds")
 	}
 
 	// Back inside the window: the gap is servable again, so the latch clears.
-	near := &p2p.StatusMessage{HeadSlot: 100 + blocksByRangeSyncThreshold + 1}
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p3"), near)
+	near := &types.Status{HeadSlot: 100 + blocksByRangeSyncThreshold + 1}
+	sd.checkAndBackfill(context.Background(), PeerID("p3"), near)
 	if sd.horizonReported {
 		t.Fatal("expected latch to clear once the gap is inside the window")
 	}

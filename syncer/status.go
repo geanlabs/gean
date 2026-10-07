@@ -1,14 +1,14 @@
 package syncer
 
-import "github.com/geanlabs/gean/p2p"
+import "github.com/geanlabs/gean/types"
 
-func (sd *SyncDriver) makeStatusMessage() *p2p.StatusMessage {
+func (sd *SyncDriver) makeStatusMessage() *types.Status {
 	if sd == nil || sd.store == nil {
 		return nil
 	}
 
 	finalized := sd.store.LatestFinalized()
-	return &p2p.StatusMessage{
+	return &types.Status{
 		FinalizedRoot: finalized.Root,
 		FinalizedSlot: finalized.Slot,
 		HeadRoot:      sd.store.Head(),

@@ -1,15 +1,13 @@
 package syncer
 
-import libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
-func (sd *SyncDriver) tryReserve(peerID libp2ppeer.ID) bool {
+func (sd *SyncDriver) tryReserve(peerID PeerID) bool {
 	if sd == nil {
 		return false
 	}
 	sd.mu.Lock()
 	defer sd.mu.Unlock()
 	if sd.inFlight == nil {
-		sd.inFlight = make(map[libp2ppeer.ID]bool)
+		sd.inFlight = make(map[PeerID]bool)
 	}
 	if sd.inFlight[peerID] {
 		return false
@@ -18,7 +16,7 @@ func (sd *SyncDriver) tryReserve(peerID libp2ppeer.ID) bool {
 	return true
 }
 
-func (sd *SyncDriver) release(peerID libp2ppeer.ID) {
+func (sd *SyncDriver) release(peerID PeerID) {
 	if sd == nil {
 		return
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 func (h *Host) RegisterReqRespHandlers(
-	statusFn func() *StatusMessage,
+	statusFn func() *types.Status,
 	blockByRootFn func(root [32]byte) *types.SignedBlock,
 	currentSlotFn func() uint64,
 	blocksInRangeFn func(startSlot, count uint64) ([]*types.SignedBlock, bool),

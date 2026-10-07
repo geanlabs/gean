@@ -9,10 +9,10 @@ import (
 	"github.com/geanlabs/gean/types"
 )
 
-// sszStatusAdapter wraps p2p.StatusMessage so the SSZ spec-test harness can
+// sszStatusAdapter wraps types.Status so the SSZ spec-test harness can
 // drive it through the same sszCodec interface as consensus containers.
 //
-// p2p.StatusMessage is hand-rolled SSZ in the networking layer (no
+// types.Status is hand-rolled SSZ in the networking layer (no
 // HashTreeRoot — req/resp messages aren't merkleized on the consensus hot
 // path). For the networking SSZ fixtures we compose the hash here:
 // Status is a Container { finalized: Checkpoint, head: Checkpoint }, and
@@ -23,7 +23,7 @@ type sszStatusAdapter struct {
 }
 
 func (s *sszStatusAdapter) MarshalSSZ() ([]byte, error) {
-	msg := p2p.StatusMessage{
+	msg := types.Status{
 		FinalizedRoot: s.Finalized.Root,
 		FinalizedSlot: s.Finalized.Slot,
 		HeadRoot:      s.Head.Root,
@@ -33,7 +33,7 @@ func (s *sszStatusAdapter) MarshalSSZ() ([]byte, error) {
 }
 
 func (s *sszStatusAdapter) UnmarshalSSZ(buf []byte) error {
-	var msg p2p.StatusMessage
+	var msg types.Status
 	if err := msg.UnmarshalSSZ(buf); err != nil {
 		return err
 	}

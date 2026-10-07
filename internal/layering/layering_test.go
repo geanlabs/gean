@@ -57,7 +57,7 @@ var rules = map[string][]string{
 	"sim": {nativeCrypto, libp2p, pebble, p2p, syncer, api},
 	// Networking and serving sit beside the engine, not on top of it.
 	"p2p":            {nativeCrypto, fakeCrypto, pebble, engine, syncer, api, module + "store"},
-	"syncer":         {nativeCrypto, fakeCrypto, pebble, engine, api},
+	"syncer":         {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, api},
 	"api":            {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 	"api/testdriver": {nativeCrypto, fakeCrypto, libp2p, pebble, engine, p2p, syncer},
 	// The binaries never run on the forgeable scheme.

@@ -2,14 +2,12 @@ package syncer
 
 import (
 	"context"
-
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/geanlabs/gean/types"
 
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/p2p"
 )
 
-func (sd *SyncDriver) OnPeerConnected(peerID libp2ppeer.ID) {
+func (sd *SyncDriver) OnPeerConnected(peerID PeerID) {
 	if !sd.ready() {
 		return
 	}
@@ -37,7 +35,7 @@ func (sd *SyncDriver) refreshSyncFromPeers(ctx context.Context) {
 	}
 }
 
-func (sd *SyncDriver) pollPeer(ctx context.Context, peerID libp2ppeer.ID, ourStatus *p2p.StatusMessage) {
+func (sd *SyncDriver) pollPeer(ctx context.Context, peerID PeerID, ourStatus *types.Status) {
 	if !sd.ready() || ourStatus == nil {
 		return
 	}

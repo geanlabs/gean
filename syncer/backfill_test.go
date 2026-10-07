@@ -6,9 +6,6 @@ import (
 	"testing"
 	"time"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
-	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
 )
 
@@ -17,8 +14,8 @@ func TestSyncDriver_CheckAndBackfill_PeerNotAhead(t *testing.T) {
 	mock := &mockSyncP2P{}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	peerStatus := &p2p.StatusMessage{HeadSlot: 0}
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
+	peerStatus := &types.Status{HeadSlot: 0}
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), peerStatus)
 
 	if got := mock.rangeCalls.Load(); got != 0 {
 		t.Errorf("expected 0 range calls when peer not ahead, got %d", got)
@@ -30,8 +27,8 @@ func TestSyncDriver_CheckAndBackfill_GapBelowThreshold(t *testing.T) {
 	mock := &mockSyncP2P{}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	peerStatus := &p2p.StatusMessage{HeadSlot: blocksByRangeSyncThreshold}
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
+	peerStatus := &types.Status{HeadSlot: blocksByRangeSyncThreshold}
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), peerStatus)
 
 	if got := mock.rangeCalls.Load(); got != 0 {
 		t.Errorf("expected 0 range calls for gap below threshold, got %d", got)
@@ -48,8 +45,8 @@ func TestSyncDriver_CheckAndBackfill_FetchesWhenAhead(t *testing.T) {
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	peerStatus := &p2p.StatusMessage{HeadSlot: 100}
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
+	peerStatus := &types.Status{HeadSlot: 100}
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), peerStatus)
 
 	if got := mock.rangeCalls.Load(); got != 2 {
 		t.Errorf("expected 2 range calls (drain + empty probe), got %d", got)
@@ -72,8 +69,8 @@ func TestSyncDriver_CheckAndBackfill_LoopsUntilCaughtUp(t *testing.T) {
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	peerStatus := &p2p.StatusMessage{HeadSlot: 100}
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
+	peerStatus := &types.Status{HeadSlot: 100}
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), peerStatus)
 
 	if got := mock.rangeCalls.Load(); got != 3 {
 		t.Errorf("expected 3 range calls (2 batches + empty probe), got %d", got)
@@ -90,7 +87,7 @@ func TestSyncDriver_CheckAndBackfill_CapsRangeCount(t *testing.T) {
 	mock := &mockSyncP2P{}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: types.MaxRequestBlocks + 100})
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), &types.Status{HeadSlot: types.MaxRequestBlocks + 100})
 
 	mock.mu.Lock()
 	got := mock.lastRangeCount
@@ -109,7 +106,7 @@ func TestSyncDriver_CheckAndBackfill_StopsOnMalformedRangeBlock(t *testing.T) {
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), &types.Status{HeadSlot: 100})
 
 	if got := drainBlockCh(t, n, 1, 10*time.Millisecond); len(got) != 0 {
 		t.Fatalf("malformed block should not reach node, got %d", len(got))
@@ -125,7 +122,7 @@ func TestSyncDriver_CheckAndBackfill_RejectsBlockBeforeRequestedSlot(t *testing.
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), &types.Status{HeadSlot: 100})
 
 	if got := drainBlockCh(t, n, 1, 10*time.Millisecond); len(got) != 0 {
 		t.Fatalf("old range block should not reach node, got %d", len(got))
@@ -144,7 +141,7 @@ func TestSyncDriver_CheckAndBackfill_RejectsNonMonotonicRange(t *testing.T) {
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), &types.Status{HeadSlot: 100})
 
 	if got := drainBlockCh(t, n, 1, 10*time.Millisecond); len(got) != 0 {
 		t.Fatalf("non-monotonic range should not partially reach node, got %d", len(got))
@@ -159,7 +156,7 @@ func TestSyncDriver_CheckAndBackfill_RejectsDisconnectedRange(t *testing.T) {
 	mock := &mockSyncP2P{rangeBatches: [][]*types.SignedBlock{blocks}}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), &types.Status{HeadSlot: 100})
 
 	if got := drainBlockCh(t, n, 1, 10*time.Millisecond); len(got) != 0 {
 		t.Fatalf("disconnected range should not partially reach node, got %d", len(got))
@@ -179,8 +176,8 @@ func TestSyncDriver_CheckAndBackfill_FallsBackToRoot(t *testing.T) {
 
 	var headRoot [32]byte
 	headRoot[0] = 0xAB
-	peerStatus := &p2p.StatusMessage{HeadSlot: 100, HeadRoot: headRoot}
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), peerStatus)
+	peerStatus := &types.Status{HeadSlot: 100, HeadRoot: headRoot}
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), peerStatus)
 
 	if got := mock.rangeCalls.Load(); got != 1 {
 		t.Errorf("expected 1 range call (failed), got %d", got)
@@ -209,7 +206,7 @@ func TestSyncDriver_CheckAndBackfill_FallbackSkipsMalformedBlocks(t *testing.T) 
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+	sd.checkAndBackfill(context.Background(), PeerID("p1"), &types.Status{HeadSlot: 100})
 
 	got := drainBlockCh(t, n, 1, 100*time.Millisecond)
 	if len(got) != 1 || got[0].Block.Slot != 100 {
@@ -229,8 +226,8 @@ func TestSyncDriver_CheckAndBackfill_PerPeerDedup(t *testing.T) {
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
-	peerStatus := &p2p.StatusMessage{HeadSlot: 100}
-	peerID := libp2ppeer.ID("p1")
+	peerStatus := &types.Status{HeadSlot: 100}
+	peerID := PeerID("p1")
 
 	done1 := make(chan struct{})
 	go func() {
@@ -267,7 +264,7 @@ func TestSyncDriver_CheckAndBackfill_BackpressuresInsteadOfDropping(t *testing.T
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+		sd.checkAndBackfill(context.Background(), PeerID("p1"), &types.Status{HeadSlot: 100})
 	}()
 
 	got := drainBlockCh(t, n, 4, time.Second)
@@ -292,7 +289,7 @@ func TestSyncDriver_CheckAndBackfill_CancelAbortsStalledDelivery(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		sd.checkAndBackfill(ctx, libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+		sd.checkAndBackfill(ctx, PeerID("p1"), &types.Status{HeadSlot: 100})
 	}()
 
 	// One block fits the channel; the feed is now stalled on the second.
@@ -321,11 +318,11 @@ func TestSyncDriver_ShouldBackfill_MaroonedOnFork(t *testing.T) {
 	sd := NewSyncDriver(context.Background(), n, st, &mockSyncP2P{})
 
 	// Peer at the same head but finalized far ahead -> reconcile.
-	if !sd.shouldBackfill(&p2p.StatusMessage{HeadSlot: 100, FinalizedSlot: forkReconcileFinalizedThreshold + 1}) {
+	if !sd.shouldBackfill(&types.Status{HeadSlot: 100, FinalizedSlot: forkReconcileFinalizedThreshold + 1}) {
 		t.Fatal("expected backfill when finalized is stuck behind a peer at equal head")
 	}
 	// Peer finalized only marginally ahead -> normal skew, no reconcile.
-	if sd.shouldBackfill(&p2p.StatusMessage{HeadSlot: 100, FinalizedSlot: forkReconcileFinalizedThreshold - 1}) {
+	if sd.shouldBackfill(&types.Status{HeadSlot: 100, FinalizedSlot: forkReconcileFinalizedThreshold - 1}) {
 		t.Fatal("did not expect backfill for small finalized skew at equal head")
 	}
 }

@@ -3,16 +3,18 @@ package syncer
 import (
 	"context"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
-	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
 )
 
+// PeerID identifies a peer to the sync driver. It is opaque here: the network
+// that implements SyncDriverP2P decides what it holds.
+type PeerID string
+
+// SyncDriverP2P is what the sync driver needs from the network.
 type SyncDriverP2P interface {
-	Peers() []libp2ppeer.ID
-	SendStatusRequest(ctx context.Context, peerID libp2ppeer.ID, ourStatus *p2p.StatusMessage) (*p2p.StatusMessage, error)
-	FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.ID, startSlot, count uint64) ([]*types.SignedBlock, error)
+	Peers() []PeerID
+	SendStatusRequest(ctx context.Context, peerID PeerID, ourStatus *types.Status) (*types.Status, error)
+	FetchBlocksByRange(ctx context.Context, peerID PeerID, startSlot, count uint64) ([]*types.SignedBlock, error)
 	FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error)
 }
 

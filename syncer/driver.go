@@ -6,8 +6,6 @@ import (
 	"sync"
 	"time"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/geanlabs/gean/logger"
 	"github.com/geanlabs/gean/store"
 	"github.com/geanlabs/gean/tasks"
@@ -24,7 +22,7 @@ type SyncDriver struct {
 	tasks tasks.Group
 
 	mu       sync.Mutex
-	inFlight map[libp2ppeer.ID]bool
+	inFlight map[PeerID]bool
 	// horizonReported latches the beyond-window report so it is stated once per
 	// episode rather than once per peer per poll.
 	horizonReported bool
@@ -39,7 +37,7 @@ func NewSyncDriver(ctx context.Context, node LocalNode, store *store.ConsensusSt
 		node:     node,
 		store:    store,
 		p2p:      p2pHost,
-		inFlight: make(map[libp2ppeer.ID]bool),
+		inFlight: make(map[PeerID]bool),
 	}
 }
 

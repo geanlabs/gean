@@ -4,14 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/geanlabs/gean/logger"
-	"github.com/geanlabs/gean/p2p"
 	"github.com/geanlabs/gean/types"
 )
 
-func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage) {
+func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID PeerID, peerStatus *types.Status) {
 	if !sd.ready() {
 		return
 	}
@@ -72,7 +69,7 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 // Falling forward to a servable start slot would not help either: the blocks
 // returned would have no parent state here and could only churn the pending
 // buffer. Closing a gap this wide requires checkpoint sync.
-func (sd *SyncDriver) beyondHistoryHorizon(peerStatus *p2p.StatusMessage) bool {
+func (sd *SyncDriver) beyondHistoryHorizon(peerStatus *types.Status) bool {
 	if sd == nil || sd.store == nil || peerStatus == nil {
 		return false
 	}
@@ -85,7 +82,7 @@ func (sd *SyncDriver) beyondHistoryHorizon(peerStatus *p2p.StatusMessage) bool {
 // latch this fires for every peer on every poll, burying the one line an operator
 // needs under a repeating log; without the report at all the node just retries an
 // unanswerable request forever and looks merely slow.
-func (sd *SyncDriver) reportBeyondHistoryHorizon(peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage) {
+func (sd *SyncDriver) reportBeyondHistoryHorizon(peerID PeerID, peerStatus *types.Status) {
 	sd.mu.Lock()
 	alreadyReported := sd.horizonReported
 	sd.horizonReported = true
@@ -106,7 +103,7 @@ func (sd *SyncDriver) clearBeyondHistoryHorizon() {
 	sd.mu.Unlock()
 }
 
-func (sd *SyncDriver) shouldBackfill(peerStatus *p2p.StatusMessage) bool {
+func (sd *SyncDriver) shouldBackfill(peerStatus *types.Status) bool {
 	if sd == nil || sd.store == nil || peerStatus == nil {
 		return false
 	}
@@ -122,7 +119,7 @@ func (sd *SyncDriver) shouldBackfill(peerStatus *p2p.StatusMessage) bool {
 // fork. By-root parent fetches cannot recover a fork the peer never had (the peer
 // answers "no blocks" for a root only our branch produced), so this triggers a
 // range backfill from our finalized point to let fork choice reconcile.
-func (sd *SyncDriver) marooned(peerStatus *p2p.StatusMessage) bool {
+func (sd *SyncDriver) marooned(peerStatus *types.Status) bool {
 	if sd == nil || sd.store == nil || peerStatus == nil {
 		return false
 	}
@@ -141,7 +138,7 @@ func requestCount(startSlot, headSlot uint64) uint64 {
 	return count
 }
 
-func (sd *SyncDriver) fallbackHeadByRoot(ctx context.Context, peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage, rangeErr error) {
+func (sd *SyncDriver) fallbackHeadByRoot(ctx context.Context, peerID PeerID, peerStatus *types.Status, rangeErr error) {
 	if !sd.ready() || peerStatus == nil {
 		return
 	}
@@ -161,7 +158,7 @@ func (sd *SyncDriver) fallbackHeadByRoot(ctx context.Context, peerID libp2ppeer.
 	}
 }
 
-func (sd *SyncDriver) feedBlocks(ctx context.Context, peerID libp2ppeer.ID, blocks []*types.SignedBlock, startSlot uint64) (uint64, bool) {
+func (sd *SyncDriver) feedBlocks(ctx context.Context, peerID PeerID, blocks []*types.SignedBlock, startSlot uint64) (uint64, bool) {
 	if sd == nil || sd.node == nil {
 		return 0, false
 	}
@@ -185,7 +182,7 @@ func (sd *SyncDriver) feedBlocks(ctx context.Context, peerID libp2ppeer.ID, bloc
 	return lastSlot, true
 }
 
-func validateRangeBlocks(peerID libp2ppeer.ID, blocks []*types.SignedBlock, startSlot uint64) (uint64, bool) {
+func validateRangeBlocks(peerID PeerID, blocks []*types.SignedBlock, startSlot uint64) (uint64, bool) {
 	if len(blocks) == 0 {
 		return 0, false
 	}
