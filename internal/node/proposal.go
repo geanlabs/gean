@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/internal/attestationproof"
+	"github.com/geanlabs/gean/internal/aggregation"
 	"github.com/geanlabs/gean/internal/blockbuilder"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
@@ -309,7 +309,7 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		ParentRoot:      headRoot,
 		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
 		Payloads:        payloadsFromEntries(e.Store.KnownPayloads.Entries()),
-		ProofMerger:     attestationproof.NewMerger(e.Store.PubKeyCache),
+		ProofMerger:     aggregation.NewProofMerger(e.Store.PubKeyCache),
 	})
 	if err != nil {
 		metrics.IncBlockBuildingFailures()

@@ -156,7 +156,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 					candidate.att.Data,
 					append([]*types.SingleMessageAggregate{recovered}, locals...),
 					state,
-					attestationproof.NewMerger(e.Store.PubKeyCache),
+					aggregation.NewProofMerger(e.Store.PubKeyCache),
 				)
 				if mergeErr == nil && coversParticipants(combined, candidate.att.AggregationBits) {
 					recovered = combined

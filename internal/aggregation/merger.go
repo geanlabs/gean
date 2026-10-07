@@ -1,60 +1,51 @@
-package attestationproof
+package aggregation
 
 import (
-	"errors"
 	"fmt"
 
+	"github.com/geanlabs/gean/internal/attestationproof"
 	"github.com/geanlabs/gean/internal/types"
 	"github.com/geanlabs/gean/xmss"
 )
 
-var ErrMergeUnavailable = errors.New("proof merge unavailable")
-var ErrNoUsableProofs = errors.New("no usable proofs")
-
-type Merger struct {
+// ProofMerger merges attestation proofs for the same data into one recursive
+// XMSS proof. It implements attestationproof.MergeProvider.
+type ProofMerger struct {
 	cache *xmss.PubKeyCache
 }
 
-func NewMerger(cache *xmss.PubKeyCache) *Merger {
-	return &Merger{cache: cache}
+func NewProofMerger(cache *xmss.PubKeyCache) *ProofMerger {
+	return &ProofMerger{cache: cache}
 }
 
-type MergeProvider interface {
-	Merge(
-		proofs []*types.SingleMessageAggregate,
-		attData *types.AttestationData,
-		state *types.State,
-	) (*types.SingleMessageAggregate, error)
-}
-
-func (m *Merger) Merge(
+func (m *ProofMerger) Merge(
 	proofs []*types.SingleMessageAggregate,
 	attData *types.AttestationData,
 	state *types.State,
 ) (*types.SingleMessageAggregate, error) {
 	if len(proofs) < 2 {
-		return nil, fmt.Errorf("%w: fewer than two proofs", ErrMergeUnavailable)
+		return nil, fmt.Errorf("%w: fewer than two proofs", attestationproof.ErrMergeUnavailable)
 	}
 	if attData == nil {
-		return nil, fmt.Errorf("%w: attestation data is nil", ErrMergeUnavailable)
+		return nil, fmt.Errorf("%w: attestation data is nil", attestationproof.ErrMergeUnavailable)
 	}
 	slot := uint32(attData.Slot)
 	if uint64(slot) != attData.Slot {
-		return nil, fmt.Errorf("%w: slot %d overflows uint32", ErrMergeUnavailable, attData.Slot)
+		return nil, fmt.Errorf("%w: slot %d overflows uint32", attestationproof.ErrMergeUnavailable, attData.Slot)
 	}
 	if state == nil {
-		return nil, fmt.Errorf("%w: state is nil", ErrMergeUnavailable)
+		return nil, fmt.Errorf("%w: state is nil", attestationproof.ErrMergeUnavailable)
 	}
 	if m == nil || m.cache == nil {
-		return nil, fmt.Errorf("%w: pubkey cache is nil", ErrMergeUnavailable)
+		return nil, fmt.Errorf("%w: pubkey cache is nil", attestationproof.ErrMergeUnavailable)
 	}
 
 	children := make([]xmss.ChildProof, 0, len(proofs))
 	allIDs := make([]uint64, 0)
 	seen := make(map[uint64]bool)
 	for _, proof := range proofs {
-		if !validProof(proof) {
-			return nil, fmt.Errorf("%w: malformed child proof", ErrMergeUnavailable)
+		if proof == nil || len(proof.Proof) == 0 || types.BitlistCount(proof.Participants) == 0 {
+			return nil, fmt.Errorf("%w: malformed child proof", attestationproof.ErrMergeUnavailable)
 		}
 
 		pubkeys := make([]xmss.CPubKey, 0, types.BitlistLen(proof.Participants))
@@ -63,37 +54,37 @@ func (m *Merger) Merge(
 				continue
 			}
 			if seen[vid] {
-				return nil, fmt.Errorf("%w: participant %d appears in multiple proofs", ErrMergeUnavailable, vid)
+				return nil, fmt.Errorf("%w: participant %d appears in multiple proofs", attestationproof.ErrMergeUnavailable, vid)
 			}
 			seen[vid] = true
 			if vid >= uint64(len(state.Validators)) {
 				return nil, fmt.Errorf("%w: participant %d exceeds validator count %d",
-					ErrMergeUnavailable, vid, len(state.Validators))
+					attestationproof.ErrMergeUnavailable, vid, len(state.Validators))
 			}
 			validator := state.Validators[vid]
 			if validator == nil {
-				return nil, fmt.Errorf("%w: validator %d is nil", ErrMergeUnavailable, vid)
+				return nil, fmt.Errorf("%w: validator %d is nil", attestationproof.ErrMergeUnavailable, vid)
 			}
 
 			pk, err := m.cache.Get(validator.AttestationPubkey)
 			if err != nil {
-				return nil, fmt.Errorf("%w: validator %d pubkey: %v", ErrMergeUnavailable, vid, err)
+				return nil, fmt.Errorf("%w: validator %d pubkey: %v", attestationproof.ErrMergeUnavailable, vid, err)
 			}
 			pubkeys = append(pubkeys, pk)
 			allIDs = append(allIDs, vid)
 		}
 
 		if len(pubkeys) == 0 {
-			return nil, fmt.Errorf("%w: child proof has no known participants", ErrMergeUnavailable)
+			return nil, fmt.Errorf("%w: child proof has no known participants", attestationproof.ErrMergeUnavailable)
 		}
 		children = append(children, xmss.ChildProof{
 			Pubkeys: pubkeys,
-			Proof:   copyBytes(proof.Proof),
+			Proof:   append([]byte(nil), proof.Proof...),
 		})
 	}
 
 	if len(children) < 2 {
-		return nil, fmt.Errorf("%w: fewer than two usable child proofs", ErrMergeUnavailable)
+		return nil, fmt.Errorf("%w: fewer than two usable child proofs", attestationproof.ErrMergeUnavailable)
 	}
 
 	dataRoot, err := attData.HashTreeRoot()
@@ -109,10 +100,4 @@ func (m *Merger) Merge(
 		Participants: types.BitlistFromIndices(allIDs),
 		Proof:        mergedBytes,
 	}, nil
-}
-
-func validProof(proof *types.SingleMessageAggregate) bool {
-	return proof != nil &&
-		len(proof.Proof) > 0 &&
-		types.BitlistCount(proof.Participants) > 0
 }

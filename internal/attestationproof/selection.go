@@ -138,3 +138,9 @@ func markParticipants(bits []byte, covered map[uint64]bool) {
 		}
 	}
 }
+
+func validProof(proof *types.SingleMessageAggregate) bool {
+	return proof != nil &&
+		len(proof.Proof) > 0 &&
+		types.BitlistCount(proof.Participants) > 0
+}

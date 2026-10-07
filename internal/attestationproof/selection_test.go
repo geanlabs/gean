@@ -235,3 +235,19 @@ func TestSelectProofsCapsMergedProofs(t *testing.T) {
 		t.Fatalf("selected=%d, want %d", len(got), maxMergedProofs)
 	}
 }
+
+func testData() *types.AttestationData {
+	return &types.AttestationData{
+		Slot:   1,
+		Head:   &types.Checkpoint{},
+		Target: &types.Checkpoint{},
+		Source: &types.Checkpoint{},
+	}
+}
+
+func testProof(ids ...uint64) *types.SingleMessageAggregate {
+	return &types.SingleMessageAggregate{
+		Participants: types.BitlistFromIndices(ids),
+		Proof:        []byte{0x01},
+	}
+}
