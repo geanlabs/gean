@@ -62,15 +62,33 @@ type Node struct {
 
 // Cluster is a set of nodes sharing a simulated network and clock.
 type Cluster struct {
-	clock  Clock
+	// manual is the clock a stepped cluster advances; a real-time cluster
+	// runs on the system clock and leaves it unused.
+	manual Clock
+	clock  node.Clock
 	crypto Crypto
 	nodes  []*Node
 }
 
-// New builds every node from one genesis and runs their first tick at the
-// genesis time. It takes ownership of cfg.Crypto: Close releases it, and New
-// releases it itself if it fails.
+// New builds every node from one genesis on a manual clock and runs their
+// first tick at the genesis time; the caller then steps the cluster. It takes
+// ownership of cfg.Crypto: Close releases it, and New releases it itself if
+// it fails.
 func New(ctx context.Context, cfg Config) (*Cluster, error) {
+	c, err := build(cfg, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range c.nodes {
+		n.Engine.Tick(ctx)
+	}
+	c.settle(ctx)
+	return c, nil
+}
+
+// build assembles the nodes on clock, or on the cluster's manual clock when
+// clock is nil.
+func build(cfg Config, clock node.Clock) (*Cluster, error) {
 	cryptoProvider := cfg.Crypto
 	if cryptoProvider == nil {
 		cryptoProvider = Insecure()
@@ -92,7 +110,10 @@ func New(ctx context.Context, cfg Config) (*Cluster, error) {
 		aggregators[i] = true
 	}
 
-	c := &Cluster{clock: Clock{now: time.Unix(int64(cfg.GenesisTime), 0)}, crypto: cryptoProvider}
+	c := &Cluster{manual: Clock{now: time.Unix(int64(cfg.GenesisTime), 0)}, clock: clock, crypto: cryptoProvider}
+	if c.clock == nil {
+		c.clock = &c.manual
+	}
 	for i, validators := range cfg.Nodes {
 		n, err := c.newNode(i, cfg, entries, validators, aggregators[i])
 		if err != nil {
@@ -101,11 +122,6 @@ func New(ctx context.Context, cfg Config) (*Cluster, error) {
 		}
 		c.nodes = append(c.nodes, n)
 	}
-
-	for _, n := range c.nodes {
-		n.Engine.Tick(ctx)
-	}
-	c.settle(ctx)
 	return c, nil
 }
 
@@ -158,7 +174,7 @@ func (c *Cluster) newNode(index int, cfg Config, entries []genesis.GenesisValida
 		Network:    &network{cluster: c, self: index},
 		Crypto:     c.crypto.Scheme(),
 		Aggregator: n.Aggregator,
-		Clock:      &c.clock,
+		Clock:      c.clock,
 		Metrics:    metrics.New(n.Metrics),
 	}
 	if len(validators) > 0 {
@@ -179,7 +195,7 @@ func (c *Cluster) Slot() uint64 {
 // AdvanceInterval moves the clock one interval, ticks every node in order,
 // then lets the network settle.
 func (c *Cluster) AdvanceInterval(ctx context.Context) {
-	c.clock.advance(types.MillisecondsPerInterval * time.Millisecond)
+	c.manual.advance(types.MillisecondsPerInterval * time.Millisecond)
 	for _, n := range c.nodes {
 		n.Engine.Tick(ctx)
 	}
