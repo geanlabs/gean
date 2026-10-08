@@ -87,6 +87,33 @@ func TestProofValue(t *testing.T) {
 	}
 }
 
+// Votes name the head block as their head, and often as their target. The head
+// block is not in its own state's history and its slot is past the justified
+// window, so judged against the head state such a vote reads as off the chain.
+// The next block's header adds both; that is the state its votes count against.
+func TestProofValueCountsVotesForTheHeadBlock(t *testing.T) {
+	head := valueTestState()
+	const headSlot = 9
+	headRoot := valueTestRoot(headSlot)
+	head.LatestBlockHeader = &types.BlockHeader{Slot: headSlot}
+	historyLen, window := len(head.HistoricalBlockHashes), types.BitlistLen(head.JustifiedSlots)
+	if historyLen != headSlot {
+		t.Fatalf("test state history has %d entries, want the head slot %d", historyLen, headSlot)
+	}
+	vote := valueTestData(0, headSlot, headSlot)
+	vote.Head.Root, vote.Target.Root = headRoot, headRoot
+
+	if got := proofValue(head, vote, []uint64{2}, nil); got != metrics.ProofValueIgnored {
+		t.Fatalf("against the head state: %q, want ignored (the case being fixed)", got)
+	}
+	if got := proofValue(voteState(head, headRoot), vote, []uint64{2}, nil); got != metrics.ProofValueAddsVotes {
+		t.Fatalf("against the next block's view: %q, want adds_votes", got)
+	}
+	if len(head.HistoricalBlockHashes) != historyLen || types.BitlistLen(head.JustifiedSlots) != window {
+		t.Fatal("projection modified the head state")
+	}
+}
+
 // valueTestSnapshot holds one group per entry, each voting for the slot-1
 // target with the given raw signers; group 1 also has validator 2 in a held
 // aggregate.
@@ -116,7 +143,7 @@ func valueTestSnapshot(signers ...[]uint64) *Snapshot {
 func TestDeferredValuesUseEverySignerOnHand(t *testing.T) {
 	snap := valueTestSnapshot([]uint64{2}, []uint64{0, 1}, []uint64{2, 3})
 	groups := []aggregationGroup{{dataRoot: rootByte(1)}, {dataRoot: rootByte(2)}, {dataRoot: rootByte(3)}}
-	got := deferredValues(snap, groups)
+	got := deferredValues(snap, snap.headState, groups)
 	want := map[string]int{
 		metrics.ProofValueNoNewVotes: 2, // group 1: its only signer is held; group 2: both already counted
 		metrics.ProofValueJustifies:  1, // group 3: 0,1 counted + 2,3 new = 4 of 6
@@ -139,7 +166,7 @@ func TestDeferredValuesCountAVoterOnce(t *testing.T) {
 	types.BitlistSet(tally, 0) // only validator 0 counted on chain
 	snap.headState.JustificationsValidators = tally
 	// 0 counted + 2 (held and raw) + 3 = 3 of 6, one short of 2/3.
-	got := deferredValues(snap, []aggregationGroup{{dataRoot: rootByte(1)}})
+	got := deferredValues(snap, snap.headState, []aggregationGroup{{dataRoot: rootByte(1)}})
 	if got[metrics.ProofValueAddsVotes] != 1 {
 		t.Fatalf("values = %v, want one adds_votes", got)
 	}
@@ -169,6 +196,59 @@ func TestSessionCountsProofAndDeferredValues(t *testing.T) {
 	if n := counterSum(t, "lean_aggregation_deferred_group_value_total") - deferredBefore; n != float64(4-len(aggs)) {
 		t.Fatalf("deferred groups counted = %v, want %d", n, 4-len(aggs))
 	}
+}
+
+// A session classifies against the next block's view, not the bare head state:
+// a proof for the head block's own target is counted as adding votes.
+func TestSessionClassifiesAgainstTheNextBlocksView(t *testing.T) {
+	const headSlot = 9
+	snap := valueTestSnapshot([]uint64{2, 3})
+	snap.headState.LatestBlockHeader = &types.BlockHeader{Slot: headSlot}
+	snap.headRoot = valueTestRoot(headSlot)
+	data := snap.attSigs[rootByte(1)].Data
+	data.Head = &types.Checkpoint{Slot: headSlot, Root: snap.headRoot}
+	data.Target = &types.Checkpoint{Slot: headSlot, Root: snap.headRoot}
+	delete(snap.newEntries, rootByte(1))
+	cache := xmss.NewPubKeyCache()
+	defer cache.Close()
+	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+		return []byte{1}, nil
+	}
+	ignoredBefore := counterValue(t, "lean_aggregation_proof_value_total", metrics.ProofValueIgnored)
+	addsBefore := counterValue(t, "lean_aggregation_proof_value_total", metrics.ProofValueAddsVotes)
+
+	aggs, _, _, _, _ := aggregateFromSnapshotWithProver(nil, snap, cache,
+		time.Now().Add(time.Hour), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+
+	if len(aggs) != 1 {
+		t.Fatalf("aggs=%d, want 1", len(aggs))
+	}
+	if counterValue(t, "lean_aggregation_proof_value_total", metrics.ProofValueAddsVotes)-addsBefore != 1 ||
+		counterValue(t, "lean_aggregation_proof_value_total", metrics.ProofValueIgnored) != ignoredBefore {
+		t.Fatal("head-block proof not counted as adding votes")
+	}
+}
+
+// counterValue reads one labelled series of a counter in the default registry.
+func counterValue(t *testing.T, name, value string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "value" && l.GetValue() == value {
+					return m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
 }
 
 // counterSum adds every series of a counter in the default registry.

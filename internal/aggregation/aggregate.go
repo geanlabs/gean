@@ -275,6 +275,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	attempts := 0
 
 	groups := orderedGroups(snap, skips)
+	votes := voteState(snap.headState, snap.headRoot)
 	// stopAt is the first group the session left unproved when it stopped early.
 	stopAt := len(groups)
 	for i, group := range groups {
@@ -473,7 +474,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
 				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
 
-			metrics.IncAggregationProofValue(proofValue(snap.headState, attData, allIDs, heldVoters(snap, dataRoot)))
+			metrics.IncAggregationProofValue(proofValue(votes, attData, allIDs, heldVoters(snap, dataRoot)))
 			metrics.ObservePqSigAggBuildingTime(aggDuration.Seconds())
 			metrics.ObserveCommitteeSignaturesAggregationTime(aggDuration.Seconds())
 			metrics.IncPqSigAggregatedTotal()
@@ -521,7 +522,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 		}
 	}
 
-	for value, n := range deferredValues(snap, groups[stopAt:]) {
+	for value, n := range deferredValues(snap, votes, groups[stopAt:]) {
 		metrics.IncAggregationDeferredValue(value, n)
 	}
 
