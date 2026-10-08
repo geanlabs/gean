@@ -25,6 +25,31 @@ func reconstructJustifications(state *types.State, validatorCount int) map[[32]b
 	return justifications
 }
 
+// JustificationVotes returns one tracked target's tally: which validators have a
+// counted vote for root. Nil when the root is not tracked or the state is
+// malformed. Reads a single row, where reconstructJustifications decodes every
+// tracked root.
+func JustificationVotes(state *types.State, root [32]byte) []bool {
+	if state == nil {
+		return nil
+	}
+	validatorCount := len(state.Validators)
+	if validatorCount == 0 || int(types.BitlistLen(state.JustificationsValidators)) != len(state.JustificationsRoots)*validatorCount {
+		return nil
+	}
+	for i, rootBytes := range state.JustificationsRoots {
+		if [32]byte(rootBytes) != root {
+			continue
+		}
+		votes := make([]bool, validatorCount)
+		for v := range validatorCount {
+			votes[v] = types.BitlistGet(state.JustificationsValidators, uint64(i*validatorCount+v))
+		}
+		return votes
+	}
+	return nil
+}
+
 func serializeJustifications(state *types.State, justifications map[[32]byte][]bool, validatorCount int) {
 	roots := sortedJustificationRoots(justifications)
 	sszRoots := make([][]byte, len(roots))

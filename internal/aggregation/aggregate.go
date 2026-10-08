@@ -275,10 +275,13 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	attempts := 0
 
 	groups := orderedGroups(snap, skips)
+	// stopAt is the first group the session left unproved when it stopped early.
+	stopAt := len(groups)
 	for i, group := range groups {
 		if shouldYield != nil && shouldYield() {
 			truncated = true
 			skips.addN(metrics.AggGroupSkipProposalPending, len(groups)-i)
+			stopAt = i
 			break
 		}
 		// Groups that never reached the prover cost nothing, so the cap counts
@@ -286,6 +289,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 		if attempts >= maxGroups {
 			truncated = true
 			skips.addN(metrics.AggGroupSkipSessionCap, len(groups)-i)
+			stopAt = i
 			break
 		}
 		// An over-budget observation must not prevent every future attempt:
@@ -296,6 +300,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			if remaining <= 0 || (attempted && remaining < estimator.nextGroupDuration()) {
 				truncated = true
 				skips.addN(metrics.AggGroupSkipBudget, len(groups)-i)
+				stopAt = i
 				break
 			}
 		}
@@ -468,6 +473,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
 				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
 
+			metrics.IncAggregationProofValue(proofValue(snap.headState, attData, allIDs, heldVoters(snap, dataRoot)))
 			metrics.ObservePqSigAggBuildingTime(aggDuration.Seconds())
 			metrics.ObserveCommitteeSignaturesAggregationTime(aggDuration.Seconds())
 			metrics.IncPqSigAggregatedTotal()
@@ -504,6 +510,8 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			}
 		}()
 		if truncated {
+			// Every truncation inside the group stops before its proof starts.
+			stopAt = i
 			break
 		}
 		// Only groups that actually proved inform the wall-time estimate; skipped
@@ -511,6 +519,10 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 		if len(newAggregates) > provedBefore {
 			estimator.observeGroup(time.Since(groupStart), groupChildren)
 		}
+	}
+
+	for value, n := range deferredValues(snap, groups[stopAt:]) {
+		metrics.IncAggregationDeferredValue(value, n)
 	}
 
 	return newAggregates, payloadEntries, keysToDelete, truncated, skips
