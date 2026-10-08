@@ -44,13 +44,6 @@ identical either way.
 Container names vary per devnet; list them with `docker ps --format '{{.Names}}'`. Bundles use
 `$c` for the gean container under inspection — set it, or loop over every gean container.
 
-gean logs carry ANSI colour codes, with a reset between `[component]` and the message, so a
-grep spanning them misses. Strip before every grep:
-
-```bash
-docker logs "$c" 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | grep ...
-```
-
 Note the shell nesting: bundles below are written to run *on the host*. Wrap them in
 `ssh gean-devnet '...'` and keep inner quoting single-level, or write the bundle to a heredoc.
 
@@ -166,7 +159,7 @@ curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=increase(lean_pq
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=increase(lean_aggregator_skipped_total[1h])'
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=increase(lean_aggregation_dispatch_dropped_total[1h])'
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=increase(lean_dispatch_event_duration_seconds_count{event="early_aggregate"}[1h])'
-docker logs "$c" 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | grep -E 'aggregation (worker|session|skipped|yielded)' | tail -20
+docker logs "$c" 2>&1 | grep -E 'aggregation (worker|session|skipped|yielded)' | tail -20
 ```
 
 When a session starts: `maybeEarlyAggregate` (`internal/node/tick.go`) dispatches in interval 1
@@ -193,7 +186,7 @@ proposal:` for the other outcomes. They carry the real durations the histograms 
 
 ```bash
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=lean_table_bytes'
-docker logs "$c" 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | grep -E 'pruning:|finalization stalled:' | tail -20
+docker logs "$c" 2>&1 | grep -E 'pruning:|finalization stalled:' | tail -20
 ```
 
 Finalisation prune lines (`pruning: finalized_slot=...`) carry `states= blocks= live_chain=
