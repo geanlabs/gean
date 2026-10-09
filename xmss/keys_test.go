@@ -49,22 +49,46 @@ func TestKeyManagerNilSafeAccessors(t *testing.T) {
 	}
 }
 
-func TestLoadValidatorKeysRejectsIncompleteDualKeyConfig(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "validators.yaml")
-	data := []byte(`
+func TestLoadValidatorKeysRejectsInvalidConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    string
+		wantErr string
+	}{
+		{
+			name: "incomplete dual key",
+			data: `
 node-a:
   - index: 4
     attestation_sk_file: att.sk
     attestation_pubkey_hex: 00
-`)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write annotated validators: %v", err)
+`,
+			wantErr: "proposal key file missing for validator 4",
+		},
+		{
+			name: "single key without role",
+			data: `
+node-a:
+  - index: 4
+    privkey_file: validator_4_sk.ssz
+    pubkey_hex: 00
+`,
+			wantErr: "key file validator_4_sk.ssz for validator 4 has no attester or proposer role",
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "validators.yaml")
+			if err := os.WriteFile(path, []byte(tt.data), 0o600); err != nil {
+				t.Fatalf("write annotated validators: %v", err)
+			}
 
-	_, err := LoadValidatorKeys(path, dir, "node-a")
-	if err == nil || !strings.Contains(err.Error(), "proposal key file missing for validator 4") {
-		t.Fatalf("error=%v, want missing proposal key file", err)
+			_, err := LoadValidatorKeys(path, dir, "node-a")
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error=%v, want %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 

@@ -217,22 +217,21 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 
 	for _, v := range validators {
 		if v.PrivkeyFile != "" {
+			// Each role signs with the slot as the XMSS index; a key cannot serve both.
+			var keys map[uint64]*ValidatorKeyPair
+			switch {
+			case strings.Contains(v.PrivkeyFile, "attester") || strings.Contains(v.PrivkeyFile, "attestation"):
+				keys = attestationKeys
+			case strings.Contains(v.PrivkeyFile, "proposer") || strings.Contains(v.PrivkeyFile, "proposal"):
+				keys = proposalKeys
+			default:
+				return nil, fmt.Errorf("key file %s for validator %d has no attester or proposer role", v.PrivkeyFile, v.Index)
+			}
 			kp, err := loadKeypair(keysDir, v.PrivkeyFile, v.PubkeyHex, v.Index)
 			if err != nil {
 				return nil, fmt.Errorf("load key for validator %d (%s): %w", v.Index, v.PrivkeyFile, err)
 			}
-			if strings.Contains(v.PrivkeyFile, "attester") || strings.Contains(v.PrivkeyFile, "attestation") {
-				attestationKeys[v.Index] = kp
-			} else if strings.Contains(v.PrivkeyFile, "proposer") || strings.Contains(v.PrivkeyFile, "proposal") {
-				proposalKeys[v.Index] = kp
-			} else {
-				if attestationKeys[v.Index] == nil {
-					attestationKeys[v.Index] = kp
-				}
-				if proposalKeys[v.Index] == nil {
-					proposalKeys[v.Index] = kp
-				}
-			}
+			keys[v.Index] = kp
 		} else if v.AttestationSkFile != "" || v.ProposalSkFile != "" {
 			if v.AttestationSkFile == "" {
 				return nil, fmt.Errorf("attestation key file missing for validator %d", v.Index)
