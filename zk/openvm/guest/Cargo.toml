@@ -1,0 +1,16 @@
+[package]
+name = "stf-openvm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+gean-stf = { path = "../../stf" }
+openvm = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.x.0-preview.2", features = ["std"] }
+# OpenVM has no sha2 replacement: hash through its SHA-256 instruction instead.
+ethereum_hashing = { version = "0.8", features = ["openvm"] }
+
+[patch.crates-io]
+ethereum_hashing = { path = "../../ethereum_hashing" }

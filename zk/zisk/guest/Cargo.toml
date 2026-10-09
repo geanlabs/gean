@@ -1,0 +1,15 @@
+[package]
+name = "stf-zisk"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+gean-stf = { path = "../../stf" }
+ziskos = { git = "https://github.com/0xPolygonHermez/zisk", tag = "v1.3.0-alpha" }
+
+[patch.crates-io]
+ethereum_hashing = { path = "../../ethereum_hashing" }
+sha2 = { git = "https://github.com/0xPolygonHermez/zisk-patch-hashes", tag = "patch-sha2-0.10.9-zisk-0.16.0+" }

@@ -1,0 +1,15 @@
+[package]
+name = "stf-sp1"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+gean-stf = { path = "../../stf" }
+sp1-zkvm = "=6.8.1"
+
+[patch.crates-io]
+ethereum_hashing = { path = "../../ethereum_hashing" }
+sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", tag = "sha2-v0.10.9" }

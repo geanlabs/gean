@@ -1,0 +1,15 @@
+[package]
+name = "stf-risc0"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+gean-stf = { path = "../../stf" }
+risc0-zkvm = { version = "=3.0.6", default-features = false, features = ["std"] }
+
+[patch.crates-io]
+ethereum_hashing = { path = "../../ethereum_hashing" }
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.9-risczero.0" }

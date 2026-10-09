@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2 zk-vectors zk-stf-test zk-guest zk-host zk-exec zk-prove
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -45,10 +45,13 @@ lint: ## Run linters for go & rust
 	go vet ./...
 	cd xmss/rust && cargo fmt --check
 	cd xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
+	cd zk/stf && cargo fmt --check
+	cd zk/stf && cargo clippy --all-targets --locked -- -D warnings
 
 fmt: ## Format all Go code
 	gofmt -w .
 	cd xmss/rust && cargo fmt
+	cd zk/stf && cargo fmt
 
 sszgen: ## Regenerate SSZ encoding files from struct tags
 	@rm -f internal/types/*_encoding.go
@@ -66,6 +69,42 @@ clean: ## Remove build artifacts and generated files
 
 tidy: ## Tidy Go module dependencies
 	go mod tidy
+
+# --- zkVM proofs of the state transition (opt-in; see zk/README.md) ---
+
+ZKVM ?= sp1
+ZK_OUT := $(abspath zk/out)
+ZK_ELF = $(ZK_OUT)/$(ZKVM)/stf.elf
+ZK_HOST = zk/$(ZKVM)/host/target/release/$(ZKVM)host
+INPUT ?= $(ZK_OUT)/vectors/0000.gstf
+
+# How each zkVM's toolchain builds its guest into $(ZK_ELF).
+ZK_GUEST_sp1 = cd zk/sp1/guest && cargo prove build --locked --output-directory $(ZK_OUT)/sp1 --elf-name stf.elf
+ZK_GUEST_risc0 = cd zk/risc0/methods && cargo run --release --locked -- $(ZK_ELF)
+ZK_GUEST_zisk = cd zk/zisk/guest && cargo-zisk build --release && cp target/elf/riscv64ima-zisk-zkvm-elf/release/stf-zisk $(ZK_ELF)
+ZK_GUEST_openvm = cd zk/openvm/guest && cargo openvm build && cp target/riscv64im-unknown-openvm-elf/release/stf-openvm $(ZK_ELF)
+
+zk-vectors: ## Write the state-transition vectors, with the Go outcome of each, to zk/out/vectors
+	go run ./cmd/stfprove vectors -o $(ZK_OUT)/vectors
+
+zk-stf-test: zk-vectors ## Check the Rust port (zk/stf) against the Go transition on every vector
+	cd zk/stf && cargo test --release --locked
+
+zk-guest: ## Build the guest for ZKVM (sp1, risc0, zisk or openvm) into zk/out/<zkvm>/stf.elf
+	@test -n "$(ZK_GUEST_$(ZKVM))" || (echo "unknown ZKVM=$(ZKVM)"; exit 1)
+	@mkdir -p $(ZK_OUT)/$(ZKVM)
+	$(ZK_GUEST_$(ZKVM))
+
+# MAKEFLAGS is cleared so cargo build scripts that run make do not inherit
+# this make's command-line variables.
+zk-host: ## Build zk/<ZKVM>/host, which executes, proves and verifies on ZKVM
+	cd zk/$(ZKVM)/host && env -u MAKEFLAGS cargo build --release --locked
+
+zk-exec: zk-vectors ## Run every vector on ZKVM and compare with the Go transition
+	go run ./cmd/stfprove exec -host $(ZK_HOST) -elf $(ZK_ELF) -vectors $(ZK_OUT)/vectors
+
+zk-prove: ## Prove and verify INPUT (default the first vector) on ZKVM
+	go run ./cmd/stfprove prove -host $(ZK_HOST) -elf $(ZK_ELF) -i $(INPUT) -o $(ZK_OUT)/$(ZKVM)/proof.bin
 
 # --- Local testnet ---
 
