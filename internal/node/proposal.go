@@ -111,7 +111,6 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 		return result
 	}
 
-	signStart := time.Now()
 	propKey := e.Keys.GetProposalKey(validatorID)
 	if propKey == nil {
 		logger.Error(logger.Validator, "proposal key not found for validator=%d", validatorID)
@@ -129,6 +128,11 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	}
 	// A signing error must not permit another candidate to use this duty.
 	result.retryable = false
+	if err := e.Store.ReserveSigningSlot(store.RoleProposal, slot, []uint64{validatorID}); err != nil {
+		logger.Error(logger.Validator, "block not signed slot=%d: %v", slot, err)
+		return result
+	}
+	signStart := time.Now()
 	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
 	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {

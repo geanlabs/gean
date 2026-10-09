@@ -146,6 +146,10 @@ func (b *inMemoryWriteBatch) Commit() error {
 	return nil
 }
 
+func (b *inMemoryWriteBatch) CommitSync() error {
+	return b.Commit()
+}
+
 type sliceIterator struct {
 	entries []KV
 	pos     int

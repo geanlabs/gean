@@ -79,6 +79,10 @@ type ConsensusStore struct {
 	validatorKeysMu    sync.Mutex
 	validatorKeys      map[[32]byte]*ValidatorKeys
 	validatorKeysOrder [][32]byte
+
+	// signedSlotsMu makes ReserveSigningSlot's read-check-write of
+	// TableSignedSlots atomic.
+	signedSlotsMu sync.Mutex
 }
 
 // ObserveStoredBlockSlot raises the stored-block high-water mark. Safe from any

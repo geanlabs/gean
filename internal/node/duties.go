@@ -7,6 +7,7 @@ import (
 	"github.com/geanlabs/gean/internal/attestation"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -22,6 +23,10 @@ func (e *Engine) produceAttestations(slot uint64) {
 
 	attData := attestation.ProduceAttestationData(e.Store, slot)
 	if attData == nil {
+		return
+	}
+	if err := e.Store.ReserveSigningSlot(store.RoleAttestation, attData.Slot, e.Keys.ValidatorIDs()); err != nil {
+		logger.Error(logger.Validator, "attestation not signed slot=%d: %v", attData.Slot, err)
 		return
 	}
 

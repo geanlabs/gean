@@ -147,10 +147,18 @@ func (b *pebbleWriteBatch) DeleteBatch(table Table, keys [][]byte) error {
 }
 
 func (b *pebbleWriteBatch) Commit() error {
+	return b.commit(pebble.NoSync)
+}
+
+func (b *pebbleWriteBatch) CommitSync() error {
+	return b.commit(pebble.Sync)
+}
+
+func (b *pebbleWriteBatch) commit(opts *pebble.WriteOptions) error {
 	if b.closed {
 		return errBatchClosed
 	}
-	err := b.batch.Commit(pebble.NoSync)
+	err := b.batch.Commit(opts)
 	closeErr := b.batch.Close()
 	b.closed = true
 	if err != nil {

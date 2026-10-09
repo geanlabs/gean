@@ -22,6 +22,9 @@ type WriteBatch interface {
 	DeleteBatch(table Table, keys [][]byte) error
 
 	Commit() error
+
+	// CommitSync commits and waits for the write to reach stable storage.
+	CommitSync() error
 }
 
 type Iterator interface {

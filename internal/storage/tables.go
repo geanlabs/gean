@@ -9,6 +9,7 @@ const (
 	TableStates       Table = "states"
 	TableMetadata     Table = "metadata"
 	TableLiveChain    Table = "live_chain"
+	TableSignedSlots  Table = "signed_slots"
 )
 
 var AllTables = []Table{
@@ -18,4 +19,5 @@ var AllTables = []Table{
 	TableStates,
 	TableMetadata,
 	TableLiveChain,
+	TableSignedSlots,
 }
