@@ -1,0 +1,112 @@
+riscv64 zkVM guests: explicit nil checks on tamago/riscv64
+
+SP1 has no memory protection: a load or store at address zero succeeds.
+Go normally elides a nil check when a faulting memory access follows it, and
+lowers the check itself to a load. On tamago/riscv64 every nil check is kept
+and lowered to a branch that calls runtime.panicmem, and closure calls check
+the closure pointer as on AIX.
+
+diff --git a/src/cmd/compile/internal/ir/symtab.go b/src/cmd/compile/internal/ir/symtab.go
+index f0e91f6..5f3a615 100644
+--- a/src/cmd/compile/internal/ir/symtab.go
++++ b/src/cmd/compile/internal/ir/symtab.go
+@@ -55,6 +55,7 @@ type symsStruct struct {
+ 	PanicdottypeE             *obj.LSym
+ 	PanicdottypeI             *obj.LSym
+ 	Panicnildottype           *obj.LSym
++	Panicmem                  *obj.LSym
+ 	Panicoverflow             *obj.LSym
+ 	PanicSimdImm              *obj.LSym
+ 	Racefuncenter             *obj.LSym
+diff --git a/src/cmd/compile/internal/riscv64/ssa.go b/src/cmd/compile/internal/riscv64/ssa.go
+index 9aa77c3..f40868d 100644
+--- a/src/cmd/compile/internal/riscv64/ssa.go
++++ b/src/cmd/compile/internal/riscv64/ssa.go
+@@ -15,6 +15,7 @@ import (
+ 	"cmd/internal/obj"
+ 	"cmd/internal/obj/riscv"
+ 	"internal/abi"
++	"internal/buildcfg"
+ )
+ 
+ // ssaRegToReg maps ssa register numbers to obj register numbers.
+@@ -925,13 +926,29 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
+ 		}
+ 
+ 	case ssa.OpRISCV64LoweredNilCheck:
+-		// Issue a load which will fault if arg is nil.
+-		p := s.Prog(riscv.AMOVB)
+-		p.From.Type = obj.TYPE_MEM
+-		p.From.Reg = v.Args[0].Reg()
+-		ssagen.AddAux(&p.From, v)
+-		p.To.Type = obj.TYPE_REG
+-		p.To.Reg = riscv.REG_ZERO
++		if buildcfg.GOOS == "tamago" {
++			// zkVM guests have no memory protection and address zero is
++			// readable, so a load cannot be the nil check: branch to
++			// panicmem instead.
++			p := s.Prog(riscv.ABNE)
++			p.From.Type = obj.TYPE_REG
++			p.From.Reg = v.Args[0].Reg()
++			p.Reg = riscv.REG_ZERO
++			p.To.Type = obj.TYPE_BRANCH
++			call := s.Prog(obj.ACALL)
++			call.To.Type = obj.TYPE_MEM
++			call.To.Name = obj.NAME_EXTERN
++			call.To.Sym = ir.Syms.Panicmem
++			p.To.SetTarget(s.Prog(obj.ANOP))
++		} else {
++			// Issue a load which will fault if arg is nil.
++			p := s.Prog(riscv.AMOVB)
++			p.From.Type = obj.TYPE_MEM
++			p.From.Reg = v.Args[0].Reg()
++			ssagen.AddAux(&p.From, v)
++			p.To.Type = obj.TYPE_REG
++			p.To.Reg = riscv.REG_ZERO
++		}
+ 		if logopt.Enabled() {
+ 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
+ 		}
+diff --git a/src/cmd/compile/internal/ssa/nilcheck.go b/src/cmd/compile/internal/ssa/nilcheck.go
+index 467c751..41c3411 100644
+--- a/src/cmd/compile/internal/ssa/nilcheck.go
++++ b/src/cmd/compile/internal/ssa/nilcheck.go
+@@ -194,9 +194,17 @@ const minZeroPage = 4096
+ // faultOnLoad is true if a load to an address below minZeroPage will trigger a SIGSEGV.
+ var faultOnLoad = buildcfg.GOOS != "aix"
+ 
++// faultOnNil is false on zkVM guests (tamago/riscv64), which have no memory
++// protection: neither a load nor a store to address zero faults, so every nil
++// check must stay explicit.
++var faultOnNil = !(buildcfg.GOOS == "tamago" && buildcfg.GOARCH == "riscv64")
++
+ // nilcheckelim2 eliminates unnecessary nil checks.
+ // Runs after lowering and scheduling.
+ func nilcheckelim2(f *Func) {
++	if !faultOnNil {
++		return
++	}
+ 	unnecessary := f.newSparseMap(f.NumValues()) // map from pointer that will be dereferenced to index of dereferencing value in b.Values[]
+ 	defer f.retSparseMap(unnecessary)
+ 
+diff --git a/src/cmd/compile/internal/ssagen/ssa.go b/src/cmd/compile/internal/ssagen/ssa.go
+index 3da43e7..618c9a9 100644
+--- a/src/cmd/compile/internal/ssagen/ssa.go
++++ b/src/cmd/compile/internal/ssagen/ssa.go
+@@ -158,6 +158,7 @@ func InitConfig() {
+ 	ir.Syms.PanicdottypeE = typecheck.LookupRuntimeFunc("panicdottypeE")
+ 	ir.Syms.PanicdottypeI = typecheck.LookupRuntimeFunc("panicdottypeI")
+ 	ir.Syms.Panicnildottype = typecheck.LookupRuntimeFunc("panicnildottype")
++	ir.Syms.Panicmem = typecheck.LookupRuntimeFunc("panicmem")
+ 	ir.Syms.Panicoverflow = typecheck.LookupRuntimeFunc("panicoverflow")
+ 	ir.Syms.Panicshift = typecheck.LookupRuntimeFunc("panicshift")
+ 	ir.Syms.PanicSimdImm = typecheck.LookupRuntimeFunc("panicSimdImm")
+@@ -5198,7 +5199,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
+ // maybeNilCheckClosure checks if a nil check of a closure is needed in some
+ // architecture-dependent situations and, if so, emits the nil check.
+ func (s *state) maybeNilCheckClosure(closure *ssa.Value, k callKind) {
+-	if Arch.LinkArch.Family == sys.Wasm || buildcfg.GOOS == "aix" && k != callGo {
++	if Arch.LinkArch.Family == sys.Wasm || (buildcfg.GOOS == "aix" || buildcfg.GOOS == "tamago" && buildcfg.GOARCH == "riscv64") && k != callGo {
+ 		// On AIX, the closure needs to be verified as fn can be nil, except if it's a call go. This needs to be handled by the runtime to have the "go of nil func value" error.
+ 		// TODO(neelance): On other architectures this should be eliminated by the optimization steps
+ 		s.nilCheck(closure)

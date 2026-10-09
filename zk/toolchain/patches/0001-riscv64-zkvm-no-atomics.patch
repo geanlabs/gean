@@ -1,0 +1,180 @@
+riscv64 zkVM guests: no atomics or fences on tamago/riscv64
+
+SP1 and OpenVM implement RV64IM: they reject A-extension instructions when
+loading a program and abort on FENCE. A zkVM guest runs on one hart with no
+interrupts, so on tamago/riscv64:
+
+- internal/runtime/atomic uses plain loads and stores (the wasm
+  implementation) instead of AMO and LR/SC assembly;
+- the compiler does not intrinsify internal/runtime/atomic, sync/atomic or
+  the sync aliases of them, and skips the interface switch caches, whose
+  lookup is an inline atomic load;
+- runtime.publicationBarrier is a RET instead of a FENCE.
+
+diff --git a/src/cmd/compile/internal/ssagen/intrinsics.go b/src/cmd/compile/internal/ssagen/intrinsics.go
+index e2eebd78..7b467587 100644
+--- a/src/cmd/compile/internal/ssagen/intrinsics.go
++++ b/src/cmd/compile/internal/ssagen/intrinsics.go
+@@ -2170,6 +2170,15 @@ func findIntrinsic(sym *types.Sym) intrinsicBuilder {
+ 	}
+ 
+ 	fn := sym.Name
++	// zkVM guests (tamago/riscv64) run on RV64IM machines without the A
++	// extension or fences. Atomics and the publication barrier are plain
++	// calls to the single-threaded implementations in internal/runtime/atomic
++	// and runtime (the only sync intrinsics are aliases of those), so no AMO,
++	// LR/SC or FENCE instruction is ever emitted.
++	if zkNoAtomics() && (pkg == "internal/runtime/atomic" || pkg == "sync/atomic" || pkg == "sync" ||
++		pkg == "runtime" && fn == "publicationBarrier") {
++		return nil
++	}
+ 	if ssa.IntrinsicsDisable {
+ 		if pkg == "internal/runtime/sys" && (fn == "GetCallerPC" || fn == "GrtCallerSP" || fn == "GetClosurePtr") ||
+ 			pkg == simdPackage {
+@@ -2258,3 +2267,9 @@ func GenIntrinsicBody(fn *ir.Func) {
+ 	typecheck.Stmts(fn.Body)
+ 	ir.CurFunc = nil // we know CurFunc is nil at entry
+ }
++
++// zkNoAtomics reports whether the target is a zkVM guest (tamago/riscv64),
++// which has no atomic memory operations and no memory fences.
++func zkNoAtomics() bool {
++	return buildcfg.GOOS == "tamago" && buildcfg.GOARCH == "riscv64"
++}
+diff --git a/src/cmd/compile/internal/ssagen/ssa.go b/src/cmd/compile/internal/ssagen/ssa.go
+index 3da43e71..d3a30ceb 100644
+--- a/src/cmd/compile/internal/ssagen/ssa.go
++++ b/src/cmd/compile/internal/ssagen/ssa.go
+@@ -2244,7 +2244,7 @@ func (s *state) stmt(n ir.Node) {
+ 
+ 		// Check the cache first.
+ 		var merge *ssa.Block
+-		if base.Flag.N == 0 && rtabi.UseInterfaceSwitchCache(Arch.LinkArch.Family) {
++		if base.Flag.N == 0 && !zkNoAtomics() && rtabi.UseInterfaceSwitchCache(Arch.LinkArch.Family) {
+ 			// Note: we can only use the cache if we have the right atomic load instruction.
+ 			// Double-check that here.
+ 			if intrinsics.lookup(Arch.LinkArch.Arch, "internal/runtime/atomic", "Loadp") == nil {
+@@ -6379,7 +6379,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
+ 		var d *ssa.Value
+ 		if descriptor != nil {
+ 			d = s.newValue1A(ssa.OpAddr, byteptr, descriptor, s.sb)
+-			if base.Flag.N == 0 && rtabi.UseInterfaceSwitchCache(Arch.LinkArch.Family) {
++			if base.Flag.N == 0 && !zkNoAtomics() && rtabi.UseInterfaceSwitchCache(Arch.LinkArch.Family) {
+ 				// Note: we can only use the cache if we have the right atomic load instruction.
+ 				// Double-check that here.
+ 				if intrinsics.lookup(Arch.LinkArch.Arch, "internal/runtime/atomic", "Loadp") == nil {
+diff --git a/src/internal/runtime/atomic/atomic_andor_generic.go b/src/internal/runtime/atomic/atomic_andor_generic.go
+index 433ee0bd..74cf5b29 100644
+--- a/src/internal/runtime/atomic/atomic_andor_generic.go
++++ b/src/internal/runtime/atomic/atomic_andor_generic.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build arm || wasm
++//go:build arm || wasm || (tamago && riscv64)
+ 
+ // Export some functions via linkname to assembly in sync/atomic.
+ //
+diff --git a/src/internal/runtime/atomic/atomic_riscv64.go b/src/internal/runtime/atomic/atomic_riscv64.go
+index d09919d0..44588236 100644
+--- a/src/internal/runtime/atomic/atomic_riscv64.go
++++ b/src/internal/runtime/atomic/atomic_riscv64.go
+@@ -2,6 +2,8 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
++//go:build !tamago
++
+ package atomic
+ 
+ import "unsafe"
+diff --git a/src/internal/runtime/atomic/atomic_riscv64.s b/src/internal/runtime/atomic/atomic_riscv64.s
+index f68a607a..fb7e6859 100644
+--- a/src/internal/runtime/atomic/atomic_riscv64.s
++++ b/src/internal/runtime/atomic/atomic_riscv64.s
+@@ -2,6 +2,8 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
++//go:build !tamago
++
+ // RISC-V's atomic operations have two bits, aq ("acquire") and rl ("release"),
+ // which may be toggled on and off. Their precise semantics are defined in
+ // section 6.3 of the specification, but the basic idea is as follows:
+diff --git a/src/internal/runtime/atomic/atomic_wasm.go b/src/internal/runtime/atomic/atomic_tamago_riscv64.go
+similarity index 94%
+copy from src/internal/runtime/atomic/atomic_wasm.go
+copy to src/internal/runtime/atomic/atomic_tamago_riscv64.go
+index 3f14da13..6b83ed4d 100644
+--- a/src/internal/runtime/atomic/atomic_wasm.go
++++ b/src/internal/runtime/atomic/atomic_tamago_riscv64.go
+@@ -1,9 +1,13 @@
+-// Copyright 2018 The Go Authors. All rights reserved.
++// Copyright 2026 The Go Authors. All rights reserved.
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-// TODO(neelance): implement with actual atomic operations as soon as threads are available
+-// See https://github.com/WebAssembly/design/issues/1073
++//go:build tamago && riscv64
++
++// A tamago zkVM guest runs on a single hart with no interrupts, and the zkVMs
++// implement RV64IM without the A extension. These are the plain loads and
++// stores of the wasm implementation; the compiler does not intrinsify them on
++// tamago/riscv64.
+ 
+ // Export some functions via linkname to assembly in sync/atomic.
+ //
+diff --git a/src/internal/runtime/atomic/atomic_wasm.s b/src/internal/runtime/atomic/atomic_tamago_riscv64.s
+similarity index 55%
+copy from src/internal/runtime/atomic/atomic_wasm.s
+copy to src/internal/runtime/atomic/atomic_tamago_riscv64.s
+index 1c2d1ce5..e4fb64fa 100644
+--- a/src/internal/runtime/atomic/atomic_wasm.s
++++ b/src/internal/runtime/atomic/atomic_tamago_riscv64.s
+@@ -1,10 +1,13 @@
+-// Copyright 2020 The Go Authors. All rights reserved.
++// Copyright 2026 The Go Authors. All rights reserved.
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
++//go:build tamago && riscv64
++
+ #include "textflag.h"
+ 
+ TEXT ·StorepNoWB(SB), NOSPLIT, $0-16
+-	MOVD ptr+0(FP), R0
+-	MOVD val+8(FP), 0(R0)
++	MOV	ptr+0(FP), A0
++	MOV	val+8(FP), A1
++	MOV	A1, (A0)
+ 	RET
+diff --git a/src/internal/runtime/atomic/stubs.go b/src/internal/runtime/atomic/stubs.go
+index 7df8d9c8..7d433d52 100644
+--- a/src/internal/runtime/atomic/stubs.go
++++ b/src/internal/runtime/atomic/stubs.go
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
+-//go:build !wasm
++//go:build !wasm && !(tamago && riscv64)
+ 
+ package atomic
+ 
+diff --git a/src/runtime/atomic_riscv64.s b/src/runtime/atomic_riscv64.s
+index 544a7c59..e0e9926f 100644
+--- a/src/runtime/atomic_riscv64.s
++++ b/src/runtime/atomic_riscv64.s
+@@ -5,6 +5,10 @@
+ #include "textflag.h"
+ 
+ // func publicationBarrier()
++//
++// A tamago zkVM guest is single-threaded and has no FENCE instruction.
+ TEXT ·publicationBarrier(SB),NOSPLIT|NOFRAME,$0-0
++#ifndef GOOS_tamago
+ 	FENCE
++#endif
+ 	RET
