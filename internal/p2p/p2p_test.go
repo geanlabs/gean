@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -306,6 +307,22 @@ func TestSuccessUntouchedByErrorMessageCap(t *testing.T) {
 	}
 	if !bytes.Equal(large, decoded) {
 		t.Fatal("success payload should not be truncated")
+	}
+}
+
+func TestDecodeResponseDoesNotAllocateDeclaredLength(t *testing.T) {
+	header := append([]byte{RespSuccess}, EncodeVarint(MaxPayloadSize)...)
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, _, err := DecodeResponse(bytes.NewReader(header))
+	runtime.ReadMemStats(&after)
+
+	if err == nil {
+		t.Fatal("expected error for a response with no payload")
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > MaxPayloadSize/2 {
+		t.Fatalf("allocated %d bytes for a %d-byte response", allocated, len(header))
 	}
 }
 

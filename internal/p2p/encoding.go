@@ -123,11 +123,17 @@ func DecodeResponse(r io.Reader) (byte, []byte, error) {
 		return code, nil, fmt.Errorf("response length %d exceeds max %d", declaredLen, MaxPayloadSize)
 	}
 
-	decoded := make([]byte, declaredLen)
+	decoded := []byte{}
 	sr := snappy.NewReader(br)
 	if declaredLen > 0 {
-		if _, err := io.ReadFull(sr, decoded); err != nil {
+		// Grow with the bytes that arrive rather than trusting the declared
+		// length up front. Reading past it would consume the next chunk.
+		decoded, err = io.ReadAll(io.LimitReader(sr, int64(declaredLen)))
+		if err != nil {
 			return code, nil, fmt.Errorf("decode response payload: %w", err)
+		}
+		if uint32(len(decoded)) != declaredLen {
+			return code, nil, fmt.Errorf("length mismatch: declared %d, got %d", declaredLen, len(decoded))
 		}
 	} else {
 		var scratch [1]byte
