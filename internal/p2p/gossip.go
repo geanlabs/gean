@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/types"
@@ -42,21 +43,43 @@ func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscr
 			continue
 		}
 
-		data, err := SnappyRawDecode(msg.Data)
-		if err != nil {
-			logger.Error(logger.Gossip, "snappy decode failed on %s: %v", topic, err)
-			continue
-		}
-
-		if err := h.dispatchMessage(topic, data, handler); err != nil {
-			logger.Error(logger.Gossip, "dispatch failed on %s: %v", topic, err)
+		switch m := msg.ValidatorData.(type) {
+		case *types.SignedBlock:
+			blockRoot, err := m.Block.HashTreeRoot()
+			if err != nil {
+				logger.Error(logger.Gossip, "block root on %s: %v", topic, err)
+				continue
+			}
+			logger.Info(logger.Gossip, "received block slot=%d proposer=%d block_root=0x%x parent_root=0x%x",
+				m.Block.Slot, m.Block.ProposerIndex, blockRoot, m.Block.ParentRoot)
+			handler.OnBlock(m)
+		case *types.SignedAttestation:
+			handler.OnGossipAttestation(m)
+		case *types.SignedAggregatedAttestation:
+			handler.OnGossipAggregatedAttestation(m)
 		}
 	}
 }
 
-func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler) error {
-	if handler == nil {
-		return fmt.Errorf("missing gossip handler")
+// validateGossip decodes a remote message so that only decodable messages are
+// relayed; the decoded value reaches listenTopic as the message's ValidatorData.
+func (h *Host) validateGossip(_ context.Context, from peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
+	if from == h.host.ID() {
+		return pubsub.ValidationAccept
+	}
+	decoded, err := h.decodeGossip(msg.GetTopic(), msg.Data)
+	if err != nil {
+		logger.Warn(logger.Gossip, "rejected message on %s from %s: %v", msg.GetTopic(), from, err)
+		return pubsub.ValidationReject
+	}
+	msg.ValidatorData = decoded
+	return pubsub.ValidationAccept
+}
+
+func (h *Host) decodeGossip(topic string, compressed []byte) (any, error) {
+	data, err := SnappyRawDecode(compressed)
+	if err != nil {
+		return nil, fmt.Errorf("snappy decode: %w", err)
 	}
 
 	switch {
@@ -66,19 +89,12 @@ func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler
 		}
 		block := &types.SignedBlock{}
 		if err := block.UnmarshalSSZ(data); err != nil {
-			return fmt.Errorf("unmarshal block (%d bytes): %w", len(data), err)
+			return nil, fmt.Errorf("unmarshal block (%d bytes): %w", len(data), err)
 		}
 		if block.Block == nil {
-			return fmt.Errorf("malformed block: missing block")
+			return nil, fmt.Errorf("malformed block: missing block")
 		}
-		blockRoot, err := block.Block.HashTreeRoot()
-		if err != nil {
-			return fmt.Errorf("block root: %w", err)
-		}
-		logger.Info(logger.Gossip, "received block slot=%d proposer=%d block_root=0x%x parent_root=0x%x",
-			block.Block.Slot, block.Block.ProposerIndex,
-			blockRoot, block.Block.ParentRoot)
-		handler.OnBlock(block)
+		return block, nil
 
 	case isAttestationSubnetTopic(topic):
 		if h.Hooks.GossipAttestationSize != nil {
@@ -86,9 +102,9 @@ func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler
 		}
 		att := &types.SignedAttestation{}
 		if err := att.UnmarshalSSZ(data); err != nil {
-			return fmt.Errorf("unmarshal attestation (%d bytes): %w", len(data), err)
+			return nil, fmt.Errorf("unmarshal attestation (%d bytes): %w", len(data), err)
 		}
-		handler.OnGossipAttestation(att)
+		return att, nil
 
 	case topic == AggregationTopic():
 		if h.Hooks.GossipAggregationSize != nil {
@@ -96,13 +112,11 @@ func (h *Host) dispatchMessage(topic string, data []byte, handler MessageHandler
 		}
 		agg := &types.SignedAggregatedAttestation{}
 		if err := agg.UnmarshalSSZ(data); err != nil {
-			return fmt.Errorf("unmarshal aggregation (%d bytes): %w", len(data), err)
+			return nil, fmt.Errorf("unmarshal aggregation (%d bytes): %w", len(data), err)
 		}
-		handler.OnGossipAggregatedAttestation(agg)
+		return agg, nil
 
 	default:
-		return fmt.Errorf("unknown topic: %s", topic)
+		return nil, fmt.Errorf("unknown topic: %s", topic)
 	}
-
-	return nil
 }

@@ -15,8 +15,12 @@ import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/types"
 	"github.com/golang/snappy"
+	"github.com/libp2p/go-libp2p"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	pb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
 // stubStream is a minimal network.Stream for exercising writeResponse: it wires
@@ -36,16 +40,6 @@ func (s stubStream) Write(p []byte) (int, error) {
 }
 
 func (stubStream) SetWriteDeadline(time.Time) error { return nil }
-
-type captureHandler struct {
-	block *types.SignedBlock
-}
-
-func (h *captureHandler) OnBlock(block *types.SignedBlock) { h.block = block }
-func (h *captureHandler) OnGossipAttestation(att *types.SignedAttestation) {
-}
-func (h *captureHandler) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
-}
 
 func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
 	var buf bytes.Buffer
@@ -330,41 +324,119 @@ func TestDecodeResponseConcatenatedChunks(t *testing.T) {
 	}
 }
 
-func TestDispatchMessageRequiresHandler(t *testing.T) {
-	h := &Host{}
-	if err := h.dispatchMessage(BlockTopic(), nil, nil); err == nil {
-		t.Fatal("expected missing handler error")
+func TestValidateGossip(t *testing.T) {
+	lh, err := libp2p.New(libp2p.NoListenAddrs)
+	if err != nil {
+		t.Fatalf("create libp2p host: %v", err)
 	}
-}
+	t.Cleanup(func() { lh.Close() })
 
-func TestDispatchMessageUsesHostHooks(t *testing.T) {
 	block := &types.SignedBlock{
 		Block: &types.Block{Body: &types.BlockBody{}},
 		Proof: &types.MultiMessageAggregate{},
 	}
-	data, err := block.MarshalSSZ()
+	blockSSZ, err := block.MarshalSSZ()
 	if err != nil {
 		t.Fatalf("marshal block: %v", err)
 	}
 
-	var observedSize int
-	h := &Host{
-		Hooks: Hooks{
-			GossipBlockSize: func(bytes int) {
-				observedSize = bytes
-			},
-		},
+	tests := []struct {
+		name    string
+		from    peer.ID
+		topic   string
+		data    []byte
+		want    pubsub.ValidationResult
+		decoded bool
+	}{
+		{"valid block", "remote", BlockTopic(), SnappyRawEncode(blockSSZ), pubsub.ValidationAccept, true},
+		{"own message is not decoded", lh.ID(), BlockTopic(), SnappyRawEncode(blockSSZ), pubsub.ValidationAccept, false},
+		{"invalid snappy", "remote", BlockTopic(), []byte{0xff, 0xff, 0xff}, pubsub.ValidationReject, false},
+		{"invalid ssz", "remote", AttestationSubnetTopic(0), SnappyRawEncode([]byte{1, 2, 3}), pubsub.ValidationReject, false},
 	}
-	handler := &captureHandler{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var observedSize int
+			h := &Host{host: lh, Hooks: Hooks{GossipBlockSize: func(bytes int) { observedSize = bytes }}}
+			topic := tt.topic
+			msg := &pubsub.Message{Message: &pb.Message{Topic: &topic, Data: tt.data}}
 
-	if err := h.dispatchMessage(BlockTopic(), data, handler); err != nil {
-		t.Fatalf("dispatch block: %v", err)
+			if got := h.validateGossip(context.Background(), tt.from, msg); got != tt.want {
+				t.Fatalf("result=%v, want %v", got, tt.want)
+			}
+			if !tt.decoded {
+				if msg.ValidatorData != nil || observedSize != 0 {
+					t.Fatalf("ValidatorData=%T observed size=%d, want nothing decoded", msg.ValidatorData, observedSize)
+				}
+				return
+			}
+			if _, ok := msg.ValidatorData.(*types.SignedBlock); !ok {
+				t.Fatalf("ValidatorData=%T, want *types.SignedBlock", msg.ValidatorData)
+			}
+			if observedSize != len(blockSSZ) {
+				t.Fatalf("observed size=%d, want %d", observedSize, len(blockSSZ))
+			}
+		})
 	}
-	if observedSize != len(data) {
-		t.Fatalf("observed size=%d, want %d", observedSize, len(data))
+}
+
+type captureHandler struct{ blocks chan *types.SignedBlock }
+
+func (h captureHandler) OnBlock(block *types.SignedBlock) {
+	select {
+	case h.blocks <- block:
+	default:
 	}
-	if handler.block == nil {
-		t.Fatal("block handler was not called")
+}
+func (captureHandler) OnGossipAttestation(*types.SignedAttestation)                     {}
+func (captureHandler) OnGossipAggregatedAttestation(*types.SignedAggregatedAttestation) {}
+
+func TestGossipBlockReachesHandlerThroughValidator(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	mn, err := mocknet.FullMeshConnected(2)
+	if err != nil {
+		t.Fatalf("mocknet: %v", err)
+	}
+	t.Cleanup(func() { mn.Close() })
+
+	hosts := make([]*Host, 2)
+	for i, lh := range mn.Hosts() {
+		ps, err := newGossipSub(ctx, lh)
+		if err != nil {
+			t.Fatalf("gossipsub: %v", err)
+		}
+		hosts[i] = &Host{
+			host:   lh,
+			pubsub: ps,
+			topics: make(map[string]*pubsub.Topic),
+			subs:   make(map[string]*pubsub.Subscription),
+			ctx:    ctx,
+		}
+		if err := hosts[i].JoinTopic(BlockTopic()); err != nil {
+			t.Fatalf("join topic: %v", err)
+		}
+	}
+	received := captureHandler{blocks: make(chan *types.SignedBlock, 1)}
+	hosts[1].StartGossipListeners(received)
+
+	// The mesh forms on a heartbeat, so republish a fresh block until one is
+	// delivered rather than guessing how long that takes.
+	deadline := time.After(10 * time.Second)
+	for slot := uint64(1); ; slot++ {
+		block := &types.SignedBlock{
+			Block: &types.Block{Slot: slot, Body: &types.BlockBody{}},
+			Proof: &types.MultiMessageAggregate{},
+		}
+		if err := hosts[0].PublishBlock(ctx, block); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+		select {
+		case <-received.blocks:
+			return
+		case <-time.After(100 * time.Millisecond):
+		case <-deadline:
+			t.Fatal("no block reached the handler")
+		}
 	}
 }
 
@@ -416,14 +488,6 @@ func TestIsAttestationSubnetTopic(t *testing.T) {
 		if got := isAttestationSubnetTopic(test.topic); got != test.want {
 			t.Fatalf("isAttestationSubnetTopic(%q)=%t, want %t", test.topic, got, test.want)
 		}
-	}
-}
-
-func TestDispatchMessageRejectsNearMissAttestationTopic(t *testing.T) {
-	h := &Host{}
-	err := h.dispatchMessage("/leanconsensus/12345678/not_attestation_0/ssz_snappy", nil, &captureHandler{})
-	if err == nil {
-		t.Fatal("expected unknown topic error")
 	}
 }
 

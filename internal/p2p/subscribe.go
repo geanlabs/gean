@@ -7,6 +7,9 @@ import (
 )
 
 func (h *Host) JoinTopic(topic string) error {
+	if err := h.pubsub.RegisterTopicValidator(topic, h.validateGossip); err != nil {
+		return fmt.Errorf("register validator for %s: %w", topic, err)
+	}
 	t, err := h.pubsub.Join(topic)
 	if err != nil {
 		return fmt.Errorf("join topic %s: %w", topic, err)
