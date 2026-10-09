@@ -753,3 +753,13 @@ func TestLoadBootnodesRejectsInvalidLine(t *testing.T) {
 		t.Fatalf("error=%v, want invalid line with number", err)
 	}
 }
+
+func TestDecodeGossipRejectsPaddedEmptyList(t *testing.T) {
+	in := paddedEmptyListBlock()
+	if err := (&types.SignedBlock{}).UnmarshalSSZ(in); err != nil {
+		t.Fatalf("fastssz rejects the padded empty list; drop the size check: %v", err)
+	}
+	if _, err := (&Host{}).decodeGossip(BlockTopic(), SnappyRawEncode(in)); err == nil {
+		t.Fatal("padded empty list accepted")
+	}
+}

@@ -94,6 +94,12 @@ func (h *Host) decodeGossip(topic string, compressed []byte) (any, error) {
 		if block.Block == nil {
 			return nil, fmt.Errorf("malformed block: missing block")
 		}
+		// The decoder also accepts an empty attestation list padded to four
+		// bytes. That encoding has the same root but another message ID, so
+		// relaying it would let a block bypass gossip deduplication.
+		if size := block.SizeSSZ(); size != len(data) {
+			return nil, fmt.Errorf("non-canonical block: %d bytes, canonical %d", len(data), size)
+		}
 		return block, nil
 
 	case isAttestationSubnetTopic(topic):
