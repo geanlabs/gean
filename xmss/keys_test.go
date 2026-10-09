@@ -1,6 +1,7 @@
 package xmss
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,25 @@ func TestKeyManagerNilSafeAccessors(t *testing.T) {
 }
 
 func TestLoadValidatorKeysRejectsInvalidConfig(t *testing.T) {
+	keysDir := t.TempDir()
+	kp, err := GenerateKeyPair("test-load-validator-keys", 0, 1<<10)
+	if err != nil {
+		t.Fatalf("generate keypair: %v", err)
+	}
+	defer kp.Close()
+	sk, err := kp.PrivateKeyBytes()
+	if err != nil {
+		t.Fatalf("private key bytes: %v", err)
+	}
+	pk, err := kp.PublicKeyBytes()
+	if err != nil {
+		t.Fatalf("public key bytes: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(keysDir, "validator_4_attester_sk.ssz"), sk, 0o600); err != nil {
+		t.Fatalf("write secret key: %v", err)
+	}
+	attester := fmt.Sprintf("\n  - index: 4\n    privkey_file: validator_4_attester_sk.ssz\n    pubkey_hex: %x", pk)
+
 	tests := []struct {
 		name    string
 		data    string
@@ -66,25 +86,44 @@ node-a:
 			wantErr: "proposal key file missing for validator 4",
 		},
 		{
-			name: "single key without role",
-			data: `
-node-a:
-  - index: 4
-    privkey_file: validator_4_sk.ssz
-    pubkey_hex: 00
-`,
-			wantErr: "key file validator_4_sk.ssz for validator 4 has no attester or proposer role",
+			name:    "single key without role",
+			data:    "node-a:\n  - index: 4\n    privkey_file: validator_4_sk.ssz\n",
+			wantErr: "key file validator_4_sk.ssz for validator 4 must name exactly one of the attester and proposer roles",
+		},
+		{
+			name:    "role only in directory",
+			data:    "node-a:\n  - index: 4\n    privkey_file: attester/validator_4_sk.ssz\n",
+			wantErr: "key file validator_4_sk.ssz for validator 4 must name exactly one",
+		},
+		{
+			name:    "both roles in name",
+			data:    "node-a:\n  - index: 4\n    privkey_file: validator_4_attester_proposer_sk.ssz\n",
+			wantErr: "must name exactly one of the attester and proposer roles",
+		},
+		{
+			name:    "no key files",
+			data:    "node-a:\n  - index: 4\n",
+			wantErr: "no key files for validator 4",
+		},
+		{
+			name:    "duplicate role",
+			data:    "node-a:" + attester + attester + "\n",
+			wantErr: "duplicate key file validator_4_attester_sk.ssz for validator 4",
+		},
+		{
+			name:    "missing proposer key",
+			data:    "node-a:" + attester + "\n",
+			wantErr: "proposal key file missing for validator 4",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			path := filepath.Join(dir, "validators.yaml")
+			path := filepath.Join(t.TempDir(), "validators.yaml")
 			if err := os.WriteFile(path, []byte(tt.data), 0o600); err != nil {
 				t.Fatalf("write annotated validators: %v", err)
 			}
 
-			_, err := LoadValidatorKeys(path, dir, "node-a")
+			_, err := LoadValidatorKeys(path, keysDir, "node-a")
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error=%v, want %q", err, tt.wantErr)
 			}

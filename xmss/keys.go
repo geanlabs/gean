@@ -216,28 +216,38 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 	proposalKeys := make(map[uint64]*ValidatorKeyPair)
 
 	for _, v := range validators {
-		if v.PrivkeyFile != "" {
+		switch {
+		case v.PrivkeyFile != "":
 			// Each role signs with the slot as the XMSS index; a key cannot serve both.
+			name := filepath.Base(v.PrivkeyFile)
+			isAttester := strings.Contains(name, "attester") || strings.Contains(name, "attestation")
+			isProposer := strings.Contains(name, "proposer") || strings.Contains(name, "proposal")
 			var keys map[uint64]*ValidatorKeyPair
 			switch {
-			case strings.Contains(v.PrivkeyFile, "attester") || strings.Contains(v.PrivkeyFile, "attestation"):
+			case isAttester && !isProposer:
 				keys = attestationKeys
-			case strings.Contains(v.PrivkeyFile, "proposer") || strings.Contains(v.PrivkeyFile, "proposal"):
+			case isProposer && !isAttester:
 				keys = proposalKeys
 			default:
-				return nil, fmt.Errorf("key file %s for validator %d has no attester or proposer role", v.PrivkeyFile, v.Index)
+				return nil, fmt.Errorf("key file %s for validator %d must name exactly one of the attester and proposer roles", name, v.Index)
+			}
+			if keys[v.Index] != nil {
+				return nil, fmt.Errorf("duplicate key file %s for validator %d", name, v.Index)
 			}
 			kp, err := loadKeypair(keysDir, v.PrivkeyFile, v.PubkeyHex, v.Index)
 			if err != nil {
 				return nil, fmt.Errorf("load key for validator %d (%s): %w", v.Index, v.PrivkeyFile, err)
 			}
 			keys[v.Index] = kp
-		} else if v.AttestationSkFile != "" || v.ProposalSkFile != "" {
+		case v.AttestationSkFile != "" || v.ProposalSkFile != "":
 			if v.AttestationSkFile == "" {
 				return nil, fmt.Errorf("attestation key file missing for validator %d", v.Index)
 			}
 			if v.ProposalSkFile == "" {
 				return nil, fmt.Errorf("proposal key file missing for validator %d", v.Index)
+			}
+			if attestationKeys[v.Index] != nil || proposalKeys[v.Index] != nil {
+				return nil, fmt.Errorf("duplicate keys for validator %d", v.Index)
 			}
 			attKp, err := loadKeypair(keysDir, v.AttestationSkFile, v.AttestationPubkey, v.Index)
 			if err != nil {
@@ -250,6 +260,18 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 				return nil, fmt.Errorf("load proposal key for validator %d: %w", v.Index, err)
 			}
 			proposalKeys[v.Index] = propKp
+		default:
+			return nil, fmt.Errorf("no key files for validator %d", v.Index)
+		}
+	}
+	for index := range attestationKeys {
+		if proposalKeys[index] == nil {
+			return nil, fmt.Errorf("proposal key file missing for validator %d", index)
+		}
+	}
+	for index := range proposalKeys {
+		if attestationKeys[index] == nil {
+			return nil, fmt.Errorf("attestation key file missing for validator %d", index)
 		}
 	}
 
