@@ -44,10 +44,12 @@ func loadStartupInputs(cfg config) (*startupInputs, error) {
 	validators, err := genesisConfig.Validators()
 	if err != nil {
 		logger.Error(logger.Node, "genesis validators: %v", err)
+		keyManager.Close()
 		return nil, err
 	}
 	if err := keyManager.MatchRegistry(validators); err != nil {
 		logger.Error(logger.Node, "validator keys: %v", err)
+		keyManager.Close()
 		return nil, err
 	}
 	logger.Info(logger.Node, "validators: %d keys loaded for %s", len(keyManager.ValidatorIDs()), cfg.NodeID)

@@ -112,6 +112,9 @@ func TestLoadValidatorKeys(t *testing.T) {
 		{"missing proposal key", `
   - {index: 0, privkey_file: v_attester_key_sk.ssz}
 `, "proposal key file missing for validator 0"},
+		{"entry without key files", `
+  - {index: 0}
+`, "attestation key file missing for validator 0"},
 		{"incomplete keygen pair", `
   - {index: 0, attestation_sk_file: v_attester_key_sk.ssz}
 `, "proposal key file missing for validator 0"},

@@ -240,6 +240,9 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 	attestationFiles := make(map[uint64]string)
 	proposalFiles := make(map[uint64]string)
 	assign := func(files map[uint64]string, role string, index uint64, file string) error {
+		if file == "" {
+			return fmt.Errorf("%s key file missing for validator %d", role, index)
+		}
 		if files[index] != "" {
 			return fmt.Errorf("duplicate %s key for validator %d", role, index)
 		}
@@ -267,12 +270,6 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 				return nil, err
 			}
 			continue
-		}
-		if v.AttestationSkFile == "" {
-			return nil, fmt.Errorf("attestation key file missing for validator %d", v.Index)
-		}
-		if v.ProposalSkFile == "" {
-			return nil, fmt.Errorf("proposal key file missing for validator %d", v.Index)
 		}
 		if err := assign(attestationFiles, "attestation", v.Index, v.AttestationSkFile); err != nil {
 			return nil, err

@@ -61,7 +61,7 @@ pub unsafe extern "C" fn hashsig_keypair_generate(
 }
 
 /// Reconstruct a key pair from a persisted secret key (postcard, since upstream excludes the
-/// secret key from SSZ). The public key is derived from the secret key, so it always belongs to it.
+/// secret key from SSZ). The public key is derived from the persisted secret key.
 #[no_mangle]
 pub unsafe extern "C" fn hashsig_keypair_from_secret_key(
     private_key_ptr: *const u8,
