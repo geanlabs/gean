@@ -178,9 +178,10 @@ func (b *BlockBuffer) Pairs() [][2][32]byte {
 	return out
 }
 
-func (b *BlockBuffer) DiscardSubtree(root [32]byte) {
+// DiscardSubtree drops root and every pending descendant, returning the dropped roots.
+func (b *BlockBuffer) DiscardSubtree(root [32]byte) [][32]byte {
 	if b == nil {
-		return
+		return nil
 	}
 	if parent, ok := b.parents[root]; ok {
 		b.RemoveChild(parent, root)
@@ -192,24 +193,23 @@ func (b *BlockBuffer) DiscardSubtree(root [32]byte) {
 			}
 		}
 	}
-	b.discardSubtree(root)
+	return b.discardSubtree(root, nil)
 }
 
-func (b *BlockBuffer) discardSubtree(root [32]byte) {
-	if b == nil {
-		return
-	}
+func (b *BlockBuffer) discardSubtree(root [32]byte, dropped [][32]byte) [][32]byte {
 	delete(b.parents, root)
 	delete(b.depths, root)
 	delete(b.slots, root)
+	dropped = append(dropped, root)
 	set, ok := b.children[root]
 	if !ok {
-		return
+		return dropped
 	}
 	delete(b.children, root)
 	for child := range set {
-		b.discardSubtree(child)
+		dropped = b.discardSubtree(child, dropped)
 	}
+	return dropped
 }
 
 func (b *BlockBuffer) ensureMaps() bool {
