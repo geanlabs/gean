@@ -274,6 +274,9 @@ func TestDecodeResponseMaxSignedBlockSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal max block: %v", err)
 	}
+	if len(encoded) != MaxSignedBlockSize {
+		t.Fatalf("max block is %d bytes, MaxSignedBlockSize is %d", len(encoded), MaxSignedBlockSize)
+	}
 
 	if _, _, err := DecodeResponse(bytes.NewReader(EncodeResponse(RespSuccess, encoded)), MaxSignedBlockSize); err != nil {
 		t.Fatalf("decode max block: %v", err)
