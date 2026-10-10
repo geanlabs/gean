@@ -90,6 +90,8 @@ func persistBlock(
 	if err := wb.Commit(); err != nil {
 		return fmt.Errorf("persist block: commit: %w", err)
 	}
+	s.NoteStoredHeader(blockRoot, header)
+	s.NoteStoredState(blockRoot, postState)
 	// The header is now stored, so the duty gate's stored-block high-water mark
 	// has to see it. This is the import path's equivalent of what
 	// ConsensusStore.PutBlockHeader does for pending blocks.

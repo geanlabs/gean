@@ -38,11 +38,22 @@ func (e *Engine) bufferMissingParentBlock(
 	e.Store.StorePendingBlock(blockRoot, signedBlock)
 	e.Pending.AddChild(parentRoot, blockRoot)
 
-	missingRoot, queued := e.queueStoredAncestor(missingRoot, queue)
-	if queued {
-		return
+	missingRoot, outcome := e.queueStoredAncestor(missingRoot, queue)
+	switch outcome {
+	case ancestorQueued:
+	case ancestorMissing:
+		e.queueMissingBlockFetch(missingRoot)
+	case ancestorBelowFinalized:
+		// The branch leaves the chain below finalization, so it can never be
+		// canonical: drop it whole instead of fetching toward genesis.
+		logger.Warn(logger.Chain, "discarding pending branch below the finalized slot: block slot=%d block_root=0x%x ancestor=0x%x",
+			block.Slot, blockRoot, missingRoot)
+		e.Pending.DiscardSubtree(missingRoot)
+	case ancestorTooDeep:
+		logger.Warn(logger.Chain, "stored ancestor walk exceeded %d blocks, discarding pending branch: block slot=%d block_root=0x%x",
+			MaxBlockFetchDepth, block.Slot, blockRoot)
+		e.Pending.DiscardSubtree(missingRoot)
 	}
-	e.queueMissingBlockFetch(missingRoot)
 }
 
 // evictFarthestPending frees a slot in the full pending buffer for a block at
@@ -63,18 +74,50 @@ func (e *Engine) evictFarthestPending(incomingSlot uint64) bool {
 	return true
 }
 
-func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, bool) {
-	for {
+type ancestorOutcome int
+
+const (
+	// ancestorQueued: a stored block whose parent has a state was queued for import.
+	ancestorQueued ancestorOutcome = iota
+	// ancestorMissing: the returned root has no stored header and must be fetched.
+	ancestorMissing
+	// ancestorBelowFinalized: the walk reached a stored block at or below the
+	// finalized slot without meeting a state, so the branch split from the chain
+	// before finalization. The returned root heads everything the walk linked.
+	ancestorBelowFinalized
+	// ancestorTooDeep: the walk passed MaxBlockFetchDepth stored blocks. A gap
+	// that deep is range sync's to close, not a by-root walk's.
+	ancestorTooDeep
+)
+
+// queueStoredAncestor walks back from missingRoot through blocks whose headers
+// are stored but whose states are not, linking each into the pending buffer, until
+// it finds one whose parent has a state and queues it for import.
+//
+// The walk ends at the finalized slot. Below it, canonical blocks keep their
+// headers while their states are pruned, so a branch that split off before
+// finalization would otherwise be walked header by header all the way to genesis
+// on the dispatch loop, and every step would be linked into the buffer.
+func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, ancestorOutcome) {
+	finalizedSlot := e.Store.LatestFinalized().Slot
+	for steps := 0; ; steps++ {
 		header := e.Store.GetBlockHeader(missingRoot)
 		if header == nil {
-			return missingRoot, false
+			return missingRoot, ancestorMissing
+		}
+		if header.Slot <= finalizedSlot {
+			return missingRoot, ancestorBelowFinalized
 		}
 		if e.Store.HasState(header.ParentRoot) {
 			if storedBlock := e.Store.GetSignedBlock(missingRoot); storedBlock != nil {
 				*queue = append(*queue, storedBlock)
 			}
-			return missingRoot, true
+			return missingRoot, ancestorQueued
 		}
+		if steps >= MaxBlockFetchDepth {
+			return missingRoot, ancestorTooDeep
+		}
+		e.Pending.SetSlot(missingRoot, header.Slot)
 		e.Pending.AddChild(header.ParentRoot, missingRoot)
 		e.Pending.SetParent(missingRoot, header.ParentRoot)
 		missingRoot = header.ParentRoot
@@ -102,19 +145,7 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 }
 
 func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
-	discarded := 0
-
-	for _, pair := range e.Pending.Pairs() {
-		parentRoot, childRoot := pair[0], pair[1]
-		header := e.Store.GetBlockHeader(childRoot)
-		if header != nil && header.Slot <= finalizedSlot {
-			e.Pending.DiscardSubtree(childRoot)
-			e.Pending.RemoveChild(parentRoot, childRoot)
-			discarded++
-		}
-	}
-
-	if discarded > 0 {
+	if discarded := e.Pending.DiscardAtOrBelow(finalizedSlot); discarded > 0 {
 		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
 	}
 

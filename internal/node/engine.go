@@ -91,6 +91,10 @@ type Engine struct {
 	// goroutine precisely so it still reports while the dispatch loop is blocked.
 	lastTickMs atomic.Int64
 
+	// lastIntervalStartMs is the start of the interval whose duties onTick
+	// last ran; see claimInterval.
+	lastIntervalStartMs uint64
+
 	warnedMissingJustified [32]byte
 
 	// maxSeenGossipSlot is the highest plausible slot heard on gossip, whether
@@ -176,12 +180,9 @@ func (e *Engine) WaitForStorageWorkers() {
 func (e *Engine) Run(ctx context.Context) {
 	e.initMetrics()
 
-	ticker := time.NewTicker(types.MillisecondsPerInterval * time.Millisecond)
-	defer ticker.Stop()
-
 	e.startWorkers(ctx)
 
 	logger.Info(logger.Node, "started")
 	e.onTick()
-	e.dispatch(ctx, ticker.C)
+	e.dispatch(ctx, alignedTicks(ctx, e.Store.Config().GenesisTime))
 }

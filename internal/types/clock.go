@@ -27,6 +27,29 @@ func CurrentInterval(genesisTime, currentTimeMs uint64) uint64 {
 	return MillisIntoSlot(genesisTime, currentTimeMs) / MillisecondsPerInterval
 }
 
+// NextIntervalBoundaryMs returns the unix-millisecond time of the first
+// interval boundary strictly after currentTimeMs. Exactly on a boundary, that
+// is the following one, a full interval away. Before genesis it is genesis
+// itself. ok is false when the boundary does not fit in a uint64.
+func NextIntervalBoundaryMs(genesisTime, currentTimeMs uint64) (uint64, bool) {
+	genesisMs, ok := unixMillis(genesisTime)
+	if !ok {
+		return 0, false
+	}
+	if currentTimeMs < genesisMs {
+		return genesisMs, true
+	}
+	elapsedIntervals := (currentTimeMs - genesisMs) / MillisecondsPerInterval
+	if elapsedIntervals >= ^uint64(0)/MillisecondsPerInterval {
+		return 0, false
+	}
+	offset := (elapsedIntervals + 1) * MillisecondsPerInterval
+	if offset > ^uint64(0)-genesisMs {
+		return 0, false
+	}
+	return genesisMs + offset, true
+}
+
 func TotalIntervals(genesisTime, currentTimeMs uint64) uint64 {
 	genesisMs, ok := unixMillis(genesisTime)
 	if !ok {

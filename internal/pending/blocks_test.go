@@ -188,9 +188,6 @@ func TestBlockBuffer_ZeroValueAndNilGuards(t *testing.T) {
 	if got := nilBuffer.ResolveAncestor(child); got != child {
 		t.Fatalf("nil ancestor=0x%x, want start 0x%x", got, child)
 	}
-	if pairs := nilBuffer.Pairs(); pairs != nil {
-		t.Fatalf("nil pairs=%v, want nil", pairs)
-	}
 }
 
 func TestBlockBuffer_HighestSlotEntry(t *testing.T) {
@@ -244,5 +241,33 @@ func TestBlockBuffer_DiscardSubtreeClearsSlots(t *testing.T) {
 
 	if _, _, ok := b.HighestSlotEntry(); ok {
 		t.Fatal("expected slot tracking cleared for the whole discarded subtree")
+	}
+}
+
+// DiscardAtOrBelow drops entries at or below the slot with everything waiting
+// on them, and leaves higher entries untouched.
+func TestBlockBuffer_DiscardAtOrBelow(t *testing.T) {
+	b := NewBlockBuffer()
+	root := func(n byte) [32]byte { return [32]byte{n} }
+	missing := root(0xFF)
+	// missing <- r1 (slot 5) <- r2 (slot 9); missing <- r3 (slot 20)
+	b.SetSlot(root(1), 5)
+	b.SetParent(root(1), missing)
+	b.AddChild(missing, root(1))
+	b.SetSlot(root(2), 9)
+	b.SetParent(root(2), root(1))
+	b.AddChild(root(1), root(2))
+	b.SetSlot(root(3), 20)
+	b.SetParent(root(3), missing)
+	b.AddChild(missing, root(3))
+
+	if got := b.DiscardAtOrBelow(5); got != 2 {
+		t.Fatalf("dropped %d entries, want r1 and the r2 waiting on it", got)
+	}
+	if b.Count() != 1 || b.ChildCount(missing) != 1 {
+		t.Fatalf("count=%d children(missing)=%d, want only r3 left", b.Count(), b.ChildCount(missing))
+	}
+	if got := b.DiscardAtOrBelow(19); got != 0 {
+		t.Fatalf("dropped %d entries above the slot", got)
 	}
 }

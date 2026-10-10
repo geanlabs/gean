@@ -85,11 +85,11 @@ func (e *Engine) getOurProposer(slot uint64) (uint64, bool) {
 	if e.Keys == nil {
 		return 0, false
 	}
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
+	headSummary, ok := e.Store.StateSummary(e.Store.Head())
+	if !ok {
 		return 0, false
 	}
-	numValidators := headState.NumValidators()
+	numValidators := headSummary.NumValidators
 
 	for _, vid := range e.Keys.ValidatorIDs() {
 		if types.IsProposer(slot, vid, numValidators) {
