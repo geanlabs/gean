@@ -2,6 +2,8 @@ package node
 
 import (
 	"context"
+	"runtime"
+	"sync"
 
 	"github.com/geanlabs/gean/internal/aggregation"
 )
@@ -25,15 +27,26 @@ func (e *Engine) startWorkers(ctx context.Context) {
 	}()
 }
 
+// runAttestationWorker verifies gossip attestations on one worker per core. Each
+// verify holds an OS thread in cgo, so a fixed pool bounds the threads a flood can
+// take, and once every worker is busy AttestationCh fills and drops the excess.
 func (e *Engine) runAttestationWorker(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case att := <-e.AttestationCh:
-			go e.onGossipAttestation(att)
-		}
+	var wg sync.WaitGroup
+	for range runtime.GOMAXPROCS(0) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case att := <-e.AttestationCh:
+					e.onGossipAttestation(att)
+				}
+			}
+		}()
 	}
+	wg.Wait()
 }
 
 // runAggregationWorker verifies gossiped aggregates off the dispatch loop.

@@ -10,7 +10,6 @@ func (e *Engine) replayPendingAttestations(headRoot [32]byte) {
 	logger.Info(logger.Gossip, "replaying %d buffered attestations for newly arrived head=0x%x",
 		len(pending), headRoot)
 	for _, att := range pending {
-		att := att
-		go e.onGossipAttestation(att)
+		e.OnGossipAttestation(att)
 	}
 }
