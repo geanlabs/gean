@@ -30,9 +30,18 @@ func (fc *ForkChoice) UpdateHead(justifiedRoot [32]byte) [32]byte {
 	return fc.array.FindHead(justifiedRoot)
 }
 
-func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uint64) [32]byte {
+// UpdateSafeTarget counts only votes, the latest vote per validator from the current
+// new-payload pool. Every earlier new vote is dropped first: a validator absent from
+// this pool contributes nothing, as in leanSpec's update_safe_target.
+func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uint64, votes map[uint64]*types.AttestationData) [32]byte {
 	if fc == nil || fc.array == nil {
 		return justifiedRoot
+	}
+	if fc.votes != nil {
+		fc.votes.ClearNew()
+		for vid, data := range votes {
+			fc.votes.SetNew(vid, fc.NodeIndex(data.Head.Root), data.Slot, data)
+		}
 	}
 	if numValidators == 0 {
 		return justifiedRoot
@@ -92,18 +101,6 @@ func (fc *ForkChoice) SetKnownVote(validatorID uint64, headRoot [32]byte, slot u
 		return false
 	}
 	fc.votes.SetKnown(validatorID, idx, slot, data)
-	return true
-}
-
-func (fc *ForkChoice) SetNewVote(validatorID uint64, headRoot [32]byte, slot uint64, data *types.AttestationData) bool {
-	if fc == nil || fc.votes == nil {
-		return false
-	}
-	idx := fc.NodeIndex(headRoot)
-	if idx < 0 {
-		return false
-	}
-	fc.votes.SetNew(validatorID, idx, slot, data)
 	return true
 }
 

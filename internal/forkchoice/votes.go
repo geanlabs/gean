@@ -38,12 +38,9 @@ func (vs *VoteStore) SetNew(validatorID uint64, nodeIndex int, slot uint64, data
 	tracker.LatestNew = &VoteTarget{Index: nodeIndex, Slot: slot, Data: data}
 }
 
-func (vs *VoteStore) PromoteNewToKnown() {
+func (vs *VoteStore) ClearNew() {
 	for _, tracker := range vs.Votes {
-		if tracker.LatestNew != nil {
-			tracker.LatestKnown = tracker.LatestNew
-			tracker.LatestNew = nil
-		}
+		tracker.LatestNew = nil
 	}
 }
 
