@@ -116,12 +116,7 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 }
 
 func (e *Engine) updateSafeTarget() {
-	attestations := e.Store.ExtractLatestNewAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
-
-	for vid, data := range attestations {
-		e.FC.SetNewVote(vid, data.Head.Root, data.Slot, data)
-	}
 
 	headState := e.Store.GetState(e.Store.Head())
 	if headState == nil {
@@ -129,7 +124,7 @@ func (e *Engine) updateSafeTarget() {
 	}
 	numValidators := uint64(len(headState.Validators))
 
-	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators)
+	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators, e.Store.ExtractLatestNewAttestations())
 	e.Store.SetSafeTarget(safeTarget)
 
 	safeHeader := e.Store.GetBlockHeader(safeTarget)

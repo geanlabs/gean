@@ -116,24 +116,6 @@ func TestVoteStoreIgnoresInvalidIndices(t *testing.T) {
 	}
 }
 
-func TestPromoteNewToKnown(t *testing.T) {
-	vs := NewVoteStore()
-	vs.SetKnown(0, 1, 1, nil)
-	vs.SetNew(0, 2, 2, nil)
-	vs.SetNew(1, 3, 3, nil)
-
-	vs.PromoteNewToKnown()
-
-	v0 := vs.Votes[0]
-	if v0.LatestKnown == nil || v0.LatestKnown.Index != 2 || v0.LatestNew != nil {
-		t.Fatalf("validator 0 after promote = %+v, want known index 2 and no new", v0)
-	}
-	v1 := vs.Votes[1]
-	if v1.LatestKnown == nil || v1.LatestKnown.Index != 3 || v1.LatestNew != nil {
-		t.Fatalf("validator 1 after promote = %+v, want known index 3 and no new", v1)
-	}
-}
-
 // The latest vote per validator is last-wins, matching the spec: a fresh vote
 // always replaces the prior one, whether it is older, newer, or at the same
 // slot. A validator only ever holds one latest vote, so a same-slot
