@@ -38,11 +38,11 @@ func isStreamTimeout(err error) bool {
 	return errors.As(err, &ne) && ne.Timeout()
 }
 
-// readReqRespChunk arms the idle read deadline, decodes one response frame, and on a
-// deadline expiry records the stall and returns a clear error.
-func readReqRespChunk(s network.Stream, r io.Reader, protocol string) (byte, []byte, error) {
+// readReqRespChunk arms the idle read deadline, decodes one response frame of at most
+// maxLen bytes, and on a deadline expiry records the stall and returns a clear error.
+func readReqRespChunk(s network.Stream, r io.Reader, protocol string, maxLen uint32) (byte, []byte, error) {
 	armReadDeadline(s)
-	code, data, err := DecodeResponse(r)
+	code, data, err := DecodeResponse(r, maxLen)
 	if err != nil && isStreamTimeout(err) {
 		metrics.IncReqRespTimeout(protocol, "read")
 		return code, data, fmt.Errorf("%s: response read stalled beyond %s: %w", protocol, ReqRespTimeout, err)
