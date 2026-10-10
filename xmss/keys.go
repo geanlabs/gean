@@ -7,9 +7,7 @@ package xmss
 // typedef struct PrivateKey PrivateKey;
 // typedef struct Signature Signature;
 //
-// KeyPair* hashsig_keypair_from_ssz(
-//     const uint8_t* private_key_ptr, size_t private_key_len,
-//     const uint8_t* public_key_ptr, size_t public_key_len);
+// KeyPair* hashsig_keypair_from_secret_key(const uint8_t* private_key_ptr, size_t private_key_len);
 // void hashsig_keypair_free(KeyPair* keypair);
 // const PublicKey* hashsig_keypair_get_public_key(const KeyPair* keypair);
 // const PrivateKey* hashsig_keypair_get_private_key(const KeyPair* keypair);
@@ -19,7 +17,6 @@ package xmss
 import "C"
 
 import (
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -186,16 +183,44 @@ func (km *KeyManager) Close() {
 	}
 }
 
+// MatchRegistry checks every loaded key against its validator's registry pubkeys, so a swapped,
+// shared, or foreign key file stops the node before it signs anything.
+func (km *KeyManager) MatchRegistry(validators []*types.Validator) error {
+	for _, id := range km.ValidatorIDs() {
+		if id >= uint64(len(validators)) {
+			return fmt.Errorf("validator %d not in registry of %d validators", id, len(validators))
+		}
+		if err := matchPubkey(km.attestationKeys[id], validators[id].AttestationPubkey, id, "attestation"); err != nil {
+			return err
+		}
+		if err := matchPubkey(km.proposalKeys[id], validators[id].ProposalPubkey, id, "proposal"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func matchPubkey(kp *ValidatorKeyPair, want [types.PubkeySize]byte, id uint64, role string) error {
+	got, err := kp.PublicKeyBytes()
+	if err != nil {
+		return fmt.Errorf("validator %d %s key: %w", id, role, err)
+	}
+	if got != want {
+		return fmt.Errorf("validator %d %s key 0x%x does not match registry pubkey 0x%x", id, role, got, want)
+	}
+	return nil
+}
+
 type annotatedValidator struct {
 	Index             uint64 `yaml:"index"`
-	PubkeyHex         string `yaml:"pubkey_hex"`
 	PrivkeyFile       string `yaml:"privkey_file"`
-	AttestationPubkey string `yaml:"attestation_pubkey_hex"`
-	ProposalPubkey    string `yaml:"proposal_pubkey_hex"`
 	AttestationSkFile string `yaml:"attestation_sk_file"`
 	ProposalSkFile    string `yaml:"proposal_sk_file"`
 }
 
+// LoadValidatorKeys loads a node's attestation and proposal keys. Entries use either gean keygen's
+// attestation_sk_file/proposal_sk_file pair or lean-quickstart's one privkey_file per role, with
+// the role named in the file name. Every validator must end up with exactly one key per role.
 func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, error) {
 	data, err := os.ReadFile(annotatedPath)
 	if err != nil {
@@ -212,52 +237,82 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 		return nil, fmt.Errorf("node ID %q not found in annotated validators", nodeID)
 	}
 
-	attestationKeys := make(map[uint64]*ValidatorKeyPair)
-	proposalKeys := make(map[uint64]*ValidatorKeyPair)
+	attestationFiles := make(map[uint64]string)
+	proposalFiles := make(map[uint64]string)
+	assign := func(files map[uint64]string, role string, index uint64, file string) error {
+		if files[index] != "" {
+			return fmt.Errorf("duplicate %s key for validator %d", role, index)
+		}
+		files[index] = file
+		return nil
+	}
 
 	for _, v := range validators {
 		if v.PrivkeyFile != "" {
-			kp, err := loadKeypair(keysDir, v.PrivkeyFile, v.PubkeyHex, v.Index)
-			if err != nil {
-				return nil, fmt.Errorf("load key for validator %d (%s): %w", v.Index, v.PrivkeyFile, err)
+			if v.AttestationSkFile != "" || v.ProposalSkFile != "" {
+				return nil, fmt.Errorf("validator %d: privkey_file cannot be combined with attestation_sk_file or proposal_sk_file", v.Index)
 			}
-			if strings.Contains(v.PrivkeyFile, "attester") || strings.Contains(v.PrivkeyFile, "attestation") {
-				attestationKeys[v.Index] = kp
-			} else if strings.Contains(v.PrivkeyFile, "proposer") || strings.Contains(v.PrivkeyFile, "proposal") {
-				proposalKeys[v.Index] = kp
+			name := filepath.Base(v.PrivkeyFile)
+			attestation := strings.Contains(name, "attester") || strings.Contains(name, "attestation")
+			proposal := strings.Contains(name, "proposer") || strings.Contains(name, "proposal")
+			if attestation == proposal {
+				return nil, fmt.Errorf("validator %d: key file %q must name exactly one role (attester or proposer)", v.Index, v.PrivkeyFile)
+			}
+			if attestation {
+				err = assign(attestationFiles, "attestation", v.Index, v.PrivkeyFile)
 			} else {
-				if attestationKeys[v.Index] == nil {
-					attestationKeys[v.Index] = kp
-				}
-				if proposalKeys[v.Index] == nil {
-					proposalKeys[v.Index] = kp
-				}
+				err = assign(proposalFiles, "proposal", v.Index, v.PrivkeyFile)
 			}
-		} else if v.AttestationSkFile != "" || v.ProposalSkFile != "" {
-			if v.AttestationSkFile == "" {
-				return nil, fmt.Errorf("attestation key file missing for validator %d", v.Index)
-			}
-			if v.ProposalSkFile == "" {
-				return nil, fmt.Errorf("proposal key file missing for validator %d", v.Index)
-			}
-			attKp, err := loadKeypair(keysDir, v.AttestationSkFile, v.AttestationPubkey, v.Index)
 			if err != nil {
-				return nil, fmt.Errorf("load attestation key for validator %d: %w", v.Index, err)
+				return nil, err
 			}
-			attestationKeys[v.Index] = attKp
-
-			propKp, err := loadKeypair(keysDir, v.ProposalSkFile, v.ProposalPubkey, v.Index)
-			if err != nil {
-				return nil, fmt.Errorf("load proposal key for validator %d: %w", v.Index, err)
-			}
-			proposalKeys[v.Index] = propKp
+			continue
 		}
+		if v.AttestationSkFile == "" {
+			return nil, fmt.Errorf("attestation key file missing for validator %d", v.Index)
+		}
+		if v.ProposalSkFile == "" {
+			return nil, fmt.Errorf("proposal key file missing for validator %d", v.Index)
+		}
+		if err := assign(attestationFiles, "attestation", v.Index, v.AttestationSkFile); err != nil {
+			return nil, err
+		}
+		if err := assign(proposalFiles, "proposal", v.Index, v.ProposalSkFile); err != nil {
+			return nil, err
+		}
+	}
+	for index := range attestationFiles {
+		if proposalFiles[index] == "" {
+			return nil, fmt.Errorf("proposal key file missing for validator %d", index)
+		}
+	}
+	for index := range proposalFiles {
+		if attestationFiles[index] == "" {
+			return nil, fmt.Errorf("attestation key file missing for validator %d", index)
+		}
+	}
+
+	attestationKeys := make(map[uint64]*ValidatorKeyPair, len(attestationFiles))
+	proposalKeys := make(map[uint64]*ValidatorKeyPair, len(proposalFiles))
+	for index, file := range attestationFiles {
+		kp, err := loadKeypair(keysDir, file, index)
+		if err != nil {
+			return nil, fmt.Errorf("load attestation key for validator %d (%s): %w", index, file, err)
+		}
+		attestationKeys[index] = kp
+	}
+	for index, file := range proposalFiles {
+		kp, err := loadKeypair(keysDir, file, index)
+		if err != nil {
+			return nil, fmt.Errorf("load proposal key for validator %d (%s): %w", index, file, err)
+		}
+		proposalKeys[index] = kp
 	}
 
 	return NewKeyManager(attestationKeys, proposalKeys), nil
 }
 
-func loadKeypair(keysDir, skFile, pubkeyHex string, index uint64) (*ValidatorKeyPair, error) {
+func loadKeypair(keysDir, skFile string, index uint64) (*ValidatorKeyPair, error) {
 	skPath := skFile
 	if !filepath.IsAbs(skPath) {
 		skPath = filepath.Join(keysDir, skFile)
@@ -271,22 +326,7 @@ func loadKeypair(keysDir, skFile, pubkeyHex string, index uint64) (*ValidatorKey
 		return nil, fmt.Errorf("secret key is empty")
 	}
 
-	pkHex := strings.TrimSpace(pubkeyHex)
-	if len(pkHex) >= 2 && pkHex[0] == '0' && (pkHex[1] == 'x' || pkHex[1] == 'X') {
-		pkHex = pkHex[2:]
-	}
-	pkBytes, err := hex.DecodeString(pkHex)
-	if err != nil {
-		return nil, fmt.Errorf("decode pubkey hex: %w", err)
-	}
-	if len(pkBytes) != types.PubkeySize {
-		return nil, fmt.Errorf("pubkey has %d bytes, expected %d", len(pkBytes), types.PubkeySize)
-	}
-
-	handle := C.hashsig_keypair_from_ssz(
-		(*C.uint8_t)(unsafe.Pointer(&skBytes[0])), C.size_t(len(skBytes)),
-		(*C.uint8_t)(unsafe.Pointer(&pkBytes[0])), C.size_t(len(pkBytes)),
-	)
+	handle := C.hashsig_keypair_from_secret_key((*C.uint8_t)(unsafe.Pointer(&skBytes[0])), C.size_t(len(skBytes)))
 	if handle == nil {
 		return nil, fmt.Errorf("%w: validator %d", ErrKeypairParseFailed, index)
 	}

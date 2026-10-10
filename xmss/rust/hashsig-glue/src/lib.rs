@@ -60,37 +60,27 @@ pub unsafe extern "C" fn hashsig_keypair_generate(
     }
 }
 
-/// Reconstruct a key pair from its persisted parts: the secret key is postcard (serde), the
-/// public key is SSZ. The two encodings differ because upstream persists the secret key with
-/// serde and deliberately excludes it from SSZ.
+/// Reconstruct a key pair from a persisted secret key (postcard, since upstream excludes the
+/// secret key from SSZ). The public key is derived from the secret key, so it always belongs to it.
 #[no_mangle]
-pub unsafe extern "C" fn hashsig_keypair_from_ssz(
+pub unsafe extern "C" fn hashsig_keypair_from_secret_key(
     private_key_ptr: *const u8,
     private_key_len: usize,
-    public_key_ptr: *const u8,
-    public_key_len: usize,
 ) -> *mut KeyPair {
-    if private_key_ptr.is_null() || public_key_ptr.is_null() {
+    if private_key_ptr.is_null() {
         return ptr::null_mut();
     }
-    unsafe {
-        let sk_slice = slice::from_raw_parts(private_key_ptr, private_key_len);
-        let pk_slice = slice::from_raw_parts(public_key_ptr, public_key_len);
-
-        let private_key: XmssSecretKey = match postcard::from_bytes(sk_slice) {
-            Ok(key) => key,
-            Err(_) => return ptr::null_mut(),
-        };
-        let public_key: XmssPublicKey = match XmssPublicKey::from_ssz_bytes(pk_slice) {
-            Ok(key) => key,
-            Err(_) => return ptr::null_mut(),
-        };
-
-        Box::into_raw(Box::new(KeyPair {
-            public_key: PublicKey { inner: public_key },
-            private_key: PrivateKey { inner: private_key },
-        }))
-    }
+    let sk_slice = unsafe { slice::from_raw_parts(private_key_ptr, private_key_len) };
+    let private_key: XmssSecretKey = match postcard::from_bytes(sk_slice) {
+        Ok(key) => key,
+        Err(_) => return ptr::null_mut(),
+    };
+    Box::into_raw(Box::new(KeyPair {
+        public_key: PublicKey {
+            inner: private_key.public_key(),
+        },
+        private_key: PrivateKey { inner: private_key },
+    }))
 }
 
 #[no_mangle]
