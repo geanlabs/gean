@@ -347,6 +347,44 @@ func TestUpdateSafeTargetUsesNewVotesAboveThreshold(t *testing.T) {
 	}
 }
 
+// The HTTP API reads Nodes while the dispatch loop inserts blocks and updates the
+// head. Run under -race.
+func TestNodesConcurrentWithDispatch(t *testing.T) {
+	fc := New(0, root(1), [32]byte{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 2000 {
+			_ = fc.Nodes()
+		}
+	}()
+	parent := root(1)
+	for i := 2; i < 2002; i++ {
+		block := [32]byte{byte(i), byte(i >> 8), 0xee}
+		fc.OnBlock(uint64(i), block, parent)
+		fc.UpdateHead(root(1))
+		parent = block
+	}
+	<-done
+}
+
+// The safe-target pass rewrites the array's weights; readers must still see the
+// head weights.
+func TestNodesCarryHeadWeightsAfterSafeTarget(t *testing.T) {
+	rootA, rootB := root(1), root(2)
+	fc := New(0, rootA, [32]byte{})
+	fc.OnBlock(1, rootB, rootA)
+	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+	fc.UpdateHead(rootA)
+	fc.UpdateSafeTarget(rootA, 3)
+
+	for _, node := range fc.Nodes() {
+		if node.Root == rootB && node.Weight != 1 {
+			t.Fatalf("rootB weight=%d after safe-target pass, want head weight 1", node.Weight)
+		}
+	}
+}
+
 func TestUpdateSafeTargetZeroValidatorsStaysAtJustifiedRoot(t *testing.T) {
 	rootA, rootB := root(1), root(2)
 	fc := New(0, rootA, [32]byte{})
