@@ -117,12 +117,18 @@ func ValidateAttestationData(s *store.ConsensusStore, data *types.AttestationDat
 	if data.Slot < data.Head.Slot {
 		return errAttestationSlotBeforeHead(data.Slot, data.Head.Slot)
 	}
-	if data.Slot > math.MaxUint64/types.IntervalsPerSlot ||
-		data.Slot*types.IntervalsPerSlot > s.Time()+types.GossipDisparityIntervals {
+	if !SlotWithinGossipHorizon(s, data.Slot) {
 		return errAttestationTooFarInFuture(data.Slot, s.Time())
 	}
 
 	return nil
+}
+
+// SlotWithinGossipHorizon reports whether an attestation for slot is no further in
+// the future than the gossip disparity allows, without overflowing the interval math.
+func SlotWithinGossipHorizon(s *store.ConsensusStore, slot uint64) bool {
+	return slot <= math.MaxUint64/types.IntervalsPerSlot &&
+		slot*types.IntervalsPerSlot <= s.Time()+types.GossipDisparityIntervals
 }
 
 // checkpointIsAncestor reports whether ancestor lies on descendant's parent

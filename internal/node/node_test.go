@@ -359,6 +359,7 @@ func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
 
 func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 10)
 
 	var finalizedRoot, parentRoot [32]byte
 	finalizedRoot[0] = 0x05
@@ -519,6 +520,7 @@ func TestCascadeClearsDepth(t *testing.T) {
 
 func TestBufferMissingParentKeepsImmediateParentLink(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 2)
 
 	var missingRoot, parentRoot, blockRoot [32]byte
 	missingRoot[0] = 0xAA
@@ -562,6 +564,7 @@ func TestBufferMissingParentKeepsImmediateParentLink(t *testing.T) {
 // closer than what it already holds.
 func TestBufferMissingParentEvictsFarthestWhenFull(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 1<<20)
 	var queue []*types.SignedBlock
 
 	mkRoot := func(slot uint64, tag byte) [32]byte {
@@ -647,5 +650,55 @@ func TestDutyGateClosedForMaroonedNodeViaGossipSeenSlot(t *testing.T) {
 	fixed := dutygate.New()
 	if fixed.Decide("block", wallSlot, forkHead, gossipSeen) {
 		t.Fatal("marooned node should be gated off its dead fork with gossip-seen slot")
+	}
+}
+
+// A block with an unknown parent reaches disk before its signature can be checked,
+// so the cheap checks import would apply run first.
+func TestBufferMissingParentRejectsImplausibleBlocks(t *testing.T) {
+	tests := []struct {
+		name     string
+		slot     uint64
+		proposer uint64
+		admitted bool
+	}{
+		{"next slot, slot proposer", 6, 0, true},
+		{"beyond future horizon", 7, 0, false},
+		{"not the slot proposer", 6, 1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := makeTestEngine()
+			admitPendingBlocks(e, 5)
+			root := [32]byte{0xCC}
+			blk := &types.SignedBlock{Block: &types.Block{Slot: tt.slot, ProposerIndex: tt.proposer, ParentRoot: [32]byte{0xBB}, Body: &types.BlockBody{}}}
+			var queue []*types.SignedBlock
+			e.bufferMissingParentBlock(blk, root, blk.Block.ParentRoot, &queue)
+
+			_, pending := e.Pending.Depth(root)
+			onDisk := e.Store.GetSignedBlock(root) != nil
+			if pending != tt.admitted || onDisk != tt.admitted {
+				t.Fatalf("pending=%v on disk=%v, want both %v", pending, onDisk, tt.admitted)
+			}
+		})
+	}
+}
+
+// Discarding a pending block also removes the copy written to disk.
+func TestDiscardedPendingBlockLeavesDisk(t *testing.T) {
+	e := makeTestEngine()
+	admitPendingBlocks(e, 5)
+	parent, root := [32]byte{0xBB}, [32]byte{0xCC}
+	blk := &types.SignedBlock{Block: &types.Block{Slot: 5, ParentRoot: parent, Body: &types.BlockBody{}}}
+	var queue []*types.SignedBlock
+	e.bufferMissingParentBlock(blk, root, parent, &queue)
+	if e.Store.GetSignedBlock(root) == nil {
+		t.Fatal("precondition: pending block should be on disk")
+	}
+
+	e.onFailedRoot(parent)
+
+	if e.Store.GetSignedBlock(root) != nil || e.Store.GetBlockHeader(root) != nil {
+		t.Fatal("discarded pending block still on disk")
 	}
 }

@@ -25,6 +25,20 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 
 	if err := attestation.ValidateAttestationData(e.Store, att.Data); err != nil {
 		if se, ok := err.(*store.StoreError); ok && se.Kind == store.ErrUnknownHeadBlock && att.Data.Head != nil {
+			// Buffer only what can pass once its head arrives: within the time
+			// horizon, above finality, and signed by its validator. Source and
+			// target are known by now, and verification reads only the target state.
+			if !attestation.SlotWithinGossipHorizon(e.Store, att.Data.Slot) || att.Data.Slot <= e.Store.LatestFinalized().Slot {
+				return
+			}
+			dataRoot, err := att.Data.HashTreeRoot()
+			if err != nil {
+				return
+			}
+			if attestation.VerifyGossipAttestation(e.Store, att.ValidatorID, att.Data, dataRoot, att.Signature[:]) != nil {
+				metrics.IncAttestationsInvalid()
+				return
+			}
 			added, dropped := e.PendingAttestations.Add(att.Data.Head.Root, att)
 			if added {
 				select {
