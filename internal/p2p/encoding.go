@@ -14,6 +14,10 @@ const (
 	MaxPayloadSize           = 10 * 1024 * 1024
 	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024
 	MaxErrorMessageSize      = 256
+
+	// MaxSignedBlockSize is the SSZ size of a SignedBlock with every list and
+	// bitlist at its limit. A block response chunk declaring more cannot decode.
+	MaxSignedBlockSize = 3_182_692
 )
 
 func SnappyRawEncode(data []byte) []byte {
@@ -101,7 +105,7 @@ func EncodeResponse(code byte, data []byte) []byte {
 	return result
 }
 
-func DecodeResponse(r io.Reader) (byte, []byte, error) {
+func DecodeResponse(r io.Reader, maxLen uint32) (byte, []byte, error) {
 	br, ok := r.(interface {
 		io.Reader
 		io.ByteReader
@@ -119,8 +123,8 @@ func DecodeResponse(r io.Reader) (byte, []byte, error) {
 	if err != nil {
 		return code, nil, fmt.Errorf("decode response length: %w", err)
 	}
-	if declaredLen > MaxPayloadSize {
-		return code, nil, fmt.Errorf("response length %d exceeds max %d", declaredLen, MaxPayloadSize)
+	if declaredLen > maxLen {
+		return code, nil, fmt.Errorf("response length %d exceeds max %d", declaredLen, maxLen)
 	}
 
 	decoded := []byte{}

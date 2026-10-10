@@ -101,7 +101,7 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 	}
 	stream.CloseWrite()
 
-	code, respData, err := readReqRespChunk(stream, stream, "status")
+	code, respData, err := readReqRespChunk(stream, stream, "status", MaxPayloadSize)
 	if err != nil {
 		return nil, fmt.Errorf("read status response: %w", err)
 	}

@@ -184,7 +184,7 @@ func TestResponseEncoding(t *testing.T) {
 	}
 
 	reader := bytes.NewReader(encoded)
-	code, decoded, err := DecodeResponse(reader)
+	code, decoded, err := DecodeResponse(reader, MaxPayloadSize)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestWriteResponseWritesEncodedResponse(t *testing.T) {
 	if !writeResponse(stubStream{w: &buf}, "test", RespSuccess, []byte("payload")) {
 		t.Fatal("expected writeResponse success")
 	}
-	code, payload, err := DecodeResponse(&buf)
+	code, payload, err := DecodeResponse(&buf, MaxPayloadSize)
 	if err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestWriteResponseWritesEncodedResponse(t *testing.T) {
 func TestErrorMessageTruncatedOnEncode(t *testing.T) {
 	oversized := bytes.Repeat([]byte("A"), MaxErrorMessageSize+100)
 	encoded := EncodeResponse(RespInvalidRequest, oversized)
-	code, decoded, err := DecodeResponse(bytes.NewReader(encoded))
+	code, decoded, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestErrorMessageTruncatedOnEncode(t *testing.T) {
 func TestErrorMessageAtBoundaryRoundtrips(t *testing.T) {
 	data := bytes.Repeat([]byte("B"), MaxErrorMessageSize)
 	encoded := EncodeResponse(RespServerError, data)
-	code, decoded, err := DecodeResponse(bytes.NewReader(encoded))
+	code, decoded, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -250,9 +250,37 @@ func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
 	oversized := bytes.Repeat([]byte("C"), MaxErrorMessageSize+1)
 	encoded := EncodeResponse(RespSuccess, oversized)
 	encoded[0] = RespServerError
-	_, _, err := DecodeResponse(bytes.NewReader(encoded))
+	_, _, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
 	if err == nil {
 		t.Fatal("expected error for oversize error-body decode, got nil")
+	}
+}
+
+func TestDecodeResponseMaxSignedBlockSize(t *testing.T) {
+	attestations := make([]*types.AggregatedAttestation, types.ValidatorRegistryLimit)
+	for i := range attestations {
+		bits := make([]byte, types.ValidatorRegistryLimit/8+1)
+		bits[len(bits)-1] = 1
+		attestations[i] = &types.AggregatedAttestation{
+			AggregationBits: bits,
+			Data:            &types.AttestationData{Head: &types.Checkpoint{}, Target: &types.Checkpoint{}, Source: &types.Checkpoint{}},
+		}
+	}
+	block := &types.SignedBlock{
+		Block: &types.Block{Body: &types.BlockBody{Attestations: attestations}},
+		Proof: &types.MultiMessageAggregate{Proof: make([]byte, 512<<10)},
+	}
+	encoded, err := block.MarshalSSZ()
+	if err != nil {
+		t.Fatalf("marshal max block: %v", err)
+	}
+
+	if _, _, err := DecodeResponse(bytes.NewReader(EncodeResponse(RespSuccess, encoded)), MaxSignedBlockSize); err != nil {
+		t.Fatalf("decode max block: %v", err)
+	}
+	oversized := EncodeResponse(RespSuccess, append(encoded, 0))
+	if _, _, err := DecodeResponse(bytes.NewReader(oversized), MaxSignedBlockSize); err == nil {
+		t.Fatal("expected error for a chunk one byte over MaxSignedBlockSize")
 	}
 }
 
@@ -298,7 +326,7 @@ func TestReqRespPayloadRejectsDecodedBodyPastDeclaredLength(t *testing.T) {
 func TestSuccessUntouchedByErrorMessageCap(t *testing.T) {
 	large := bytes.Repeat([]byte("D"), MaxErrorMessageSize+1024)
 	encoded := EncodeResponse(RespSuccess, large)
-	code, decoded, err := DecodeResponse(bytes.NewReader(encoded))
+	code, decoded, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -315,7 +343,7 @@ func TestDecodeResponseDoesNotAllocateDeclaredLength(t *testing.T) {
 
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	_, _, err := DecodeResponse(bytes.NewReader(header))
+	_, _, err := DecodeResponse(bytes.NewReader(header), MaxPayloadSize)
 	runtime.ReadMemStats(&after)
 
 	if err == nil {
@@ -330,7 +358,7 @@ func TestDecodeResponseConcatenatedChunks(t *testing.T) {
 	encoded := append(EncodeResponse(RespSuccess, []byte("one")), EncodeResponse(RespSuccess, []byte("two"))...)
 	reader := bytes.NewReader(encoded)
 
-	code, data, err := DecodeResponse(reader)
+	code, data, err := DecodeResponse(reader, MaxPayloadSize)
 	if err != nil {
 		t.Fatalf("decode first: %v", err)
 	}
@@ -338,7 +366,7 @@ func TestDecodeResponseConcatenatedChunks(t *testing.T) {
 		t.Fatalf("first response: code=%d data=%q", code, data)
 	}
 
-	code, data, err = DecodeResponse(reader)
+	code, data, err = DecodeResponse(reader, MaxPayloadSize)
 	if err != nil {
 		t.Fatalf("decode second: %v", err)
 	}
