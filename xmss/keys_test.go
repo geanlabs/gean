@@ -103,7 +103,6 @@ func TestLoadValidatorKeys(t *testing.T) {
 `, "must name exactly one role"},
 		{"file naming both roles", `
   - {index: 0, privkey_file: v_attester_proposer_sk.ssz}
-  - {index: 0, privkey_file: v_proposer_key_sk.ssz}
 `, "must name exactly one role"},
 		{"duplicate role", `
   - {index: 0, privkey_file: v_attester_key_sk.ssz}
