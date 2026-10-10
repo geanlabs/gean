@@ -12,7 +12,7 @@ func TestPayloadBufferPushAndExtract(t *testing.T) {
 	pb := store.NewPayloadBuffer(100)
 	var dr [32]byte
 	dr[0] = 1
-	data := &types.AttestationData{Slot: 5}
+	data := &types.AttestationData{Slot: 5, Head: &types.Checkpoint{Slot: 5}}
 	participants := types.NewBitlistSSZ(3)
 	types.BitlistSet(participants, 0)
 	types.BitlistSet(participants, 2)
@@ -23,7 +23,7 @@ func TestPayloadBufferPushAndExtract(t *testing.T) {
 		t.Fatalf("expected 1 entry, got %d", pb.Len())
 	}
 
-	atts := pb.ExtractLatestAttestations()
+	atts := pb.ExtractLatestAttestations(0)
 	if len(atts) != 2 {
 		t.Fatalf("expected 2 validators, got %d", len(atts))
 	}
@@ -56,7 +56,7 @@ func TestPayloadBufferEqualSlotTieKeepsLargerDataRoot(t *testing.T) {
 			push(large, largeData)
 		}
 
-		got := pb.ExtractLatestAttestations()[0]
+		got := pb.ExtractLatestAttestations(0)[0]
 		if got == nil {
 			t.Fatalf("largeFirst=%v: validator 0 has no extracted vote", largeFirst)
 		}
@@ -70,12 +70,12 @@ func TestPayloadBufferEqualSlotTieKeepsLargerDataRoot(t *testing.T) {
 func TestPayloadBufferDataOnlyHasNoWeight(t *testing.T) {
 	pb := store.NewPayloadBuffer(10)
 	root := [32]byte{1}
-	pb.PushData(root, &types.AttestationData{Slot: 3})
+	pb.PushData(root, &types.AttestationData{Slot: 3, Head: &types.Checkpoint{Slot: 3}})
 
 	if pb.Len() != 1 || pb.TotalProofs() != 0 {
 		t.Fatalf("entries=%d proofs=%d, want 1,0", pb.Len(), pb.TotalProofs())
 	}
-	if len(pb.Entries()) != 0 || len(pb.ExtractLatestAttestations()) != 0 {
+	if len(pb.Entries()) != 0 || len(pb.ExtractLatestAttestations(0)) != 0 {
 		t.Fatal("data-only payload became selectable or gained head weight")
 	}
 }
@@ -207,14 +207,14 @@ func TestPayloadBufferConcurrentAccess(t *testing.T) {
 				dr[1] = byte(i)
 				bits := types.NewBitlistSSZ(4)
 				types.BitlistSet(bits, uint64(i%4))
-				pb.Push(dr, &types.AttestationData{Slot: uint64(i)}, &types.SingleMessageAggregate{
+				pb.Push(dr, &types.AttestationData{Slot: uint64(i), Head: &types.Checkpoint{Slot: uint64(i)}}, &types.SingleMessageAggregate{
 					Participants: bits,
 					Proof:        []byte{byte(i)},
 				})
 				_ = pb.Len()
 				_ = pb.TotalProofs()
 				_ = pb.Entries()
-				_ = pb.ExtractLatestAttestations()
+				_ = pb.ExtractLatestAttestations(0)
 			}
 		}(worker)
 	}
@@ -260,13 +260,13 @@ func TestExtractLatestNewAttestations(t *testing.T) {
 	dr1[0] = 1
 	bits1 := types.NewBitlistSSZ(2)
 	types.BitlistSet(bits1, 0)
-	s.KnownPayloads.Push(dr1, &types.AttestationData{Slot: 5}, &types.SingleMessageAggregate{Participants: bits1, Proof: []byte{0x01}})
+	s.KnownPayloads.Push(dr1, &types.AttestationData{Slot: 5, Head: &types.Checkpoint{Slot: 5}}, &types.SingleMessageAggregate{Participants: bits1, Proof: []byte{0x01}})
 
 	var dr2 [32]byte
 	dr2[0] = 2
 	bits2 := types.NewBitlistSSZ(2)
 	types.BitlistSet(bits2, 1)
-	s.NewPayloads.Push(dr2, &types.AttestationData{Slot: 8}, &types.SingleMessageAggregate{Participants: bits2, Proof: []byte{0x01}})
+	s.NewPayloads.Push(dr2, &types.AttestationData{Slot: 8, Head: &types.Checkpoint{Slot: 8}}, &types.SingleMessageAggregate{Participants: bits2, Proof: []byte{0x01}})
 
 	got := s.ExtractLatestNewAttestations()
 	if _, found := got[0]; found {
@@ -274,5 +274,43 @@ func TestExtractLatestNewAttestations(t *testing.T) {
 	}
 	if got[1] == nil || got[1].Slot != 8 {
 		t.Fatalf("validator 1 should appear at slot 8, got %v", got[1])
+	}
+}
+
+// A vote whose head is at or below finality is skipped before the latest vote is
+// picked, as in leanSpec's _extract_attestations_from_aggregated_payloads.
+func TestExtractLatestAttestationsSkipsStaleHeads(t *testing.T) {
+	const finalizedSlot = 10
+	vote := func(slot, headSlot uint64) *types.AttestationData {
+		return &types.AttestationData{Slot: slot, Head: &types.Checkpoint{Root: [32]byte{byte(slot)}, Slot: headSlot}}
+	}
+	tests := []struct {
+		name     string
+		votes    []*types.AttestationData
+		wantSlot uint64 // 0: validator absent
+	}{
+		// The newest vote points at the finalized block; the older one above it still counts.
+		{"falls back to older live vote", []*types.AttestationData{vote(11, 12), vote(13, finalizedSlot)}, 11},
+		{"only stale votes", []*types.AttestationData{vote(12, finalizedSlot), vote(13, 9)}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pb := store.NewPayloadBuffer(100)
+			for _, data := range tt.votes {
+				bits := types.NewBitlistSSZ(1)
+				types.BitlistSet(bits, 0)
+				pb.Push([32]byte{byte(data.Slot)}, data, &types.SingleMessageAggregate{Participants: bits, Proof: []byte{0x01}})
+			}
+			got, ok := pb.ExtractLatestAttestations(finalizedSlot)[0]
+			if tt.wantSlot == 0 {
+				if ok {
+					t.Fatalf("validator 0 voted only for stale heads, got vote at slot %d", got.Slot)
+				}
+				return
+			}
+			if !ok || got.Slot != tt.wantSlot {
+				t.Fatalf("got %+v, want the vote at slot %d", got, tt.wantSlot)
+			}
+		})
 	}
 }

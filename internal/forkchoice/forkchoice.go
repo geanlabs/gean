@@ -30,9 +30,9 @@ func (fc *ForkChoice) UpdateHead(justifiedRoot [32]byte) [32]byte {
 	return fc.array.FindHead(justifiedRoot)
 }
 
-// UpdateSafeTarget counts only votes, the latest vote per validator from the current
-// new-payload pool. Every earlier new vote is dropped first: a validator absent from
-// this pool contributes nothing, as in leanSpec's update_safe_target.
+// UpdateSafeTarget counts only the given votes: the latest per validator from the
+// current new-payload pool. Every earlier new vote is dropped first, so a validator
+// absent from this pool contributes nothing, as in leanSpec's update_safe_target.
 func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uint64, votes map[uint64]*types.AttestationData) [32]byte {
 	if fc == nil || fc.array == nil {
 		return justifiedRoot
