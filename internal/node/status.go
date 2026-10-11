@@ -47,6 +47,9 @@ func (e *Engine) GetSyncStatus() syncer.SyncStatus {
 
 func (e *Engine) logChainStatus(currentSlot uint64) {
 	metrics.SampleProcessRSS()
+	if dropped := e.attestationsDropped.Swap(0); dropped > 0 {
+		logger.Warn(logger.Gossip, "dropped %d gossip attestations since the last status: verify queue full", dropped)
+	}
 	headRoot := e.Store.Head()
 	headHeader := e.Store.GetBlockHeader(headRoot)
 	justified := e.Store.LatestJustified()
