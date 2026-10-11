@@ -1,6 +1,7 @@
 package forkchoice
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/geanlabs/gean/internal/types"
@@ -377,12 +378,15 @@ func TestNodesCarryHeadWeightsAfterSafeTarget(t *testing.T) {
 	fc.OnBlock(1, rootB, rootA)
 	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
 	fc.UpdateHead(rootA)
-	fc.UpdateSafeTarget(rootA, 3)
+	fc.UpdateSafeTarget(rootA, 3, nil)
 
-	for _, node := range fc.Nodes() {
-		if node.Root == rootB && node.Weight != 1 {
-			t.Fatalf("rootB weight=%d after safe-target pass, want head weight 1", node.Weight)
-		}
+	nodes := fc.Nodes()
+	i := slices.IndexFunc(nodes, func(n ProtoNode) bool { return n.Root == rootB })
+	if i < 0 {
+		t.Fatal("rootB missing from Nodes()")
+	}
+	if w := nodes[i].Weight; w != 1 {
+		t.Fatalf("rootB weight=%d after safe-target pass, want head weight 1", w)
 	}
 }
 
