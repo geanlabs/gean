@@ -724,3 +724,76 @@ func TestDiscardedPendingBlockLeavesDisk(t *testing.T) {
 		t.Fatal("discarded pending block still on disk")
 	}
 }
+
+// prunedCanonicalWithCraftedChild stands in for canonical blocks below finality,
+// a1 <- a2: block data on disk, state pruned by PruneOnFinalization. z is a1's
+// parent with no header. An unsigned block at the current slot from the slot's
+// proposer then names a2 as its parent.
+func prunedCanonicalWithCraftedChild(t *testing.T, finalizedSlot uint64) (e *Engine, z, a1, a2, crafted [32]byte) {
+	t.Helper()
+	e = makeTestEngine()
+	admitPendingBlocks(e, 10)
+	e.Store.SetLatestFinalized(&types.Checkpoint{Root: e.Store.Head(), Slot: finalizedSlot})
+	z, a1, a2 = [32]byte{0x0F}, [32]byte{0xA1}, [32]byte{0xA2}
+	for _, b := range []struct {
+		root, parent [32]byte
+		slot         uint64
+	}{{a1, z, 1}, {a2, a1, 2}} {
+		sb := &types.SignedBlock{Block: &types.Block{Slot: b.slot, ParentRoot: b.parent, Body: &types.BlockBody{}}}
+		if err := e.Store.StorePendingBlock(b.root, sb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	block := &types.SignedBlock{Block: &types.Block{Slot: 10, ParentRoot: a2, Body: &types.BlockBody{}}}
+	crafted, err := block.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var queue []*types.SignedBlock
+	e.processOneBlock(block, &queue)
+	return e, z, a1, a2, crafted
+}
+
+// Discarding a pending subtree deletes only the blocks the buffer stored, never
+// imported blocks it walked over.
+func TestDiscardPendingKeepsImportedAncestors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		discard func(e *Engine, z [32]byte)
+	}{
+		{"failed fetch", func(e *Engine, z [32]byte) { e.onFailedRoot(z) }},
+		{"finalized", func(e *Engine, _ [32]byte) { e.discardFinalizedPending(2) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, z, a1, a2, crafted := prunedCanonicalWithCraftedChild(t, 0)
+			if e.Store.GetSignedBlock(crafted) == nil {
+				t.Fatal("precondition: crafted block should be pending on disk")
+			}
+			tc.discard(e, z)
+			if e.Store.GetBlockHeader(a1) == nil || e.Store.GetBlockHeader(a2) == nil {
+				t.Fatal("imported block data deleted")
+			}
+			if e.Store.GetSignedBlock(crafted) != nil {
+				t.Fatal("crafted pending block still on disk")
+			}
+		})
+	}
+}
+
+// A pending chain that reaches a stateless block at or below finality can never
+// import, so it is dropped at once instead of fetching further ancestors.
+func TestPendingWalkStopsAtFinality(t *testing.T) {
+	e, _, a1, a2, crafted := prunedCanonicalWithCraftedChild(t, 2)
+	if n := e.Pending.Count(); n != 0 {
+		t.Fatalf("pending count=%d, want 0", n)
+	}
+	if len(e.fetchInFlight) != 0 {
+		t.Fatalf("fetches queued=%d, want 0", len(e.fetchInFlight))
+	}
+	if e.Store.GetSignedBlock(crafted) != nil {
+		t.Fatal("crafted pending block still on disk")
+	}
+	if e.Store.GetBlockHeader(a1) == nil || e.Store.GetBlockHeader(a2) == nil {
+		t.Fatal("imported block data deleted")
+	}
+}

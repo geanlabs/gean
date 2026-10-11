@@ -80,7 +80,7 @@ func (e *Engine) importKnownParentBlock(
 	e.FC.OnBlock(block.Slot, blockRoot, parentRoot)
 
 	e.updateHead()
-	e.Pending.ClearDepth(blockRoot)
+	e.Pending.MarkImported(blockRoot)
 	e.replayPendingAttestations(blockRoot)
 	e.collectPendingChildren(blockRoot, queue)
 }

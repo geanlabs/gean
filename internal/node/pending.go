@@ -22,7 +22,12 @@ func (e *Engine) bufferMissingParentBlock(
 		return
 	}
 	keys := e.Store.ValidatorKeys(e.Store.Head())
-	if keys == nil || !types.IsProposer(block.Slot, block.ProposerIndex, uint64(keys.Len())) {
+	if keys == nil {
+		logger.Error(logger.Chain, "rejecting pending block: head state has no validators slot=%d block_root=0x%x",
+			block.Slot, blockRoot)
+		return
+	}
+	if !types.IsProposer(block.Slot, block.ProposerIndex, uint64(keys.Len())) {
 		logger.Warn(logger.Chain, "rejecting pending block with wrong proposer slot=%d proposer=%d block_root=0x%x",
 			block.Slot, block.ProposerIndex, blockRoot)
 		return
@@ -51,10 +56,11 @@ func (e *Engine) bufferMissingParentBlock(
 	missingRoot := e.Pending.ResolveAncestor(parentRoot)
 	e.Pending.SetParent(blockRoot, parentRoot)
 	e.Store.StorePendingBlock(blockRoot, signedBlock)
+	e.Pending.MarkStored(blockRoot)
 	e.Pending.AddChild(parentRoot, blockRoot)
 
-	missingRoot, queued := e.queueStoredAncestor(missingRoot, queue)
-	if queued {
+	missingRoot, handled := e.queueStoredAncestor(missingRoot, queue)
+	if handled {
 		return
 	}
 	e.queueMissingBlockFetch(missingRoot)
@@ -78,22 +84,19 @@ func (e *Engine) evictFarthestPending(incomingSlot uint64) bool {
 	return true
 }
 
-// discardPending drops a pending subtree and deletes its blocks from disk, where
-// bufferMissingParentBlock stored them. A root that has a state was imported in
-// the meantime, and its block data stays.
-func (e *Engine) discardPending(root [32]byte) int {
-	dropped := e.Pending.DiscardSubtree(root)
-	unimported := make([][32]byte, 0, len(dropped))
-	for _, r := range dropped {
-		if !e.Store.HasState(r) {
-			unimported = append(unimported, r)
-		}
-	}
-	e.Store.DeletePendingBlocks(unimported)
-	return len(dropped)
+// discardPending drops a pending subtree and deletes from disk the blocks
+// bufferMissingParentBlock stored and that were not imported since. Imported
+// blocks below finality also lack a state, so a state check cannot tell them apart.
+func (e *Engine) discardPending(root [32]byte) {
+	e.Store.DeletePendingBlocks(e.Pending.DiscardSubtree(root))
 }
 
+// queueStoredAncestor walks up stored headers from missingRoot. It reports true
+// when the walk is handled here: the first block whose parent has a state is
+// queued for import, or the walk reached a stateless block at or below
+// finality, which nothing above can import through, and the subtree is dropped.
 func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, bool) {
+	finalizedSlot := e.Store.LatestFinalized().Slot
 	for {
 		header := e.Store.GetBlockHeader(missingRoot)
 		if header == nil {
@@ -103,6 +106,12 @@ func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.Signe
 			if storedBlock := e.Store.GetSignedBlock(missingRoot); storedBlock != nil {
 				*queue = append(*queue, storedBlock)
 			}
+			return missingRoot, true
+		}
+		if header.Slot <= finalizedSlot {
+			logger.Warn(logger.Chain, "pending chain reaches stateless block at or below finality slot=%d block_root=0x%x finalized_slot=%d, discarding",
+				header.Slot, missingRoot, finalizedSlot)
+			e.discardPending(missingRoot)
 			return missingRoot, true
 		}
 		e.Pending.AddChild(header.ParentRoot, missingRoot)

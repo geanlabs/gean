@@ -5,6 +5,9 @@ type BlockBuffer struct {
 	parents  map[[32]byte][32]byte
 	depths   map[[32]byte]int
 	slots    map[[32]byte]uint64
+	// stored holds the roots whose block data the buffer wrote to disk and that
+	// have not been imported since: the only data a discard may delete.
+	stored map[[32]byte]bool
 }
 
 func NewBlockBuffer() *BlockBuffer {
@@ -60,11 +63,21 @@ func (b *BlockBuffer) SetDepth(root [32]byte, depth int) {
 	b.depths[root] = depth
 }
 
-func (b *BlockBuffer) ClearDepth(root [32]byte) {
+// MarkStored records that root's block data was written to disk for the buffer.
+func (b *BlockBuffer) MarkStored(root [32]byte) {
+	if !b.ensureMaps() {
+		return
+	}
+	b.stored[root] = true
+}
+
+// MarkImported clears root's depth, and its block data now belongs to the chain.
+func (b *BlockBuffer) MarkImported(root [32]byte) {
 	if b == nil {
 		return
 	}
 	delete(b.depths, root)
+	delete(b.stored, root)
 }
 
 func (b *BlockBuffer) SetSlot(root [32]byte, slot uint64) {
@@ -163,6 +176,7 @@ func (b *BlockBuffer) ClearEntry(root [32]byte) {
 	delete(b.parents, root)
 	delete(b.depths, root)
 	delete(b.slots, root)
+	delete(b.stored, root)
 }
 
 func (b *BlockBuffer) Pairs() [][2][32]byte {
@@ -178,7 +192,8 @@ func (b *BlockBuffer) Pairs() [][2][32]byte {
 	return out
 }
 
-// DiscardSubtree drops root and every pending descendant, returning the dropped roots.
+// DiscardSubtree drops root and every pending descendant, returning the dropped
+// roots whose block data the buffer stored.
 func (b *BlockBuffer) DiscardSubtree(root [32]byte) [][32]byte {
 	if b == nil {
 		return nil
@@ -200,7 +215,10 @@ func (b *BlockBuffer) discardSubtree(root [32]byte, dropped [][32]byte) [][32]by
 	delete(b.parents, root)
 	delete(b.depths, root)
 	delete(b.slots, root)
-	dropped = append(dropped, root)
+	if b.stored[root] {
+		delete(b.stored, root)
+		dropped = append(dropped, root)
+	}
 	set, ok := b.children[root]
 	if !ok {
 		return dropped
@@ -227,6 +245,9 @@ func (b *BlockBuffer) ensureMaps() bool {
 	}
 	if b.slots == nil {
 		b.slots = make(map[[32]byte]uint64)
+	}
+	if b.stored == nil {
+		b.stored = make(map[[32]byte]bool)
 	}
 	return true
 }
