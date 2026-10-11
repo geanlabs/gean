@@ -82,6 +82,51 @@ leanVM `e2592df4e30fdddbbf8ae26a333116c68cec7026`.
 the spec version; the leanVM rev is pinned in
 [`xmss/rust/multisig-glue/Cargo.toml`](xmss/rust/multisig-glue/Cargo.toml).
 
+## Architecture overview
+
+Gean is a single Go module. Consensus logic lives in `internal/`, and XMSS signatures and proofs are Go bindings over Rust FFI crates in `xmss/`.
+
+| Package | Description |
+| --- | --- |
+| **Binaries** | |
+| [`cmd/gean`](cmd/gean) | Node binary: flags, bootstrap, servers, and shutdown |
+| [`cmd/keygen`](cmd/keygen) | Testnet configuration and XMSS key generation |
+| **Node** | |
+| [`internal/node`](internal/node) | Engine: single dispatch loop, tick-driven duties, gossip handling, and workers |
+| [`internal/dutygate`](internal/dutygate) | Suspends duties while the node lags sync or the network stalls |
+| [`internal/role`](internal/role) | Runtime aggregator role toggle |
+| **Consensus** | |
+| [`internal/types`](internal/types) | Consensus containers and generated SSZ encoding |
+| [`internal/genesis`](internal/genesis) | Genesis config, validators, and state |
+| [`internal/statetransition`](internal/statetransition) | leanSpec state transition: slots, blocks, justification, and finality |
+| [`internal/forkchoice`](internal/forkchoice) | Proto-array LMD-GHOST, votes, and safe target |
+| **Blocks and attestations** | |
+| [`internal/blockprocessor`](internal/blockprocessor) | Block validation, verification, transition, and persistence |
+| [`internal/blockbuilder`](internal/blockbuilder) | Block proposal: payload selection and planning |
+| [`internal/attestation`](internal/attestation) | Attestation production, validation, and signature verification |
+| [`internal/attestationproof`](internal/attestationproof) | Selection and merging of attestation proofs |
+| [`internal/aggregation`](internal/aggregation) | Signature aggregation into XMSS proofs |
+| [`internal/proving`](internal/proving) | Proving gate shared by proposal and aggregation |
+| [`internal/shadow`](internal/shadow) | Prover cost model for the Shadow network simulator |
+| **Storage** | |
+| [`internal/store`](internal/store) | Consensus store: blocks, states, gossip buffers, and pruning |
+| [`internal/storage`](internal/storage) | Key-value backends: Pebble, and in-memory for tests |
+| **Networking and sync** | |
+| [`internal/p2p`](internal/p2p) | libp2p host, gossipsub, req/resp, ENR, and peer dialing |
+| [`internal/syncer`](internal/syncer) | Range sync from peers ahead of the local head |
+| [`internal/pending`](internal/pending) | Buffers for blocks and attestations awaiting unknown parents |
+| [`internal/checkpoint`](internal/checkpoint) | Checkpoint sync: fetch and verify an anchor state and block |
+| **Interfaces and observability** | |
+| [`internal/api`](internal/api) | HTTP API, admin routes, metrics, pprof, and the Hive test driver |
+| [`internal/metrics`](internal/metrics) | Prometheus metrics (`lean_` prefix) |
+| [`internal/logger`](internal/logger) | Component-scoped logger |
+| **Testing** | |
+| [`internal/spectests`](internal/spectests) | leanSpec consensus fixture runners |
+| [`internal/specfixtures`](internal/specfixtures) | leanSpec fixture parsing |
+| **Cryptography** | |
+| [`xmss`](xmss) | Go bindings for XMSS keys, signatures, and proofs |
+| [`xmss/rust`](xmss/rust) | Rust FFI crates: `hashsig-glue` (XMSS), `multisig-glue` (leanVM proofs), and `cgo-glue` (link shim) |
+
 ## Philosophy
 
 Gean treats reviewability as a consensus-safety property. Consensus-critical behavior should remain small enough to audit end to end, and disagreements between clients should be traceable to a small number of files.
