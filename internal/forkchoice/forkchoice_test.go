@@ -328,7 +328,7 @@ func TestUpdateSafeTargetDoesNotReuseHeadDescendant(t *testing.T) {
 		t.Fatalf("head=%x, want rootB", head[:4])
 	}
 
-	if safe := fc.UpdateSafeTarget(rootA, 3); safe != rootA {
+	if safe := fc.UpdateSafeTarget(rootA, 3, nil); safe != rootA {
 		t.Fatalf("safe target reused head descendant: got %x, want rootA", safe[:4])
 	}
 }
@@ -338,11 +338,12 @@ func TestUpdateSafeTargetUsesNewVotesAboveThreshold(t *testing.T) {
 	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 
+	votes := make(map[uint64]*types.AttestationData)
 	for vid := uint64(0); vid < 3; vid++ {
-		fc.votes.SetNew(vid, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
+		votes[vid] = makeAttData(rootB, 1)
 	}
 
-	if safe := fc.UpdateSafeTarget(rootA, 4); safe != rootB {
+	if safe := fc.UpdateSafeTarget(rootA, 4, votes); safe != rootB {
 		t.Fatalf("safe target=%x, want rootB", safe[:4])
 	}
 }
@@ -352,7 +353,7 @@ func TestUpdateSafeTargetZeroValidatorsStaysAtJustifiedRoot(t *testing.T) {
 	fc := New(0, rootA, [32]byte{})
 	fc.OnBlock(1, rootB, rootA)
 
-	if safe := fc.UpdateSafeTarget(rootA, 0); safe != rootA {
+	if safe := fc.UpdateSafeTarget(rootA, 0, nil); safe != rootA {
 		t.Fatalf("safe target=%x, want justified root %x", safe[:4], rootA[:4])
 	}
 }
@@ -726,14 +727,11 @@ func TestForkChoicePublicAccessors(t *testing.T) {
 	if nilFC.SetKnownVote(0, root(1), 1, nil) {
 		t.Fatal("nil forkchoice should reject known vote")
 	}
-	if nilFC.SetNewVote(0, root(1), 1, nil) {
-		t.Fatal("nil forkchoice should reject new vote")
-	}
 	nilFC.OnBlock(1, root(2), root(1))
 	if got := nilFC.UpdateHead(unknown); got != unknown {
 		t.Fatalf("nil forkchoice head=%x, want justified root %x", got[:4], unknown[:4])
 	}
-	if got := nilFC.UpdateSafeTarget(unknown, 1); got != unknown {
+	if got := nilFC.UpdateSafeTarget(unknown, 1, nil); got != unknown {
 		t.Fatalf("nil forkchoice safe target=%x, want justified root %x", got[:4], unknown[:4])
 	}
 	nilFC.Prune(root(1))
@@ -766,14 +764,9 @@ func TestForkChoicePublicAccessors(t *testing.T) {
 	if !fc.SetKnownVote(0, child, 1, makeAttData(child, 1)) {
 		t.Fatal("known vote for existing root should be accepted")
 	}
-	if !fc.SetNewVote(1, child, 1, makeAttData(child, 1)) {
-		t.Fatal("new vote for existing root should be accepted")
-	}
+	fc.votes.SetNew(1, fc.NodeIndex(child), 1, makeAttData(child, 1))
 	if fc.SetKnownVote(2, root(99), 1, nil) {
 		t.Fatal("known vote for unknown root should be rejected")
-	}
-	if fc.SetNewVote(3, root(99), 1, nil) {
-		t.Fatal("new vote for unknown root should be rejected")
 	}
 
 	tracker, ok := fc.VoteTracker(0)
@@ -811,9 +804,6 @@ func TestForkChoicePartialValueGuards(t *testing.T) {
 	}
 	if fc.SetKnownVote(0, child, 1, makeAttData(child, 1)) {
 		t.Fatal("partial forkchoice without vote store should reject known vote")
-	}
-	if fc.SetNewVote(0, child, 1, makeAttData(child, 1)) {
-		t.Fatal("partial forkchoice without vote store should reject new vote")
 	}
 	if head := fc.UpdateHead(anchor); head != child {
 		t.Fatalf("partial forkchoice head=%x, want child", head[:4])

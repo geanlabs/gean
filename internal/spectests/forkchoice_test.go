@@ -587,9 +587,6 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			copy(sig[:], signature)
 			s.AttestationSignatures.Insert(dataRoot, attData, att.ValidatorID, sig)
 
-			// Feed vote to fork choice so attestation weight is reflected.
-			fc.SetNewVote(att.ValidatorID, attData.Head.Root, attData.Slot, attData)
-
 			// Gossip lands in the new pool only. The head keeps reflecting the
 			// known pool until a slot-boundary tick promotes these votes, so
 			// recompute from the known pool here without promoting.
@@ -660,12 +657,6 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				Proof:        proofData,
 			}
 			s.NewPayloads.Push(dataRoot, attData, proof)
-
-			// Feed per-validator votes to fork choice from participant bits.
-			participantIDs := types.BitlistIndices(participants)
-			for _, vid := range participantIDs {
-				fc.SetNewVote(vid, attData.Head.Root, attData.Slot, attData)
-			}
 
 			// Gossip lands in the new pool only. The head keeps reflecting the
 			// known pool until a slot-boundary tick promotes these votes, so
@@ -1027,6 +1018,6 @@ func simulateUpdateSafeTarget(s *store.ConsensusStore, fc *forkchoice.ForkChoice
 	}
 	justifiedRoot := s.LatestJustified().Root
 	numValidators := uint64(len(headState.Validators))
-	safeTarget := fc.UpdateSafeTarget(justifiedRoot, numValidators)
+	safeTarget := fc.UpdateSafeTarget(justifiedRoot, numValidators, s.ExtractLatestNewAttestations())
 	s.SetSafeTarget(safeTarget)
 }

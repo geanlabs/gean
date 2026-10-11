@@ -266,6 +266,28 @@ func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 				e.Store.SafeTarget())
 		}
 	})
+
+	t.Run("promoted_votes_stop_counting", func(t *testing.T) {
+		e, block2 := makeSafeTargetEngine(t, numValidators)
+		genesis := e.Store.Head()
+
+		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
+		e.Store.NewPayloads.Push(dataRoot, data, proof)
+		e.updateSafeTarget()
+		if e.Store.SafeTarget() != block2 {
+			t.Fatalf("precondition: 4-of-6 new-pool votes should reach block_2; got 0x%x", e.Store.SafeTarget())
+		}
+
+		// The next slot's pool holds one vote; the four promoted votes must not count.
+		e.Store.PromoteNewToKnown()
+		dataRoot, data, proof = planAggregatedVoteForBlock(t, block2, 2, numValidators, 1)
+		e.Store.NewPayloads.Push(dataRoot, data, proof)
+		e.updateSafeTarget()
+
+		if e.Store.SafeTarget() != genesis {
+			t.Fatalf("safe target counted promoted votes: got 0x%x, want genesis", e.Store.SafeTarget())
+		}
+	})
 }
 
 func TestEnginePendingBlocks(t *testing.T) {
