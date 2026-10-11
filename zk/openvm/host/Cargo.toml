@@ -1,0 +1,16 @@
+[package]
+name = "openvmhost"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone: not part of gean's default build or the xmss workspace.
+[workspace]
+
+# RV64 guests exist only on OpenVM's preview line, which is not on crates.io.
+[dependencies]
+openvm-sdk = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.x.0-preview.2" }
+openvm-sdk-config = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.x.0-preview.2" }
+openvm-continuations = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.x.0-preview.2" }
+openvm-circuit = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.x.0-preview.2" }
+openvm-stark-sdk = { git = "https://github.com/openvm-org/stark-backend.git", branch = "main" }

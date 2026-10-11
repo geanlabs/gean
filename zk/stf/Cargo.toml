@@ -1,0 +1,19 @@
+[package]
+name = "gean-stf"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+description = "gean's state transition, ported 1:1 from internal/statetransition for zkVM guests"
+
+[workspace]
+
+[dependencies]
+ethereum_ssz = "0.10.4"
+ethereum_ssz_derive = "0.10.4"
+ssz_types = { version = "0.14.1", default-features = false }
+tree_hash = { version = "0.12.1", default-features = false }
+tree_hash_derive = "0.12.1"
+
+# The published ethereum_hashing needs ring off x86_64; see zk/ethereum_hashing.
+[patch.crates-io]
+ethereum_hashing = { path = "../ethereum_hashing" }

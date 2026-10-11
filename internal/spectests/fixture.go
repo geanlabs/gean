@@ -18,6 +18,7 @@ type StateTransitionTest struct {
 	Pre                    TestState      `json:"pre"`
 	Blocks                 []TestBlock    `json:"blocks"`
 	Post                   *TestPostState `json:"post"`
+	PostStateRoot          string         `json:"postStateRoot"`
 	ExpectException        string         `json:"expectException"`
 	ExpectExceptionMessage string         `json:"expectExceptionMessage"`
 }

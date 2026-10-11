@@ -1,0 +1,18 @@
+# Stands in for crates.io ethereum_hashing (see zk/stf/Cargo.toml [patch]):
+# the published crate needs ring on every target but x86_64, which no zkVM
+# builds. This one hashes through sha2, which each zkVM guest replaces with
+# its SHA-256 precompile. OpenVM has no sha2 replacement; its guest enables the
+# `openvm` feature to hash with openvm-sha2.
+[package]
+name = "ethereum_hashing"
+version = "0.8.0"
+edition = "2021"
+
+[features]
+zero_hash_cache = []
+ring = []
+openvm = ["dep:openvm-sha2"]
+
+[dependencies]
+sha2 = "0.10"
+openvm-sha2 = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.x.0-preview.2", optional = true }

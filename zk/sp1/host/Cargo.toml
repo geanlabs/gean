@@ -1,0 +1,11 @@
+[package]
+name = "sp1host"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone: not part of gean's default build or the xmss workspace.
+[workspace]
+
+[dependencies]
+sp1-sdk = { version = "=6.8.1", features = ["blocking"] }
