@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -56,7 +57,10 @@ func (e *Engine) OnGossipAttestation(att *types.SignedAttestation) {
 	select {
 	case e.AttestationCh <- att:
 	default:
-		logger.Warn(logger.Gossip, "attestation channel full, dropping")
+		// One log line per drop would turn a flood into a log flood; the
+		// chain-status tick reports the count once per slot instead.
+		metrics.IncAttestationsDropped()
+		e.attestationsDropped.Add(1)
 	}
 }
 

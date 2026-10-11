@@ -63,3 +63,48 @@ func TestAttestationWorkerBoundsConcurrentVerifies(t *testing.T) {
 		t.Fatalf("peak extra goroutines=%d during a %d-attestation flood, want <= %d", peak, flood, limit)
 	}
 }
+
+// Shutdown joins the attestation workers before closing storage, so cancelling
+// must not let runAttestationWorker return while a verify is still running.
+func TestRunAttestationWorkerWaitsForInFlightVerify(t *testing.T) {
+	e := makeTestEngine()
+	e.AggCtl = role.New(true)
+	e.Shadow = shadow.Rates{VerifySignature: 5} // 200ms per verify
+	checkpoint := &types.Checkpoint{Root: e.Store.Head()}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		e.runAttestationWorker(ctx)
+		close(done)
+	}()
+
+	start := time.Now()
+	e.AttestationCh <- &types.SignedAttestation{
+		Data: &types.AttestationData{Head: checkpoint, Target: checkpoint, Source: checkpoint},
+	}
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
+		t.Fatalf("worker returned %v after receiving an attestation, before its 200ms verify finished", elapsed)
+	}
+}
+
+// A full verify queue drops attestations without logging each one; the
+// chain-status line reports the count once and resets it.
+func TestOnGossipAttestationCountsDrops(t *testing.T) {
+	e := makeTestEngine()
+	e.AttestationCh = make(chan *types.SignedAttestation) // no receiver: every send drops
+
+	for range 3 {
+		e.OnGossipAttestation(&types.SignedAttestation{})
+	}
+	if got := e.attestationsDropped.Load(); got != 3 {
+		t.Fatalf("dropped=%d, want 3", got)
+	}
+	e.logChainStatus(0)
+	if got := e.attestationsDropped.Load(); got != 0 {
+		t.Fatalf("dropped=%d after chain status, want 0", got)
+	}
+}
