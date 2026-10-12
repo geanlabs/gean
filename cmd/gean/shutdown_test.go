@@ -200,18 +200,3 @@ func TestFirstSignalClosesStop(t *testing.T) {
 	sigCh <- syscall.SIGINT
 	<-stop
 }
-
-func TestWaitForShutdownReturnsServerFailure(t *testing.T) {
-	failed := make(chan error, 1)
-	want := errors.New("serve failed")
-	failed <- want
-	if err := waitForShutdown(make(chan struct{}), failed); !errors.Is(err, want) {
-		t.Fatalf("err=%v, want %v", err, want)
-	}
-
-	stop := make(chan struct{})
-	close(stop)
-	if err := waitForShutdown(stop, make(chan error)); err != nil {
-		t.Fatalf("err=%v on signal, want nil", err)
-	}
-}

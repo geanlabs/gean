@@ -8,16 +8,16 @@ import "sync"
 // it waits, so a goroutine cannot start after the wait has begun. The zero
 // value is ready to use.
 type Group struct {
-	mu     sync.Mutex
-	closed bool
-	wg     sync.WaitGroup
+	closedMu sync.Mutex
+	closed   bool
+	wg       sync.WaitGroup
 }
 
 // Enter registers the calling goroutine. It reports false once Close has been
 // called; on true, the caller must call Leave when it returns.
 func (g *Group) Enter() bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.closedMu.Lock()
+	defer g.closedMu.Unlock()
 	if g.closed {
 		return false
 	}
@@ -46,8 +46,8 @@ func (g *Group) Go(fn func()) bool {
 // Close stops admitting goroutines and waits for the tracked ones to return.
 // Callers cancel the work first; Close does not.
 func (g *Group) Close() {
-	g.mu.Lock()
+	g.closedMu.Lock()
 	g.closed = true
-	g.mu.Unlock()
+	g.closedMu.Unlock()
 	g.wg.Wait()
 }

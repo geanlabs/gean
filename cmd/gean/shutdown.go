@@ -111,7 +111,6 @@ func waitForShutdown(stop <-chan struct{}, failed <-chan error) error {
 	case <-stop:
 		return nil
 	case err := <-failed:
-		logger.Error(logger.Node, "shutting down: %v", err)
 		return err
 	}
 }
