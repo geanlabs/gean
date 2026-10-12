@@ -66,8 +66,7 @@ func serveHTTP(servers []*httpServer, tasks *lifecycle.Group) <-chan error {
 	return failed
 }
 
-// shutdown stops accepting connections and drains active requests. The
-// listener is closed too, for a server that was bound but never served.
+// shutdown stops accepting connections and drains active requests.
 func (srv *httpServer) shutdown() {
 	ctx := context.Background()
 	if srv.drainTimeout > 0 {
@@ -80,5 +79,4 @@ func (srv *httpServer) shutdown() {
 			srv.server.Close()
 		}
 	})
-	srv.listener.Close()
 }

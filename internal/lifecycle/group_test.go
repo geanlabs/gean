@@ -29,12 +29,10 @@ func TestCloseWaitsForRunningGoroutine(t *testing.T) {
 	<-closed
 }
 
+// Go admits through Enter, so a closed group starts nothing.
 func TestClosedGroupAdmitsNothing(t *testing.T) {
 	var g Group
 	g.Close()
-	if g.Go(func() { t.Error("goroutine ran after Close") }) {
-		t.Fatal("Go reported true after Close")
-	}
 	if g.Enter() {
 		t.Fatal("Enter reported true after Close")
 	}

@@ -15,10 +15,6 @@ import (
 	"github.com/geanlabs/gean/internal/lifecycle"
 )
 
-// earlyReturnWindow is how long a test watches for a shutdown step that
-// returns too early. It only detects that bug; no test needs it to pass.
-const earlyReturnWindow = 100 * time.Millisecond
-
 type stepLog struct {
 	mu    sync.Mutex
 	steps []string
@@ -132,10 +128,11 @@ func TestHTTPShutdownDrainsActiveRequest(t *testing.T) {
 		srv.shutdown()
 		close(shutDown)
 	}()
+	// Only detects an early return; passing never depends on the window.
 	select {
 	case <-shutDown:
 		t.Fatal("shutdown returned while a request was still running")
-	case <-time.After(earlyReturnWindow):
+	case <-time.After(100 * time.Millisecond):
 	}
 	close(release)
 	<-shutDown

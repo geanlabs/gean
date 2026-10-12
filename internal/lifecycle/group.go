@@ -30,17 +30,15 @@ func (g *Group) Leave() {
 	g.wg.Done()
 }
 
-// Go runs fn on a tracked goroutine. It reports false, without running fn,
-// once Close has been called.
-func (g *Group) Go(fn func()) bool {
+// Go runs fn on a tracked goroutine, unless Close has been called.
+func (g *Group) Go(fn func()) {
 	if !g.Enter() {
-		return false
+		return
 	}
 	go func() {
 		defer g.Leave()
 		fn()
 	}()
-	return true
 }
 
 // Close stops admitting goroutines and waits for the tracked ones to return.

@@ -54,7 +54,7 @@ func TestWaitJoinsWorkerHeldInStorage(t *testing.T) {
 	select {
 	case <-waited:
 		t.Fatal("Wait returned while a worker was still inside a storage call")
-	case <-time.After(earlyReturnWindow):
+	case <-time.After(100 * time.Millisecond):
 	}
 	close(backend.release)
 	<-waited
@@ -62,10 +62,6 @@ func TestWaitJoinsWorkerHeldInStorage(t *testing.T) {
 		t.Fatal("Wait returned before the worker left its storage call")
 	}
 }
-
-// earlyReturnWindow is how long a test watches for a wait that returns too
-// early. It only detects that bug; no test needs it to pass.
-const earlyReturnWindow = 100 * time.Millisecond
 
 // A worker blocked on a full result queue must still return on cancel, or
 // Wait would hang shutdown.

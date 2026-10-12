@@ -55,9 +55,7 @@ func (c *components) teardown() {
 			logger.Error(logger.Node, "close database: %v", err)
 		}
 	}
-	if c.freeKeys != nil {
-		c.freeKeys()
-	}
+	c.freeKeys()
 }
 
 // waitLogged runs wait and logs every shutdownProgressInterval until it returns.
@@ -102,15 +100,4 @@ func shutdownOn(sigCh <-chan os.Signal) <-chan struct{} {
 		os.Exit(1)
 	}()
 	return stop
-}
-
-// waitForShutdown blocks until stop closes or a server fails, and returns the
-// server's error.
-func waitForShutdown(stop <-chan struct{}, failed <-chan error) error {
-	select {
-	case <-stop:
-		return nil
-	case err := <-failed:
-		return err
-	}
 }

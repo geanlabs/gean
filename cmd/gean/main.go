@@ -123,5 +123,10 @@ func run(cfg config) error {
 	failed := serveHTTP(c.servers, &c.tasks)
 	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", cfg.apiAddress(), cfg.metricsAddress(), cfg.IsAggregator)
 
-	return waitForShutdown(stop, failed)
+	select {
+	case <-stop:
+		return nil
+	case err := <-failed:
+		return err
+	}
 }
