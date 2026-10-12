@@ -30,12 +30,16 @@ func main() {
 
 func run(cfg config) error {
 	logger.Info(logger.Node, "gean consensus client starting")
+	stop := notifyShutdown()
 
 	inputs, err := loadStartupInputs(cfg)
 	if err != nil {
 		return err
 	}
-	defer inputs.keyManager.Close()
+	// Every exit path, including a failure halfway through startup, tears down
+	// whatever started, in an order that frees nothing still in use.
+	c := &components{freeKeys: inputs.keyManager.Close}
+	defer c.teardown()
 
 	// Committee count is a network-wide parameter: resolve the flag against the
 	// shared config before any subnet routing is wired (p2p subscriptions and
@@ -48,7 +52,7 @@ func run(cfg config) error {
 		logger.Error(logger.Node, "open pebble: %v", err)
 		return err
 	}
-	defer backend.Close()
+	c.closeStore = backend.Close
 
 	if err := bootstrapStore(s, inputs.genesisConfig, cfg.CheckpointURL); err != nil {
 		return err
@@ -73,14 +77,14 @@ func run(cfg config) error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	c.cancel = cancel
 
 	p2pHost, err := setupP2P(ctx, cfg, inputs.keyManager)
 	if err != nil {
 		logger.Error(logger.Network, "create p2p host: %v", err)
 		return err
 	}
-	defer p2pHost.Close()
+	c.closeNetwork = p2pHost.Close
 
 	// Handlers must be live before the prover pre-init: the listener is
 	// already accepting connections, and peers that dial during the
@@ -93,6 +97,13 @@ func run(cfg config) error {
 	if err := preinitializeXMSS(proving); err != nil {
 		return err
 	}
+	// The startup steps above cannot be interrupted, so a signal that arrived
+	// during them is honoured here, before the engine starts.
+	select {
+	case <-stop:
+		return nil
+	default:
+	}
 
 	aggCtl := role.NewWithHook(cfg.IsAggregator, metrics.SetIsAggregator)
 	shadowRates := shadow.Rates{
@@ -102,17 +113,15 @@ func run(cfg config) error {
 	}
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
-	startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes)
+	c.waitEngine = n.Wait
+	syncDriver := startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes, &c.tasks)
+	c.waitSync = syncDriver.Wait
 
-	apiAddr, metricsAddr := startHTTPServers(cfg, s, fc, aggCtl)
-	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", apiAddr, metricsAddr, cfg.IsAggregator)
+	if c.servers, err = listenHTTP(cfg, s, fc, aggCtl); err != nil {
+		return err
+	}
+	failed := serveHTTP(c.servers, &c.tasks)
+	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", cfg.apiAddress(), cfg.metricsAddress(), cfg.IsAggregator)
 
-	waitForShutdown(cancel)
-
-	// Join the storage-size sampler and attestation workers before the deferred
-	// backend.Close runs. Cancellation alone is not enough: a worker mid-round
-	// when the database closes calls into a closed Pebble instance, which
-	// panics. Other workers that read storage are still not joined.
-	n.WaitForStorageWorkers()
-	return nil
+	return waitForShutdown(stop, failed)
 }

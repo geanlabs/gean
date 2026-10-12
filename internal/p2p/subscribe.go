@@ -35,7 +35,7 @@ func (h *Host) ReannounceSubscriptions() error {
 			return fmt.Errorf("reannounce: subscribe %s: %w", topic, err)
 		}
 		h.subs[topic] = newSub
-		go h.listenTopic(h.ctx, topic, newSub, h.gossipHandler)
+		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, newSub, h.gossipHandler) })
 		logger.Info(logger.Network, "re-announced subscription topic=%s", topic)
 	}
 	return nil

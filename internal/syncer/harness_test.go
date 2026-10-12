@@ -28,6 +28,7 @@ type mockSyncP2P struct {
 	rangeCalls     atomic.Int32
 	lastRangeCount uint64
 	rangeBlock     chan struct{}
+	rangeEntered   chan struct{} // receives once per call, before rangeBlock
 
 	rootBlocks []*types.SignedBlock
 	rootErr    error
@@ -50,6 +51,9 @@ func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.
 	m.lastRangeCount = count
 	m.mu.Unlock()
 
+	if m.rangeEntered != nil {
+		m.rangeEntered <- struct{}{}
+	}
 	if m.rangeBlock != nil {
 		<-m.rangeBlock
 	}

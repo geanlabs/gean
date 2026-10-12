@@ -2,13 +2,13 @@ package node
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/geanlabs/gean/internal/aggregation"
 	"github.com/geanlabs/gean/internal/dutygate"
 	"github.com/geanlabs/gean/internal/forkchoice"
+	"github.com/geanlabs/gean/internal/lifecycle"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/p2p"
 	"github.com/geanlabs/gean/internal/pending"
@@ -73,16 +73,11 @@ type Engine struct {
 	lastProposalDuty proposalDuty
 	proposalReserved bool
 
-	// storageWorkers tracks the storage-size sampler and the attestation
-	// workers so shutdown can join them before the database is closed: a
-	// worker still running after Close calls into a closed Pebble instance,
-	// which panics rather than erroring.
-	//
-	// Other workers read storage too — the aggregation, proposal and recovery
-	// workers, and the fetch batcher — and none of them is joined. Closing that
-	// gap means deciding how long shutdown may block on in-flight proving work.
-	// Tracked separately; do not read this WaitGroup as covering them.
-	storageWorkers sync.WaitGroup
+	// tasks tracks Run and every worker it starts, so shutdown can join them
+	// before closing the database and freeing the keys they use: a worker
+	// still running after Close calls into a closed Pebble instance, which
+	// panics, and a proof in flight still borrows native key material.
+	tasks lifecycle.Group
 
 	// attestationsDropped counts gossip attestations dropped on a full verify
 	// queue since the last chain-status line.
@@ -166,15 +161,16 @@ func New(
 	return e
 }
 
-// WaitForStorageWorkers blocks until the storage-size sampler and the
-// attestation workers have returned.
-// Callers must invoke it after cancelling the context and before closing the
-// backend.
-//
-// It does not cover every storage-reading goroutine — see the storageWorkers
-// field for what is and is not tracked.
-func (e *Engine) WaitForStorageWorkers() {
-	e.storageWorkers.Wait()
+// Start runs the engine on a tracked goroutine.
+func (e *Engine) Start(ctx context.Context) {
+	e.tasks.Go(func() { e.Run(ctx) })
+}
+
+// Wait blocks until Run and every worker have returned, including any proof in
+// flight. Callers cancel the context first, and close the database and keys
+// only after Wait returns.
+func (e *Engine) Wait() {
+	e.tasks.Close()
 }
 
 func (e *Engine) Run(ctx context.Context) {

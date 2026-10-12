@@ -8,26 +8,23 @@ import (
 	"github.com/geanlabs/gean/internal/aggregation"
 )
 
+// startWorkers starts every worker on e.tasks, so Engine.Wait joins them.
 func (e *Engine) startWorkers(ctx context.Context) {
-	go e.runFetchBatcher(ctx)
-	go aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
-	go e.runProposalWorker(ctx)
-	go e.runRecoveryWorker(ctx)
-	go e.runAggregationWorker(ctx)
-	go e.runGossipMeshGauge(ctx)
-	go e.runTickAgeGauge(ctx)
-
-	// These read the backend, so shutdown has to join them before Close: see
-	// Engine.WaitForStorageWorkers.
-	e.storageWorkers.Add(2)
-	go func() {
-		defer e.storageWorkers.Done()
-		e.runAttestationWorker(ctx)
-	}()
-	go func() {
-		defer e.storageWorkers.Done()
-		e.runStorageSizeGauge(ctx)
-	}()
+	for _, run := range []func(){
+		func() { e.runFetchBatcher(ctx) },
+		func() {
+			aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
+		},
+		func() { e.runProposalWorker(ctx) },
+		func() { e.runRecoveryWorker(ctx) },
+		func() { e.runAttestationWorker(ctx) },
+		func() { e.runAggregationWorker(ctx) },
+		func() { e.runGossipMeshGauge(ctx) },
+		func() { e.runTickAgeGauge(ctx) },
+		func() { e.runStorageSizeGauge(ctx) },
+	} {
+		e.tasks.Go(run)
+	}
 }
 
 // runAttestationWorker verifies gossip attestations on one worker per core. Each

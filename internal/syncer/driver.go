@@ -7,6 +7,7 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/geanlabs/gean/internal/lifecycle"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/store"
 )
@@ -22,6 +23,10 @@ type SyncDriver struct {
 	// horizonReported latches the beyond-window report so it is stated once per
 	// episode rather than once per peer per poll.
 	horizonReported bool
+
+	// tasks tracks Run, the per-peer polls and new-peer status checks, which all
+	// read the store, so shutdown can join them before closing it.
+	tasks lifecycle.Group
 }
 
 func NewSyncDriver(ctx context.Context, node LocalNode, store *store.ConsensusStore, p2pHost SyncDriverP2P) *SyncDriver {
@@ -35,6 +40,17 @@ func NewSyncDriver(ctx context.Context, node LocalNode, store *store.ConsensusSt
 		p2p:      p2pHost,
 		inFlight: make(map[libp2ppeer.ID]bool),
 	}
+}
+
+// Start runs the driver on a tracked goroutine.
+func (sd *SyncDriver) Start() {
+	sd.tasks.Go(sd.Run)
+}
+
+// Wait blocks until Run and every poll have returned. Callers cancel the
+// driver's context first.
+func (sd *SyncDriver) Wait() {
+	sd.tasks.Close()
 }
 
 func (sd *SyncDriver) Run() {
