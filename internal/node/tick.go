@@ -74,6 +74,9 @@ func (e *Engine) onTick() {
 	if currentInterval == 0 || currentInterval == 4 {
 		e.updateHead()
 	}
+	if currentInterval == 4 {
+		e.maybeProposeEarly(timestampMs)
+	}
 
 	if hasProposal {
 		e.maybePropose(currentSlot, proposerValidatorID)

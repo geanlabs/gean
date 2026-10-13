@@ -2,6 +2,7 @@ package blockbuilder
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/geanlabs/gean/internal/attestationproof"
@@ -87,10 +88,11 @@ func TestBuildBlockSucceedsWithNoPayloads(t *testing.T) {
 	headState, parentRoot := minimalHeadState(t)
 
 	result, err := Build(Input{
-		HeadState:     headState,
-		Slot:          1,
-		ProposerIndex: 0,
-		ParentRoot:    parentRoot,
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               1,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
 	})
 
 	if err != nil {
@@ -109,9 +111,10 @@ func TestBuildBlockSucceedsWithNoPayloads(t *testing.T) {
 
 func TestBuildBlockRejectsMalformedHeadState(t *testing.T) {
 	_, err := Build(Input{
-		HeadState:     &types.State{},
-		Slot:          1,
-		ProposerIndex: 0,
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          &types.State{},
+		Slot:               1,
+		ProposerIndex:      0,
 	})
 	if err == nil {
 		t.Fatal("expected malformed head state error")
@@ -125,10 +128,11 @@ func TestBuildBlockRejectsPayloadsWithoutKnownRoots(t *testing.T) {
 	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
 
 	result, err := Build(Input{
-		HeadState:     headState,
-		Slot:          3,
-		ProposerIndex: 0,
-		ParentRoot:    parentRoot,
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               3,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
@@ -149,10 +153,11 @@ func TestBuildBlockReturnsTransitionError(t *testing.T) {
 	headState.Validators = []*types.Validator{{}, {}}
 
 	result, err := Build(Input{
-		HeadState:     headState,
-		Slot:          1,
-		ProposerIndex: 0,
-		ParentRoot:    parentRoot,
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               1,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
 	})
 
 	if result != nil {
@@ -174,11 +179,12 @@ func TestBuildBlockReportsMismatchedPayloadRoot(t *testing.T) {
 	}
 
 	result, err := Build(Input{
-		HeadState:       headState,
-		Slot:            1,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               1,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
+		KnownBlockRoots:    RootSet{parentRoot: true},
 		Payloads: []AttestationPayload{{
 			DataRoot: [32]byte{0xee},
 			Data:     data,
@@ -214,11 +220,12 @@ func TestBuildBlockReportsSkippedPayloadIssues(t *testing.T) {
 	unknownRoot := hashAttestationData(t, &unknownHead)
 
 	result, err := Build(Input{
-		HeadState:       headState,
-		Slot:            3,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               3,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
+		KnownBlockRoots:    RootSet{parentRoot: true},
 		Payloads: []AttestationPayload{
 			{DataRoot: dataRoot, Data: data, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: staleRoot, Data: &staleSourceVote, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
@@ -251,11 +258,12 @@ func TestBuildBlockRecordsProofMergeFallback(t *testing.T) {
 	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
 
 	result, err := Build(Input{
-		HeadState:       headState,
-		Slot:            3,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               3,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
+		KnownBlockRoots:    RootSet{parentRoot: true},
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
@@ -286,11 +294,12 @@ func TestPlanAttestationsUsesPostHeaderState(t *testing.T) {
 	headState, parentRoot, data, dataRoot := postHeaderVoteInput(t)
 
 	plan, err := planAttestations(Input{
-		HeadState:       headState,
-		Slot:            3,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               3,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
+		KnownBlockRoots:    RootSet{parentRoot: true},
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
@@ -354,11 +363,12 @@ func TestPlanAttestationsCarriesTrialState(t *testing.T) {
 	}
 
 	plan, err := planAttestations(Input{
-		HeadState:       headState,
-		Slot:            3,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{root1: true, parentRoot: true},
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               3,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
+		KnownBlockRoots:    RootSet{root1: true, parentRoot: true},
 		Payloads: []AttestationPayload{
 			{DataRoot: firstRoot, Data: first, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: secondRoot, Data: second, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
@@ -422,11 +432,12 @@ func TestPlanAttestationsContinuesWhenJustifiedSlotsChange(t *testing.T) {
 	secondRoot := hashAttestationData(t, second)
 
 	plan, err := planAttestations(Input{
-		HeadState:       headState,
-		Slot:            7,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{roots[2]: true, parentRoot: true},
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               7,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
+		KnownBlockRoots:    RootSet{roots[2]: true, parentRoot: true},
 		Payloads: []AttestationPayload{
 			{DataRoot: firstRoot, Data: first, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: secondRoot, Data: second, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
@@ -446,7 +457,7 @@ func TestPlanAttestationsContinuesWhenJustifiedSlotsChange(t *testing.T) {
 	}
 }
 
-func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
+func TestPlanAttestationsStopsAtBudgetWithoutReportingSkips(t *testing.T) {
 	root0 := [32]byte{0x30}
 	headState := &types.State{
 		Config:                   &types.ChainConfig{GenesisTime: 1000},
@@ -497,22 +508,28 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 	})
 
-	plan, err := planAttestations(Input{
-		HeadState:       headState,
-		Slot:            2,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
-		Payloads:        payloads,
-	})
-	if err != nil {
-		t.Fatalf("plan attestations: %v", err)
-	}
-	if len(plan.attestations) != maxBlockAttestationData {
-		t.Fatalf("planned attestations=%d, want %d", len(plan.attestations), maxBlockAttestationData)
-	}
-	if len(plan.payloadErrors) != 0 {
-		t.Fatalf("payload errors=%d, want 0", len(plan.payloadErrors))
+	// The caller's budget limits the block below the builder's cap, never above it.
+	for _, budget := range []int{0, 1, 2, maxBlockAttestationData, int(types.MaxAttestationsData)} {
+		t.Run(fmt.Sprintf("budget_%d", budget), func(t *testing.T) {
+			plan, err := planAttestations(Input{
+				MaxAttestationData: budget,
+				HeadState:          headState,
+				Slot:               2,
+				ProposerIndex:      0,
+				ParentRoot:         parentRoot,
+				KnownBlockRoots:    RootSet{parentRoot: true},
+				Payloads:           payloads,
+			})
+			if err != nil {
+				t.Fatalf("plan attestations: %v", err)
+			}
+			if want := min(budget, maxBlockAttestationData); len(plan.attestations) != want || len(plan.proofs) != want {
+				t.Fatalf("planned attestations=%d proofs=%d, want %d", len(plan.attestations), len(plan.proofs), want)
+			}
+			if len(plan.payloadErrors) != 0 {
+				t.Fatalf("payload errors=%d, want 0", len(plan.payloadErrors))
+			}
+		})
 	}
 }
 
@@ -531,11 +548,12 @@ func TestPlanAttestationsKeepsEveryDataAtOneSlot(t *testing.T) {
 	atBlockSlot.Slot = 3
 
 	plan, err := planAttestations(Input{
-		HeadState:       headState,
-		Slot:            3,
-		ProposerIndex:   0,
-		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{root1: true, parentRoot: true},
+		MaxAttestationData: maxBlockAttestationData,
+		HeadState:          headState,
+		Slot:               3,
+		ProposerIndex:      0,
+		ParentRoot:         parentRoot,
+		KnownBlockRoots:    RootSet{root1: true, parentRoot: true},
 		Payloads: []AttestationPayload{
 			{DataRoot: dataRoot, Data: data, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: hashAttestationData(t, &rival), Data: &rival, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},

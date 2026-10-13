@@ -46,6 +46,9 @@ type Input struct {
 	KnownBlockRoots KnownRoots
 	Payloads        []AttestationPayload
 	ProofMerger     attestationproof.MergeProvider
+	// MaxAttestationData is how many distinct AttestationData the caller has time
+	// to prove into the block. The builder's own cap still applies.
+	MaxAttestationData int
 }
 
 type Result struct {

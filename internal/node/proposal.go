@@ -16,7 +16,16 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-var errStaleProposal = errors.New("proposal parent changed")
+// A proposal aims to be published before interval 1, when the slot's
+// validators attest to the head they have. Its block proof costs about
+// proposalBaseCost for the proposer's signature alone, plus proposalProofCost
+// for each attestation proof merged with it (measured on leanVM 48a90420: 0.41,
+// 1.42, 2.66 and 3.55 s for 0-3 proofs). Started at the previous slot's
+// interval 4, that leaves room for one proof.
+const (
+	proposalBaseCost  = 450 * time.Millisecond
+	proposalProofCost = 1100 * time.Millisecond
+)
 
 type proposalDuty struct {
 	slot        uint64
@@ -28,6 +37,55 @@ type proposalResult struct {
 	retryable   bool // Only failures before a signing attempt may release the duty.
 	blockRoot   [32]byte
 	signedBlock *types.SignedBlock
+}
+
+// maybeProposeEarly starts the next slot's proposal during interval 4 of the
+// current slot, after the interval-4 promotion, so its proof can finish by
+// interval 1 of its own slot. It waits until this slot's block is the head: a
+// proposal is signed once, so building on a parent that a late block is about
+// to replace would cost the slot. Otherwise the proposal starts at interval 0.
+func (e *Engine) maybeProposeEarly(timestampMs uint64) {
+	if e.currentInterval(timestampMs) != types.IntervalsPerSlot-1 {
+		return
+	}
+	slot := e.currentSlot(timestampMs)
+	if e.Store.HeadSlot() != slot {
+		return
+	}
+	if validatorID, ok := e.getOurProposer(slot + 1); ok {
+		e.maybePropose(slot+1, validatorID)
+	}
+}
+
+// attestationBudget is how many attestation proofs a proposal for slot started
+// at nowMs can carry and still be published by interval 1 of slot.
+func (e *Engine) attestationBudget(slot, nowMs uint64) int {
+	deadlineMs := e.slotStartMs(slot) + types.MillisecondsPerInterval
+	if nowMs >= deadlineMs {
+		return 0
+	}
+	spare := time.Duration(deadlineMs-nowMs)*time.Millisecond - proposalBaseCost
+	if spare <= 0 {
+		return 0
+	}
+	return int(spare / proposalProofCost)
+}
+
+// waitForSlotStart holds a proposal that finished early until its slot begins,
+// and reports false if ctx ends first.
+func (e *Engine) waitForSlotStart(ctx context.Context, slot uint64) bool {
+	wait := time.Until(time.UnixMilli(int64(e.slotStartMs(slot))))
+	if wait <= 0 {
+		return true
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (e *Engine) maybePropose(slot, validatorID uint64) {
@@ -62,6 +120,9 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 		case duty := <-e.ProposalCh:
 			metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
 			result := e.proveProposal(ctx, duty)
+			if result.signedBlock != nil && !e.waitForSlotStart(ctx, duty.slot) {
+				return
+			}
 			select {
 			case e.ProposalResultCh <- result:
 			case <-ctx.Done():
@@ -98,7 +159,8 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	result := &proposalResult{duty: proposalDuty{slot: slot, validatorID: validatorID}, retryable: true}
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
-	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID)
+	budget := e.attestationBudget(slot, uint64(time.Now().UnixMilli()))
+	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID, budget)
 	if err != nil {
 		// Head advanced past the target slot; skip as a slot-boundary miss (matches spec).
 		var stale *statetransition.StateSlotIsNewerError
@@ -140,11 +202,6 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	proof, err := e.mergeBlockProof(block, attSigProofs, propKey, blockSig)
 	metrics.ObserveProvingDuration("proposal", time.Since(mergeStart).Seconds())
 	if err != nil {
-		if errors.Is(err, errStaleProposal) {
-			metrics.IncProofOperation("proposal", "skipped_stale")
-			logger.Info(logger.Validator, "stopped stale proposal before next proof stage slot=%d", slot)
-			return result
-		}
 		metrics.IncProofOperation("proposal", "error")
 		logger.Error(logger.Validator, "merge block proof failed: %v", err)
 		return result
@@ -169,10 +226,11 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		return
 	}
 	block := result.signedBlock.Block
-	// A proposal that outlived its slot is still the chain's best extension
-	// unless the head moved past it; fork choice accepts late blocks, while
-	// discarding one here can permanently halt a stalled chain.
-	if e.Store.HeadSlot() >= block.Slot || e.Store.Head() != block.ParentRoot {
+	// The slot's key has signed this block and cannot sign another, so publish it
+	// even if a late block changed the head while it was proving: it is a valid
+	// block competing for the slot, and fork choice decides. Only a head already
+	// at or past the slot, or a parent whose state is gone, makes it unusable.
+	if e.Store.HeadSlot() >= block.Slot || !e.Store.HasState(block.ParentRoot) {
 		metrics.IncProofOperation("proposal", "canceled")
 		logger.Warn(logger.Validator, "discarding proposal slot=%d: head moved head_slot=%d head=0x%x parent=0x%x",
 			block.Slot, e.Store.HeadSlot(), e.Store.Head(), block.ParentRoot)
@@ -190,6 +248,9 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		defer cancel()
 		if err := e.P2P.PublishBlock(publishCtx, result.signedBlock); err != nil {
 			logger.Error(logger.Network, "publish block failed: %v", err)
+		} else {
+			publishedMs := float64(time.Now().UnixMilli()) - float64(e.slotStartMs(block.Slot))
+			metrics.ObserveBlockPublishDelay(publishedMs / 1000)
 		}
 	}
 
@@ -220,9 +281,6 @@ func (e *Engine) mergeBlockProofWithProver(
 ) ([]byte, error) {
 	if block == nil || block.Body == nil || len(block.Body.Attestations) != len(attestationProofs) {
 		return nil, fmt.Errorf("attestation proof count mismatch")
-	}
-	if e.Store.Head() != block.ParentRoot {
-		return nil, errStaleProposal
 	}
 	state := e.Store.GetState(block.ParentRoot)
 	if state == nil {
@@ -262,9 +320,6 @@ func (e *Engine) mergeBlockProofWithProver(
 	if err != nil {
 		return nil, err
 	}
-	if e.Store.Head() != block.ParentRoot {
-		return nil, errStaleProposal
-	}
 	// The proposer's signature goes into the merge raw. Proving it alone first and
 	// merging that proof costs a whole extra proof, the most expensive part of a
 	// proposal after the merge itself.
@@ -280,7 +335,7 @@ func (e *Engine) mergeBlockProofWithProver(
 	return proof, err
 }
 
-func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types.Block, []*types.SingleMessageAggregate, error) {
+func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64, maxAttestationData int) (*types.Block, []*types.SingleMessageAggregate, error) {
 	buildStart := time.Now()
 	defer func() { metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds()) }()
 
@@ -298,13 +353,14 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 	}
 
 	result, err := blockbuilder.Build(blockbuilder.Input{
-		HeadState:       headState,
-		Slot:            slot,
-		ProposerIndex:   validatorIndex,
-		ParentRoot:      headRoot,
-		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
-		Payloads:        payloadsFromEntries(e.Store.KnownPayloads.Entries()),
-		ProofMerger:     attestationproof.NewMerger(e.Store.PubKeyCache),
+		HeadState:          headState,
+		Slot:               slot,
+		ProposerIndex:      validatorIndex,
+		ParentRoot:         headRoot,
+		KnownBlockRoots:    blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
+		Payloads:           payloadsFromEntries(e.Store.KnownPayloads.Entries()),
+		ProofMerger:        attestationproof.NewMerger(e.Store.PubKeyCache),
+		MaxAttestationData: maxAttestationData,
 	})
 	if err != nil {
 		metrics.IncBlockBuildingFailures()
