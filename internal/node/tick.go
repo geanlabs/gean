@@ -17,7 +17,11 @@ import (
 const aggregationDeadlineOffset = 4 * types.MillisecondsPerInterval
 
 func (e *Engine) onTick() {
-	now := time.Now()
+	e.tickAt(time.Now())
+}
+
+// tickAt runs the duties of the interval containing now.
+func (e *Engine) tickAt(now time.Time) {
 	firstTick := e.lastTick.IsZero()
 	if !firstTick {
 		metrics.ObserveTickIntervalDuration(now.Sub(e.lastTick).Seconds())
@@ -74,8 +78,9 @@ func (e *Engine) onTick() {
 	if currentInterval == 0 || currentInterval == 4 {
 		e.updateHead()
 	}
-	if currentInterval == 4 {
-		e.maybeProposeEarly(timestampMs)
+	// Like the interval-0 proposal, never propose from the startup tick.
+	if currentInterval == 4 && !firstTick {
+		e.maybeProposeEarly()
 	}
 
 	if hasProposal {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/proving"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/store"
@@ -63,7 +64,7 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	})
 
 	e := &Engine{Store: s}
-	block, sigs, err := e.produceBlockWithSignatures(1, 0, int(types.MaxAttestationsData))
+	block, sigs, err := e.produceBlockWithSignatures(1, 0)
 	if err != nil {
 		t.Fatalf("produce block: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestProduceBlockWithSignaturesStaleHeadReturnsSlotError(t *testing.T) {
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
 	e := &Engine{Store: s}
-	_, _, err := e.produceBlockWithSignatures(1, 0, int(types.MaxAttestationsData))
+	_, _, err := e.produceBlockWithSignatures(1, 0)
 	var stale *statetransition.StateSlotIsNewerError
 	if !errors.As(err, &stale) {
 		t.Fatalf("err=%v, want StateSlotIsNewerError", err)
@@ -143,7 +144,7 @@ func TestProduceBlockWithSignaturesRejectsNonProposer(t *testing.T) {
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
 	e := &Engine{Store: s}
-	block, sigs, err := e.produceBlockWithSignatures(1, 0, int(types.MaxAttestationsData))
+	block, sigs, err := e.produceBlockWithSignatures(1, 0)
 	if err == nil {
 		t.Fatal("expected non-proposer error")
 	}
@@ -355,28 +356,40 @@ func TestBlockProofContinuesWhenParentChanges(t *testing.T) {
 	}
 }
 
-// proposalTestStartMs is when the proposal test engine's slot 0 begins: its
-// genesis is GenesisTime 1000.
-const proposalTestStartMs = 1000 * 1000
+// earlyProposalEngine is a proposal test engine whose head is slot 0's block
+// and whose single validator proposes every slot.
+// proposalTestGenesisMs is when the proposal test engine's slot 0 begins.
+const proposalTestGenesisMs = 1000 * 1000
+
+func earlyProposalEngine(t *testing.T) *Engine {
+	t.Helper()
+	e := proposalTestEngine(t)
+	// Validator IDs come from the attestation keys.
+	e.Keys = xmss.NewKeyManager(map[uint64]*xmss.ValidatorKeyPair{0: {}}, nil)
+	// Fork choice keeps the head on slot 0's block through the ticks.
+	head := e.Store.Head()
+	e.Store.SetLatestJustified(&types.Checkpoint{Root: head})
+	e.FC = forkchoice.New(0, head, [32]byte{})
+	return e
+}
 
 func TestMaybeProposeEarlyWaitsForTheSlotsBlock(t *testing.T) {
-	intervalMs := uint64(types.MillisecondsPerInterval)
 	for _, tc := range []struct {
-		name     string
-		atMs     uint64
-		wantSlot uint64 // 0: no duty
+		name      string
+		storeTime uint64
+		wantSlot  uint64 // 0: no duty
 	}{
 		// The head is slot 0's block, so slot 1's proposal starts at slot 0's interval 4.
-		{name: "interval_4_with_slots_block", atMs: proposalTestStartMs + 4*intervalMs, wantSlot: 1},
+		{name: "interval_4_with_slots_block", storeTime: 4, wantSlot: 1},
 		// Slot 1's block has not arrived: its successor waits for it or for interval 0.
-		{name: "interval_4_without_slots_block", atMs: proposalTestStartMs + types.MillisecondsPerSlot + 4*intervalMs},
-		{name: "interval_3", atMs: proposalTestStartMs + 3*intervalMs},
+		{name: "interval_4_without_slots_block", storeTime: types.IntervalsPerSlot + 4},
+		// Interval 4's promotion has not run yet.
+		{name: "interval_3", storeTime: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			e := proposalTestEngine(t)
-			// Validator IDs come from the attestation keys.
-			e.Keys = xmss.NewKeyManager(map[uint64]*xmss.ValidatorKeyPair{0: {}}, nil)
-			e.maybeProposeEarly(tc.atMs)
+			e := earlyProposalEngine(t)
+			e.Store.SetTime(tc.storeTime)
+			e.maybeProposeEarly()
 			select {
 			case duty := <-e.ProposalCh:
 				if duty.slot != tc.wantSlot {
@@ -396,23 +409,48 @@ func TestMaybeProposeEarlyWaitsForTheSlotsBlock(t *testing.T) {
 	}
 }
 
-func TestAttestationBudgetFitsProofsBeforeInterval1(t *testing.T) {
-	slot1Ms := uint64(proposalTestStartMs + types.MillisecondsPerSlot)
-	intervalMs := uint64(types.MillisecondsPerInterval)
-	e := proposalTestEngine(t)
-	for _, tc := range []struct {
-		name  string
-		nowMs uint64
-		want  int
-	}{
-		{name: "previous_slot_start", nowMs: slot1Ms - types.MillisecondsPerSlot, want: 3},
-		{name: "previous_slot_interval_4", nowMs: slot1Ms - intervalMs, want: 1},
-		{name: "slot_start", nowMs: slot1Ms, want: 0},
-		{name: "past_interval_1", nowMs: slot1Ms + 2*intervalMs, want: 0},
-	} {
-		if got := e.attestationBudget(1, tc.nowMs); got != tc.want {
-			t.Errorf("%s: budget=%d, want %d", tc.name, got, tc.want)
+// The interval-4 tick starts the next proposal, except as the startup tick.
+func TestTickAtInterval4StartsNextProposal(t *testing.T) {
+	interval4 := time.UnixMilli(proposalTestGenesisMs + 4*types.MillisecondsPerInterval)
+
+	e := earlyProposalEngine(t)
+	e.tickAt(interval4)
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("startup tick started a proposal")
+	}
+
+	e = earlyProposalEngine(t)
+	e.tickAt(time.UnixMilli(proposalTestGenesisMs + 3*types.MillisecondsPerInterval))
+	e.tickAt(interval4)
+	select {
+	case duty := <-e.ProposalCh:
+		if duty.slot != 1 {
+			t.Fatalf("duty slot=%d, want 1", duty.slot)
 		}
+	default:
+		t.Fatal("interval-4 tick did not start the next proposal")
+	}
+}
+
+// A block handled after the interval-4 tick starts the next proposal.
+func TestDispatchBlockStartsNextProposal(t *testing.T) {
+	e := earlyProposalEngine(t)
+	e.BlockCh = make(chan *types.SignedBlock, 1)
+	e.fetchInFlight = map[[32]byte]bool{}
+	e.Store.SetTime(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); e.dispatch(ctx, nil) }()
+	defer func() { cancel(); <-done }()
+
+	e.BlockCh <- blockAtSlot(0)
+	select {
+	case duty := <-e.ProposalCh:
+		if duty.slot != 1 {
+			t.Fatalf("duty slot=%d, want 1", duty.slot)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("block event did not start the next proposal")
 	}
 }
 

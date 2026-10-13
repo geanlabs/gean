@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"time"
 
 	"github.com/geanlabs/gean/internal/blockprocessor"
 	"github.com/geanlabs/gean/internal/logger"
@@ -96,8 +95,6 @@ func (e *Engine) importKnownParentBlock(
 	e.FC.OnBlock(block.Slot, blockRoot, parentRoot)
 
 	e.updateHead()
-	// This slot's block arriving during interval 4 settles the next proposal's parent.
-	e.maybeProposeEarly(uint64(time.Now().UnixMilli()))
 	e.Pending.ClearDepth(blockRoot)
 	e.replayPendingAttestations(blockRoot)
 	e.collectPendingChildren(blockRoot, queue)

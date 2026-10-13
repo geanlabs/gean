@@ -28,7 +28,6 @@ type planner struct {
 	state         *types.State
 	progress      progressSnapshot
 	payloadErrors []PayloadError
-	limit         int
 	full          bool
 }
 
@@ -41,8 +40,7 @@ func planAttestations(input Input) (planResult, error) {
 	if err != nil {
 		return planResult{}, err
 	}
-	limit := min(input.MaxAttestationData, maxBlockAttestationData)
-	if len(input.Payloads) == 0 || limit <= 0 {
+	if len(input.Payloads) == 0 {
 		return planResult{postState: workingState}, nil
 	}
 
@@ -59,7 +57,6 @@ func planAttestations(input Input) (planResult, error) {
 		state:         workingState,
 		progress:      captureProgress(workingState),
 		payloadErrors: payloadErrors,
-		limit:         limit,
 	}
 	if err := planner.run(); err != nil {
 		return planResult{}, err
@@ -75,7 +72,7 @@ func planAttestations(input Input) (planResult, error) {
 const maxBlockAttestationData = 3
 
 func (p *planner) run() error {
-	for len(p.attestations) < p.limit {
+	for len(p.attestations) < maxBlockAttestationData {
 		if !p.runRound() {
 			return nil
 		}
@@ -83,7 +80,7 @@ func (p *planner) run() error {
 		if err != nil {
 			return err
 		}
-		if len(p.attestations) >= p.limit {
+		if len(p.attestations) >= maxBlockAttestationData {
 			p.full = true
 			return nil
 		}
@@ -98,7 +95,7 @@ func (p *planner) run() error {
 func (p *planner) runRound() bool {
 	added := false
 	for _, payload := range p.payloads {
-		if len(p.attestations) >= p.limit {
+		if len(p.attestations) >= maxBlockAttestationData {
 			return added
 		}
 		if p.tryPayload(payload) {

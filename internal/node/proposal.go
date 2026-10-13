@@ -16,17 +16,6 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-// A proposal aims to be published before interval 1, when the slot's
-// validators attest to the head they have. Its block proof costs about
-// proposalBaseCost for the proposer's signature alone, plus proposalProofCost
-// for each attestation proof merged with it (measured on leanVM 48a90420: 0.41,
-// 1.42, 2.66 and 3.55 s for 0-3 proofs). Started at the previous slot's
-// interval 4, that leaves room for one proof.
-const (
-	proposalBaseCost  = 450 * time.Millisecond
-	proposalProofCost = 1100 * time.Millisecond
-)
-
 type proposalDuty struct {
 	slot        uint64
 	validatorID uint64
@@ -39,36 +28,24 @@ type proposalResult struct {
 	signedBlock *types.SignedBlock
 }
 
-// maybeProposeEarly starts the next slot's proposal during interval 4 of the
-// current slot, after the interval-4 promotion, so its proof can finish by
-// interval 1 of its own slot. It waits until this slot's block is the head: a
-// proposal is signed once, so building on a parent that a late block is about
-// to replace would cost the slot. Otherwise the proposal starts at interval 0.
-func (e *Engine) maybeProposeEarly(timestampMs uint64) {
-	if e.currentInterval(timestampMs) != types.IntervalsPerSlot-1 {
+// maybeProposeEarly starts the next slot's proposal at interval 4 of the
+// current slot, so its proof finishes about one interval earlier. It reads the
+// store clock, which reaches interval 4 only after that interval's promotion,
+// and waits until this slot's block is the head: a proposal is signed once, so
+// building on a parent that a late block is about to replace would cost the
+// slot. Otherwise the proposal starts at interval 0.
+func (e *Engine) maybeProposeEarly() {
+	storeTime := e.Store.Time()
+	if storeTime%types.IntervalsPerSlot != types.IntervalsPerSlot-1 {
 		return
 	}
-	slot := e.currentSlot(timestampMs)
+	slot := storeTime / types.IntervalsPerSlot
 	if e.Store.HeadSlot() != slot {
 		return
 	}
 	if validatorID, ok := e.getOurProposer(slot + 1); ok {
 		e.maybePropose(slot+1, validatorID)
 	}
-}
-
-// attestationBudget is how many attestation proofs a proposal for slot started
-// at nowMs can carry and still be published by interval 1 of slot.
-func (e *Engine) attestationBudget(slot, nowMs uint64) int {
-	deadlineMs := e.slotStartMs(slot) + types.MillisecondsPerInterval
-	if nowMs >= deadlineMs {
-		return 0
-	}
-	spare := time.Duration(deadlineMs-nowMs)*time.Millisecond - proposalBaseCost
-	if spare <= 0 {
-		return 0
-	}
-	return int(spare / proposalProofCost)
 }
 
 // waitForSlotStart holds a proposal that finished early until its slot begins,
@@ -159,8 +136,7 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	result := &proposalResult{duty: proposalDuty{slot: slot, validatorID: validatorID}, retryable: true}
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
-	budget := e.attestationBudget(slot, uint64(time.Now().UnixMilli()))
-	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID, budget)
+	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID)
 	if err != nil {
 		// Head advanced past the target slot; skip as a slot-boundary miss (matches spec).
 		var stale *statetransition.StateSlotIsNewerError
@@ -335,7 +311,7 @@ func (e *Engine) mergeBlockProofWithProver(
 	return proof, err
 }
 
-func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64, maxAttestationData int) (*types.Block, []*types.SingleMessageAggregate, error) {
+func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types.Block, []*types.SingleMessageAggregate, error) {
 	buildStart := time.Now()
 	defer func() { metrics.ObserveBlockBuildingTime(time.Since(buildStart).Seconds()) }()
 
@@ -353,14 +329,13 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64, maxAtte
 	}
 
 	result, err := blockbuilder.Build(blockbuilder.Input{
-		HeadState:          headState,
-		Slot:               slot,
-		ProposerIndex:      validatorIndex,
-		ParentRoot:         headRoot,
-		KnownBlockRoots:    blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
-		Payloads:           payloadsFromEntries(e.Store.KnownPayloads.Entries()),
-		ProofMerger:        attestationproof.NewMerger(e.Store.PubKeyCache),
-		MaxAttestationData: maxAttestationData,
+		HeadState:       headState,
+		Slot:            slot,
+		ProposerIndex:   validatorIndex,
+		ParentRoot:      headRoot,
+		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
+		Payloads:        payloadsFromEntries(e.Store.KnownPayloads.Entries()),
+		ProofMerger:     attestationproof.NewMerger(e.Store.PubKeyCache),
 	})
 	if err != nil {
 		metrics.IncBlockBuildingFailures()

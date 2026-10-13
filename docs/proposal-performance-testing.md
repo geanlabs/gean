@@ -18,6 +18,6 @@ This experiment reduces duplicate and stale work. Individual proof speed and ove
 
 ## Early proposals
 
-A proposal for slot N+1 starts at interval 4 of slot N, once slot N's block is the head. It includes only as many attestation proofs as can be proved before interval 1 of N+1, up to the builder's cap. A block that finishes early is held until its slot starts. After signing, a proposal is published even if a late block moved the head, unless the head has already reached its slot.
+A proposal for slot N+1 starts at interval 4 of slot N once slot N's block is the head: on the interval-4 tick, or when that block arrives later in the interval. The builder's attestation cap is unchanged. A block that finishes early is held until its slot starts. After signing, a proposal is published even if a late block moved the head, unless the head has already reached its slot or the parent state is gone.
 
-`lean_block_publish_delay_seconds` is the time from slot start to publishing this node's block. Compare its distribution against interval 1 (0.8 s), together with `discarding proposal` warnings, reorgs and duty-gate closures. The budget includes fewer attestation proofs in each block, so also check that useful votes still land within a slot or two and that finality keeps pace.
+`lean_block_publish_delay_seconds` is the time from slot start to publishing this node's block. Compare its distribution against interval 1 (0.8 s), together with `discarding proposal` warnings, reorgs and duty-gate closures.

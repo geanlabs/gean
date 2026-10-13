@@ -42,7 +42,12 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(uint64(time.Now().UnixMilli())) })
 
 		case block := <-e.BlockCh:
-			timeEvent("block", func() { e.onBlock(block) })
+			timeEvent("block", func() {
+				e.onBlock(block)
+				// This slot's block arriving after the interval-4 tick settles the
+				// next proposal's parent.
+				e.maybeProposeEarly()
+			})
 
 		case result := <-e.ProposalResultCh:
 			timeEvent("proposal_result", func() { e.acceptProposal(ctx, result) })
