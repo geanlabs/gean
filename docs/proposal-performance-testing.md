@@ -15,3 +15,9 @@ The proof stages are included in the existing proposal proving total; do not cou
 Look for `proposal_pending` aggregation skips and `skipped_stale` proposal operations. Completed aggregates survive a yield; deferred signatures remain available. Native proofs already running cannot be interrupted.
 
 This experiment reduces duplicate and stale work. Individual proof speed and overall finality gains still need measurement.
+
+## Early proposals
+
+A proposal for slot N+1 starts at interval 4 of slot N once slot N's block is the head: on the interval-4 tick, or when that block arrives later in the interval. The builder's attestation cap is unchanged. A block that finishes early is held until its slot starts. After signing, a proposal is published even if a late block moved the head, unless the head has already reached its slot or the parent state is gone.
+
+`lean_block_publish_delay_seconds` is the time from slot start to publishing this node's block. Compare its distribution against interval 1 (0.8 s), together with `discarding proposal` warnings, reorgs and duty-gate closures.

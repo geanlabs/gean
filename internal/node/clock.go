@@ -37,3 +37,8 @@ func (e *Engine) millisIntoSlot(timestampMs uint64) uint64 {
 	}
 	return types.MillisIntoSlot(e.Store.Config().GenesisTime, timestampMs)
 }
+
+// slotStartMs is when slot begins, in Unix milliseconds.
+func (e *Engine) slotStartMs(slot uint64) uint64 {
+	return e.Store.Config().GenesisTime*1000 + slot*types.MillisecondsPerSlot
+}

@@ -16,8 +16,6 @@ import (
 	"github.com/geanlabs/gean/xmss"
 )
 
-var errStaleProposal = errors.New("proposal parent changed")
-
 type proposalDuty struct {
 	slot        uint64
 	validatorID uint64
@@ -28,6 +26,43 @@ type proposalResult struct {
 	retryable   bool // Only failures before a signing attempt may release the duty.
 	blockRoot   [32]byte
 	signedBlock *types.SignedBlock
+}
+
+// maybeProposeEarly starts the next slot's proposal at interval 4 of the
+// current slot, so its proof finishes about one interval earlier. It reads the
+// store clock, which reaches interval 4 only after that interval's promotion,
+// and waits until this slot's block is the head: a proposal is signed once, so
+// building on a parent that a late block is about to replace would cost the
+// slot. Otherwise the proposal starts at interval 0.
+func (e *Engine) maybeProposeEarly() {
+	storeTime := e.Store.Time()
+	if storeTime%types.IntervalsPerSlot != types.IntervalsPerSlot-1 {
+		return
+	}
+	slot := storeTime / types.IntervalsPerSlot
+	if e.Store.HeadSlot() != slot {
+		return
+	}
+	if validatorID, ok := e.getOurProposer(slot + 1); ok {
+		e.maybePropose(slot+1, validatorID)
+	}
+}
+
+// waitForSlotStart holds a proposal that finished early until its slot begins,
+// and reports false if ctx ends first.
+func (e *Engine) waitForSlotStart(ctx context.Context, slot uint64) bool {
+	wait := time.Until(time.UnixMilli(int64(e.slotStartMs(slot))))
+	if wait <= 0 {
+		return true
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (e *Engine) maybePropose(slot, validatorID uint64) {
@@ -62,6 +97,9 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 		case duty := <-e.ProposalCh:
 			metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
 			result := e.proveProposal(ctx, duty)
+			if result.signedBlock != nil && !e.waitForSlotStart(ctx, duty.slot) {
+				return
+			}
 			select {
 			case e.ProposalResultCh <- result:
 			case <-ctx.Done():
@@ -140,11 +178,6 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 	proof, err := e.mergeBlockProof(block, attSigProofs, propKey, blockSig)
 	metrics.ObserveProvingDuration("proposal", time.Since(mergeStart).Seconds())
 	if err != nil {
-		if errors.Is(err, errStaleProposal) {
-			metrics.IncProofOperation("proposal", "skipped_stale")
-			logger.Info(logger.Validator, "stopped stale proposal before next proof stage slot=%d", slot)
-			return result
-		}
 		metrics.IncProofOperation("proposal", "error")
 		logger.Error(logger.Validator, "merge block proof failed: %v", err)
 		return result
@@ -169,10 +202,11 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		return
 	}
 	block := result.signedBlock.Block
-	// A proposal that outlived its slot is still the chain's best extension
-	// unless the head moved past it; fork choice accepts late blocks, while
-	// discarding one here can permanently halt a stalled chain.
-	if e.Store.HeadSlot() >= block.Slot || e.Store.Head() != block.ParentRoot {
+	// The slot's key has signed this block and cannot sign another, so publish it
+	// even if a late block changed the head while it was proving: it is a valid
+	// block competing for the slot, and fork choice decides. Only a head already
+	// at or past the slot, or a parent whose state is gone, makes it unusable.
+	if e.Store.HeadSlot() >= block.Slot || !e.Store.HasState(block.ParentRoot) {
 		metrics.IncProofOperation("proposal", "canceled")
 		logger.Warn(logger.Validator, "discarding proposal slot=%d: head moved head_slot=%d head=0x%x parent=0x%x",
 			block.Slot, e.Store.HeadSlot(), e.Store.Head(), block.ParentRoot)
@@ -190,6 +224,9 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		defer cancel()
 		if err := e.P2P.PublishBlock(publishCtx, result.signedBlock); err != nil {
 			logger.Error(logger.Network, "publish block failed: %v", err)
+		} else {
+			publishedMs := float64(time.Now().UnixMilli()) - float64(e.slotStartMs(block.Slot))
+			metrics.ObserveBlockPublishDelay(publishedMs / 1000)
 		}
 	}
 
@@ -220,9 +257,6 @@ func (e *Engine) mergeBlockProofWithProver(
 ) ([]byte, error) {
 	if block == nil || block.Body == nil || len(block.Body.Attestations) != len(attestationProofs) {
 		return nil, fmt.Errorf("attestation proof count mismatch")
-	}
-	if e.Store.Head() != block.ParentRoot {
-		return nil, errStaleProposal
 	}
 	state := e.Store.GetState(block.ParentRoot)
 	if state == nil {
@@ -261,9 +295,6 @@ func (e *Engine) mergeBlockProofWithProver(
 	blockRoot, err := block.HashTreeRoot()
 	if err != nil {
 		return nil, err
-	}
-	if e.Store.Head() != block.ParentRoot {
-		return nil, errStaleProposal
 	}
 	// The proposer's signature goes into the merge raw. Proving it alone first and
 	// merging that proof costs a whole extra proof, the most expensive part of a

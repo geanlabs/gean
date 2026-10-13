@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/proving"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/store"
@@ -303,15 +304,16 @@ func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 	}
 }
 
-func TestBlockProofStopsWhenParentChanges(t *testing.T) {
+// The proposer's key has signed the block by the time it is proved, so a parent
+// change mid-proof must not stop the proof: the block is still published.
+func TestBlockProofContinuesWhenParentChanges(t *testing.T) {
 	for _, tc := range []struct {
-		name                    string
-		staleBefore, mergeFails bool
-		wantMerge               int
+		name                      string
+		parentChanged, mergeFails bool
 	}{
-		{name: "already_stale", staleBefore: true},
-		{name: "unchanged_parent", wantMerge: 1},
-		{name: "merge_error", mergeFails: true, wantMerge: 1},
+		{name: "unchanged_parent"},
+		{name: "parent_changed", parentChanged: true},
+		{name: "merge_error", mergeFails: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := proposalTestEngine(t)
@@ -320,7 +322,7 @@ func TestBlockProofStopsWhenParentChanges(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.staleBefore {
+			if tc.parentChanged {
 				e.Store.SetHead([32]byte{99})
 			}
 			mergeCalls := 0
@@ -338,22 +340,178 @@ func TestBlockProofStopsWhenParentChanges(t *testing.T) {
 				return []byte{8}, nil
 			}
 			proof, err := e.mergeBlockProofWithProver(block, nil, nil, [types.SignatureSize]byte{}, merge)
-			if mergeCalls != tc.wantMerge {
-				t.Fatalf("merge=%d", mergeCalls)
+			if mergeCalls != 1 {
+				t.Fatalf("merge=%d, want 1", mergeCalls)
 			}
-			switch {
-			case tc.staleBefore:
-				if !errors.Is(err, errStaleProposal) || proof != nil {
-					t.Fatalf("expected stale failure: %v", err)
-				}
-			case tc.mergeFails:
+			if tc.mergeFails {
 				if !errors.Is(err, proofErr) {
 					t.Fatalf("lost proof error: %v", err)
 				}
-			default:
-				if err != nil || len(proof) != 1 || proof[0] != 8 {
-					t.Fatalf("valid parent failed: %v", err)
+				return
+			}
+			if err != nil || len(proof) != 1 || proof[0] != 8 {
+				t.Fatalf("proof=%v err=%v, want the merged proof", proof, err)
+			}
+		})
+	}
+}
+
+// earlyProposalEngine is a proposal test engine whose head is slot 0's block
+// and whose single validator proposes every slot.
+// proposalTestGenesisMs is when the proposal test engine's slot 0 begins.
+const proposalTestGenesisMs = 1000 * 1000
+
+func earlyProposalEngine(t *testing.T) *Engine {
+	t.Helper()
+	e := proposalTestEngine(t)
+	// Validator IDs come from the attestation keys.
+	e.Keys = xmss.NewKeyManager(map[uint64]*xmss.ValidatorKeyPair{0: {}}, nil)
+	// Fork choice keeps the head on slot 0's block through the ticks.
+	head := e.Store.Head()
+	e.Store.SetLatestJustified(&types.Checkpoint{Root: head})
+	e.FC = forkchoice.New(0, head, [32]byte{})
+	return e
+}
+
+func TestMaybeProposeEarlyWaitsForTheSlotsBlock(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		storeTime uint64
+		wantSlot  uint64 // 0: no duty
+	}{
+		// The head is slot 0's block, so slot 1's proposal starts at slot 0's interval 4.
+		{name: "interval_4_with_slots_block", storeTime: 4, wantSlot: 1},
+		// Slot 1's block has not arrived: its successor waits for it or for interval 0.
+		{name: "interval_4_without_slots_block", storeTime: types.IntervalsPerSlot + 4},
+		// Interval 4's promotion has not run yet.
+		{name: "interval_3", storeTime: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := earlyProposalEngine(t)
+			e.Store.SetTime(tc.storeTime)
+			e.maybeProposeEarly()
+			select {
+			case duty := <-e.ProposalCh:
+				if duty.slot != tc.wantSlot {
+					t.Fatalf("duty slot=%d, want %d", duty.slot, tc.wantSlot)
 				}
+				// The interval-0 trigger must not start a second proposal for the slot.
+				e.maybePropose(duty.slot, duty.validatorID)
+				if len(e.ProposalCh) != 0 {
+					t.Fatal("interval-0 trigger queued a second proposal for the slot")
+				}
+			default:
+				if tc.wantSlot != 0 {
+					t.Fatalf("no duty, want slot %d", tc.wantSlot)
+				}
+			}
+		})
+	}
+}
+
+// The interval-4 tick starts the next proposal, except as the startup tick.
+func TestTickAtInterval4StartsNextProposal(t *testing.T) {
+	interval4 := time.UnixMilli(proposalTestGenesisMs + 4*types.MillisecondsPerInterval)
+
+	e := earlyProposalEngine(t)
+	e.tickAt(interval4)
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("startup tick started a proposal")
+	}
+
+	e = earlyProposalEngine(t)
+	e.tickAt(time.UnixMilli(proposalTestGenesisMs + 3*types.MillisecondsPerInterval))
+	e.tickAt(interval4)
+	select {
+	case duty := <-e.ProposalCh:
+		if duty.slot != 1 {
+			t.Fatalf("duty slot=%d, want 1", duty.slot)
+		}
+	default:
+		t.Fatal("interval-4 tick did not start the next proposal")
+	}
+}
+
+// A block handled after the interval-4 tick starts the next proposal.
+func TestDispatchBlockStartsNextProposal(t *testing.T) {
+	e := earlyProposalEngine(t)
+	e.BlockCh = make(chan *types.SignedBlock, 1)
+	e.fetchInFlight = map[[32]byte]bool{}
+	e.Store.SetTime(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); e.dispatch(ctx, nil) }()
+	defer func() { cancel(); <-done }()
+
+	e.BlockCh <- blockAtSlot(0)
+	select {
+	case duty := <-e.ProposalCh:
+		if duty.slot != 1 {
+			t.Fatalf("duty slot=%d, want 1", duty.slot)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("block event did not start the next proposal")
+	}
+}
+
+func TestWaitForSlotStartHoldsEarlyProposal(t *testing.T) {
+	e := proposalTestEngine(t)
+	// Slot 0 starts at the next whole second, so the wait is under a second.
+	genesis := uint64(time.Now().Unix()) + 1
+	e.Store.SetConfig(&types.ChainConfig{GenesisTime: genesis})
+	if !e.waitForSlotStart(context.Background(), 0) {
+		t.Fatal("wait reported cancellation")
+	}
+	if now := time.Now().UnixMilli(); now < int64(genesis*1000) {
+		t.Fatalf("returned %d ms before the slot started", int64(genesis*1000)-now)
+	}
+
+	e.Store.SetConfig(&types.ChainConfig{GenesisTime: genesis + 100})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if e.waitForSlotStart(ctx, 0) {
+		t.Fatal("cancelled wait reported the slot start")
+	}
+}
+
+// A signed proposal is published even if a late block moved the head while it
+// was proving. Only a head at its slot, or a parent without state, discards it.
+// A block that reaches import clears its by-root fetch marker, so the marker
+// shows whether acceptProposal handed the block on.
+func TestAcceptProposalPublishesUnlessUnusable(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		setup       func(e *Engine, block *types.Block)
+		wantHandled bool
+	}{
+		{name: "parent_still_head", setup: func(*Engine, *types.Block) {}, wantHandled: true},
+		{name: "parent_replaced", setup: func(e *Engine, _ *types.Block) {
+			e.Store.SetHead([32]byte{0x99})
+		}, wantHandled: true},
+		{name: "head_reached_slot", setup: func(e *Engine, block *types.Block) {
+			later := [32]byte{0x98}
+			e.Store.InsertBlockHeader(later, &types.BlockHeader{Slot: block.Slot})
+			e.Store.SetHead(later)
+		}},
+		{name: "parent_state_gone", setup: func(_ *Engine, block *types.Block) {
+			block.ParentRoot = [32]byte{0x55}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := proposalTestEngine(t)
+			block := &types.Block{Slot: 1, ParentRoot: e.Store.Head(), Body: &types.BlockBody{}}
+			tc.setup(e, block)
+			root, err := block.HashTreeRoot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.fetchInFlight = map[[32]byte]bool{root: true}
+			e.acceptProposal(context.Background(), &proposalResult{
+				blockRoot:   root,
+				signedBlock: &types.SignedBlock{Block: block, Proof: &types.MultiMessageAggregate{Proof: []byte{1}}},
+			})
+			if handled := !e.fetchInFlight[root]; handled != tc.wantHandled {
+				t.Fatalf("handed to import=%v, want %v", handled, tc.wantHandled)
 			}
 		})
 	}
