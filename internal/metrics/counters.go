@@ -26,6 +26,14 @@ var (
 		Name: "lean_aggregation_groups_skipped_total",
 		Help: "Aggregation groups dropped inside a session by reason",
 	}, []string{"reason"})
+	metricAggregationProofValue = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_aggregation_proof_value_total",
+		Help: "Aggregation proofs produced, by what they would do for justification on top of the head state",
+	}, []string{"value"})
+	metricAggregationDeferredValue = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_aggregation_deferred_group_value_total",
+		Help: "Groups a session stopped before proving, counted per session, by what proving them would have done for justification",
+	}, []string{"value"})
 	metricForkChoiceReorgs = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_fork_choice_reorgs_total", Help: "Total fork choice reorgs",
 	})

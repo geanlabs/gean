@@ -25,6 +25,15 @@ func IncAggregationGroupSkipped(reason string, n int) {
 	}
 	metricAggregationGroupSkipped.WithLabelValues(aggregationGroupSkipReason(reason)).Add(float64(n))
 }
+func IncAggregationProofValue(value string) {
+	metricAggregationProofValue.WithLabelValues(labelOrUnknown(value)).Inc()
+}
+func IncAggregationDeferredValue(value string, n int) {
+	if n <= 0 {
+		return
+	}
+	metricAggregationDeferredValue.WithLabelValues(labelOrUnknown(value)).Add(float64(n))
+}
 func IncFinalization(result string) {
 	metricFinalizationsTotal.WithLabelValues(labelOrUnknown(result)).Inc()
 }
