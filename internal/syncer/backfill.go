@@ -37,26 +37,41 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 		// canonical chain. Starting at our head would only re-fetch our own tip.
 		startSlot = sd.store.LatestFinalized().Slot + 1
 	}
+	// Once the status peer fails a request, the rest of this pass asks other
+	// peers, so a stalled peer costs one request timeout rather than one per batch.
+	statusPeerFailed := false
 	for startSlot <= peerStatus.HeadSlot {
 		if err := ctx.Err(); err != nil {
 			return
 		}
 
 		count := requestCount(startSlot, peerStatus.HeadSlot)
-		logger.Info(logger.Sync, "sync: fetching range from peer %s start_slot=%d count=%d peer_head=%d",
-			peerID, startSlot, count, peerStatus.HeadSlot)
-
-		blocks, err := sd.p2p.FetchBlocksByRange(ctx, peerID, startSlot, count)
-		if err != nil {
-			sd.fallbackHeadByRoot(ctx, peerID, peerStatus, err)
-			return
+		servedBy := peerID
+		var blocks []*types.SignedBlock
+		var err error
+		if !statusPeerFailed {
+			logger.Info(logger.Sync, "sync: fetching range from peer %s start_slot=%d count=%d peer_head=%d",
+				peerID, startSlot, count, peerStatus.HeadSlot)
+			blocks, err = sd.p2p.FetchBlocksByRange(ctx, peerID, startSlot, count)
+			if err != nil {
+				logger.Warn(logger.Sync, "sync: blocks_by_range failed peer=%s err=%v; retrying on other peers",
+					peerID, err)
+				statusPeerFailed = true
+			}
+		}
+		if statusPeerFailed {
+			blocks, servedBy, err = sd.p2p.FetchBlocksByRangeWithRetry(ctx, peerID, startSlot, count)
+			if err != nil {
+				sd.fallbackHeadByRoot(ctx, peerID, peerStatus, err)
+				return
+			}
 		}
 		if len(blocks) == 0 {
 			logger.Info(logger.Sync, "sync: peer %s returned empty range at start_slot=%d, stopping", peerID, startSlot)
 			return
 		}
 
-		lastSlot, ok := sd.feedBlocks(ctx, peerID, blocks, startSlot)
+		lastSlot, ok := sd.feedBlocks(ctx, servedBy, blocks, startSlot)
 		if !ok {
 			return
 		}
@@ -146,7 +161,7 @@ func (sd *SyncDriver) fallbackHeadByRoot(ctx context.Context, peerID libp2ppeer.
 		return
 	}
 
-	logger.Warn(logger.Sync, "sync: blocks_by_range failed peer=%s err=%v; falling back to head-by-root",
+	logger.Warn(logger.Sync, "sync: blocks_by_range failed on every peer status_peer=%s err=%v; falling back to head-by-root",
 		peerID, rangeErr)
 
 	rootBlocks, _, err := sd.p2p.FetchBlocksByRootBatchWithRetry(ctx, [][32]byte{peerStatus.HeadRoot})

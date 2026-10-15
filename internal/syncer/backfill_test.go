@@ -171,6 +171,7 @@ func TestSyncDriver_CheckAndBackfill_FallsBackToRoot(t *testing.T) {
 	rootBlock, _ := makeSyncBlock(100, types.ZeroRoot)
 	mock := &mockSyncP2P{
 		rangeErr: fmt.Errorf("simulated range fetch failure"),
+		retryErr: fmt.Errorf("simulated retry exhaustion"),
 		rootBlocks: []*types.SignedBlock{
 			rootBlock,
 		},
@@ -185,6 +186,9 @@ func TestSyncDriver_CheckAndBackfill_FallsBackToRoot(t *testing.T) {
 	if got := mock.rangeCalls.Load(); got != 1 {
 		t.Errorf("expected 1 range call (failed), got %d", got)
 	}
+	if got := mock.retryCalls.Load(); got != 1 {
+		t.Errorf("expected 1 retry on other peers (exhausted), got %d", got)
+	}
 	if got := mock.rootCalls.Load(); got != 1 {
 		t.Errorf("expected 1 root fallback call, got %d", got)
 	}
@@ -195,11 +199,44 @@ func TestSyncDriver_CheckAndBackfill_FallsBackToRoot(t *testing.T) {
 	}
 }
 
+// A failed range request must not end the pass: the batch, and every batch
+// after it, goes to other peers, and the failed peer is not asked again.
+func TestSyncDriver_CheckAndBackfill_RetriesFailedRangeOnOtherPeers(t *testing.T) {
+	n, store := makeTestSyncHarness()
+	blocks := makeSyncRange(store.Head(), 1, 2, 3, 4)
+	mock := &mockSyncP2P{
+		rangeErr:     fmt.Errorf("simulated range fetch failure"),
+		retryBatches: [][]*types.SignedBlock{blocks[:2], blocks[2:]},
+	}
+	sd := NewSyncDriver(context.Background(), n, store, mock)
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 4})
+
+	if got := mock.rangeCalls.Load(); got != 1 {
+		t.Errorf("failed peer asked %d times, want 1", got)
+	}
+	if got := mock.retryCalls.Load(); got != 2 {
+		t.Errorf("retries=%d, want one per remaining batch (2)", got)
+	}
+	for _, failed := range mock.retryFailed {
+		if failed != "p1" {
+			t.Errorf("retry excluded %q, want the failed peer p1", failed)
+		}
+	}
+	if got := mock.rootCalls.Load(); got != 0 {
+		t.Errorf("head-by-root fallback ran %d times, want 0", got)
+	}
+	if got := drainBlockCh(t, n, 4, 100*time.Millisecond); len(got) != 4 {
+		t.Fatalf("delivered %d blocks, want 4", len(got))
+	}
+}
+
 func TestSyncDriver_CheckAndBackfill_FallbackSkipsMalformedBlocks(t *testing.T) {
 	n, store := makeTestSyncHarness()
 	rootBlock, _ := makeSyncBlock(100, types.ZeroRoot)
 	mock := &mockSyncP2P{
 		rangeErr: fmt.Errorf("simulated range fetch failure"),
+		retryErr: fmt.Errorf("simulated retry exhaustion"),
 		rootBlocks: []*types.SignedBlock{
 			nil,
 			{},
