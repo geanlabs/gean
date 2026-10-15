@@ -38,16 +38,6 @@ func (s stubStream) Write(p []byte) (int, error) {
 
 func (stubStream) SetWriteDeadline(time.Time) error { return nil }
 
-type captureHandler struct {
-	block *types.SignedBlock
-}
-
-func (h *captureHandler) OnBlock(block *types.SignedBlock) { h.block = block }
-func (h *captureHandler) OnGossipAttestation(att *types.SignedAttestation) {
-}
-func (h *captureHandler) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
-}
-
 func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
@@ -378,44 +368,6 @@ func TestDecodeResponseConcatenatedChunks(t *testing.T) {
 	}
 }
 
-func TestDispatchMessageRequiresHandler(t *testing.T) {
-	h := &Host{}
-	if err := h.dispatchMessage(BlockTopic(), nil, nil); err == nil {
-		t.Fatal("expected missing handler error")
-	}
-}
-
-func TestDispatchMessageUsesHostHooks(t *testing.T) {
-	block := &types.SignedBlock{
-		Block: &types.Block{Body: &types.BlockBody{}},
-		Proof: &types.MultiMessageAggregate{},
-	}
-	data, err := block.MarshalSSZ()
-	if err != nil {
-		t.Fatalf("marshal block: %v", err)
-	}
-
-	var observedSize int
-	h := &Host{
-		Hooks: Hooks{
-			GossipBlockSize: func(bytes int) {
-				observedSize = bytes
-			},
-		},
-	}
-	handler := &captureHandler{}
-
-	if err := h.dispatchMessage(BlockTopic(), data, handler); err != nil {
-		t.Fatalf("dispatch block: %v", err)
-	}
-	if observedSize != len(data) {
-		t.Fatalf("observed size=%d, want %d", observedSize, len(data))
-	}
-	if handler.block == nil {
-		t.Fatal("block handler was not called")
-	}
-}
-
 func TestPublishRejectsNilMessages(t *testing.T) {
 	h := &Host{}
 	ctx := context.Background()
@@ -446,32 +398,25 @@ func TestTopicStrings(t *testing.T) {
 	}
 }
 
-func TestIsAttestationSubnetTopic(t *testing.T) {
+func TestAttestationSubnet(t *testing.T) {
 	tests := []struct {
-		topic string
-		want  bool
+		topic  string
+		subnet uint64
+		ok     bool
 	}{
-		{AttestationSubnetTopic(0), true},
-		{AttestationSubnetTopic(42), true},
-		{"/leanconsensus/12345678/attestation_/ssz_snappy", false},
-		{"/leanconsensus/12345678/attestation_x/ssz_snappy", false},
-		{"/leanconsensus/12345678/not_attestation_0/ssz_snappy", false},
-		{"/other/12345678/attestation_0/ssz_snappy", false},
-		{"/leanconsensus/12345678/attestation_0/json", false},
+		{AttestationSubnetTopic(0), 0, true},
+		{AttestationSubnetTopic(42), 42, true},
+		{"/leanconsensus/12345678/attestation_/ssz_snappy", 0, false},
+		{"/leanconsensus/12345678/attestation_x/ssz_snappy", 0, false},
+		{"/leanconsensus/12345678/not_attestation_0/ssz_snappy", 0, false},
+		{"/other/12345678/attestation_0/ssz_snappy", 0, false},
+		{"/leanconsensus/12345678/attestation_0/json", 0, false},
 	}
 
 	for _, test := range tests {
-		if got := isAttestationSubnetTopic(test.topic); got != test.want {
-			t.Fatalf("isAttestationSubnetTopic(%q)=%t, want %t", test.topic, got, test.want)
+		if subnet, ok := attestationSubnet(test.topic); subnet != test.subnet || ok != test.ok {
+			t.Fatalf("attestationSubnet(%q)=(%d,%t), want (%d,%t)", test.topic, subnet, ok, test.subnet, test.ok)
 		}
-	}
-}
-
-func TestDispatchMessageRejectsNearMissAttestationTopic(t *testing.T) {
-	h := &Host{}
-	err := h.dispatchMessage("/leanconsensus/12345678/not_attestation_0/ssz_snappy", nil, &captureHandler{})
-	if err == nil {
-		t.Fatal("expected unknown topic error")
 	}
 }
 

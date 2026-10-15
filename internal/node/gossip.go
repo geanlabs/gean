@@ -1,11 +1,13 @@
 package node
 
 import (
+	"errors"
 	"time"
 
 	"github.com/geanlabs/gean/internal/attestation"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/p2p"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )
@@ -107,4 +109,66 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 		return
 	}
 	e.Store.NewPayloads.Push(dataRoot, agg.Data, agg.Proof)
+}
+
+// ValidateGossipBlock decides whether a received block is relayed. Only checks
+// that need no state are made here: the proof and the state transition still
+// run on import, after relay, so a hop does not add verification latency. A
+// block whose parent is unknown is relayed; the parent is usually in flight.
+func (e *Engine) ValidateGossipBlock(block *types.SignedBlock) p2p.Verdict {
+	slot := block.Block.Slot
+	// The import horizon, on the wall clock rather than the store clock: the
+	// store clock lags whenever the loop runs late, and judging by it would drop
+	// current blocks. Beyond the horizon the block may still be valid to a peer
+	// whose clock is ahead, so it is ignored, not rejected.
+	if slot > e.currentSlot(uint64(time.Now().UnixMilli()))+1 {
+		return p2p.Ignore
+	}
+	if finalized := e.Store.LatestFinalized(); finalized != nil && slot <= finalized.Slot {
+		return p2p.Ignore
+	}
+	return p2p.Accept
+}
+
+// ValidateGossipAttestation decides whether a received vote is relayed. The
+// signature is verified after relay, and only by aggregators, as before.
+func (e *Engine) ValidateGossipAttestation(att *types.SignedAttestation) p2p.Verdict {
+	return attestationDataVerdict(attestation.ValidateAttestationData(e.Store, att.Data))
+}
+
+// ValidateGossipAggregatedAttestation decides whether a received aggregate is
+// relayed. Its proof is verified after relay.
+func (e *Engine) ValidateGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) p2p.Verdict {
+	if len(agg.Proof.Proof) == 0 || types.BitlistCount(agg.Proof.Participants) == 0 {
+		return p2p.Reject
+	}
+	return attestationDataVerdict(attestation.ValidateAttestationData(e.Store, agg.Data))
+}
+
+// attestationDataVerdict maps ValidateAttestationData's result to a relay
+// decision. Reject only covers data that contradicts itself, or a checkpoint
+// slot that disagrees with the block its root names: invalid on every node.
+// Votes that may become valid are accepted, as before, and judged again on
+// delivery: unknown blocks, so the vote reaches the pending buffer, and the
+// future bound, which is measured on the store clock that lags when the loop
+// runs late. The rest depends on this node's view and is ignored; the node
+// drops those votes on delivery anyway.
+func attestationDataVerdict(err error) p2p.Verdict {
+	if err == nil {
+		return p2p.Accept
+	}
+	var se *store.StoreError
+	if !errors.As(err, &se) {
+		return p2p.Reject // malformed data
+	}
+	switch se.Kind {
+	case store.ErrUnknownSourceBlock, store.ErrUnknownTargetBlock, store.ErrUnknownHeadBlock,
+		store.ErrAttestationTooFarInFuture:
+		return p2p.Accept
+	case store.ErrSourceExceedsTarget, store.ErrHeadOlderThanTarget, store.ErrAttestationSlotBeforeHead,
+		store.ErrSourceSlotMismatch, store.ErrTargetSlotMismatch, store.ErrHeadSlotMismatch:
+		return p2p.Reject
+	default:
+		return p2p.Ignore
+	}
 }
