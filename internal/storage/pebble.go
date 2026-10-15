@@ -102,6 +102,18 @@ func (v *pebbleReadView) PrefixIterator(table Table, prefix []byte) (Iterator, e
 	return &pebbleIterator{iter: iter, table: table}, nil
 }
 
+func (v *pebbleReadView) IteratorFrom(table Table, start []byte) (Iterator, error) {
+	iter, err := v.db.NewIter(&pebble.IterOptions{
+		LowerBound: tableKey(table, start),
+		UpperBound: prefixUpperBound(tableKey(table, nil)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	iter.First()
+	return &pebbleIterator{iter: iter, table: table}, nil
+}
+
 func prefixUpperBound(prefix []byte) []byte {
 	if len(prefix) == 0 {
 		return nil

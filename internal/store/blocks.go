@@ -266,6 +266,53 @@ func (s *ConsensusStore) scanMaxStoredBlockSlot() (uint64, error) {
 	return max, nil
 }
 
+// LiveChainEntry is an imported block: its slot, root and parent.
+type LiveChainEntry struct {
+	Slot             uint64
+	Root, ParentRoot [32]byte
+}
+
+// LiveChainRange returns the imported blocks with from <= slot < to, in slot
+// order; to == 0 means no upper bound. Import writes the entry in the same
+// batch as the block's state, so the live chain records which blocks were
+// verified even after their states are pruned.
+func (s *ConsensusStore) LiveChainRange(from, to uint64) ([]LiveChainEntry, error) {
+	rv, err := s.beginRead("read live chain")
+	if err != nil {
+		return nil, err
+	}
+	// Keys lead with the big-endian slot, so this starts at the first entry at
+	// or above from.
+	it, err := rv.IteratorFrom(storage.TableLiveChain, storage.EncodeLiveChainKey(from, [32]byte{}))
+	if err != nil {
+		return nil, fmt.Errorf("iterate live chain: %w", err)
+	}
+	defer it.Close()
+
+	var entries []LiveChainEntry
+	for it.Next() {
+		key := it.Key()
+		if len(key) < storage.LiveChainKeySize {
+			continue
+		}
+		slot, root := storage.DecodeLiveChainKey(key)
+		if to != 0 && slot >= to {
+			break
+		}
+		val := it.Value()
+		if len(val) < 32 {
+			continue
+		}
+		entry := LiveChainEntry{Slot: slot, Root: root}
+		copy(entry.ParentRoot[:], val)
+		entries = append(entries, entry)
+	}
+	if err := it.Err(); err != nil {
+		return nil, fmt.Errorf("iterate live chain: %w", err)
+	}
+	return entries, nil
+}
+
 func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]byte) {
 	if err := s.PutLiveChainEntry(slot, root, parentRoot); err != nil {
 		logger.Error(logger.Store, "%v", err)

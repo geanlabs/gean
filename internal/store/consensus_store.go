@@ -76,6 +76,10 @@ type ConsensusStore struct {
 	// signature verification does not decode a whole state to read one key. See
 	// ValidatorKeys. validatorKeysOrder records insertion order and is the
 	// eviction queue; both are guarded by validatorKeysMu.
+	// statesPrunedBelow is the slot below which PruneStaleStates has already
+	// deleted stale states. Only the dispatch loop reads or writes it.
+	statesPrunedBelow uint64
+
 	validatorKeysMu    sync.Mutex
 	validatorKeys      map[[32]byte]*ValidatorKeys
 	validatorKeysOrder [][32]byte

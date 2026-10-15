@@ -4,6 +4,7 @@ import (
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/types"
 )
 
 const (
@@ -14,6 +15,13 @@ const (
 	// 4-second slots: long enough that a brief finality gap costs nothing, short
 	// enough that a sustained stall does not grow the pools without limit.
 	AttestationRetentionSlots = 1024
+
+	// StateRetentionSlots is how far below the head post-states are kept once
+	// finalization stops advancing: twice the attestation retention, so every
+	// vote still kept can find its target state. A block on a fork older than
+	// this still imports; the import path re-imports stored ancestors from the
+	// nearest kept state.
+	StateRetentionSlots = 2 * AttestationRetentionSlots
 )
 
 func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinalizedSlot, newFinalizedSlot uint64, newFinalizedRoot [32]byte) {
@@ -77,6 +85,49 @@ func PruneStaleAttestationPools(s *ConsensusStore, headSlot, finalizedSlot uint6
 	}
 	logger.Warn(logger.Store, "finalization lagging, pruned stale attestation pools: cutoff=%d head=%d finalized=%d gossip_sigs=%d payloads=%d",
 		cutoff, headSlot, finalizedSlot, prunedSigs, prunedKnown+prunedNew)
+}
+
+// PruneStaleStates bounds the state table while finalization stalls, by
+// deleting the post-states of imported blocks more than StateRetentionSlots
+// below the head. PruneOnFinalization only removes states below the finalized
+// slot, and PeriodicPrune only non-canonical ones, so without this every state
+// since the last finalization stays on disk. The justified state is kept.
+//
+// The live chain is slot-ordered and states below prunedBelow are already gone,
+// so each call only touches the newly aged slots. The mark is in memory: after
+// a restart the first call repeats deletes, which are no-ops.
+func PruneStaleStates(s *ConsensusStore, headSlot uint64, finalized, justified *types.Checkpoint) int {
+	if s == nil || finalized == nil || headSlot <= StateRetentionSlots {
+		return 0
+	}
+	cutoff := headSlot - StateRetentionSlots
+	from := max(s.statesPrunedBelow, finalized.Slot+1)
+	if cutoff <= from {
+		return 0
+	}
+
+	entries, err := s.LiveChainRange(from, cutoff)
+	if err != nil {
+		logger.Error(logger.Store, "prune stale states: %v", err)
+		return 0
+	}
+	var roots [][32]byte
+	for _, e := range entries {
+		if justified != nil && e.Root == justified.Root {
+			continue
+		}
+		roots = append(roots, e.Root)
+	}
+	pruned := pruneStatesByRoots(s, roots)
+	if pruned != len(roots) {
+		return pruned
+	}
+	s.statesPrunedBelow = cutoff
+	if pruned > 0 {
+		logger.Warn(logger.Store, "finalization lagging, pruned stale states: cutoff=%d head=%d finalized=%d states=%d",
+			cutoff, headSlot, finalized.Slot, pruned)
+	}
+	return pruned
 }
 
 func PeriodicPrune(s *ConsensusStore, fc *forkchoice.ForkChoice, currentSlot, finalizedSlot uint64) {
