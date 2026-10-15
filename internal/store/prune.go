@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
@@ -8,6 +10,12 @@ import (
 
 const (
 	PruningIntervalSlots = 7200
+
+	// BlockProofRetentionSlots is how far below the head a finalized block keeps
+	// its stored signed block, about a day at 4-second slots. Peers may only ask
+	// for the last types.MinSlotsForBlockRequests slots, so an older proof is
+	// never served; the header and body stay in their own tables.
+	BlockProofRetentionSlots = 21600
 
 	// AttestationRetentionSlots is how far below the head the attestation-keyed
 	// pools are kept once finalization stops advancing. Roughly an hour at
@@ -33,13 +41,19 @@ func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinali
 		prunedStates += pruneStatesByRoots(s, canonical[1:])
 	}
 
-	prunedChain := pruneLiveChain(s, newFinalizedSlot)
+	// Finalized history keeps its live-chain entry until the block is a day old,
+	// then loses the entry and its stored signed block together.
+	historyCutoff := uint64(0)
+	if head := s.HeadSlot(); head > BlockProofRetentionSlots {
+		historyCutoff = min(newFinalizedSlot, head-BlockProofRetentionSlots)
+	}
+	prunedChain := pruneFinalizedHistory(s, historyCutoff)
 
 	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
 	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
 	prunedNew := s.NewPayloads.PruneBelow(newFinalizedSlot)
 
-	logger.Info(logger.Store, "pruning: finalized_slot=%d states=%d blocks=%d live_chain=%d gossip_sigs=%d payloads=%d non_canonical=%d",
+	logger.Info(logger.Store, "pruning: finalized_slot=%d states=%d blocks=%d history=%d gossip_sigs=%d payloads=%d non_canonical=%d",
 		newFinalizedSlot, prunedStates, prunedBlocks, prunedChain, prunedSigs,
 		prunedKnown+prunedNew, len(nonCanonical))
 }
@@ -170,8 +184,14 @@ func pruneBlocksByRoots(s *ConsensusStore, roots [][32]byte) int {
 	return len(roots)
 }
 
-func pruneLiveChain(s *ConsensusStore, finalizedSlot uint64) int {
-	rv, err := s.beginRead("prune live chain")
+// pruneFinalizedHistory deletes, for every live-chain entry below cutoff, the
+// entry and the block's stored signed block, which carries its proof. Headers
+// and bodies stay. Entries are keyed by slot first, so the scan stops at the
+// first one at or above cutoff and only touches what it deletes. Non-canonical
+// blocks below finalization were already removed whole; their rows are gone and
+// the deletes are no-ops.
+func pruneFinalizedHistory(s *ConsensusStore, cutoff uint64) int {
+	rv, err := s.beginRead("prune finalized history")
 	if err != nil {
 		return 0
 	}
@@ -182,35 +202,39 @@ func pruneLiveChain(s *ConsensusStore, finalizedSlot uint64) int {
 	}
 	defer iter.Close()
 
-	var keysToDelete [][]byte
+	var entries, roots [][]byte
 	for iter.Next() {
 		key := iter.Key()
 		if len(key) < storage.LiveChainKeySize {
 			continue
 		}
-		slot, _ := storage.DecodeLiveChainKey(key)
-		if slot < finalizedSlot {
-			k := make([]byte, len(key))
-			copy(k, key)
-			keysToDelete = append(keysToDelete, k)
+		slot, root := storage.DecodeLiveChainKey(key)
+		if slot >= cutoff {
+			break
 		}
+		entries = append(entries, bytes.Clone(key))
+		roots = append(roots, bytes.Clone(root[:]))
 	}
 
-	if len(keysToDelete) == 0 {
+	if len(entries) == 0 {
 		return 0
 	}
 
-	wb, err := s.beginWrite("prune live chain")
+	wb, err := s.beginWrite("prune finalized history")
 	if err != nil {
 		logger.Error(logger.Store, "%v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(storage.TableLiveChain, keysToDelete); err != nil {
-		logger.Error(logger.Store, "prune live chain: delete failed: %v", err)
+	if err := wb.DeleteBatch(storage.TableLiveChain, entries); err != nil {
+		logger.Error(logger.Store, "prune finalized history: delete live chain: %v", err)
 		return 0
 	}
-	if !commitDeletes(wb, "prune live chain") {
+	if err := wb.DeleteBatch(storage.TableSignedBlocks, roots); err != nil {
+		logger.Error(logger.Store, "prune finalized history: delete signed blocks: %v", err)
 		return 0
 	}
-	return len(keysToDelete)
+	if !commitDeletes(wb, "prune finalized history") {
+		return 0
+	}
+	return len(entries)
 }
