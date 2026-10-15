@@ -133,16 +133,27 @@ func (e *Engine) ValidateGossipBlock(block *types.SignedBlock) p2p.Verdict {
 // ValidateGossipAttestation decides whether a received vote is relayed. The
 // signature is verified after relay, and only by aggregators, as before.
 func (e *Engine) ValidateGossipAttestation(att *types.SignedAttestation) p2p.Verdict {
+	if slotsContradict(att.Data) {
+		return p2p.Reject
+	}
 	return attestationDataVerdict(attestation.ValidateAttestationData(e.Store, att.Data))
 }
 
 // ValidateGossipAggregatedAttestation decides whether a received aggregate is
 // relayed. Its proof is verified after relay.
 func (e *Engine) ValidateGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) p2p.Verdict {
-	if len(agg.Proof.Proof) == 0 || types.BitlistCount(agg.Proof.Participants) == 0 {
+	if len(agg.Proof.Proof) == 0 || types.BitlistCount(agg.Proof.Participants) == 0 || slotsContradict(agg.Data) {
 		return p2p.Reject
 	}
 	return attestationDataVerdict(attestation.ValidateAttestationData(e.Store, agg.Data))
+}
+
+// slotsContradict reports attestation data whose slots cannot all hold, which
+// needs no state. ValidateAttestationData looks the blocks up first, as leanSpec
+// validate_attestation does, so with unknown roots it would report an unknown
+// block and the vote would be relayed and fetched for.
+func slotsContradict(data *types.AttestationData) bool {
+	return data.Source.Slot > data.Target.Slot || data.Head.Slot < data.Target.Slot || data.Slot < data.Head.Slot
 }
 
 // attestationDataVerdict maps ValidateAttestationData's result to a relay

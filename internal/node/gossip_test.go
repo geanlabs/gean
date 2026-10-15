@@ -78,6 +78,10 @@ func TestValidateGossipAttestationVerdicts(t *testing.T) {
 		// Still delivered, so it reaches the pending buffer and triggers a fetch.
 		{"unknown head", &types.AttestationData{Slot: 1, Head: cp(unknown, 1), Target: cp(genesis, 0), Source: cp(genesis, 0)}, p2p.Accept},
 		{"source after target", &types.AttestationData{Slot: 2, Head: cp(genesis, 2), Target: cp(genesis, 0), Source: cp(genesis, 1)}, p2p.Reject},
+		// Contradicting slots are rejected before any block is looked up.
+		{"source after target, unknown roots", &types.AttestationData{Slot: 2, Head: cp(unknown, 2), Target: cp(unknown, 0), Source: cp(unknown, 1)}, p2p.Reject},
+		{"head older than target, unknown roots", &types.AttestationData{Slot: 3, Head: cp(unknown, 1), Target: cp(unknown, 2), Source: cp(unknown, 0)}, p2p.Reject},
+		{"slot before head, unknown roots", &types.AttestationData{Slot: 1, Head: cp(unknown, 2), Target: cp(unknown, 2), Source: cp(unknown, 0)}, p2p.Reject},
 		{"head slot disagrees with its block", &types.AttestationData{Slot: 3, Head: cp(genesis, 3), Target: cp(genesis, 0), Source: cp(genesis, 0)}, p2p.Reject},
 		// Judged by the lagging store clock, so it is left to the engine.
 		{"ahead of the store clock", &types.AttestationData{Slot: 10, Head: cp(genesis, 0), Target: cp(genesis, 0), Source: cp(genesis, 0)}, p2p.Accept},
@@ -102,26 +106,35 @@ func TestValidateGossipAttestationVerdicts(t *testing.T) {
 	}
 }
 
-func TestValidateGossipAggregatedAttestationRejectsEmptyProof(t *testing.T) {
+func TestValidateGossipAggregatedAttestationVerdicts(t *testing.T) {
 	e := makeTestEngine()
 	genesis := e.Store.Head()
-	data := &types.AttestationData{
+	valid := &types.AttestationData{
 		Head: &types.Checkpoint{Root: genesis}, Target: &types.Checkpoint{Root: genesis}, Source: &types.Checkpoint{Root: genesis},
+	}
+	var unknown [32]byte
+	unknown[0] = 0xEE
+	contradicting := &types.AttestationData{
+		Slot: 2, Head: &types.Checkpoint{Root: unknown, Slot: 2},
+		Target: &types.Checkpoint{Root: unknown}, Source: &types.Checkpoint{Root: unknown, Slot: 1},
 	}
 	participants := types.NewBitlistSSZ(1)
 	types.BitlistSet(participants, 0)
+	proof := &types.SingleMessageAggregate{Participants: participants, Proof: []byte{1}}
 
 	for _, tc := range []struct {
 		name  string
+		data  *types.AttestationData
 		proof *types.SingleMessageAggregate
 		want  p2p.Verdict
 	}{
-		{"no participants", &types.SingleMessageAggregate{Participants: types.NewBitlistSSZ(1), Proof: []byte{1}}, p2p.Reject},
-		{"no proof bytes", &types.SingleMessageAggregate{Participants: participants, Proof: nil}, p2p.Reject},
-		{"non-empty", &types.SingleMessageAggregate{Participants: participants, Proof: []byte{1}}, p2p.Accept},
+		{"no participants", valid, &types.SingleMessageAggregate{Participants: types.NewBitlistSSZ(1), Proof: []byte{1}}, p2p.Reject},
+		{"no proof bytes", valid, &types.SingleMessageAggregate{Participants: participants}, p2p.Reject},
+		{"contradicting slots, unknown roots", contradicting, proof, p2p.Reject},
+		{"non-empty", valid, proof, p2p.Accept},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			agg := &types.SignedAggregatedAttestation{Data: data, Proof: tc.proof}
+			agg := &types.SignedAggregatedAttestation{Data: tc.data, Proof: tc.proof}
 			if got := e.ValidateGossipAggregatedAttestation(agg); got != tc.want {
 				t.Fatalf("verdict=%d, want %d", got, tc.want)
 			}
