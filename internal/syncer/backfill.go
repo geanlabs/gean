@@ -37,9 +37,10 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 		// canonical chain. Starting at our head would only re-fetch our own tip.
 		startSlot = sd.store.LatestFinalized().Slot + 1
 	}
-	// Once the status peer fails a request, the rest of this pass asks other
-	// peers, so a stalled peer costs one request timeout rather than one per batch.
-	statusPeerFailed := false
+	// excluded stays nil while the status peer serves. Once it fails, the rest
+	// of this pass asks other peers, and every peer that fails is excluded until
+	// the pass ends, so a stalled peer costs one request timeout, not one per batch.
+	var excluded map[libp2ppeer.ID]bool
 	for startSlot <= peerStatus.HeadSlot {
 		if err := ctx.Err(); err != nil {
 			return
@@ -49,20 +50,25 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 		servedBy := peerID
 		var blocks []*types.SignedBlock
 		var err error
-		if !statusPeerFailed {
+		if excluded == nil {
 			logger.Info(logger.Sync, "sync: fetching range from peer %s start_slot=%d count=%d peer_head=%d",
 				peerID, startSlot, count, peerStatus.HeadSlot)
 			blocks, err = sd.p2p.FetchBlocksByRange(ctx, peerID, startSlot, count)
 			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				logger.Warn(logger.Sync, "sync: blocks_by_range failed peer=%s err=%v; retrying on other peers",
 					peerID, err)
-				statusPeerFailed = true
+				excluded = map[libp2ppeer.ID]bool{peerID: true}
 			}
 		}
-		if statusPeerFailed {
-			blocks, servedBy, err = sd.p2p.FetchBlocksByRangeWithRetry(ctx, peerID, startSlot, count)
+		if excluded != nil {
+			blocks, servedBy, err = sd.p2p.FetchBlocksByRangeWithRetry(ctx, excluded, startSlot, count)
 			if err != nil {
-				sd.fallbackHeadByRoot(ctx, peerID, peerStatus, err)
+				if ctx.Err() == nil {
+					sd.fallbackHeadByRoot(ctx, peerID, peerStatus, err)
+				}
 				return
 			}
 		}

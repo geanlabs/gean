@@ -73,18 +73,19 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	return nil, roots, fmt.Errorf("batch block fetch failed after %d retries for %d roots", MaxFetchRetries, len(roots))
 }
 
-// FetchBlocksByRangeWithRetry asks random peers other than failed for the range
-// and returns the first non-empty response with the peer that served it.
+// FetchBlocksByRangeWithRetry asks random peers outside excluded for the range
+// and returns the first non-empty response with the peer that served it. Each
+// peer that fails is added to excluded, so a caller fetching several batches
+// can keep it for all of them.
 func (h *Host) FetchBlocksByRangeWithRetry(
 	ctx context.Context,
-	failed peer.ID,
+	excluded map[peer.ID]bool,
 	startSlot, count uint64,
 ) ([]*types.SignedBlock, peer.ID, error) {
 	if err := validateRangeRequest(startSlot, count); err != nil {
 		return nil, "", err
 	}
 
-	excluded := map[peer.ID]bool{failed: true}
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {

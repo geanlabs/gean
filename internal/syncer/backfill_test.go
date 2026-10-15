@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -200,13 +201,15 @@ func TestSyncDriver_CheckAndBackfill_FallsBackToRoot(t *testing.T) {
 }
 
 // A failed range request must not end the pass: the batch, and every batch
-// after it, goes to other peers, and the failed peer is not asked again.
+// after it, goes to other peers. Every peer that failed stays excluded for the
+// rest of the pass, so a stalled peer is not asked again for each batch.
 func TestSyncDriver_CheckAndBackfill_RetriesFailedRangeOnOtherPeers(t *testing.T) {
 	n, store := makeTestSyncHarness()
 	blocks := makeSyncRange(store.Head(), 1, 2, 3, 4)
 	mock := &mockSyncP2P{
 		rangeErr:     fmt.Errorf("simulated range fetch failure"),
 		retryBatches: [][]*types.SignedBlock{blocks[:2], blocks[2:]},
+		retryFails:   []libp2ppeer.ID{"p2"}, // p2 stalls during the first retry
 	}
 	sd := NewSyncDriver(context.Background(), n, store, mock)
 
@@ -215,19 +218,33 @@ func TestSyncDriver_CheckAndBackfill_RetriesFailedRangeOnOtherPeers(t *testing.T
 	if got := mock.rangeCalls.Load(); got != 1 {
 		t.Errorf("failed peer asked %d times, want 1", got)
 	}
-	if got := mock.retryCalls.Load(); got != 2 {
-		t.Errorf("retries=%d, want one per remaining batch (2)", got)
-	}
-	for _, failed := range mock.retryFailed {
-		if failed != "p1" {
-			t.Errorf("retry excluded %q, want the failed peer p1", failed)
-		}
+	want := [][]libp2ppeer.ID{{"p1"}, {"p1", "p2"}}
+	if !reflect.DeepEqual(mock.retryExcluded, want) {
+		t.Errorf("retries excluded %v, want %v", mock.retryExcluded, want)
 	}
 	if got := mock.rootCalls.Load(); got != 0 {
 		t.Errorf("head-by-root fallback ran %d times, want 0", got)
 	}
 	if got := drainBlockCh(t, n, 4, 100*time.Millisecond); len(got) != 4 {
 		t.Fatalf("delivered %d blocks, want 4", len(got))
+	}
+}
+
+// Shutdown fails the in-flight request; that is not the peer's fault, and
+// retrying or falling back against a cancelled context only logs blame.
+func TestSyncDriver_CheckAndBackfill_ShutdownDoesNotRetry(t *testing.T) {
+	n, store := makeTestSyncHarness()
+	ctx, cancel := context.WithCancel(context.Background())
+	mock := &mockSyncP2P{rangeErr: context.Canceled, onRange: cancel}
+	sd := NewSyncDriver(ctx, n, store, mock)
+
+	sd.checkAndBackfill(ctx, libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+
+	if got := mock.retryCalls.Load(); got != 0 {
+		t.Errorf("retries after shutdown=%d, want 0", got)
+	}
+	if got := mock.rootCalls.Load(); got != 0 {
+		t.Errorf("head-by-root fallback after shutdown=%d, want 0", got)
 	}
 }
 
