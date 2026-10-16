@@ -3,6 +3,7 @@ package node
 import (
 	"testing"
 
+	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )
@@ -117,19 +118,35 @@ func TestGetCanonicalBlocksInRange_ReportsIncompleteChain(t *testing.T) {
 		chain        []uint64
 		startSlot    uint64
 		count        uint64
+		pruneProof   []uint64
 		wantBlocks   int
 		wantComplete bool
 	}{
-		{"reaches genesis", []uint64{0, 1, 2, 3}, 0, 4, 4, true},
-		{"walk stops below startSlot", []uint64{0, 1, 2, 3, 4, 5}, 3, 3, 3, true},
-		{"ancestors end above startSlot", []uint64{5, 6, 7}, 0, 8, 3, false},
-		{"anchor above requested range", []uint64{5, 6, 7}, 1, 2, 0, false},
-		{"zero count", []uint64{0, 1, 2}, 0, 0, 0, false},
+		{"reaches genesis", []uint64{0, 1, 2, 3}, 0, 4, nil, 4, true},
+		{"walk stops below startSlot", []uint64{0, 1, 2, 3, 4, 5}, 3, 3, nil, 3, true},
+		{"ancestors end above startSlot", []uint64{5, 6, 7}, 0, 8, nil, 3, false},
+		{"anchor above requested range", []uint64{5, 6, 7}, 1, 2, nil, 0, false},
+		{"zero count", []uint64{0, 1, 2}, 0, 0, nil, 0, false},
+		{"proof pruned inside range", []uint64{0, 1, 2, 3}, 0, 4, []uint64{1}, 2, false},
+		{"proof pruned below range", []uint64{0, 1, 2, 3}, 2, 2, []uint64{0}, 2, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, _ := makeChainStore(t, tt.chain)
+			s, roots := makeChainStore(t, tt.chain)
+			for _, slot := range tt.pruneProof {
+				root := roots[slot]
+				wb, err := s.Backend.BeginWrite()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := wb.DeleteBatch(storage.TableSignedBlocks, [][]byte{root[:]}); err != nil {
+					t.Fatal(err)
+				}
+				if err := wb.Commit(); err != nil {
+					t.Fatal(err)
+				}
+			}
 
 			got, complete := s.GetCanonicalBlocksInRange(tt.startSlot, tt.count)
 			if len(got) != tt.wantBlocks {
