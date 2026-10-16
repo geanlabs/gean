@@ -14,7 +14,8 @@ const (
 	// BlockProofRetentionSlots is how far below the head a finalized block keeps
 	// its stored signed block, about a day at 4-second slots. Peers may only ask
 	// for the last types.MinSlotsForBlockRequests slots, so an older proof is
-	// never served; the header and body stay in their own tables.
+	// never asked for, and a range that reaches one is refused rather than
+	// served with a gap. The header and body stay in their own tables.
 	BlockProofRetentionSlots = 21600
 
 	// AttestationRetentionSlots is how far below the head the attestation-keyed
