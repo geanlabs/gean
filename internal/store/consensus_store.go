@@ -73,9 +73,11 @@ type ConsensusStore struct {
 	maxBlockSlotSeedMu sync.Mutex
 
 	// statesPrunedBelow is the slot below which PruneStaleStates has already
-	// deleted stale states. Block import lowers it; both run on the dispatch
-	// loop, the only reader and writer.
-	statesPrunedBelow uint64
+	// deleted the head's stale ancestor states, and statesKeptJustifiedSlot the
+	// justified slot it last kept. Block import lowers the mark; both run on the
+	// dispatch loop, the only reader and writer.
+	statesPrunedBelow       uint64
+	statesKeptJustifiedSlot uint64
 
 	// validatorKeys caches each state's attestation public keys by state root so
 	// signature verification does not decode a whole state to read one key. See

@@ -22,6 +22,11 @@ const (
 	// this still imports; the import path re-imports stored ancestors from the
 	// nearest kept state.
 	StateRetentionSlots = 2 * AttestationRetentionSlots
+
+	// StateCheckpointSlots is the spacing of the ancestor states kept below
+	// StateRetentionSlots during a stall: the most a rebuild for an old fork
+	// point replays, and one kept state per this many slots of stall.
+	StateCheckpointSlots = 64
 )
 
 func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinalizedSlot, newFinalizedSlot uint64, newFinalizedRoot [32]byte) {
@@ -88,37 +93,56 @@ func PruneStaleAttestationPools(s *ConsensusStore, headSlot, finalizedSlot uint6
 }
 
 // PruneStaleStates bounds the state table while finalization stalls, by
-// deleting the post-states of imported blocks more than StateRetentionSlots
-// below the head. PruneOnFinalization only removes states below the finalized
-// slot, and PeriodicPrune only non-canonical ones, so without this every state
-// since the last finalization stays on disk. The justified state is kept.
+// deleting the post-states of the head's ancestors more than
+// StateRetentionSlots below the head. PruneOnFinalization only removes states
+// below the finalized slot, and PeriodicPrune only non-canonical ones, so
+// without this every state since the last finalization stays on disk.
 //
-// The live chain is slot-ordered and states below statesPrunedBelow are already
-// gone, unless import rebuilt one and lowered the mark, so each call only
-// touches the newly aged slots. The mark is in memory: after
-// a restart the first call repeats deletes, which are no-ops.
-func PruneStaleStates(s *ConsensusStore, headSlot uint64, finalized, justified *types.Checkpoint) int {
-	if s == nil || finalized == nil || headSlot <= StateRetentionSlots {
+// Three kinds of state are kept:
+//   - side branches: a branch being synced onto must keep its states, or each
+//     sweep would delete what the last import built and the next block would
+//     rebuild the whole branch;
+//   - the justified state;
+//   - the lowest ancestor in each StateCheckpointSlots bucket, so rebuilding
+//     a pruned parent for a block on an old fork point replays at most that
+//     many slots.
+//
+// Ancestors below statesPrunedBelow were pruned by an earlier call, so the walk
+// stops at the first missing state below it; import lowers the mark when it
+// rebuilds a state there. The mark is in memory: after a restart the first
+// call checks every ancestor down to the finalized slot once.
+func PruneStaleStates(s *ConsensusStore, fc *forkchoice.ForkChoice, headRoot [32]byte, headSlot uint64, finalized, justified *types.Checkpoint) int {
+	if s == nil || fc == nil || finalized == nil || justified == nil || headSlot <= StateRetentionSlots {
 		return 0
 	}
 	cutoff := headSlot - StateRetentionSlots
-	from := max(s.statesPrunedBelow, finalized.Slot+1)
-	if cutoff <= from {
+	if cutoff <= finalized.Slot+1 {
 		return 0
+	}
+	// A justified state skipped by an earlier call sits below the mark once
+	// justified moves on; lowering the mark lets this walk reach it.
+	if justified.Slot != s.statesKeptJustifiedSlot {
+		s.statesPrunedBelow = min(s.statesPrunedBelow, s.statesKeptJustifiedSlot)
+		s.statesKeptJustifiedSlot = justified.Slot
 	}
 
-	entries, err := s.LiveChainRange(from, cutoff)
-	if err != nil {
-		logger.Error(logger.Store, "prune stale states: %v", err)
-		return 0
-	}
 	var roots [][32]byte
-	for _, e := range entries {
-		if justified != nil && e.Root == justified.Root {
-			continue
+	fc.WalkAncestors(headRoot, func(root [32]byte, slot, parentSlot uint64) bool {
+		if slot >= cutoff {
+			return true
 		}
-		roots = append(roots, e.Root)
-	}
+		if slot <= finalized.Slot {
+			return false
+		}
+		if root == justified.Root || parentSlot/StateCheckpointSlots < slot/StateCheckpointSlots {
+			return true
+		}
+		has := s.HasState(root)
+		if has {
+			roots = append(roots, root)
+		}
+		return has || slot >= s.statesPrunedBelow
+	})
 	pruned := pruneStatesByRoots(s, roots)
 	if pruned != len(roots) {
 		return pruned

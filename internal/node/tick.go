@@ -75,7 +75,7 @@ func (e *Engine) onTick() {
 		finalized := e.Store.LatestFinalized()
 		headSlot := e.Store.HeadSlot()
 		store.PruneStaleAttestationPools(e.Store, headSlot, finalized.Slot)
-		store.PruneStaleStates(e.Store, headSlot, finalized, e.Store.LatestJustified())
+		store.PruneStaleStates(e.Store, e.FC, e.Store.Head(), headSlot, finalized, e.Store.LatestJustified())
 		store.PeriodicPrune(e.Store, e.FC, currentSlot, finalized.Slot)
 	}
 }

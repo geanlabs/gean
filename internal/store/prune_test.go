@@ -3,6 +3,7 @@ package store_test
 import (
 	"testing"
 
+	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
@@ -105,10 +106,62 @@ func countStates(t *testing.T, s *store.ConsensusStore) int {
 	return n
 }
 
-func importBlock(s *store.ConsensusStore, slot uint64, root, parent [32]byte) {
-	s.InsertBlockHeader(root, &types.BlockHeader{Slot: slot, ParentRoot: parent})
-	s.InsertState(root, &types.State{Slot: slot})
-	s.InsertLiveChainEntry(slot, root, parent)
+// stallChain is a store and fork choice fed the way import feeds them.
+type stallChain struct {
+	s  *store.ConsensusStore
+	fc *forkchoice.ForkChoice
+}
+
+func newStallChain(t *testing.T) *stallChain {
+	t.Helper()
+	// Pebble, as on a node: the in-memory backend re-sorts a table on every
+	// iterator, which over thousands of slots would dominate the test.
+	backend, err := storage.NewPebbleBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { backend.Close() })
+	c := &stallChain{s: store.NewConsensusStore(backend), fc: forkchoice.New(0, slotRoot(0), [32]byte{})}
+	c.s.InsertBlockHeader(slotRoot(0), &types.BlockHeader{})
+	c.s.InsertState(slotRoot(0), &types.State{})
+	return c
+}
+
+// importBlock imports a block whose parent state is present, as persistBlock
+// does.
+func (c *stallChain) importBlock(slot uint64, root, parent [32]byte) {
+	c.s.InsertBlockHeader(root, &types.BlockHeader{Slot: slot, ParentRoot: parent})
+	c.s.InsertState(root, &types.State{Slot: slot})
+	c.s.InsertLiveChainEntry(slot, root, parent)
+	c.s.ObserveImportedState(slot)
+	c.fc.OnBlock(slot, root, parent)
+}
+
+// deliver imports a new block the way the import path does: a missing parent
+// state is rebuilt by re-importing stored ancestors from the nearest kept
+// state. It returns how many imports that took.
+func (c *stallChain) deliver(t *testing.T, slot uint64, root, parent [32]byte) int {
+	t.Helper()
+	var missing [][32]byte
+	for r := parent; !c.s.HasState(r); {
+		h := c.s.GetBlockHeader(r)
+		if h == nil {
+			t.Fatalf("no header for 0x%x", r)
+		}
+		missing = append(missing, r)
+		r = h.ParentRoot
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		h := c.s.GetBlockHeader(missing[i])
+		c.s.InsertState(missing[i], &types.State{Slot: h.Slot})
+		c.s.ObserveImportedState(h.Slot)
+	}
+	c.importBlock(slot, root, parent)
+	return len(missing) + 1
+}
+
+func (c *stallChain) sweep(head [32]byte, headSlot uint64, finalized, justified *types.Checkpoint) {
+	store.PruneStaleStates(c.s, c.fc, head, headSlot, finalized, justified)
 }
 
 func slotRoot(slot uint64) [32]byte {
@@ -117,52 +170,102 @@ func slotRoot(slot uint64) [32]byte {
 	return r
 }
 
+func forkRoot(slot uint64) [32]byte {
+	r := slotRoot(slot)
+	r[3] = 0xF0
+	return r
+}
+
 // The issue's acceptance case: a node in a finality stall keeps its state table
 // within a bound however long the stall runs.
 func TestPruneStaleStatesBoundsTheStateTableInAStall(t *testing.T) {
-	// Pebble, as on a node: the in-memory backend re-sorts a table on every
-	// iterator, which over thousands of slots would dominate the test.
-	backend, err := storage.NewPebbleBackend(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { backend.Close() })
-	s := store.NewConsensusStore(backend)
+	c := newStallChain(t)
 	finalized := &types.Checkpoint{Root: slotRoot(0), Slot: 0}
 	justified := &types.Checkpoint{Root: slotRoot(40), Slot: 40}
-	importBlock(s, 0, slotRoot(0), [32]byte{})
 	const stall = 3 * store.StateRetentionSlots
 	for slot := uint64(1); slot <= stall; slot++ {
-		importBlock(s, slot, slotRoot(slot), slotRoot(slot-1))
-		store.PruneStaleStates(s, slot, finalized, justified)
+		c.importBlock(slot, slotRoot(slot), slotRoot(slot-1))
+		c.sweep(slotRoot(slot), slot, finalized, justified)
 	}
 
-	// The last StateRetentionSlots blocks below the head and the head itself,
-	// plus the finalized and justified states.
-	if got, bound := countStates(t, s), store.StateRetentionSlots+3; got != bound {
+	// The head and the StateRetentionSlots blocks below it, the finalized and
+	// justified states, and one state per checkpoint bucket below the window.
+	cutoff := uint64(stall - store.StateRetentionSlots)
+	bound := store.StateRetentionSlots + 1 + 2 + int((cutoff-1)/store.StateCheckpointSlots)
+	if got := countStates(t, c.s); got != bound {
 		t.Fatalf("states after a %d-slot stall: %d, want %d", stall, got, bound)
 	}
-	for _, kept := range []uint64{0, 40, stall - store.StateRetentionSlots, stall} {
-		if !s.HasState(slotRoot(kept)) {
+	for _, kept := range []uint64{0, 40, store.StateCheckpointSlots, cutoff, stall} {
+		if !c.s.HasState(slotRoot(kept)) {
 			t.Fatalf("state at slot %d was pruned", kept)
 		}
 	}
-	if s.HasState(slotRoot(stall - store.StateRetentionSlots - 1)) {
+	if c.s.HasState(slotRoot(cutoff - 1)) {
 		t.Fatal("state just past the retention window survived")
 	}
-	if s.GetBlockHeader(slotRoot(100)) == nil {
+	if c.s.GetBlockHeader(slotRoot(100)) == nil {
 		t.Fatal("pruning a state took the block header with it")
 	}
 }
 
+// Syncing onto a branch that forks far below the head: each branch block's
+// parent state must survive the sweeps, or every sweep deletes what the last
+// import built and the next block rebuilds the branch from the bottom.
+func TestPruneStaleStatesKeepsABranchBeingSynced(t *testing.T) {
+	c := newStallChain(t)
+	finalized := &types.Checkpoint{Root: slotRoot(0), Slot: 0}
+	justified := finalized
+	const head = 3000
+	for slot := uint64(1); slot <= head; slot++ {
+		c.importBlock(slot, slotRoot(slot), slotRoot(slot-1))
+		c.sweep(slotRoot(slot), slot, finalized, justified)
+	}
+
+	// The branch forks at slot 100, which is not a checkpoint: the first block
+	// rebuilds back to the nearest kept ancestor, the rest import directly.
+	const fork, branchEnd = 100, 900
+	imports := 0
+	parent := slotRoot(fork)
+	for slot := uint64(fork + 1); slot <= branchEnd; slot++ {
+		imports += c.deliver(t, slot, forkRoot(slot), parent)
+		parent = forkRoot(slot)
+		c.sweep(slotRoot(head), head, finalized, justified)
+	}
+	branch := branchEnd - fork
+	if limit := branch + store.StateCheckpointSlots; imports > limit {
+		t.Fatalf("syncing a %d-block branch took %d imports, want at most %d", branch, imports, limit)
+	}
+}
+
+// A justified state kept below the window is pruned once justification moves on.
+func TestPruneStaleStatesDropsTheOldJustifiedState(t *testing.T) {
+	c := newStallChain(t)
+	finalized := &types.Checkpoint{Root: slotRoot(0), Slot: 0}
+	justified := &types.Checkpoint{Root: slotRoot(40), Slot: 40}
+	const head = 3000
+	for slot := uint64(1); slot <= head; slot++ {
+		c.importBlock(slot, slotRoot(slot), slotRoot(slot-1))
+		c.sweep(slotRoot(slot), slot, finalized, justified)
+	}
+	if !c.s.HasState(slotRoot(40)) {
+		t.Fatal("justified state was pruned")
+	}
+
+	c.importBlock(head+1, slotRoot(head+1), slotRoot(head))
+	c.sweep(slotRoot(head+1), head+1, finalized, &types.Checkpoint{Root: slotRoot(2990), Slot: 2990})
+	if c.s.HasState(slotRoot(40)) {
+		t.Fatal("old justified state survived after justification moved on")
+	}
+}
+
 func TestPruneStaleStatesLeavesHealthyFinalityAlone(t *testing.T) {
-	s := makeTestStore()
-	for slot := uint64(0); slot <= 3000; slot++ {
-		importBlock(s, slot, slotRoot(slot), slotRoot(slot-1))
+	c := newStallChain(t)
+	for slot := uint64(1); slot <= 3000; slot++ {
+		c.importBlock(slot, slotRoot(slot), slotRoot(slot-1))
 	}
 	// Finalized within the window: PruneOnFinalization owns everything below it.
 	finalized := &types.Checkpoint{Root: slotRoot(2990), Slot: 2990}
-	if got := store.PruneStaleStates(s, 3000, finalized, finalized); got != 0 {
+	if got := store.PruneStaleStates(c.s, c.fc, slotRoot(3000), 3000, finalized, finalized); got != 0 {
 		t.Fatalf("pruned %d states with finality inside the window, want 0", got)
 	}
 }

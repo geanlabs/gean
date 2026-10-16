@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
@@ -256,26 +257,37 @@ func processorBlockRoot(t *testing.T, block *types.Block) [32]byte {
 	return root
 }
 
-// Rebuilding a pruned parent writes states below PruneStaleStates' mark; the
-// next sweep must reach them, or each rebuild leaks states until finality
-// resumes.
+// Rebuilding a pruned parent writes states below PruneStaleStates' mark, under
+// ancestors whose states are already gone. persistBlock must lower the mark, or
+// the next sweep stops at the first missing state above the rebuilt one and the
+// rebuilt state stays until finality resumes.
 func TestPruneStaleStatesReachesStatesRebuiltBelowItsMark(t *testing.T) {
 	s, parentState, parentRoot := processorStoreWithParent(t)
 	finalized := s.LatestFinalized()
-	headSlot := uint64(store.StateRetentionSlots + 10)
-	// An empty live chain still advances the mark to the cutoff.
-	store.PruneStaleStates(s, headSlot, finalized, finalized)
-
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
+	blockRoot := processorBlockRoot(t, block)
+	above := [32]byte{0xb2}
+	head := [32]byte{0xb3}
+	fc := forkchoice.New(0, parentRoot, [32]byte{})
+	fc.OnBlock(1, blockRoot, parentRoot)
+	fc.OnBlock(2, above, blockRoot)
+	fc.OnBlock(3, head, above)
+	s.InsertState(above, &types.State{Slot: 2})
+	s.InsertState(head, &types.State{Slot: 3})
+	// The head slot puts all three blocks below the window, so the first sweep
+	// prunes them and moves the mark to the cutoff.
+	headSlot := uint64(store.StateRetentionSlots + 10)
+	store.PruneStaleStates(s, fc, head, headSlot, finalized, finalized)
+
 	if err := OnBlockWithoutVerification(s, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	}); err != nil {
 		t.Fatalf("process block: %v", err)
 	}
-	store.PruneStaleStates(s, headSlot, finalized, finalized)
+	store.PruneStaleStates(s, fc, head, headSlot, finalized, finalized)
 
-	if s.HasState(processorBlockRoot(t, block)) {
+	if s.HasState(blockRoot) {
 		t.Fatal("state imported below the prune mark survived the next sweep")
 	}
 }
