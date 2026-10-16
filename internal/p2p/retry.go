@@ -49,7 +49,7 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.RandomPeer(excluded)
+		peerID := h.peerStore.SelectPeer(excluded, 0)
 		if peerID == "" {
 			return nil, roots, fmt.Errorf("no peers available for batch block fetch")
 		}
@@ -73,10 +73,11 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	return nil, roots, fmt.Errorf("batch block fetch failed after %d retries for %d roots", MaxFetchRetries, len(roots))
 }
 
-// FetchBlocksByRangeWithRetry asks random peers outside excluded for the range
-// and returns the first non-empty response with the peer that served it. Each
-// peer that fails is added to excluded, so a caller fetching several batches
-// can keep it for all of them.
+// FetchBlocksByRangeWithRetry asks peers outside excluded for the range, picked
+// by score and preferring those whose status covers its last slot, and returns
+// the first non-empty response with the peer that served it. Each peer that
+// fails is added to excluded, so a caller fetching several batches can keep it
+// for all of them.
 func (h *Host) FetchBlocksByRangeWithRetry(
 	ctx context.Context,
 	excluded map[peer.ID]bool,
@@ -89,7 +90,7 @@ func (h *Host) FetchBlocksByRangeWithRetry(
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.RandomPeer(excluded)
+		peerID := h.peerStore.SelectPeer(excluded, startSlot+count-1)
 		if peerID == "" {
 			return nil, "", fmt.Errorf("no peers available for blocks_by_range fetch")
 		}
@@ -118,7 +119,7 @@ func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.RandomPeer(excluded)
+		peerID := h.peerStore.SelectPeer(excluded, 0)
 		if peerID == "" {
 			return nil, fmt.Errorf("no peers available for block fetch")
 		}

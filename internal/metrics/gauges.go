@@ -62,6 +62,9 @@ var (
 	metricNodeStartTime = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_node_start_time_seconds", Help: "Node start time as Unix timestamp",
 	})
+	metricPeerScore = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lean_peer_score", Help: "Request reputation of each connected peer (0-200, starts at 100)",
+	}, []string{"peer"})
 	metricConnectedPeers = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lean_connected_peers", Help: "Number of connected peers",
 	}, []string{"client"})
