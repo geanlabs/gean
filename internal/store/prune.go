@@ -93,8 +93,9 @@ func PruneStaleAttestationPools(s *ConsensusStore, headSlot, finalizedSlot uint6
 // slot, and PeriodicPrune only non-canonical ones, so without this every state
 // since the last finalization stays on disk. The justified state is kept.
 //
-// The live chain is slot-ordered and states below prunedBelow are already gone,
-// so each call only touches the newly aged slots. The mark is in memory: after
+// The live chain is slot-ordered and states below statesPrunedBelow are already
+// gone, unless import rebuilt one and lowered the mark, so each call only
+// touches the newly aged slots. The mark is in memory: after
 // a restart the first call repeats deletes, which are no-ops.
 func PruneStaleStates(s *ConsensusStore, headSlot uint64, finalized, justified *types.Checkpoint) int {
 	if s == nil || finalized == nil || headSlot <= StateRetentionSlots {
@@ -128,6 +129,13 @@ func PruneStaleStates(s *ConsensusStore, headSlot uint64, finalized, justified *
 			cutoff, headSlot, finalized.Slot, pruned)
 	}
 	return pruned
+}
+
+// ObserveImportedState lowers PruneStaleStates' mark when import writes a state
+// below it, as rebuilding a pruned parent does, so the next sweep reaches that
+// state again.
+func (s *ConsensusStore) ObserveImportedState(slot uint64) {
+	s.statesPrunedBelow = min(s.statesPrunedBelow, slot)
 }
 
 func PeriodicPrune(s *ConsensusStore, fc *forkchoice.ForkChoice, currentSlot, finalizedSlot uint64) {

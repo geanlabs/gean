@@ -255,3 +255,27 @@ func processorBlockRoot(t *testing.T, block *types.Block) [32]byte {
 	}
 	return root
 }
+
+// Rebuilding a pruned parent writes states below PruneStaleStates' mark; the
+// next sweep must reach them, or each rebuild leaks states until finality
+// resumes.
+func TestPruneStaleStatesReachesStatesRebuiltBelowItsMark(t *testing.T) {
+	s, parentState, parentRoot := processorStoreWithParent(t)
+	finalized := s.LatestFinalized()
+	headSlot := uint64(store.StateRetentionSlots + 10)
+	// An empty live chain still advances the mark to the cutoff.
+	store.PruneStaleStates(s, headSlot, finalized, finalized)
+
+	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
+	if err := OnBlockWithoutVerification(s, &types.SignedBlock{
+		Block: block,
+		Proof: &types.MultiMessageAggregate{},
+	}); err != nil {
+		t.Fatalf("process block: %v", err)
+	}
+	store.PruneStaleStates(s, headSlot, finalized, finalized)
+
+	if s.HasState(processorBlockRoot(t, block)) {
+		t.Fatal("state imported below the prune mark survived the next sweep")
+	}
+}

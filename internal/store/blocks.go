@@ -313,6 +313,17 @@ func (s *ConsensusStore) LiveChainRange(from, to uint64) ([]LiveChainEntry, erro
 	return entries, nil
 }
 
+// HasLiveChainEntry reports whether the block at slot with this root was
+// imported.
+func (s *ConsensusStore) HasLiveChainEntry(slot uint64, root [32]byte) bool {
+	rv, err := s.beginRead("has live chain entry")
+	if err != nil {
+		return false
+	}
+	val, err := rv.Get(storage.TableLiveChain, storage.EncodeLiveChainKey(slot, root))
+	return err == nil && val != nil
+}
+
 func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]byte) {
 	if err := s.PutLiveChainEntry(slot, root, parentRoot); err != nil {
 		logger.Error(logger.Store, "%v", err)
