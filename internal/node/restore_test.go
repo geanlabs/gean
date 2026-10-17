@@ -23,9 +23,11 @@ func minimalState() *types.State {
 	}
 }
 
+// insertProcessedBlock stores what import persists for a verified block.
 func insertProcessedBlock(s *store.ConsensusStore, root [32]byte, header *types.BlockHeader) {
 	s.InsertBlockHeader(root, header)
 	s.InsertState(root, minimalState())
+	s.InsertLiveChainEntry(header.Slot, root, header.ParentRoot)
 }
 
 func TestForkChoiceFromStoreRejectsMissingHeader(t *testing.T) {
@@ -138,7 +140,8 @@ func TestForkChoiceFromStoreSkipsUnprocessedHeaders(t *testing.T) {
 
 	insertProcessedBlock(s, justified, &types.BlockHeader{Slot: 2})
 	insertProcessedBlock(s, processed, &types.BlockHeader{Slot: 4, ParentRoot: justified})
-	// Header persisted for a pending block that was never verified: no state.
+	// Header persisted for a pending block that was never verified: no
+	// live-chain entry.
 	s.InsertBlockHeader(unverified, &types.BlockHeader{Slot: 5, ParentRoot: justified})
 	s.SetHead(processed)
 	s.SetLatestJustified(&types.Checkpoint{Root: justified, Slot: 2})
@@ -152,5 +155,38 @@ func TestForkChoiceFromStoreSkipsUnprocessedHeaders(t *testing.T) {
 	}
 	if head := fc.UpdateHead(justified); head != processed {
 		t.Fatalf("head=%x, want processed block %x", head, processed)
+	}
+}
+
+// A finality stall prunes old states; their blocks must still be replayed, or
+// every descendant is left dangling and the head cannot move off the anchor.
+func TestForkChoiceFromStoreReplaysBlocksWhoseStateWasPruned(t *testing.T) {
+	s := restoreTestStore()
+	justified := [32]byte{0xaa}
+	old := [32]byte{0xbb}
+	head := [32]byte{0xcc}
+
+	insertProcessedBlock(s, justified, &types.BlockHeader{Slot: 2})
+	insertProcessedBlock(s, old, &types.BlockHeader{Slot: 4, ParentRoot: justified})
+	insertProcessedBlock(s, head, &types.BlockHeader{Slot: 6, ParentRoot: old})
+	s.SetHead(head)
+	s.SetLatestJustified(&types.Checkpoint{Root: justified, Slot: 2})
+	wb, err := s.Backend.BeginWrite()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.DeleteBatch(storage.TableStates, [][]byte{old[:]}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wb.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	fc, err := ForkChoiceFromStore(s)
+	if err != nil {
+		t.Fatalf("fork choice from store: %v", err)
+	}
+	if got := fc.UpdateHead(justified); got != head {
+		t.Fatalf("head=%x, want %x past the block whose state was pruned", got, head)
 	}
 }

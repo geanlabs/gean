@@ -14,6 +14,9 @@ type ReadView interface {
 	Get(table Table, key []byte) ([]byte, error)
 
 	PrefixIterator(table Table, prefix []byte) (Iterator, error)
+
+	// IteratorFrom iterates a table's keys at or after start, in key order.
+	IteratorFrom(table Table, start []byte) (Iterator, error)
 }
 
 type WriteBatch interface {
