@@ -26,6 +26,10 @@ const (
 	GossipDuplicateCache    = 24 * time.Second
 	GossipMaxTransmitSize   = MaxCompressedPayloadSize
 	GossipMaxMsgPerRPC      = 500
+	// GossipValidateQueueSize bounds messages waiting for validation. pubsub's
+	// default of 32 drops anything beyond one small burst, silently; this holds
+	// several full RPCs.
+	GossipValidateQueueSize = 4 * GossipMaxMsgPerRPC
 )
 
 func newLibP2PHost(privKey libp2pcrypto.PrivKey, listenPort int) (libp2phost.Host, error) {
@@ -60,6 +64,7 @@ func newGossipSub(ctx context.Context, h libp2phost.Host) (*pubsub.PubSub, error
 		pubsub.WithGossipSubParams(gossipSubParams()),
 		pubsub.WithSeenMessagesTTL(GossipDuplicateCache),
 		pubsub.WithMaxMessageSize(GossipMaxTransmitSize),
+		pubsub.WithValidateQueueSize(GossipValidateQueueSize),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create gossipsub: %w", err)
