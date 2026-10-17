@@ -15,7 +15,7 @@ func (e *Engine) startWorkers(ctx context.Context) {
 	go e.runRecoveryWorker(ctx)
 	go e.runAggregationWorker(ctx)
 	go e.runGossipMeshGauge(ctx)
-	go e.runTickAgeGauge(ctx)
+	go e.runStallGauges(ctx)
 
 	// These read the backend, so shutdown has to join them before Close: see
 	// Engine.WaitForStorageWorkers.
