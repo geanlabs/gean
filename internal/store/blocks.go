@@ -146,6 +146,12 @@ func WriteBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 	return nil
 }
 
+// DeletePendingBlocks removes the header, body and signed block StorePendingBlock
+// wrote for each root. Callers pass only roots that were never imported.
+func (s *ConsensusStore) DeletePendingBlocks(roots [][32]byte) int {
+	return pruneBlocksByRoots(s, roots)
+}
+
 func (s *ConsensusStore) StorePendingBlock(root [32]byte, signedBlock *types.SignedBlock) error {
 	err := s.storePendingBlock(root, signedBlock)
 	if err != nil {
