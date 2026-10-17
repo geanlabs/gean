@@ -100,7 +100,7 @@ func (e *Engine) recordTableBytes(ctx context.Context) {
 	for _, table := range storage.AllTables {
 		// Bail between tables so a cancelled shutdown does not spend a whole
 		// round on a database that is about to close. Responsiveness only:
-		// Engine.WaitForStorageWorkers is what actually makes Close safe.
+		// Engine.Wait is what actually makes Close safe.
 		if ctx.Err() != nil {
 			return
 		}
