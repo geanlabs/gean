@@ -20,7 +20,7 @@ func (e *Engine) startWorkers(ctx context.Context) {
 		func() { e.runAttestationWorker(ctx) },
 		func() { e.runAggregationWorker(ctx) },
 		func() { e.runGossipMeshGauge(ctx) },
-		func() { e.runTickAgeGauge(ctx) },
+		func() { e.runStallGauges(ctx) },
 		func() { e.runStorageSizeGauge(ctx) },
 	} {
 		e.tasks.Go(run)

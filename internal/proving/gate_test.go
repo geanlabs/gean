@@ -72,3 +72,30 @@ func TestGateConcurrentProposalAndBackground(t *testing.T) {
 		t.Fatal("background waiter never acquired the gate during stress")
 	}
 }
+
+func TestGateHeldTracksTheHolder(t *testing.T) {
+	g := NewGate()
+	if held, _ := g.Held(time.Now()); held != 0 {
+		t.Fatalf("free gate held for %v, want 0", held)
+	}
+
+	if !g.Acquire(context.Background(), true) {
+		t.Fatal("acquire failed")
+	}
+	later := time.Now().Add(90 * time.Second)
+	held, proposal := g.Held(later)
+	if held < 89*time.Second || !proposal {
+		t.Fatalf("held=%v proposal=%t, want about 90s by a proposal", held, proposal)
+	}
+
+	g.Release(true)
+	if held, _ := g.Held(later); held != 0 {
+		t.Fatalf("released gate held for %v, want 0", held)
+	}
+	if !g.Acquire(context.Background(), false) {
+		t.Fatal("background acquire failed")
+	}
+	if _, proposal := g.Held(later); proposal {
+		t.Fatal("background holder reported as a proposal")
+	}
+}
