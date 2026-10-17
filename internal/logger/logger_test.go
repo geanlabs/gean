@@ -33,15 +33,9 @@ func TestLogLevelsWriteFormattedLines(t *testing.T) {
 
 	got := buf.String()
 	for _, want := range []string{
-		"INFO",
-		"[chain]",
-		"height=12",
-		"WARN",
-		"[network]",
-		"peer=abc",
-		"ERROR",
-		"[store]",
-		"failed=true",
+		" INFO [chain] height=12\n",
+		" WARN [network] peer=abc\n",
+		" ERROR [store] failed=true\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("log output %q does not contain %q", got, want)

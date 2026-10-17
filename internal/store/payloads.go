@@ -149,7 +149,11 @@ func (pb *PayloadBuffer) TotalProofs() int {
 	return pb.totalProofs
 }
 
-func (pb *PayloadBuffer) ExtractLatestAttestations() map[uint64]*types.AttestationData {
+// ExtractLatestAttestations maps each validator to its latest vote whose head sits
+// above finalizedSlot, mirroring leanSpec's _extract_attestations_from_aggregated_payloads:
+// a stale vote is skipped before the latest vote is picked, so it cannot hide an
+// earlier vote that still carries weight.
+func (pb *PayloadBuffer) ExtractLatestAttestations(finalizedSlot uint64) map[uint64]*types.AttestationData {
 	result := make(map[uint64]*types.AttestationData)
 	if pb == nil {
 		return result
@@ -165,7 +169,7 @@ func (pb *PayloadBuffer) ExtractLatestAttestations() map[uint64]*types.Attestati
 	chosenRoot := make(map[uint64][32]byte)
 	for _, dataRoot := range pb.order {
 		entry, ok := pb.data[dataRoot]
-		if !ok || !validPayloadEntry(entry) {
+		if !ok || !validPayloadEntry(entry) || entry.Data.Head.Slot <= finalizedSlot {
 			continue
 		}
 		for _, proof := range entry.Proofs {
@@ -287,14 +291,14 @@ func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.Atte
 	if s == nil || s.KnownPayloads == nil {
 		return map[uint64]*types.AttestationData{}
 	}
-	return s.KnownPayloads.ExtractLatestAttestations()
+	return s.KnownPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
 }
 
 func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.AttestationData {
 	if s == nil || s.NewPayloads == nil {
 		return map[uint64]*types.AttestationData{}
 	}
-	return s.NewPayloads.ExtractLatestAttestations()
+	return s.NewPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
 }
 
 func validPayloadEntry(entry *PayloadEntry) bool {

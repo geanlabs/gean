@@ -126,7 +126,7 @@ func (h *Host) FetchBlocksByRange(
 
 	reader := bufio.NewReader(io.LimitReader(stream, int64(MaxCompressedPayloadSize)*int64(count)))
 	for {
-		code, blockData, err := readReqRespChunk(stream, reader, "blocks_by_range")
+		code, blockData, err := readReqRespChunk(stream, reader, "blocks_by_range", MaxSignedBlockSize)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break

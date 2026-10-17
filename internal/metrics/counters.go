@@ -12,6 +12,9 @@ var (
 	metricAttestationsInvalid = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_attestations_invalid_total", Help: "Total invalid attestations rejected",
 	})
+	metricAttestationsDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "lean_attestations_dropped_total", Help: "Gossip attestations dropped because the verify queue was full",
+	})
 	metricAttestationsBufferEvicted = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "lean_attestations_buffer_evicted_total", Help: "Pending attestations dropped due to per-root FIFO overflow",
 	})

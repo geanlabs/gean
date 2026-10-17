@@ -8,16 +8,6 @@ import (
 	"time"
 )
 
-const (
-	reset  = "\033[0m"
-	dim    = "\033[2m"
-	red    = "\033[31m"
-	green  = "\033[32m"
-	yellow = "\033[33m"
-	cyan   = "\033[36m"
-	bold   = "\033[1m"
-)
-
 var (
 	mu     sync.Mutex
 	output io.Writer = os.Stderr
@@ -42,15 +32,15 @@ func timestamp() string {
 }
 
 func Info(component, format string, args ...any) {
-	emit(green, "INFO", component, format, args...)
+	emit("INFO", component, format, args...)
 }
 
 func Warn(component, format string, args ...any) {
-	emit(yellow, "WARN", component, format, args...)
+	emit("WARN", component, format, args...)
 }
 
 func Error(component, format string, args ...any) {
-	emit(red, "ERROR", component, format, args...)
+	emit("ERROR", component, format, args...)
 }
 
 func SetOutput(w io.Writer) {
@@ -71,14 +61,12 @@ func IsQuiet() bool {
 	return quiet
 }
 
-func emit(levelColor, level, component, format string, args ...any) {
+func emit(level, component, format string, args ...any) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	if quiet || output == nil {
 		return
 	}
-	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(output, "%s%s%s %s%s%s%s %s[%s]%s %s\n",
-		dim, timestamp(), reset, bold, levelColor, level, reset, cyan, component, reset, msg)
+	fmt.Fprintf(output, "%s %s [%s] %s\n", timestamp(), level, component, fmt.Sprintf(format, args...))
 }

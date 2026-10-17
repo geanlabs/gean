@@ -13,9 +13,9 @@ func (sd *SyncDriver) OnPeerConnected(peerID libp2ppeer.ID) {
 	if !sd.ready() {
 		return
 	}
-	ctx, cancel := context.WithTimeout(sd.ctx, peerStatusTimeout)
-	defer cancel()
-	sd.pollPeer(ctx, peerID, sd.makeStatusMessage())
+	// The status request carries its own timeout; the backfill it may start
+	// runs until done or shutdown, as it does from the poll.
+	sd.pollPeer(sd.ctx, peerID, sd.makeStatusMessage())
 }
 
 func (sd *SyncDriver) refreshSyncFromPeers(ctx context.Context) {

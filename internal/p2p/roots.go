@@ -95,7 +95,7 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 	seenRoots := make(map[[32]byte]bool, len(roots))
 	reader := bufio.NewReader(io.LimitReader(stream, int64(MaxCompressedPayloadSize)*int64(len(roots))))
 	for {
-		code, blockData, err := readReqRespChunk(stream, reader, "blocks_by_root")
+		code, blockData, err := readReqRespChunk(stream, reader, "blocks_by_root", MaxSignedBlockSize)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break

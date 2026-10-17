@@ -49,22 +49,150 @@ func TestKeyManagerNilSafeAccessors(t *testing.T) {
 	}
 }
 
-func TestLoadValidatorKeysRejectsIncompleteDualKeyConfig(t *testing.T) {
-	dir := t.TempDir()
+// writeKeyFiles generates one key pair per name and writes its secret key under that name in dir.
+func writeKeyFiles(t *testing.T, dir string, names ...string) map[string][types.PubkeySize]byte {
+	t.Helper()
+	pubkeys := make(map[string][types.PubkeySize]byte, len(names))
+	for _, name := range names {
+		kp, err := GenerateKeyPair("keys-test-"+name, 0, 1<<10)
+		if err != nil {
+			t.Fatalf("generate %s: %v", name, err)
+		}
+		sk, err := kp.PrivateKeyBytes()
+		if err != nil {
+			t.Fatalf("serialize %s: %v", name, err)
+		}
+		if pubkeys[name], err = kp.PublicKeyBytes(); err != nil {
+			t.Fatalf("pubkey %s: %v", name, err)
+		}
+		kp.Close()
+		if err := os.WriteFile(filepath.Join(dir, name), sk, 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	return pubkeys
+}
+
+func loadAnnotated(t *testing.T, dir, entries string) (*KeyManager, error) {
+	t.Helper()
 	path := filepath.Join(dir, "validators.yaml")
-	data := []byte(`
-node-a:
-  - index: 4
-    attestation_sk_file: att.sk
-    attestation_pubkey_hex: 00
-`)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("node-a:\n"+entries), 0o600); err != nil {
 		t.Fatalf("write annotated validators: %v", err)
 	}
+	return LoadValidatorKeys(path, dir, "node-a")
+}
 
-	_, err := LoadValidatorKeys(path, dir, "node-a")
-	if err == nil || !strings.Contains(err.Error(), "proposal key file missing for validator 4") {
-		t.Fatalf("error=%v, want missing proposal key file", err)
+func TestLoadValidatorKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeKeyFiles(t, dir, "v_attester_key_sk.ssz", "v_proposer_key_sk.ssz", "v_sk.ssz", "v_attester_proposer_sk.ssz")
+
+	tests := []struct {
+		name    string
+		entries string
+		wantErr string
+	}{
+		{"lean-quickstart pair", `
+  - {index: 0, privkey_file: v_attester_key_sk.ssz}
+  - {index: 0, privkey_file: v_proposer_key_sk.ssz}
+`, ""},
+		{"keygen pair", `
+  - {index: 0, attestation_sk_file: v_attester_key_sk.ssz, proposal_sk_file: v_proposer_key_sk.ssz}
+`, ""},
+		{"file without role", `
+  - {index: 0, privkey_file: v_sk.ssz}
+`, "must name exactly one role"},
+		{"file naming both roles", `
+  - {index: 0, privkey_file: v_attester_proposer_sk.ssz}
+`, "must name exactly one role"},
+		{"duplicate role", `
+  - {index: 0, privkey_file: v_attester_key_sk.ssz}
+  - {index: 0, privkey_file: v_attester_key_sk.ssz}
+  - {index: 0, privkey_file: v_proposer_key_sk.ssz}
+`, "duplicate attestation key for validator 0"},
+		{"missing proposal key", `
+  - {index: 0, privkey_file: v_attester_key_sk.ssz}
+`, "proposal key file missing for validator 0"},
+		{"entry without key files", `
+  - {index: 0}
+`, "attestation key file missing for validator 0"},
+		{"incomplete keygen pair", `
+  - {index: 0, attestation_sk_file: v_attester_key_sk.ssz}
+`, "proposal key file missing for validator 0"},
+		{"mixed formats", `
+  - {index: 0, privkey_file: v_attester_key_sk.ssz, proposal_sk_file: v_proposer_key_sk.ssz}
+`, "cannot be combined"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			km, err := loadAnnotated(t, dir, tt.entries)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("load: %v", err)
+				}
+				km.Close()
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				km.Close()
+				t.Fatalf("error=%v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestKeyManagerMatchRegistry(t *testing.T) {
+	dir := t.TempDir()
+	pubkeys := writeKeyFiles(t, dir, "v_attester_key_sk.ssz", "v_proposer_key_sk.ssz")
+	att, prop := pubkeys["v_attester_key_sk.ssz"], pubkeys["v_proposer_key_sk.ssz"]
+
+	// The attester file copied under a proposer name: one key in both roles.
+	sk, err := os.ReadFile(filepath.Join(dir, "v_attester_key_sk.ssz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "copy_proposer_key_sk.ssz"), sk, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	pair := `
+  - {index: 0, privkey_file: v_attester_key_sk.ssz}
+  - {index: 0, privkey_file: v_proposer_key_sk.ssz}
+`
+	tests := []struct {
+		name     string
+		entries  string
+		registry []*types.Validator
+		wantErr  string
+	}{
+		{"matching keys", pair, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, ""},
+		{"swapped keys", pair, []*types.Validator{{AttestationPubkey: prop, ProposalPubkey: att}}, "attestation key"},
+		{"one key in both roles", `
+  - {index: 0, privkey_file: v_attester_key_sk.ssz}
+  - {index: 0, privkey_file: copy_proposer_key_sk.ssz}
+`, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, "proposal key"},
+		{"validator outside registry", `
+  - {index: 1, privkey_file: v_attester_key_sk.ssz}
+  - {index: 1, privkey_file: v_proposer_key_sk.ssz}
+`, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, "not in registry"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			km, err := loadAnnotated(t, dir, tt.entries)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer km.Close()
+			err = km.MatchRegistry(tt.registry)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("match: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error=%v, want %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -75,8 +203,7 @@ func TestLoadKeypairRejectsEmptySecretKey(t *testing.T) {
 		t.Fatalf("write secret key: %v", err)
 	}
 
-	pubkeyHex := "0X" + strings.Repeat("00", types.PubkeySize)
-	if _, err := loadKeypair(dir, "empty.sk", pubkeyHex, 0); err == nil || !strings.Contains(err.Error(), "secret key is empty") {
+	if _, err := loadKeypair(dir, "empty.sk", 0); err == nil || !strings.Contains(err.Error(), "secret key is empty") {
 		t.Fatalf("loadKeypair error=%v, want empty secret key rejection", err)
 	}
 }

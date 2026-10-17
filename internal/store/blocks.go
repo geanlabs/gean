@@ -281,8 +281,9 @@ func (s *ConsensusStore) PutLiveChainEntry(slot uint64, root, parentRoot [32]byt
 // GetCanonicalBlocksInRange returns the canonical blocks in [startSlot, startSlot+count),
 // walking back from head along the ancestor chain. The second return reports whether the
 // walk actually reached startSlot: a false means the ancestor chain ran out first (a
-// checkpoint-synced or restarted node has no blocks below its anchor), which is not the
-// same answer as "this range is empty" and must not be served as one.
+// checkpoint-synced or restarted node has no blocks below its anchor) or reached a block
+// whose proof was pruned, which is not the same answer as "this range is empty" and must
+// not be served as one.
 func (s *ConsensusStore) GetCanonicalBlocksInRange(startSlot, count uint64) ([]*types.SignedBlock, bool) {
 	if count == 0 || startSlot > ^uint64(0)-count {
 		return nil, false
@@ -293,13 +294,19 @@ func (s *ConsensusStore) GetCanonicalBlocksInRange(startSlot, count uint64) ([]*
 
 	// The canonical map answers directly when it reaches below the range, which
 	// is what a walk from the head would have to reach.
+	// A pruned proof ends the answer as the walk's would: only the blocks above
+	// the highest gap, reported incomplete.
 	if roots, ok := s.canonicalRootsInRange(startSlot, endSlot); ok {
+		complete := true
 		for _, root := range roots {
-			if block := s.GetSignedBlock(root); block != nil {
-				blocks = append(blocks, block)
+			block := s.GetSignedBlock(root)
+			if block == nil {
+				blocks, complete = nil, false
+				continue
 			}
+			blocks = append(blocks, block)
 		}
-		return blocks, true
+		return blocks, complete
 	}
 
 	complete := false
@@ -314,9 +321,13 @@ func (s *ConsensusStore) GetCanonicalBlocksInRange(startSlot, count uint64) ([]*
 			break
 		}
 		if slot < endSlot {
-			if block := s.GetSignedBlock(root); block != nil {
-				blocks = append(blocks, block)
+			// A block whose signed block is gone had its proof pruned: the
+			// range cannot be served whole.
+			block := s.GetSignedBlock(root)
+			if block == nil {
+				break
 			}
+			blocks = append(blocks, block)
 		}
 		if slot == 0 {
 			complete = true

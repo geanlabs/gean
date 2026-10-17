@@ -13,9 +13,6 @@ package xmss
 // typedef struct PrivateKey PrivateKey;
 // typedef struct Signature Signature;
 //
-// KeyPair* hashsig_keypair_from_ssz(
-//     const uint8_t* private_key_ptr, size_t private_key_len,
-//     const uint8_t* public_key_ptr, size_t public_key_len);
 // void hashsig_keypair_free(KeyPair* keypair);
 // const PublicKey* hashsig_keypair_get_public_key(const KeyPair* keypair);
 // const PrivateKey* hashsig_keypair_get_private_key(const KeyPair* keypair);

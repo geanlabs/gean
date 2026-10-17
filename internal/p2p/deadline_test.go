@@ -35,7 +35,7 @@ func TestReadReqRespChunkArmsIdleDeadline(t *testing.T) {
 	s := &deadlineStream{readErr: os.ErrDeadlineExceeded}
 	before := time.Now()
 
-	if _, _, err := readReqRespChunk(s, s, "test"); err == nil {
+	if _, _, err := readReqRespChunk(s, s, "test", MaxPayloadSize); err == nil {
 		t.Fatal("expected an error from a stalled read")
 	}
 
@@ -49,7 +49,7 @@ func TestReadReqRespChunkArmsIdleDeadline(t *testing.T) {
 func TestReadReqRespChunkWrapsTimeout(t *testing.T) {
 	s := &deadlineStream{readErr: os.ErrDeadlineExceeded}
 
-	_, _, err := readReqRespChunk(s, s, "blocks_by_root")
+	_, _, err := readReqRespChunk(s, s, "blocks_by_root", MaxPayloadSize)
 	if !errors.Is(err, os.ErrDeadlineExceeded) {
 		t.Fatalf("timeout not preserved through wrapping: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestReadReqRespChunkWrapsTimeout(t *testing.T) {
 func TestReadReqRespChunkPassesThroughNonTimeout(t *testing.T) {
 	s := &deadlineStream{readErr: io.ErrUnexpectedEOF}
 
-	_, _, err := readReqRespChunk(s, s, "test")
+	_, _, err := readReqRespChunk(s, s, "test", MaxPayloadSize)
 	if err == nil {
 		t.Fatal("expected an error")
 	}

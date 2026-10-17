@@ -73,17 +73,20 @@ type Engine struct {
 	lastProposalDuty proposalDuty
 	proposalReserved bool
 
-	// storageWorkers tracks the storage-size sampler so shutdown can join it
-	// before the database is closed: a sampler still running after Close calls
-	// into a closed Pebble instance, which panics rather than erroring.
+	// storageWorkers tracks the storage-size sampler and the attestation
+	// workers so shutdown can join them before the database is closed: a
+	// worker still running after Close calls into a closed Pebble instance,
+	// which panics rather than erroring.
 	//
-	// Scope is deliberately narrow. Other workers read storage too — the
-	// aggregation, proposal, recovery and attestation workers, and the fetch
-	// batcher — and none of them is joined either. That is a pre-existing
-	// shutdown weakness, not one this sampler introduced, and closing it means
-	// deciding how long shutdown may block on in-flight proving work. Tracked
-	// separately; do not read this WaitGroup as covering them.
+	// Other workers read storage too — the aggregation, proposal and recovery
+	// workers, and the fetch batcher — and none of them is joined. Closing that
+	// gap means deciding how long shutdown may block on in-flight proving work.
+	// Tracked separately; do not read this WaitGroup as covering them.
 	storageWorkers sync.WaitGroup
+
+	// attestationsDropped counts gossip attestations dropped on a full verify
+	// queue since the last chain-status line.
+	attestationsDropped atomic.Uint64
 
 	lastTick time.Time
 
@@ -167,7 +170,8 @@ func New(
 	return e
 }
 
-// WaitForStorageWorkers blocks until the storage-size sampler has returned.
+// WaitForStorageWorkers blocks until the storage-size sampler and the
+// attestation workers have returned.
 // Callers must invoke it after cancelling the context and before closing the
 // backend.
 //

@@ -2,6 +2,7 @@ package metrics
 
 func IncAttestationsValid(n uint64)          { addUint(metricAttestationsValid, n) }
 func IncAttestationsInvalid()                { metricAttestationsInvalid.Inc() }
+func IncAttestationsDropped()                { metricAttestationsDropped.Inc() }
 func IncAttestationsBufferEvicted(n int)     { addCount(metricAttestationsBufferEvicted, n) }
 func IncForkChoiceReorgs()                   { metricForkChoiceReorgs.Inc() }
 func IncBlocksSkippedLag()                   { metricBlocksSkippedLag.Inc() }

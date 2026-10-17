@@ -197,8 +197,6 @@ func (sess *Session) applyAttestation(step *specfixtures.ForkChoiceStep) error {
 	copy(sig[:], signature)
 	sess.store.AttestationSignatures.Insert(dataRoot, attData, step.Attestation.ValidatorID, sig)
 
-	sess.fc.SetNewVote(step.Attestation.ValidatorID, attData.Head.Root, attData.Slot, attData)
-
 	// Gossip lands in the new pool only; the head keeps reflecting the known pool
 	// until a slot-boundary tick promotes these votes, so recompute from the known
 	// pool here without promoting.
@@ -247,10 +245,6 @@ func (sess *Session) applyAggregatedAttestation(step *specfixtures.ForkChoiceSte
 
 	sess.store.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants, Proof: proofData})
 
-	for _, vid := range types.BitlistIndices(participants) {
-		sess.fc.SetNewVote(vid, attData.Head.Root, attData.Slot, attData)
-	}
-
 	sess.updateHeadFromKnown(sess.store.LatestJustified().Root)
 	return nil
 }
@@ -287,7 +281,7 @@ func (sess *Session) refreshSafeTarget() {
 	}
 	justifiedRoot := sess.store.LatestJustified().Root
 	numValidators := uint64(len(headState.Validators))
-	safeTarget := sess.fc.UpdateSafeTarget(justifiedRoot, numValidators)
+	safeTarget := sess.fc.UpdateSafeTarget(justifiedRoot, numValidators, sess.store.ExtractLatestNewAttestations())
 	sess.store.SetSafeTarget(safeTarget)
 }
 

@@ -17,9 +17,13 @@ const SyncLagSlots = 2
 // sample, not a control input, so it runs well below the slot cadence.
 const gossipMeshSampleInterval = 10 * time.Second
 
-// tickAgeSampleInterval paces the stall detector. A slot is 4s, so a second is
+// stallSampleInterval paces the stall detectors. A slot is 4s, so a second is
 // fine-grained enough to distinguish a slow tick from a stopped loop.
-const tickAgeSampleInterval = time.Second
+const stallSampleInterval = time.Second
+
+// proverStuckAfter is when a proof holding the prover is reported as stuck. On
+// the devnet p99.9 of a proposal proof is 8s; a minute leaves wide room.
+const proverStuckAfter = time.Minute
 
 // storageSizeSampleInterval paces the per-table storage-size gauge. Table sizes
 // move on compaction and pruning, not per block, so a minute is ample.
@@ -47,6 +51,9 @@ func (e *Engine) GetSyncStatus() syncer.SyncStatus {
 
 func (e *Engine) logChainStatus(currentSlot uint64) {
 	metrics.SampleProcessRSS()
+	if dropped := e.attestationsDropped.Swap(0); dropped > 0 {
+		logger.Warn(logger.Gossip, "dropped %d gossip attestations since the last status: verify queue full", dropped)
+	}
 	headRoot := e.Store.Head()
 	headHeader := e.Store.GetBlockHeader(headRoot)
 	justified := e.Store.LatestJustified()
@@ -119,29 +126,49 @@ func (e *Engine) runGossipMeshGauge(ctx context.Context) {
 	}
 }
 
-// runTickAgeGauge publishes how long it has been since the dispatch loop last
-// began a tick. It must live off that loop: the existing tick-interval histogram
-// is observed inside onTick, so a fully blocked loop produces no observations at
-// all and the metric goes silent exactly when it should be alarming.
-func (e *Engine) runTickAgeGauge(ctx context.Context) {
-	ticker := time.NewTicker(tickAgeSampleInterval)
+// runStallGauges publishes the stall detectors, from off the dispatch loop. The
+// tick-interval histogram is observed inside onTick, so a fully blocked loop
+// produces no observations at all and the metric goes silent exactly when it
+// should be alarming. A proof wedged in native code holds the prover forever:
+// nothing can cancel it, so the node stops proposing and aggregating while
+// everything else still runs. It is logged once per episode.
+func (e *Engine) runStallGauges(ctx context.Context) {
+	ticker := time.NewTicker(stallSampleInterval)
 	defer ticker.Stop()
+	reportedStuck := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			last := e.lastTickMs.Load()
-			if last == 0 {
-				continue
-			}
-			age := time.Since(time.UnixMilli(last)).Seconds()
-			if age < 0 {
-				age = 0
-			}
-			metrics.SetTickAge(age)
+		case now := <-ticker.C:
+			reportedStuck = e.sampleStalls(now, reportedStuck)
 		}
 	}
+}
+
+// sampleStalls publishes one sample and returns whether the current stuck-prover
+// episode has been reported.
+func (e *Engine) sampleStalls(now time.Time, reportedStuck bool) bool {
+	if last := e.lastTickMs.Load(); last != 0 {
+		metrics.SetTickAge(max(now.Sub(time.UnixMilli(last)).Seconds(), 0))
+	}
+	if e.ProvingGate == nil {
+		return false
+	}
+	held, proposal := e.ProvingGate.Held(now)
+	metrics.SetProvingHeld(held.Seconds())
+	if held < proverStuckAfter {
+		return false
+	}
+	if !reportedStuck {
+		holder := "aggregation or recovery"
+		if proposal {
+			holder = "a proposal"
+		}
+		logger.Error(logger.Node, "prover held for %s by %s: the native proof may be wedged; proposals and aggregation are stopped until it returns",
+			held.Round(time.Second), holder)
+	}
+	return true
 }
 
 // runStorageSizeGauge samples the per-table storage-size gauge off the tick
