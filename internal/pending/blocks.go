@@ -92,6 +92,32 @@ func (b *BlockBuffer) HighestSlotEntry() ([32]byte, uint64, bool) {
 	return maxRoot, maxSlot, found
 }
 
+// DiscardAtOrBelow drops every entry whose slot is at or below slot, with the
+// subtree waiting on it, and returns how many slot-carrying entries it dropped.
+// It reads only the recorded slots, so callers must record a slot for every
+// entry they link in (the node does).
+func (b *BlockBuffer) DiscardAtOrBelow(slot uint64) int {
+	if b == nil {
+		return 0
+	}
+	var doomed [][32]byte
+	for root, s := range b.slots {
+		if s <= slot {
+			doomed = append(doomed, root)
+		}
+	}
+	dropped := 0
+	for _, root := range doomed {
+		if _, still := b.slots[root]; !still {
+			continue
+		}
+		before := len(b.slots)
+		b.DiscardSubtree(root)
+		dropped += before - len(b.slots)
+	}
+	return dropped
+}
+
 func (b *BlockBuffer) ResolveAncestor(start [32]byte) [32]byte {
 	if b == nil {
 		return start
@@ -163,19 +189,6 @@ func (b *BlockBuffer) ClearEntry(root [32]byte) {
 	delete(b.parents, root)
 	delete(b.depths, root)
 	delete(b.slots, root)
-}
-
-func (b *BlockBuffer) Pairs() [][2][32]byte {
-	if b == nil {
-		return nil
-	}
-	out := make([][2][32]byte, 0, b.Count())
-	for parent, set := range b.children {
-		for child := range set {
-			out = append(out, [2][32]byte{parent, child})
-		}
-	}
-	return out
 }
 
 func (b *BlockBuffer) DiscardSubtree(root [32]byte) {

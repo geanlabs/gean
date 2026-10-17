@@ -7,6 +7,7 @@ import (
 
 type Snapshot struct {
 	headState    *types.State
+	headRoot     [32]byte
 	slot         uint64
 	attSigs      map[[32]byte]*store.AttestationDataEntry
 	newEntries   map[[32]byte]*store.PayloadEntry
@@ -27,6 +28,7 @@ func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64
 
 	snap := &Snapshot{
 		headState:    headState,
+		headRoot:     s.Head(),
 		slot:         slot,
 		attSigs:      s.AttestationSignatures.Snapshot(),
 		newEntries:   make(map[[32]byte]*store.PayloadEntry),

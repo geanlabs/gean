@@ -118,11 +118,11 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 func (e *Engine) updateSafeTarget() {
 	justifiedRoot := e.Store.LatestJustified().Root
 
-	headState := e.Store.GetState(e.Store.Head())
-	if headState == nil {
+	headSummary, ok := e.Store.StateSummary(e.Store.Head())
+	if !ok {
 		return
 	}
-	numValidators := uint64(len(headState.Validators))
+	numValidators := headSummary.NumValidators
 
 	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators, e.Store.ExtractLatestNewAttestations())
 	e.Store.SetSafeTarget(safeTarget)

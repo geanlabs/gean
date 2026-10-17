@@ -45,15 +45,24 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types
 		return
 	}
 
+	// A block below the finalized slot with no state can never be canonical, and
+	// nothing waiting on it can connect either.
 	finalizedSlot := e.Store.LatestFinalized().Slot
 	if block.Slot < finalizedSlot {
-		logger.Warn(logger.Chain, "rejecting pre-finalized block slot=%d block_root=0x%x finalized_slot=%d",
-			block.Slot, blockRoot, finalizedSlot)
+		e.rejectPreFinalized(block.Slot, blockRoot, finalizedSlot)
 		return
 	}
 
 	hasParent := e.Store.HasState(parentRoot)
 	logger.Info(logger.Chain, "processing block slot=%d block_root=0x%x has_parent=%t", block.Slot, blockRoot, hasParent)
+
+	// With its parent missing, a block at the finalized slot is no better: it
+	// can't be the finalized block, which has a state. The spec's head sync
+	// drops parent-missing blocks at or below finalized before caching them.
+	if !hasParent && block.Slot == finalizedSlot {
+		e.rejectPreFinalized(block.Slot, blockRoot, finalizedSlot)
+		return
+	}
 
 	if !hasParent {
 		e.bufferMissingParentBlock(signedBlock, blockRoot, parentRoot, queue)
@@ -61,6 +70,12 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types
 	}
 
 	e.importKnownParentBlock(signedBlock, blockRoot, parentRoot, queue)
+}
+
+func (e *Engine) rejectPreFinalized(slot uint64, blockRoot [32]byte, finalizedSlot uint64) {
+	logger.Warn(logger.Chain, "rejecting pre-finalized block slot=%d block_root=0x%x finalized_slot=%d",
+		slot, blockRoot, finalizedSlot)
+	e.Pending.DiscardSubtree(blockRoot)
 }
 
 func (e *Engine) importKnownParentBlock(

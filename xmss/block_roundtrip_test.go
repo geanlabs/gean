@@ -45,11 +45,8 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 	}
 	defer FreePublicKey(cpk)
 
-	proof, err := AggregateSignatures([]CPubKey{cpk}, []CSig{csig}, blockRoot, 1)
-	if err != nil {
-		t.Fatalf("aggregate FAILED: %v", err)
-	}
-	merged, err := MergeType1Proofs([]Type1Input{{Pubkeys: []CPubKey{cpk}, Proof: proof}})
+	// A block without attestations: its proof is the proposer's raw signature alone.
+	merged, err := MergeType1Proofs(nil, []RawSignature{{Pubkey: cpk, Signature: csig, Message: blockRoot, Slot: 1}})
 	if err != nil {
 		t.Fatalf("merge FAILED: %v", err)
 	}

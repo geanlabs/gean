@@ -13,6 +13,10 @@ type Backend interface {
 type ReadView interface {
 	Get(table Table, key []byte) ([]byte, error)
 
+	// Has reports whether key is present without returning its value, so an
+	// existence check does not copy a value that can run to megabytes.
+	Has(table Table, key []byte) (bool, error)
+
 	PrefixIterator(table Table, prefix []byte) (Iterator, error)
 }
 

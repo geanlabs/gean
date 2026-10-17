@@ -64,8 +64,15 @@ func planAttestations(input Input) (planResult, error) {
 	return planner.result(), nil
 }
 
+// maxBlockAttestationData caps the distinct AttestationData in a block this node
+// builds, below the types.MaxAttestationsData that imported blocks are checked
+// against. Each one is a child of the block's Type-2 proof, and the proof's time and
+// peak memory grow with every child: with 8 it takes 5-10 s, past the proposal
+// deadline, and peaks near 9 GB.
+const maxBlockAttestationData = 3
+
 func (p *planner) run() error {
-	for len(p.attestations) < int(types.MaxAttestationsData) {
+	for len(p.attestations) < maxBlockAttestationData {
 		if !p.runRound() {
 			return nil
 		}
@@ -73,7 +80,7 @@ func (p *planner) run() error {
 		if err != nil {
 			return err
 		}
-		if len(p.attestations) >= int(types.MaxAttestationsData) {
+		if len(p.attestations) >= maxBlockAttestationData {
 			p.full = true
 			return nil
 		}
@@ -88,7 +95,7 @@ func (p *planner) run() error {
 func (p *planner) runRound() bool {
 	added := false
 	for _, payload := range p.payloads {
-		if len(p.attestations) >= int(types.MaxAttestationsData) {
+		if len(p.attestations) >= maxBlockAttestationData {
 			return added
 		}
 		if p.tryPayload(payload) {

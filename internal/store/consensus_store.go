@@ -79,6 +79,16 @@ type ConsensusStore struct {
 	validatorKeysMu    sync.Mutex
 	validatorKeys      map[[32]byte]*ValidatorKeys
 	validatorKeysOrder [][32]byte
+
+	// stateSummaries holds the StateSummary of every stored state, keyed by block
+	// root, so the per-slot paths read memory rather than decoding states.
+	// Entries are added when a state is written and dropped when it is pruned.
+	stateSummariesMu sync.Mutex
+	stateSummaries   map[[32]byte]StateSummary
+
+	// blocks keeps block metadata and the canonical chain in memory for chain
+	// walks. See blockIndex.
+	blocks blockIndex
 }
 
 // ObserveStoredBlockSlot raises the stored-block high-water mark. Safe from any
@@ -107,5 +117,6 @@ func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 		AttestationSignatures: NewAttestationSignatureMap(gossipSignatureCap),
 		PubKeyCache:           xmss.NewPubKeyCache(),
 		validatorKeys:         make(map[[32]byte]*ValidatorKeys, validatorKeysCacheSize),
+		stateSummaries:        make(map[[32]byte]StateSummary),
 	}
 }

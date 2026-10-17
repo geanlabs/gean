@@ -34,7 +34,11 @@ func (s *ConsensusStore) SetHead(root [32]byte) {
 }
 
 func (s *ConsensusStore) PutHead(root [32]byte) error {
-	return s.putMetadataRoot(storage.KeyHead, root, "set head")
+	if err := s.putMetadataRoot(storage.KeyHead, root, "set head"); err != nil {
+		return err
+	}
+	s.moveCanonicalHead(root)
+	return nil
 }
 
 func (s *ConsensusStore) SafeTarget() [32]byte {
@@ -80,36 +84,53 @@ func (s *ConsensusStore) PutLatestFinalized(cp *types.Checkpoint) error {
 }
 
 // DeriveFinalizedFromHead resolves the finalized checkpoint implied by the head's
-// post-state, mirroring the spec's update_head: it climbs the head's chain to the
-// ancestor block at the post-state finalized slot. Finalization is anchored to the
-// canonical head rather than advanced per imported block, so a losing fork that
-// finalizes a higher slot cannot latch finalization above the head and stall target
-// advancement. Returns nil when no stored block sits exactly at that slot (e.g. a
-// fresh checkpoint-sync anchor), so the caller keeps its current trusted checkpoint.
+// post-state, matching the spec's update_head: the head's ancestor block at the
+// post-state finalized slot. Finalization is anchored to the canonical head rather
+// than advanced per imported block, so a losing fork that finalizes a higher slot
+// cannot latch finalization above the head and stall target advancement. Returns
+// nil when no stored block sits exactly at that slot (e.g. a fresh checkpoint-sync
+// anchor), so the caller keeps its current trusted checkpoint.
+//
+// The spec reaches that ancestor by climbing parent links from the head. That
+// climb is redundant: a state's finalized root is always its own chain's block at
+// the finalized slot. Genesis sets it to the genesis block, and every later change
+// takes the source of a justifying vote, which the transition admits only when the
+// source root matches the state's historical_block_hashes at its slot. So the
+// head state's checkpoint already names the ancestor the climb would reach, and it
+// is returned whenever that block is stored. The climb would cost a step per slot
+// back to finalization, on every head update.
 func DeriveFinalizedFromHead(s *ConsensusStore, headRoot [32]byte) *types.Checkpoint {
 	if s == nil {
 		return nil
 	}
-	headState := s.GetState(headRoot)
-	if headState == nil || headState.LatestFinalized == nil {
+	summary, ok := s.StateSummary(headRoot)
+	if !ok {
 		return nil
 	}
-	finalizedSlot := headState.LatestFinalized.Slot
+	finalized := &summary.Finalized
 
-	root := headRoot
-	for {
-		header := s.GetBlockHeader(root)
-		if header == nil || header.Slot <= finalizedSlot {
-			break
+	// A head at or below the finalized slot is where the climb stops before its
+	// first step. Genesis is the case that reaches this: its state carries a zero
+	// finalized root, and the climb answers with the genesis block itself.
+	headSlot, _, ok := s.BlockSlotAndParent(headRoot)
+	if !ok {
+		return nil
+	}
+	if headSlot <= finalized.Slot {
+		if headSlot == finalized.Slot {
+			return &types.Checkpoint{Root: headRoot, Slot: finalized.Slot}
 		}
-		if s.GetBlockHeader(header.ParentRoot) == nil {
-			break
-		}
-		root = header.ParentRoot
+		return nil
 	}
 
-	if header := s.GetBlockHeader(root); header != nil && header.Slot == finalizedSlot {
-		return &types.Checkpoint{Root: root, Slot: finalizedSlot}
+	// Every block between the head and its finalized block was imported, so the
+	// climb never stops early on that stretch: it reaches the finalized block
+	// exactly when that block's own header is stored. The case where it is not is
+	// a checkpoint-sync anchor whose finalized block lies below the anchor, which
+	// is never stored because import rejects blocks below the finalized slot; the
+	// climb stops at the anchor and reports nothing.
+	if slot, _, ok := s.BlockSlotAndParent(finalized.Root); ok && slot == finalized.Slot {
+		return finalized
 	}
 	return nil
 }

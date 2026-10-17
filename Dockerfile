@@ -18,24 +18,13 @@ WORKDIR /app
 COPY xmss/rust/ xmss/rust/
 
 # Detect the build-stage architecture: legacy builders do not populate TARGETARCH.
-# Match make ffi's Haswell/AVX2 baseline on x86_64; leave arm64 flags unchanged.
+# Same flags as make ffi: Haswell on x86_64, +aes (PMULL) on aarch64.
 RUN cd xmss/rust && \
-    if [ "$(uname -m)" = "x86_64" ]; then \
-      CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked; \
-    else \
-      cargo build --profile multisig-release --locked; \
-    fi
-
-# Stage leanVM Python sources at the exact checkout path the binary expects.
-# The lean_compiler resolves .py files via CARGO_MANIFEST_DIR baked at compile time;
-# on arm64 the pre-committed bytecode cache misses and triggers a recompile from source.
-# Match the checkout by crate, not by pinned rev: cargo names the rev subdir after
-# the leanVM commit, so a hardcoded short hash breaks on every dependency bump.
-RUN CHECKOUT_DIR=$(ls -d /root/.cargo/git/checkouts/leanvm-*/*/crates/rec_aggregation | head -1 | sed 's|/crates/rec_aggregation||') && \
-    mkdir -p /leanvm-staged && \
-    echo "$CHECKOUT_DIR" > /leanvm-staged/.checkout_root && \
-    cp -r "$CHECKOUT_DIR/crates/rec_aggregation" /leanvm-staged/rec_aggregation && \
-    cp -r "$CHECKOUT_DIR/crates/lean_compiler" /leanvm-staged/lean_compiler
+    case "$(uname -m)" in \
+      x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
+      aarch64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
+      *) cargo build --profile multisig-release --locked ;; \
+    esac
 
 # Copy Go module files for dependency caching
 COPY go.mod go.sum ./
@@ -68,17 +57,6 @@ LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 COPY --from=builder /app/bin/gean /usr/local/bin/
 COPY --from=builder /app/bin/keygen /usr/local/bin/
 
-# leanVM's lean_compiler reads .py files at runtime when the embedded
-# cached_bytecode.bin fingerprint doesn't match the build target (arm64 builds
-# hit this because the repo's cache is x86-only). Restore the Python sources
-# at the exact CARGO_MANIFEST_DIR path baked into the binary at compile time.
-COPY --from=builder /leanvm-staged/ /tmp/leanvm-staged/
-RUN CHECKOUT_ROOT=$(cat /tmp/leanvm-staged/.checkout_root) && \
-    mkdir -p "$CHECKOUT_ROOT/crates" && \
-    cp -r /tmp/leanvm-staged/rec_aggregation "$CHECKOUT_ROOT/crates/" && \
-    cp -r /tmp/leanvm-staged/lean_compiler "$CHECKOUT_ROOT/crates/" && \
-    rm -rf /tmp/leanvm-staged
-
 
 # Prove on jemalloc, not glibc malloc. The prover frees its scratch after every
 # proof, but glibc keeps it: most lands in the main heap, which only shrinks from
@@ -93,6 +71,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends libjemalloc2 \
     && rm -rf /var/lib/apt/lists/* \
     && ldconfig -p | grep -q 'libjemalloc\.so\.2'
 ENV LD_PRELOAD=libjemalloc.so.2
+
+# jemalloc purges freed pages only when the arena that freed them is used again,
+# unless its background threads are on, and they are off by default. A proof
+# spreads gigabytes across the prover's worker threads and then leaves those
+# arenas idle, so hundreds of megabytes stayed resident between proofs. Devnet,
+# 16 nodes over 10 hours, the only difference being this setting: 268 MB average
+# against 729 MB, with identical proof and verification times.
+ENV MALLOC_CONF=background_thread:true
 
 # Keep the Go heap tight so the XMSS prover's transient multi-GB proving
 # peaks (allocated by the Rust arena, invisible to the Go GC) land on free
