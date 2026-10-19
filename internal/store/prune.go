@@ -6,6 +6,7 @@ import (
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/types"
 )
 
 const (
@@ -23,6 +24,18 @@ const (
 	// 4-second slots: long enough that a brief finality gap costs nothing, short
 	// enough that a sustained stall does not grow the pools without limit.
 	AttestationRetentionSlots = 1024
+
+	// StateRetentionSlots is how far below the head post-states are kept once
+	// finalization stops advancing: twice the attestation retention, so every
+	// vote still kept can find its target state. A block on a fork older than
+	// this still imports; the import path re-imports stored ancestors from the
+	// nearest kept state.
+	StateRetentionSlots = 2 * AttestationRetentionSlots
+
+	// StateCheckpointSlots is the spacing of the ancestor states kept below
+	// StateRetentionSlots during a stall: the most a rebuild for an old fork
+	// point replays, and one kept state per this many slots of stall.
+	StateCheckpointSlots = 64
 )
 
 func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinalizedSlot, newFinalizedSlot uint64, newFinalizedRoot [32]byte) {
@@ -92,6 +105,76 @@ func PruneStaleAttestationPools(s *ConsensusStore, headSlot, finalizedSlot uint6
 	}
 	logger.Warn(logger.Store, "finalization lagging, pruned stale attestation pools: cutoff=%d head=%d finalized=%d gossip_sigs=%d payloads=%d",
 		cutoff, headSlot, finalizedSlot, prunedSigs, prunedKnown+prunedNew)
+}
+
+// PruneStaleStates bounds the state table while finalization stalls, by
+// deleting the post-states of the head's ancestors more than
+// StateRetentionSlots below the head. PruneOnFinalization only removes states
+// below the finalized slot, and PeriodicPrune only non-canonical ones, so
+// without this every state since the last finalization stays on disk.
+//
+// Three kinds of state are kept:
+//   - side branches: a branch being synced onto must keep its states, or each
+//     sweep would delete what the last import built and the next block would
+//     rebuild the whole branch;
+//   - the justified state;
+//   - the lowest ancestor in each StateCheckpointSlots bucket, so rebuilding
+//     a pruned parent for a block on an old fork point replays at most that
+//     many slots.
+//
+// Ancestors below statesPrunedBelow were pruned by an earlier call, so the walk
+// stops at the first missing state below it; import lowers the mark when it
+// rebuilds a state there. The mark is in memory: after a restart the first
+// call checks every ancestor down to the finalized slot once.
+func PruneStaleStates(s *ConsensusStore, fc *forkchoice.ForkChoice, headRoot [32]byte, headSlot uint64, finalized, justified *types.Checkpoint) int {
+	if s == nil || fc == nil || finalized == nil || justified == nil || headSlot <= StateRetentionSlots {
+		return 0
+	}
+	cutoff := headSlot - StateRetentionSlots
+	if cutoff <= finalized.Slot+1 {
+		return 0
+	}
+	// A justified state skipped by an earlier call sits below the mark once
+	// justified moves on; lowering the mark lets this walk reach it.
+	if justified.Slot != s.statesKeptJustifiedSlot {
+		s.statesPrunedBelow = min(s.statesPrunedBelow, s.statesKeptJustifiedSlot)
+		s.statesKeptJustifiedSlot = justified.Slot
+	}
+
+	var roots [][32]byte
+	fc.WalkAncestors(headRoot, func(root [32]byte, slot, parentSlot uint64) bool {
+		if slot >= cutoff {
+			return true
+		}
+		if slot <= finalized.Slot {
+			return false
+		}
+		if root == justified.Root || parentSlot/StateCheckpointSlots < slot/StateCheckpointSlots {
+			return true
+		}
+		has := s.HasState(root)
+		if has {
+			roots = append(roots, root)
+		}
+		return has || slot >= s.statesPrunedBelow
+	})
+	pruned := pruneStatesByRoots(s, roots)
+	if pruned != len(roots) {
+		return pruned
+	}
+	s.statesPrunedBelow = cutoff
+	if pruned > 0 {
+		logger.Warn(logger.Store, "finalization lagging, pruned stale states: cutoff=%d head=%d finalized=%d states=%d",
+			cutoff, headSlot, finalized.Slot, pruned)
+	}
+	return pruned
+}
+
+// ObserveImportedState lowers PruneStaleStates' mark when import writes a state
+// below it, as rebuilding a pruned parent does, so the next sweep reaches that
+// state again.
+func (s *ConsensusStore) ObserveImportedState(slot uint64) {
+	s.statesPrunedBelow = min(s.statesPrunedBelow, slot)
 }
 
 func PeriodicPrune(s *ConsensusStore, fc *forkchoice.ForkChoice, currentSlot, finalizedSlot uint64) {

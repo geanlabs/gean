@@ -113,3 +113,24 @@ func (fc *ForkChoice) AncestorAtDepth(startRoot [32]byte, depth int) (root [32]b
 	node := &fc.array.nodes[idx]
 	return node.Root, node.Slot, true
 }
+
+// WalkAncestors calls fn for root and then each ancestor the array holds,
+// highest slot first, with the node's parent slot (its own slot at the array's
+// anchor), until fn returns false.
+func (fc *ForkChoice) WalkAncestors(root [32]byte, fn func(root [32]byte, slot, parentSlot uint64) bool) {
+	if fc == nil || fc.array == nil {
+		return
+	}
+	idx, ok := fc.array.indices[root]
+	for ok && idx >= 0 {
+		node := &fc.array.nodes[idx]
+		parentSlot := node.Slot
+		if node.Parent >= 0 {
+			parentSlot = fc.array.nodes[node.Parent].Slot
+		}
+		if !fn(node.Root, node.Slot, parentSlot) {
+			return
+		}
+		idx = node.Parent
+	}
+}
