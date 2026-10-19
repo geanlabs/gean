@@ -50,7 +50,7 @@ func TestBlockBuffer_DepthTracking(t *testing.T) {
 		t.Fatalf("expected inherited depth 3, got %d", parentDepth+1)
 	}
 
-	b.ClearDepth(root3)
+	b.MarkImported(root3)
 	if _, ok := b.Depth(root3); ok {
 		t.Fatal("depth should be cleared")
 	}
@@ -175,7 +175,8 @@ func TestBlockBuffer_ZeroValueAndNilGuards(t *testing.T) {
 	nilBuffer.AddChild(parent, child)
 	nilBuffer.SetParent(child, parent)
 	nilBuffer.SetDepth(child, 3)
-	nilBuffer.ClearDepth(child)
+	nilBuffer.MarkImported(child)
+	nilBuffer.MarkStored(child)
 	nilBuffer.ClearEntry(child)
 	nilBuffer.RemoveChild(parent, child)
 	nilBuffer.DiscardSubtree(child)
