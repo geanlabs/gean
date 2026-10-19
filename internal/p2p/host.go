@@ -3,21 +3,25 @@ package p2p
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
 type Host struct {
-	host          host.Host
-	pubsub        *pubsub.PubSub
-	topics        map[string]*pubsub.Topic
-	subs          map[string]*pubsub.Subscription
-	ctx           context.Context
-	cancel        context.CancelFunc
-	peerStore     *PeerStore
-	gossipHandler MessageHandler
-	Hooks         Hooks
+	host      host.Host
+	pubsub    *pubsub.PubSub
+	topics    map[string]*pubsub.Topic
+	subs      map[string]*pubsub.Subscription
+	ctx       context.Context
+	cancel    context.CancelFunc
+	peerStore *PeerStore
+	// gossipHandler is read by pubsub's validation goroutines, so it is set once
+	// atomically when the listeners start.
+	gossipHandler  atomic.Pointer[MessageHandler]
+	committeeCount uint64
+	Hooks          Hooks
 }
 
 func NewHost(
@@ -51,13 +55,14 @@ func NewHost(
 	}
 
 	p2pHost := &Host{
-		host:      libp2pHost,
-		pubsub:    ps,
-		topics:    make(map[string]*pubsub.Topic),
-		subs:      make(map[string]*pubsub.Subscription),
-		ctx:       ctx,
-		cancel:    cancel,
-		peerStore: NewPeerStore(),
+		host:           libp2pHost,
+		pubsub:         ps,
+		topics:         make(map[string]*pubsub.Topic),
+		subs:           make(map[string]*pubsub.Subscription),
+		ctx:            ctx,
+		cancel:         cancel,
+		peerStore:      NewPeerStore(),
+		committeeCount: committeeCount,
 	}
 	p2pHost.installPeerNotifier()
 

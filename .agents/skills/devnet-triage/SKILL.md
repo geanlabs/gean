@@ -126,13 +126,16 @@ the same time, because load counts processes blocked on I/O. `free -g` plus the 
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=rate(lean_tick_interval_duration_seconds_sum[10m])/rate(lean_tick_interval_duration_seconds_count[10m])'
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=max_over_time((rate(lean_tick_interval_duration_seconds_sum{job=~"gean_.*"}[10m])/rate(lean_tick_interval_duration_seconds_count{job=~"gean_.*"}[10m]))[12h:10m])'
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=lean_tick_last_age_seconds'
+curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=lean_proving_held_seconds'
 curl -sS -G localhost:9090/api/v1/query --data-urlencode 'query=rate(lean_dispatch_event_duration_seconds_sum[10m])/rate(lean_dispatch_event_duration_seconds_count[10m])'
 ```
 
 Target 0.800 s. `lean_dispatch_event_duration_seconds{event=}` attributes a slow loop to `tick`,
 `block`, `proposal_result`, `early_aggregate` or `failed_root`. Note the tick-interval histogram is
 observed *inside* `onTick`, so a fully blocked loop makes it go **silent** rather than spike —
-`lean_tick_last_age_seconds` is the gauge that keeps climbing.
+`lean_tick_last_age_seconds` is the gauge that keeps climbing. `lean_proving_held_seconds` climbs
+while one proof holds the prover; a proof takes seconds, so a value in minutes is a native call wedged
+(proposals and aggregation stop, the rest of the node runs), and the node logs `prover held for` once.
 
 ### Finality and justification
 

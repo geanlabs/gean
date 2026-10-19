@@ -15,16 +15,19 @@ func (e *Engine) onBlock(signedBlock *types.SignedBlock) {
 		return
 	}
 
-	queue := []*types.SignedBlock{signedBlock}
-
+	var queue []*types.SignedBlock
+	e.processOneBlock(signedBlock, &queue, false)
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		e.processOneBlock(current, &queue)
+		e.processOneBlock(current, &queue, true)
 	}
 }
 
-func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types.SignedBlock) {
+// processOneBlock imports or buffers one block. queued is true for blocks this
+// import queued itself: stored ancestors rebuilding a pruned parent state, and
+// pending children.
+func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types.SignedBlock, queued bool) {
 	if signedBlock == nil || signedBlock.Block == nil {
 		return
 	}
@@ -42,6 +45,13 @@ func (e *Engine) processOneBlock(signedBlock *types.SignedBlock, queue *[]*types
 	delete(e.fetchInFlight, blockRoot)
 
 	if e.Store.HasState(blockRoot) {
+		return
+	}
+	// The live chain records every imported block, including those whose state
+	// PruneStaleStates removed. Re-importing one received from outside would
+	// rebuild every ancestor down to a kept state; only this import's own queue
+	// rebuilds states.
+	if !queued && e.Store.HasLiveChainEntry(block.Slot, blockRoot) && e.Store.HasBlockHeader(blockRoot) {
 		return
 	}
 

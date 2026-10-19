@@ -49,7 +49,7 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.RandomPeer(excluded)
+		peerID := h.peerStore.SelectPeer(excluded, 0)
 		if peerID == "" {
 			return nil, roots, fmt.Errorf("no peers available for batch block fetch")
 		}
@@ -73,26 +73,31 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	return nil, roots, fmt.Errorf("batch block fetch failed after %d retries for %d roots", MaxFetchRetries, len(roots))
 }
 
+// FetchBlocksByRangeWithRetry asks peers outside excluded for the range, picked
+// by score and preferring those whose status covers its last slot, and returns
+// the first non-empty response with the peer that served it. Each peer that
+// fails is added to excluded, so a caller fetching several batches can keep it
+// for all of them.
 func (h *Host) FetchBlocksByRangeWithRetry(
 	ctx context.Context,
+	excluded map[peer.ID]bool,
 	startSlot, count uint64,
-) ([]*types.SignedBlock, error) {
+) ([]*types.SignedBlock, peer.ID, error) {
 	if err := validateRangeRequest(startSlot, count); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	excluded := make(map[peer.ID]bool)
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.RandomPeer(excluded)
+		peerID := h.peerStore.SelectPeer(excluded, startSlot+count-1)
 		if peerID == "" {
-			return nil, fmt.Errorf("no peers available for blocks_by_range fetch")
+			return nil, "", fmt.Errorf("no peers available for blocks_by_range fetch")
 		}
 
 		blocks, err := h.FetchBlocksByRange(ctx, peerID, startSlot, count)
 		if err == nil && len(blocks) > 0 {
-			return blocks, nil
+			return blocks, peerID, nil
 		}
 
 		excluded[peerID] = true
@@ -100,13 +105,13 @@ func (h *Host) FetchBlocksByRangeWithRetry(
 
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, "", ctx.Err()
 		case <-time.After(backoff):
 			backoff *= BackoffMultiplier
 		}
 	}
 
-	return nil, fmt.Errorf("blocks_by_range fetch failed after %d retries (start_slot=%d, count=%d)", MaxFetchRetries, startSlot, count)
+	return nil, "", fmt.Errorf("blocks_by_range fetch failed after %d retries (start_slot=%d, count=%d)", MaxFetchRetries, startSlot, count)
 }
 
 func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]*types.SignedBlock, error) {
@@ -114,7 +119,7 @@ func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.RandomPeer(excluded)
+		peerID := h.peerStore.SelectPeer(excluded, 0)
 		if peerID == "" {
 			return nil, fmt.Errorf("no peers available for block fetch")
 		}

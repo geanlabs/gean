@@ -366,7 +366,7 @@ func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
 	}
 
 	var queue []*types.SignedBlock
-	e.processOneBlock(signedBlock, &queue)
+	e.processOneBlock(signedBlock, &queue, false)
 
 	if e.Pending.ParentBuckets() != 0 {
 		t.Fatalf("pre-finalized block was buffered as pending; ParentBuckets=%d", e.Pending.ParentBuckets())
@@ -398,7 +398,7 @@ func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 	}
 
 	var queue []*types.SignedBlock
-	e.processOneBlock(signedBlock, &queue)
+	e.processOneBlock(signedBlock, &queue, false)
 
 	if e.Pending.Entries() == 0 {
 		t.Fatal("block at finalized slot was rejected by the strict-less-than guard")

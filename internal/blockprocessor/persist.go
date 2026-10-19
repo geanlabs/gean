@@ -94,6 +94,7 @@ func persistBlock(
 	// has to see it. This is the import path's equivalent of what
 	// ConsensusStore.PutBlockHeader does for pending blocks.
 	s.ObserveStoredBlockSlot(block.Slot)
+	s.ObserveImportedState(block.Slot)
 	return nil
 }
 

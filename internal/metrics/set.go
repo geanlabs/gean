@@ -7,6 +7,7 @@ func SetNodeStartTime(t float64)      { setNonNegative(metricNodeStartTime, t) }
 func SetHeadSlot(s uint64)            { metricHeadSlot.Set(float64(s)) }
 func SetCurrentSlot(s uint64)         { metricCurrentSlot.Set(float64(s)) }
 func SetTickAge(seconds float64)      { metricTickAge.Set(seconds) }
+func SetProvingHeld(seconds float64)  { metricProvingHeld.Set(seconds) }
 func SetSafeTargetSlot(s uint64)      { metricSafeTargetSlot.Set(float64(s)) }
 func SetLatestJustifiedSlot(s uint64) { metricLatestJustifiedSlot.Set(float64(s)) }
 func SetLatestFinalizedSlot(s uint64) { metricLatestFinalizedSlot.Set(float64(s)) }
@@ -57,3 +58,6 @@ func SetAttestationAggregateCoverageDiffValidators(direction string, n int) {
 func SetTableBytes(table string, bytes uint64) {
 	metricTableBytes.WithLabelValues(labelOrUnknown(table)).Set(float64(bytes))
 }
+
+func SetPeerScore(peer string, score int) { metricPeerScore.WithLabelValues(peer).Set(float64(score)) }
+func DeletePeerScore(peer string)         { metricPeerScore.DeleteLabelValues(peer) }

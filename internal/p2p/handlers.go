@@ -15,7 +15,9 @@ func (h *Host) RegisterReqRespHandlers(
 ) {
 	h.host.SetStreamHandler(protocol.ID(StatusProtocol), func(s network.Stream) {
 		defer s.Close()
-		handleStatusRequest(s, statusFn)
+		if peerStatus := handleStatusRequest(s, statusFn); peerStatus != nil {
+			h.peerStore.UpdateStatus(s.Conn().RemotePeer(), peerStatus.HeadSlot)
+		}
 	})
 
 	h.host.SetStreamHandler(protocol.ID(BlocksByRootProtocol), func(s network.Stream) {

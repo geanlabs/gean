@@ -20,6 +20,12 @@ var (
 	metricTickAge = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_tick_last_age_seconds", Help: "Seconds since the dispatch loop last began a tick",
 	})
+	// metricProvingHeld climbs while one proof holds the prover. Proofs take
+	// seconds; a native call wedged in the kernel holds it until the process
+	// dies, stopping proposals and aggregation while the node otherwise runs.
+	metricProvingHeld = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "lean_proving_held_seconds", Help: "Seconds the current proof has held the prover, 0 while it is free",
+	})
 	metricSafeTargetSlot = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_safe_target_slot", Help: "Safe target slot for attestation",
 	})
@@ -62,6 +68,9 @@ var (
 	metricNodeStartTime = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "lean_node_start_time_seconds", Help: "Node start time as Unix timestamp",
 	})
+	metricPeerScore = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "lean_peer_score", Help: "Request reputation of each connected peer (0-200, starts at 100)",
+	}, []string{"peer"})
 	metricConnectedPeers = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lean_connected_peers", Help: "Number of connected peers",
 	}, []string{"client"})
