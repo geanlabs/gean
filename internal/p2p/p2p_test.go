@@ -837,3 +837,72 @@ func TestLoadBootnodesRejectsInvalidLine(t *testing.T) {
 		t.Fatalf("error=%v, want invalid line with number", err)
 	}
 }
+
+// newTestHost starts a host on a random localhost port with a fresh key.
+func newTestHost(t *testing.T) *Host {
+	t.Helper()
+	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := priv.Raw()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "node.key")
+	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := NewHost(context.Background(), path, 0, 1, nil, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.Close)
+	return h
+}
+
+// connectTestHosts connects client to each server and waits until the client
+// tracks them all.
+func connectTestHosts(t *testing.T, client *Host, servers ...*Host) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, server := range servers {
+		info := peer.AddrInfo{ID: server.PeerID(), Addrs: server.Addrs()}
+		if err := client.LibP2PHost().Connect(ctx, info); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for client.ConnectedPeers() < len(servers) {
+		if ctx.Err() != nil {
+			t.Fatal("peers never registered as connected")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The syncer keeps one excluded set for a whole pass, so every peer that fails
+// here must be added to the caller's map, not to a copy, or a stalled peer is
+// asked again for every batch.
+func TestFetchBlocksByRangeWithRetryGrowsCallersExcludedSet(t *testing.T) {
+	refuse := func(h *Host) {
+		h.RegisterReqRespHandlers(
+			func() *StatusMessage { return &StatusMessage{} },
+			func([32]byte) *types.SignedBlock { return nil },
+			func() uint64 { return 1 },
+			func(uint64, uint64) ([]*types.SignedBlock, bool) { return nil, false },
+		)
+	}
+	client, a, b := newTestHost(t), newTestHost(t), newTestHost(t)
+	refuse(a)
+	refuse(b)
+	connectTestHosts(t, client, a, b)
+
+	excluded := map[peer.ID]bool{}
+	if _, _, err := client.FetchBlocksByRangeWithRetry(context.Background(), excluded, 1, 1); err == nil {
+		t.Fatal("refusing peers served the range")
+	}
+	if !excluded[a.PeerID()] || !excluded[b.PeerID()] || len(excluded) != 2 {
+		t.Fatalf("excluded after the retry = %v, want both refusing peers", excluded)
+	}
+}
