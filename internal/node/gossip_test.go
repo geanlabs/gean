@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/p2p"
+	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -63,6 +63,11 @@ func TestOnGossipAttestationBuffersOnlyPlausibleUnknownHead(t *testing.T) {
 			})
 			if got := e.PendingAttestations.Total(); got != 0 {
 				t.Fatalf("pending attestations=%d, want 0", got)
+			}
+		})
+	}
+}
+
 func TestValidateGossipBlock(t *testing.T) {
 	e := makeTestEngine()
 	// Wall clock at slot 5. The store clock is left at genesis, as when the loop
