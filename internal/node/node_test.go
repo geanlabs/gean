@@ -750,7 +750,7 @@ func prunedCanonicalWithCraftedChild(t *testing.T, finalizedSlot uint64) (e *Eng
 		t.Fatal(err)
 	}
 	var queue []*types.SignedBlock
-	e.processOneBlock(block, &queue)
+	e.processOneBlock(block, &queue, false)
 	return e, z, a1, a2, crafted
 }
 
