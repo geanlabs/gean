@@ -248,6 +248,28 @@ func TestSyncDriver_CheckAndBackfill_ShutdownDoesNotRetry(t *testing.T) {
 	}
 }
 
+// Shutdown during the retry on other peers: the retry fails because the context
+// ended, not because every peer did, so the head-by-root fallback must not run.
+func TestSyncDriver_CheckAndBackfill_ShutdownDuringRetryDoesNotFallBack(t *testing.T) {
+	n, store := makeTestSyncHarness()
+	ctx, cancel := context.WithCancel(context.Background())
+	mock := &mockSyncP2P{
+		rangeErr: fmt.Errorf("simulated range fetch failure"),
+		retryErr: context.Canceled,
+		onRetry:  cancel,
+	}
+	sd := NewSyncDriver(ctx, n, store, mock)
+
+	sd.checkAndBackfill(ctx, libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: 100})
+
+	if got := mock.retryCalls.Load(); got != 1 {
+		t.Errorf("retries=%d, want 1", got)
+	}
+	if got := mock.rootCalls.Load(); got != 0 {
+		t.Errorf("head-by-root fallback after shutdown=%d, want 0", got)
+	}
+}
+
 func TestSyncDriver_CheckAndBackfill_FallbackSkipsMalformedBlocks(t *testing.T) {
 	n, store := makeTestSyncHarness()
 	rootBlock, _ := makeSyncBlock(100, types.ZeroRoot)

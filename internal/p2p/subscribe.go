@@ -7,12 +7,17 @@ import (
 )
 
 func (h *Host) JoinTopic(topic string) error {
+	if err := h.pubsub.RegisterTopicValidator(topic, h.validateGossip); err != nil {
+		return fmt.Errorf("register validator for %s: %w", topic, err)
+	}
 	t, err := h.pubsub.Join(topic)
 	if err != nil {
+		_ = h.pubsub.UnregisterTopicValidator(topic)
 		return fmt.Errorf("join topic %s: %w", topic, err)
 	}
 	sub, err := t.Subscribe()
 	if err != nil {
+		_ = h.pubsub.UnregisterTopicValidator(topic)
 		return fmt.Errorf("subscribe to %s: %w", topic, err)
 	}
 	h.topics[topic] = t
@@ -21,7 +26,8 @@ func (h *Host) JoinTopic(topic string) error {
 }
 
 func (h *Host) ReannounceSubscriptions() error {
-	if h.gossipHandler == nil {
+	handler := h.gossipHandler.Load()
+	if handler == nil {
 		return fmt.Errorf("reannounce: gossip listeners not started yet")
 	}
 	for topic, oldSub := range h.subs {
@@ -35,7 +41,7 @@ func (h *Host) ReannounceSubscriptions() error {
 			return fmt.Errorf("reannounce: subscribe %s: %w", topic, err)
 		}
 		h.subs[topic] = newSub
-		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, newSub, h.gossipHandler) })
+		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, newSub, *handler) })
 		logger.Info(logger.Network, "re-announced subscription topic=%s", topic)
 	}
 	return nil

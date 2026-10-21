@@ -43,30 +43,32 @@ func (s *StatusMessage) UnmarshalSSZ(buf []byte) error {
 	return nil
 }
 
-func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) {
+// handleStatusRequest answers a peer's status request and returns the status the
+// peer sent, or nil if it could not be answered.
+func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) *StatusMessage {
 	armReadDeadline(stream)
 	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(MaxCompressedPayloadSize)))
 	if err != nil {
 		logger.Warn(logger.Network, "status: read request failed: %v", err)
-		return
+		return nil
 	}
 	if len(reqBuf) == 0 {
 		writeResponse(stream, "status", RespInvalidRequest, []byte("empty status request"))
-		return
+		return nil
 	}
 
 	payload, err := DecodeReqRespPayload(reqBuf)
 	if err != nil {
 		logger.Warn(logger.Network, "status: decode request failed: %v", err)
 		writeResponse(stream, "status", RespInvalidRequest, []byte("decode failed"))
-		return
+		return nil
 	}
 
 	peerStatus := &StatusMessage{}
 	if err := peerStatus.UnmarshalSSZ(payload); err != nil {
 		logger.Warn(logger.Network, "status: ssz unmarshal failed: %v", err)
 		writeResponse(stream, "status", RespInvalidRequest, []byte("ssz unmarshal failed"))
-		return
+		return nil
 	}
 
 	logger.Info(logger.Network, "status: peer at slot %d finalized=%d", peerStatus.HeadSlot, peerStatus.FinalizedSlot)
@@ -74,9 +76,10 @@ func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) 
 	status := statusFn()
 	if status == nil {
 		writeResponse(stream, "status", RespServerError, []byte("status unavailable"))
-		return
+		return nil
 	}
 	writeResponse(stream, "status", RespSuccess, status.MarshalSSZ())
+	return peerStatus
 }
 
 func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus *StatusMessage) (*StatusMessage, error) {
@@ -113,5 +116,6 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 	if err := peerStatus.UnmarshalSSZ(respData); err != nil {
 		return nil, fmt.Errorf("unmarshal status: %w", err)
 	}
+	h.peerStore.UpdateStatus(peerID, peerStatus.HeadSlot)
 	return peerStatus, nil
 }

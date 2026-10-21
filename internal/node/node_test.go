@@ -366,7 +366,7 @@ func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
 	}
 
 	var queue []*types.SignedBlock
-	e.processOneBlock(signedBlock, &queue)
+	e.processOneBlock(signedBlock, &queue, false)
 
 	if e.Pending.ParentBuckets() != 0 {
 		t.Fatalf("pre-finalized block was buffered as pending; ParentBuckets=%d", e.Pending.ParentBuckets())
@@ -381,6 +381,7 @@ func TestProcessOneBlock_RejectsPreFinalized(t *testing.T) {
 
 func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 10)
 
 	var finalizedRoot, parentRoot [32]byte
 	finalizedRoot[0] = 0x05
@@ -397,7 +398,7 @@ func TestProcessOneBlock_AdmitsAtFinalizedSlot(t *testing.T) {
 	}
 
 	var queue []*types.SignedBlock
-	e.processOneBlock(signedBlock, &queue)
+	e.processOneBlock(signedBlock, &queue, false)
 
 	if e.Pending.Entries() == 0 {
 		t.Fatal("block at finalized slot was rejected by the strict-less-than guard")
@@ -541,6 +542,7 @@ func TestCascadeClearsDepth(t *testing.T) {
 
 func TestBufferMissingParentKeepsImmediateParentLink(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 2)
 
 	var missingRoot, parentRoot, blockRoot [32]byte
 	missingRoot[0] = 0xAA
@@ -584,6 +586,7 @@ func TestBufferMissingParentKeepsImmediateParentLink(t *testing.T) {
 // closer than what it already holds.
 func TestBufferMissingParentEvictsFarthestWhenFull(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 1<<20)
 	var queue []*types.SignedBlock
 
 	mkRoot := func(slot uint64, tag byte) [32]byte {
@@ -669,5 +672,128 @@ func TestDutyGateClosedForMaroonedNodeViaGossipSeenSlot(t *testing.T) {
 	fixed := dutygate.New()
 	if fixed.Decide("block", wallSlot, forkHead, gossipSeen) {
 		t.Fatal("marooned node should be gated off its dead fork with gossip-seen slot")
+	}
+}
+
+// A block with an unknown parent reaches disk before its signature can be checked,
+// so the cheap checks import would apply run first.
+func TestBufferMissingParentRejectsImplausibleBlocks(t *testing.T) {
+	tests := []struct {
+		name     string
+		slot     uint64
+		proposer uint64
+		admitted bool
+	}{
+		{"next slot, slot proposer", 6, 0, true},
+		{"beyond future horizon", 7, 0, false},
+		{"not the slot proposer", 6, 1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := makeTestEngine()
+			admitPendingBlocks(e, 5)
+			root := [32]byte{0xCC}
+			blk := &types.SignedBlock{Block: &types.Block{Slot: tt.slot, ProposerIndex: tt.proposer, ParentRoot: [32]byte{0xBB}, Body: &types.BlockBody{}}}
+			var queue []*types.SignedBlock
+			e.bufferMissingParentBlock(blk, root, blk.Block.ParentRoot, &queue)
+
+			_, pending := e.Pending.Depth(root)
+			onDisk := e.Store.GetSignedBlock(root) != nil
+			if pending != tt.admitted || onDisk != tt.admitted {
+				t.Fatalf("pending=%v on disk=%v, want both %v", pending, onDisk, tt.admitted)
+			}
+		})
+	}
+}
+
+// Discarding a pending block also removes the copy written to disk.
+func TestDiscardedPendingBlockLeavesDisk(t *testing.T) {
+	e := makeTestEngine()
+	admitPendingBlocks(e, 5)
+	parent, root := [32]byte{0xBB}, [32]byte{0xCC}
+	blk := &types.SignedBlock{Block: &types.Block{Slot: 5, ParentRoot: parent, Body: &types.BlockBody{}}}
+	var queue []*types.SignedBlock
+	e.bufferMissingParentBlock(blk, root, parent, &queue)
+	if e.Store.GetSignedBlock(root) == nil {
+		t.Fatal("precondition: pending block should be on disk")
+	}
+
+	e.onFailedRoot(parent)
+
+	if e.Store.GetSignedBlock(root) != nil || e.Store.GetBlockHeader(root) != nil {
+		t.Fatal("discarded pending block still on disk")
+	}
+}
+
+// prunedCanonicalWithCraftedChild stands in for canonical blocks below finality,
+// a1 <- a2: block data on disk, state pruned by PruneOnFinalization. z is a1's
+// parent with no header. An unsigned block at the current slot from the slot's
+// proposer then names a2 as its parent.
+func prunedCanonicalWithCraftedChild(t *testing.T, finalizedSlot uint64) (e *Engine, z, a1, a2, crafted [32]byte) {
+	t.Helper()
+	e = makeTestEngine()
+	admitPendingBlocks(e, 10)
+	e.Store.SetLatestFinalized(&types.Checkpoint{Root: e.Store.Head(), Slot: finalizedSlot})
+	z, a1, a2 = [32]byte{0x0F}, [32]byte{0xA1}, [32]byte{0xA2}
+	for _, b := range []struct {
+		root, parent [32]byte
+		slot         uint64
+	}{{a1, z, 1}, {a2, a1, 2}} {
+		sb := &types.SignedBlock{Block: &types.Block{Slot: b.slot, ParentRoot: b.parent, Body: &types.BlockBody{}}}
+		if err := e.Store.StorePendingBlock(b.root, sb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	block := &types.SignedBlock{Block: &types.Block{Slot: 10, ParentRoot: a2, Body: &types.BlockBody{}}}
+	crafted, err := block.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var queue []*types.SignedBlock
+	e.processOneBlock(block, &queue, false)
+	return e, z, a1, a2, crafted
+}
+
+// Discarding a pending subtree deletes only the blocks the buffer stored, never
+// imported blocks it walked over.
+func TestDiscardPendingKeepsImportedAncestors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		discard func(e *Engine, z [32]byte)
+	}{
+		{"failed fetch", func(e *Engine, z [32]byte) { e.onFailedRoot(z) }},
+		{"finalized", func(e *Engine, _ [32]byte) { e.discardFinalizedPending(2) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, z, a1, a2, crafted := prunedCanonicalWithCraftedChild(t, 0)
+			if e.Store.GetSignedBlock(crafted) == nil {
+				t.Fatal("precondition: crafted block should be pending on disk")
+			}
+			tc.discard(e, z)
+			if e.Store.GetBlockHeader(a1) == nil || e.Store.GetBlockHeader(a2) == nil {
+				t.Fatal("imported block data deleted")
+			}
+			if e.Store.GetSignedBlock(crafted) != nil {
+				t.Fatal("crafted pending block still on disk")
+			}
+		})
+	}
+}
+
+// A pending chain that reaches a stateless block at or below finality can never
+// import, so it is dropped at once instead of fetching further ancestors.
+func TestPendingWalkStopsAtFinality(t *testing.T) {
+	e, _, a1, a2, crafted := prunedCanonicalWithCraftedChild(t, 2)
+	if n := e.Pending.Count(); n != 0 {
+		t.Fatalf("pending count=%d, want 0", n)
+	}
+	if len(e.fetchInFlight) != 0 {
+		t.Fatalf("fetches queued=%d, want 0", len(e.fetchInFlight))
+	}
+	if e.Store.GetSignedBlock(crafted) != nil {
+		t.Fatal("crafted pending block still on disk")
+	}
+	if e.Store.GetBlockHeader(a1) == nil || e.Store.GetBlockHeader(a2) == nil {
+		t.Fatal("imported block data deleted")
 	}
 }

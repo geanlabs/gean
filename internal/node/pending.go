@@ -12,6 +12,26 @@ func (e *Engine) bufferMissingParentBlock(
 	queue *[]*types.SignedBlock,
 ) {
 	block := signedBlock.Block
+	// A pending block is written to disk before its signature can be checked, so
+	// first turn away what import would reject anyway: a block past the future
+	// horizon (blockprocessor's currentSlot+1), or one whose proposer is not the
+	// slot's. The registry is fixed at genesis, so the head's validator count holds.
+	if currentSlot := e.Store.Time() / types.IntervalsPerSlot; block.Slot > currentSlot+1 {
+		logger.Warn(logger.Chain, "rejecting pending block beyond future horizon slot=%d current_slot=%d block_root=0x%x",
+			block.Slot, currentSlot, blockRoot)
+		return
+	}
+	keys := e.Store.ValidatorKeys(e.Store.Head())
+	if keys == nil {
+		logger.Error(logger.Chain, "rejecting pending block: head state has no validators slot=%d block_root=0x%x",
+			block.Slot, blockRoot)
+		return
+	}
+	if !types.IsProposer(block.Slot, block.ProposerIndex, uint64(keys.Len())) {
+		logger.Warn(logger.Chain, "rejecting pending block with wrong proposer slot=%d proposer=%d block_root=0x%x",
+			block.Slot, block.ProposerIndex, blockRoot)
+		return
+	}
 	if e.Pending.Count() >= MaxPendingBlocks && !e.evictFarthestPending(block.Slot) {
 		logger.Warn(logger.Chain, "pending block cache full (%d), rejecting block slot=%d block_root=0x%x",
 			MaxPendingBlocks, block.Slot, blockRoot)
@@ -36,10 +56,11 @@ func (e *Engine) bufferMissingParentBlock(
 	missingRoot := e.Pending.ResolveAncestor(parentRoot)
 	e.Pending.SetParent(blockRoot, parentRoot)
 	e.Store.StorePendingBlock(blockRoot, signedBlock)
+	e.Pending.MarkStored(blockRoot)
 	e.Pending.AddChild(parentRoot, blockRoot)
 
-	missingRoot, queued := e.queueStoredAncestor(missingRoot, queue)
-	if queued {
+	missingRoot, handled := e.queueStoredAncestor(missingRoot, queue)
+	if handled {
 		return
 	}
 	e.queueMissingBlockFetch(missingRoot)
@@ -59,11 +80,23 @@ func (e *Engine) evictFarthestPending(incomingSlot uint64) bool {
 	}
 	logger.Warn(logger.Chain, "pending block cache full (%d), evicting slot=%d block_root=0x%x to admit slot=%d",
 		MaxPendingBlocks, evictSlot, evictRoot, incomingSlot)
-	e.Pending.DiscardSubtree(evictRoot)
+	e.discardPending(evictRoot)
 	return true
 }
 
+// discardPending drops a pending subtree and deletes from disk the blocks
+// bufferMissingParentBlock stored and that were not imported since. Imported
+// blocks below finality also lack a state, so a state check cannot tell them apart.
+func (e *Engine) discardPending(root [32]byte) {
+	e.Store.DeletePendingBlocks(e.Pending.DiscardSubtree(root))
+}
+
+// queueStoredAncestor walks up stored headers from missingRoot. It reports true
+// when the walk is handled here: the first block whose parent has a state is
+// queued for import, or the walk reached a stateless block at or below
+// finality, which nothing above can import through, and the subtree is dropped.
 func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, bool) {
+	finalizedSlot := e.Store.LatestFinalized().Slot
 	for {
 		header := e.Store.GetBlockHeader(missingRoot)
 		if header == nil {
@@ -73,6 +106,12 @@ func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.Signe
 			if storedBlock := e.Store.GetSignedBlock(missingRoot); storedBlock != nil {
 				*queue = append(*queue, storedBlock)
 			}
+			return missingRoot, true
+		}
+		if header.Slot <= finalizedSlot {
+			logger.Warn(logger.Chain, "pending chain reaches stateless block at or below finality slot=%d block_root=0x%x finalized_slot=%d, discarding",
+				header.Slot, missingRoot, finalizedSlot)
+			e.discardPending(missingRoot)
 			return missingRoot, true
 		}
 		e.Pending.AddChild(header.ParentRoot, missingRoot)
@@ -108,7 +147,7 @@ func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
 		parentRoot, childRoot := pair[0], pair[1]
 		header := e.Store.GetBlockHeader(childRoot)
 		if header != nil && header.Slot <= finalizedSlot {
-			e.Pending.DiscardSubtree(childRoot)
+			e.discardPending(childRoot)
 			e.Pending.RemoveChild(parentRoot, childRoot)
 			discarded++
 		}
@@ -135,7 +174,7 @@ func (e *Engine) onFailedRoot(failedRoot [32]byte) {
 
 	discarded := 0
 	for childRoot := range children {
-		e.Pending.DiscardSubtree(childRoot)
+		e.discardPending(childRoot)
 		discarded++
 	}
 	logger.Warn(logger.Sync, "fetch exhausted for root 0x%x, discarded %d pending child block(s)", failedRoot, discarded)

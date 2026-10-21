@@ -30,15 +30,14 @@ func AttestationSubnetTopic(subnetID uint64) string {
 	return TopicString(fmt.Sprintf("%s_%d", AttestationTopicKind, subnetID))
 }
 
-func isAttestationSubnetTopic(topic string) bool {
+func attestationSubnet(topic string) (uint64, bool) {
 	prefix := fmt.Sprintf("/leanconsensus/%s/%s_", ForkDigest, AttestationTopicKind)
 	suffix := "/ssz_snappy"
 	if !strings.HasPrefix(topic, prefix) || !strings.HasSuffix(topic, suffix) {
-		return false
+		return 0, false
 	}
-	subnet := strings.TrimSuffix(strings.TrimPrefix(topic, prefix), suffix)
-	_, err := strconv.ParseUint(subnet, 10, 64)
-	return err == nil
+	subnet, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(topic, prefix), suffix), 10, 64)
+	return subnet, err == nil
 }
 
 func AggregationTopic() string {

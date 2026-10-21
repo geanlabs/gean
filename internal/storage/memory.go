@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -77,17 +78,32 @@ func (v *inMemoryReadView) PrefixIterator(table Table, prefix []byte) (Iterator,
 		return &sliceIterator{}, nil
 	}
 
+	p := string(prefix)
+	return sortedEntries(t, func(k string) bool { return strings.HasPrefix(k, p) }), nil
+}
+
+func (v *inMemoryReadView) IteratorFrom(table Table, start []byte) (Iterator, error) {
+	v.backend.mu.RLock()
+	defer v.backend.mu.RUnlock()
+	t, ok := v.backend.tables[table]
+	if !ok {
+		return &sliceIterator{}, nil
+	}
+	from := string(start)
+	return sortedEntries(t, func(k string) bool { return k >= from }), nil
+}
+
+func sortedEntries(t map[string][]byte, keep func(string) bool) *sliceIterator {
 	var entries []KV
 	for k, val := range t {
-		kb := []byte(k)
-		if bytes.HasPrefix(kb, prefix) {
-			entries = append(entries, KV{Key: bytes.Clone(kb), Value: bytes.Clone(val)})
+		if keep(k) {
+			entries = append(entries, KV{Key: []byte(k), Value: bytes.Clone(val)})
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return bytes.Compare(entries[i].Key, entries[j].Key) < 0
 	})
-	return &sliceIterator{entries: entries, pos: -1}, nil
+	return &sliceIterator{entries: entries, pos: -1}
 }
 
 type inMemoryWriteBatch struct {

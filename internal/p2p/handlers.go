@@ -14,7 +14,9 @@ func (h *Host) RegisterReqRespHandlers(
 	blocksInRangeFn func(startSlot, count uint64) ([]*types.SignedBlock, bool),
 ) {
 	h.host.SetStreamHandler(protocol.ID(StatusProtocol), h.tracked(func(s network.Stream) {
-		handleStatusRequest(s, statusFn)
+		if peerStatus := handleStatusRequest(s, statusFn); peerStatus != nil {
+			h.peerStore.UpdateStatus(s.Conn().RemotePeer(), peerStatus.HeadSlot)
+		}
 	}))
 
 	h.host.SetStreamHandler(protocol.ID(BlocksByRootProtocol), h.tracked(func(s network.Stream) {

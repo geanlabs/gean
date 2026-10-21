@@ -3,11 +3,13 @@ package p2p
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/types"
 	"github.com/golang/snappy"
+	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -37,16 +40,6 @@ func (s stubStream) Write(p []byte) (int, error) {
 }
 
 func (stubStream) SetWriteDeadline(time.Time) error { return nil }
-
-type captureHandler struct {
-	block *types.SignedBlock
-}
-
-func (h *captureHandler) OnBlock(block *types.SignedBlock) { h.block = block }
-func (h *captureHandler) OnGossipAttestation(att *types.SignedAttestation) {
-}
-func (h *captureHandler) OnGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {
-}
 
 func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
 	var buf bytes.Buffer
@@ -378,44 +371,6 @@ func TestDecodeResponseConcatenatedChunks(t *testing.T) {
 	}
 }
 
-func TestDispatchMessageRequiresHandler(t *testing.T) {
-	h := &Host{}
-	if err := h.dispatchMessage(BlockTopic(), nil, nil); err == nil {
-		t.Fatal("expected missing handler error")
-	}
-}
-
-func TestDispatchMessageUsesHostHooks(t *testing.T) {
-	block := &types.SignedBlock{
-		Block: &types.Block{Body: &types.BlockBody{}},
-		Proof: &types.MultiMessageAggregate{},
-	}
-	data, err := block.MarshalSSZ()
-	if err != nil {
-		t.Fatalf("marshal block: %v", err)
-	}
-
-	var observedSize int
-	h := &Host{
-		Hooks: Hooks{
-			GossipBlockSize: func(bytes int) {
-				observedSize = bytes
-			},
-		},
-	}
-	handler := &captureHandler{}
-
-	if err := h.dispatchMessage(BlockTopic(), data, handler); err != nil {
-		t.Fatalf("dispatch block: %v", err)
-	}
-	if observedSize != len(data) {
-		t.Fatalf("observed size=%d, want %d", observedSize, len(data))
-	}
-	if handler.block == nil {
-		t.Fatal("block handler was not called")
-	}
-}
-
 func TestPublishRejectsNilMessages(t *testing.T) {
 	h := &Host{}
 	ctx := context.Background()
@@ -446,32 +401,25 @@ func TestTopicStrings(t *testing.T) {
 	}
 }
 
-func TestIsAttestationSubnetTopic(t *testing.T) {
+func TestAttestationSubnet(t *testing.T) {
 	tests := []struct {
-		topic string
-		want  bool
+		topic  string
+		subnet uint64
+		ok     bool
 	}{
-		{AttestationSubnetTopic(0), true},
-		{AttestationSubnetTopic(42), true},
-		{"/leanconsensus/12345678/attestation_/ssz_snappy", false},
-		{"/leanconsensus/12345678/attestation_x/ssz_snappy", false},
-		{"/leanconsensus/12345678/not_attestation_0/ssz_snappy", false},
-		{"/other/12345678/attestation_0/ssz_snappy", false},
-		{"/leanconsensus/12345678/attestation_0/json", false},
+		{AttestationSubnetTopic(0), 0, true},
+		{AttestationSubnetTopic(42), 42, true},
+		{"/leanconsensus/12345678/attestation_/ssz_snappy", 0, false},
+		{"/leanconsensus/12345678/attestation_x/ssz_snappy", 0, false},
+		{"/leanconsensus/12345678/not_attestation_0/ssz_snappy", 0, false},
+		{"/other/12345678/attestation_0/ssz_snappy", 0, false},
+		{"/leanconsensus/12345678/attestation_0/json", 0, false},
 	}
 
 	for _, test := range tests {
-		if got := isAttestationSubnetTopic(test.topic); got != test.want {
-			t.Fatalf("isAttestationSubnetTopic(%q)=%t, want %t", test.topic, got, test.want)
+		if subnet, ok := attestationSubnet(test.topic); subnet != test.subnet || ok != test.ok {
+			t.Fatalf("attestationSubnet(%q)=(%d,%t), want (%d,%t)", test.topic, subnet, ok, test.subnet, test.ok)
 		}
-	}
-}
-
-func TestDispatchMessageRejectsNearMissAttestationTopic(t *testing.T) {
-	h := &Host{}
-	err := h.dispatchMessage("/leanconsensus/12345678/not_attestation_0/ssz_snappy", nil, &captureHandler{})
-	if err == nil {
-		t.Fatal("expected unknown topic error")
 	}
 }
 
@@ -662,8 +610,8 @@ func TestPeerStoreAddRemove(t *testing.T) {
 		t.Fatal("should start empty")
 	}
 
-	ps.Add("peer1")
-	ps.Add("peer2")
+	ps.AddNew("peer1")
+	ps.AddNew("peer2")
 	if ps.Count() != 2 {
 		t.Fatalf("expected 2, got %d", ps.Count())
 	}
@@ -674,26 +622,178 @@ func TestPeerStoreAddRemove(t *testing.T) {
 	}
 }
 
-func TestPeerStoreRandomPeer(t *testing.T) {
-	ps := NewPeerStore()
-	ps.Add("peer1")
-	ps.Add("peer2")
-	ps.Add("peer3")
+func peerScore(ps *PeerStore, id peer.ID) int {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	return ps.peers[id].score
+}
 
-	exclude := map[peer.ID]bool{"peer1": true, "peer2": true}
-	p := ps.RandomPeer(exclude)
-	if p != "peer3" {
-		t.Fatalf("expected peer3, got %s", p)
+// leanSpec's request reputation: +10 per completed request, -20 per failure,
+// clamped to [0, 200] from a start of 100.
+func TestPeerStoreRecordRequestScores(t *testing.T) {
+	tests := []struct {
+		name      string
+		successes int
+		failures  int
+		want      int
+	}{
+		{"new peer", 0, 0, 100},
+		{"one success", 1, 0, 110},
+		{"one failure", 0, 1, 80},
+		{"capped at 200", 20, 0, 200},
+		{"floored at 0", 0, 10, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := NewPeerStore()
+			ps.AddNew("p")
+			for range tt.successes {
+				ps.RecordRequest("p", true)
+			}
+			for range tt.failures {
+				ps.RecordRequest("p", false)
+			}
+			if got := peerScore(ps, "p"); got != tt.want {
+				t.Fatalf("score = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestPeerStoreRandomPeerNoneAvailable(t *testing.T) {
-	ps := NewPeerStore()
-	p := ps.RandomPeer(nil)
-	if p != "" {
-		t.Fatal("should return empty when no peers")
+func TestPickWeightedFollowsCumulativeWeights(t *testing.T) {
+	ids := []peer.ID{"good", "floor"}
+	weights := []int{200, 1}
+	for _, tt := range []struct {
+		r    int
+		want peer.ID
+	}{{0, "good"}, {199, "good"}, {200, "floor"}} {
+		if got := pickWeighted(ids, weights, tt.r); got != tt.want {
+			t.Fatalf("pickWeighted(r=%d) = %s, want %s", tt.r, got, tt.want)
+		}
 	}
 }
+
+func TestPeerStoreSelectPeer(t *testing.T) {
+	ps := NewPeerStore()
+	for _, id := range []peer.ID{"ahead", "behind", "unknown"} {
+		ps.AddNew(id)
+	}
+	ps.UpdateStatus("ahead", 50)
+	ps.UpdateStatus("behind", 10)
+	ps.UpdateStatus("untracked", 99)
+
+	tests := []struct {
+		name    string
+		exclude map[peer.ID]bool
+		minSlot uint64
+		want    map[peer.ID]bool
+	}{
+		{"only the peer covering minSlot", nil, 40, map[peer.ID]bool{"ahead": true}},
+		{"any peer when none covers it", nil, 60, map[peer.ID]bool{"ahead": true, "behind": true, "unknown": true}},
+		{"any other peer when the covering one is excluded", map[peer.ID]bool{"ahead": true}, 40, map[peer.ID]bool{"behind": true, "unknown": true}},
+		{"none left", map[peer.ID]bool{"ahead": true, "behind": true, "unknown": true}, 0, map[peer.ID]bool{"": true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for range 50 {
+				if got := ps.SelectPeer(tt.exclude, tt.minSlot); !tt.want[got] {
+					t.Fatalf("SelectPeer = %q, want one of %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func scoreTestHost(t *testing.T) *Host {
+	t.Helper()
+	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := priv.Raw()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "node.key")
+	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := NewHost(context.Background(), path, 0, 1, nil, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.Close)
+	return h
+}
+
+// End to end over libp2p: a refused range request costs the serving peer score,
+// a served one earns it, and both sides of a status exchange record the head the
+// other reported.
+func TestHostScoresRequestsAndRecordsStatus(t *testing.T) {
+	block, root := signedBlockForP2PTest(t, 1)
+	serve := func(h *Host, complete bool) {
+		h.RegisterReqRespHandlers(
+			func() *StatusMessage { return &StatusMessage{HeadSlot: 1, HeadRoot: root} },
+			func([32]byte) *types.SignedBlock { return nil },
+			func() uint64 { return 1 },
+			func(uint64, uint64) ([]*types.SignedBlock, bool) {
+				return []*types.SignedBlock{block}, complete
+			},
+		)
+	}
+	client := scoreTestHost(t)
+	serve(client, true)
+	refusing, serving := scoreTestHost(t), scoreTestHost(t)
+	serve(refusing, false)
+	serve(serving, true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, server := range []*Host{refusing, serving} {
+		info := peer.AddrInfo{ID: server.PeerID(), Addrs: server.Addrs()}
+		if err := client.LibP2PHost().Connect(ctx, info); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for client.ConnectedPeers() < 2 || refusing.ConnectedPeers() < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("peers never registered as connected")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := client.FetchBlocksByRange(ctx, refusing.PeerID(), 1, 1); err == nil {
+		t.Fatal("refusing peer served the range")
+	}
+	if got := peerScore(client.peerStore, refusing.PeerID()); got != initialPeerScore-peerScoreFailure {
+		t.Fatalf("refusing peer score = %d, want %d", got, initialPeerScore-peerScoreFailure)
+	}
+	if _, err := client.FetchBlocksByRange(ctx, serving.PeerID(), 1, 1); err != nil {
+		t.Fatalf("serving peer: %v", err)
+	}
+	if got := peerScore(client.peerStore, serving.PeerID()); got != initialPeerScore+peerScoreSuccess {
+		t.Fatalf("serving peer score = %d, want %d", got, initialPeerScore+peerScoreSuccess)
+	}
+
+	if _, err := client.SendStatusRequest(ctx, refusing.PeerID(), &StatusMessage{HeadSlot: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if !headRecorded(client.peerStore, refusing.PeerID(), 1) {
+		t.Fatal("outbound status response was not recorded")
+	}
+	if !headRecorded(refusing.peerStore, client.PeerID(), 7) {
+		t.Fatal("inbound status request was not recorded")
+	}
+}
+
+func headRecorded(ps *PeerStore, id peer.ID, head uint64) bool {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	e, ok := ps.peers[id]
+	return ok && e.hasStatus && e.headSlot == head
+}
+
 func TestLoadBootnodesEmpty(t *testing.T) {
 	tmpFile := t.TempDir() + "/nodes.yaml"
 	os.WriteFile(tmpFile, []byte("# empty\n"), 0644)
@@ -735,5 +835,74 @@ func TestLoadBootnodesRejectsInvalidLine(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid bootnode line 1") {
 		t.Fatalf("error=%v, want invalid line with number", err)
+	}
+}
+
+// newTestHost starts a host on a random localhost port with a fresh key.
+func newTestHost(t *testing.T) *Host {
+	t.Helper()
+	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := priv.Raw()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "node.key")
+	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := NewHost(context.Background(), path, 0, 1, nil, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.Close)
+	return h
+}
+
+// connectTestHosts connects client to each server and waits until the client
+// tracks them all.
+func connectTestHosts(t *testing.T, client *Host, servers ...*Host) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, server := range servers {
+		info := peer.AddrInfo{ID: server.PeerID(), Addrs: server.Addrs()}
+		if err := client.LibP2PHost().Connect(ctx, info); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for client.ConnectedPeers() < len(servers) {
+		if ctx.Err() != nil {
+			t.Fatal("peers never registered as connected")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The syncer keeps one excluded set for a whole pass, so every peer that fails
+// here must be added to the caller's map, not to a copy, or a stalled peer is
+// asked again for every batch.
+func TestFetchBlocksByRangeWithRetryGrowsCallersExcludedSet(t *testing.T) {
+	refuse := func(h *Host) {
+		h.RegisterReqRespHandlers(
+			func() *StatusMessage { return &StatusMessage{} },
+			func([32]byte) *types.SignedBlock { return nil },
+			func() uint64 { return 1 },
+			func(uint64, uint64) ([]*types.SignedBlock, bool) { return nil, false },
+		)
+	}
+	client, a, b := newTestHost(t), newTestHost(t), newTestHost(t)
+	refuse(a)
+	refuse(b)
+	connectTestHosts(t, client, a, b)
+
+	excluded := map[peer.ID]bool{}
+	if _, _, err := client.FetchBlocksByRangeWithRetry(context.Background(), excluded, 1, 1); err == nil {
+		t.Fatal("refusing peers served the range")
+	}
+	if !excluded[a.PeerID()] || !excluded[b.PeerID()] || len(excluded) != 2 {
+		t.Fatalf("excluded after the retry = %v, want both refusing peers", excluded)
 	}
 }

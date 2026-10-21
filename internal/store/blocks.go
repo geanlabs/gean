@@ -146,6 +146,12 @@ func WriteBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 	return nil
 }
 
+// DeletePendingBlocks removes the header, body and signed block StorePendingBlock
+// wrote for each root. Callers pass only roots that were never imported.
+func (s *ConsensusStore) DeletePendingBlocks(roots [][32]byte) int {
+	return pruneBlocksByRoots(s, roots)
+}
+
 func (s *ConsensusStore) StorePendingBlock(root [32]byte, signedBlock *types.SignedBlock) error {
 	err := s.storePendingBlock(root, signedBlock)
 	if err != nil {
@@ -264,6 +270,64 @@ func (s *ConsensusStore) scanMaxStoredBlockSlot() (uint64, error) {
 		return 0, fmt.Errorf("iterate block headers: %w", err)
 	}
 	return max, nil
+}
+
+// LiveChainEntry is an imported block: its slot, root and parent.
+type LiveChainEntry struct {
+	Slot             uint64
+	Root, ParentRoot [32]byte
+}
+
+// LiveChainRange returns the imported blocks with from <= slot < to, in slot
+// order; to == 0 means no upper bound. Import writes the entry in the same
+// batch as the block's state, so the live chain records which blocks were
+// verified even after their states are pruned.
+func (s *ConsensusStore) LiveChainRange(from, to uint64) ([]LiveChainEntry, error) {
+	rv, err := s.beginRead("read live chain")
+	if err != nil {
+		return nil, err
+	}
+	// Keys lead with the big-endian slot, so this starts at the first entry at
+	// or above from.
+	it, err := rv.IteratorFrom(storage.TableLiveChain, storage.EncodeLiveChainKey(from, [32]byte{}))
+	if err != nil {
+		return nil, fmt.Errorf("iterate live chain: %w", err)
+	}
+	defer it.Close()
+
+	var entries []LiveChainEntry
+	for it.Next() {
+		key := it.Key()
+		if len(key) < storage.LiveChainKeySize {
+			continue
+		}
+		slot, root := storage.DecodeLiveChainKey(key)
+		if to != 0 && slot >= to {
+			break
+		}
+		val := it.Value()
+		if len(val) < 32 {
+			continue
+		}
+		entry := LiveChainEntry{Slot: slot, Root: root}
+		copy(entry.ParentRoot[:], val)
+		entries = append(entries, entry)
+	}
+	if err := it.Err(); err != nil {
+		return nil, fmt.Errorf("iterate live chain: %w", err)
+	}
+	return entries, nil
+}
+
+// HasLiveChainEntry reports whether the block at slot with this root was
+// imported.
+func (s *ConsensusStore) HasLiveChainEntry(slot uint64, root [32]byte) bool {
+	rv, err := s.beginRead("has live chain entry")
+	if err != nil {
+		return false
+	}
+	val, err := rv.Get(storage.TableLiveChain, storage.EncodeLiveChainKey(slot, root))
+	return err == nil && val != nil
 }
 
 func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]byte) {

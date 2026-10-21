@@ -92,11 +92,12 @@ func (h *Host) FetchBlocksByRange(
 	ctx context.Context,
 	peerID peer.ID,
 	startSlot, count uint64,
-) ([]*types.SignedBlock, error) {
+) (blocks []*types.SignedBlock, err error) {
 	if err := validateRangeRequest(startSlot, count); err != nil {
 		return nil, err
 	}
 	endSlot := startSlot + count
+	defer func(parent context.Context) { h.recordRequest(parent, peerID, err) }(ctx)
 
 	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
 	defer cancel()
@@ -120,7 +121,6 @@ func (h *Host) FetchBlocksByRange(
 	}
 	stream.CloseWrite()
 
-	var blocks []*types.SignedBlock
 	var prevHeaderRoot [32]byte
 	var hasPrev bool
 
