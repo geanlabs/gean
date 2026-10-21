@@ -44,7 +44,7 @@ func (h *Host) StartGossipListeners(handler MessageHandler) {
 	}
 	h.gossipHandler.Store(&handler)
 	for topic, sub := range h.subs {
-		go h.listenTopic(h.ctx, topic, sub, handler)
+		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, sub, handler) })
 	}
 }
 
@@ -89,6 +89,12 @@ func (h *Host) validateGossip(_ context.Context, from peer.ID, msg *pubsub.Messa
 	if from == h.host.ID() {
 		return pubsub.ValidationAccept
 	}
+	// The handler reads the store, so Close waits for a running validation and
+	// ignores the messages that arrive once it has begun.
+	if !h.tasks.Enter() {
+		return pubsub.ValidationIgnore
+	}
+	defer h.tasks.Leave()
 	handlerPtr := h.gossipHandler.Load()
 	if handlerPtr == nil {
 		return pubsub.ValidationIgnore

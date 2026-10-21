@@ -7,6 +7,8 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
+
+	"github.com/geanlabs/gean/internal/lifecycle"
 )
 
 type Host struct {
@@ -22,6 +24,11 @@ type Host struct {
 	gossipHandler  atomic.Pointer[MessageHandler]
 	committeeCount uint64
 	Hooks          Hooks
+
+	// tasks tracks the goroutines the host starts, the req/resp handlers it
+	// runs and the gossip validators pubsub calls, which read the store, so
+	// Close can join them.
+	tasks lifecycle.Group
 }
 
 func NewHost(
