@@ -86,6 +86,11 @@ var (
 		Help:    "Time taken to process attestations",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 1},
 	})
+	metricBlockPublishDelay = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "lean_block_publish_delay_seconds",
+		Help:    "Time from slot start to publishing this node's block for the slot",
+		Buckets: []float64{0.2, 0.4, 0.6, 0.8, 1.2, 1.6, 2.4, 3.2, 4, 8},
+	})
 	metricBlockBuildingTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "lean_block_building_time_seconds",
 		Help:    "Time to build a block",

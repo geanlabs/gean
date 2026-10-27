@@ -42,6 +42,7 @@ func ObserveSTFAttestationsTime(seconds float64) {
 	observeNonNegative(metricSTFAttestationsTime, seconds)
 }
 func ObserveBlockBuildingTime(seconds float64) { observeNonNegative(metricBlockBuildingTime, seconds) }
+func ObserveBlockPublishDelay(seconds float64) { observeNonNegative(metricBlockPublishDelay, seconds) }
 func ObserveBlockBuildingPayloadAggregationTime(seconds float64) {
 	observeNonNegative(metricBlockBuildingPayloadAggregationTime, seconds)
 }
