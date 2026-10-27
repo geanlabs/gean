@@ -44,10 +44,13 @@ func (h *Host) LibP2PHost() libp2phost.Host {
 	return h.host
 }
 
+// Close shuts the host down and waits for its gossip listeners, req/resp
+// handlers and other goroutines to return.
 func (h *Host) Close() {
 	h.cancel()
 	for _, sub := range h.subs {
 		sub.Cancel()
 	}
 	h.host.Close()
+	h.tasks.Close()
 }

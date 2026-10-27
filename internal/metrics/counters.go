@@ -93,6 +93,10 @@ var (
 	metricProofOperations = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lean_proof_operations_total", Help: "Recursive proof operations by result",
 	}, []string{"operation", "result"})
+	metricPeerRequestOutcomes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lean_peer_request_outcomes_total",
+		Help: "Outbound block requests by outcome, as scored against the peer",
+	}, []string{"outcome"})
 	metricReqRespTimeout = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lean_p2p_reqresp_timeout_total",
 		Help: "Req/resp stream operations aborted by the idle deadline, by protocol and direction",

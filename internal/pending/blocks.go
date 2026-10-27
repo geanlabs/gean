@@ -5,6 +5,9 @@ type BlockBuffer struct {
 	parents  map[[32]byte][32]byte
 	depths   map[[32]byte]int
 	slots    map[[32]byte]uint64
+	// stored holds the roots whose block data the buffer wrote to disk and that
+	// have not been imported since: the only data a discard may delete.
+	stored map[[32]byte]bool
 }
 
 func NewBlockBuffer() *BlockBuffer {
@@ -60,11 +63,21 @@ func (b *BlockBuffer) SetDepth(root [32]byte, depth int) {
 	b.depths[root] = depth
 }
 
-func (b *BlockBuffer) ClearDepth(root [32]byte) {
+// MarkStored records that root's block data was written to disk for the buffer.
+func (b *BlockBuffer) MarkStored(root [32]byte) {
+	if !b.ensureMaps() {
+		return
+	}
+	b.stored[root] = true
+}
+
+// MarkImported clears root's depth, and its block data now belongs to the chain.
+func (b *BlockBuffer) MarkImported(root [32]byte) {
 	if b == nil {
 		return
 	}
 	delete(b.depths, root)
+	delete(b.stored, root)
 }
 
 func (b *BlockBuffer) SetSlot(root [32]byte, slot uint64) {
@@ -93,12 +106,13 @@ func (b *BlockBuffer) HighestSlotEntry() ([32]byte, uint64, bool) {
 }
 
 // DiscardAtOrBelow drops every entry whose slot is at or below slot, with the
-// subtree waiting on it, and returns how many slot-carrying entries it dropped.
-// It reads only the recorded slots, so callers must record a slot for every
-// entry they link in (the node does).
-func (b *BlockBuffer) DiscardAtOrBelow(slot uint64) int {
+// subtree waiting on it. It returns how many slot-carrying entries it dropped
+// and the dropped roots whose block data the buffer stored. It reads only the
+// recorded slots, so callers must record a slot for every entry they link in
+// (the node does).
+func (b *BlockBuffer) DiscardAtOrBelow(slot uint64) (int, [][32]byte) {
 	if b == nil {
-		return 0
+		return 0, nil
 	}
 	var doomed [][32]byte
 	for root, s := range b.slots {
@@ -107,15 +121,16 @@ func (b *BlockBuffer) DiscardAtOrBelow(slot uint64) int {
 		}
 	}
 	dropped := 0
+	var stored [][32]byte
 	for _, root := range doomed {
 		if _, still := b.slots[root]; !still {
 			continue
 		}
 		before := len(b.slots)
-		b.DiscardSubtree(root)
+		stored = append(stored, b.DiscardSubtree(root)...)
 		dropped += before - len(b.slots)
 	}
-	return dropped
+	return dropped, stored
 }
 
 func (b *BlockBuffer) ResolveAncestor(start [32]byte) [32]byte {
@@ -189,11 +204,14 @@ func (b *BlockBuffer) ClearEntry(root [32]byte) {
 	delete(b.parents, root)
 	delete(b.depths, root)
 	delete(b.slots, root)
+	delete(b.stored, root)
 }
 
-func (b *BlockBuffer) DiscardSubtree(root [32]byte) {
+// DiscardSubtree drops root and every pending descendant, returning the dropped
+// roots whose block data the buffer stored.
+func (b *BlockBuffer) DiscardSubtree(root [32]byte) [][32]byte {
 	if b == nil {
-		return
+		return nil
 	}
 	if parent, ok := b.parents[root]; ok {
 		b.RemoveChild(parent, root)
@@ -205,24 +223,26 @@ func (b *BlockBuffer) DiscardSubtree(root [32]byte) {
 			}
 		}
 	}
-	b.discardSubtree(root)
+	return b.discardSubtree(root, nil)
 }
 
-func (b *BlockBuffer) discardSubtree(root [32]byte) {
-	if b == nil {
-		return
-	}
+func (b *BlockBuffer) discardSubtree(root [32]byte, dropped [][32]byte) [][32]byte {
 	delete(b.parents, root)
 	delete(b.depths, root)
 	delete(b.slots, root)
+	if b.stored[root] {
+		delete(b.stored, root)
+		dropped = append(dropped, root)
+	}
 	set, ok := b.children[root]
 	if !ok {
-		return
+		return dropped
 	}
 	delete(b.children, root)
 	for child := range set {
-		b.discardSubtree(child)
+		dropped = b.discardSubtree(child, dropped)
 	}
+	return dropped
 }
 
 func (b *BlockBuffer) ensureMaps() bool {
@@ -240,6 +260,9 @@ func (b *BlockBuffer) ensureMaps() bool {
 	}
 	if b.slots == nil {
 		b.slots = make(map[[32]byte]uint64)
+	}
+	if b.stored == nil {
+		b.stored = make(map[[32]byte]bool)
 	}
 	return true
 }

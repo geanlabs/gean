@@ -62,6 +62,7 @@ func canonicalChainWithPrunedStates(e *Engine, top, finalizedSlot uint64) {
 // pending buffer, and finally ask peers for the zero root.
 func TestStaleBranchBelowFinalizedIsDroppedWithoutWalking(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 2950)
 	const top, finalizedSlot = 3000, 2900
 	canonicalChainWithPrunedStates(e, top, finalizedSlot)
 
@@ -72,7 +73,7 @@ func TestStaleBranchBelowFinalizedIsDroppedWithoutWalking(t *testing.T) {
 	// canonical block from far below it.
 	stale := &types.SignedBlock{Block: &types.Block{Slot: 2950, ParentRoot: walkRoot(40, 0xC0), Body: &types.BlockBody{}}}
 	var queue []*types.SignedBlock
-	e.processOneBlock(stale, &queue)
+	e.processOneBlock(stale, &queue, false)
 
 	if n := e.Pending.Count(); n != 0 {
 		t.Fatalf("stale branch left %d entries in the pending buffer", n)
@@ -89,6 +90,7 @@ func TestStaleBranchBelowFinalizedIsDroppedWithoutWalking(t *testing.T) {
 // no state is abandoned at the limit, not followed to its end.
 func TestStoredAncestorWalkStopsAtFetchDepth(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, MaxBlockFetchDepth*2+1)
 	parent := e.Store.Head()
 	const length = MaxBlockFetchDepth * 2
 	for slot := uint64(1); slot <= length; slot++ {
@@ -106,7 +108,7 @@ func TestStoredAncestorWalkStopsAtFetchDepth(t *testing.T) {
 
 	tip := &types.SignedBlock{Block: &types.Block{Slot: length + 1, ParentRoot: walkRoot(length, 0xD0), Body: &types.BlockBody{}}}
 	var queue []*types.SignedBlock
-	e.processOneBlock(tip, &queue)
+	e.processOneBlock(tip, &queue, false)
 
 	if counter.reads > MaxBlockFetchDepth+4 {
 		t.Fatalf("walk read %d headers, want it bounded by %d", counter.reads, MaxBlockFetchDepth)
@@ -120,6 +122,7 @@ func TestStoredAncestorWalkStopsAtFetchDepth(t *testing.T) {
 // so eviction and finalization sweeps can see it.
 func TestStoredAncestorWalkRecordsSlots(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 4)
 	// Three stored blocks with no state above an unknown root.
 	parent := walkRoot(0, 0xEE)
 	for slot := uint64(1); slot <= 3; slot++ {
@@ -129,12 +132,12 @@ func TestStoredAncestorWalkRecordsSlots(t *testing.T) {
 	}
 	tip := &types.SignedBlock{Block: &types.Block{Slot: 4, ParentRoot: walkRoot(3, 0xD0), Body: &types.BlockBody{}}}
 	var queue []*types.SignedBlock
-	e.processOneBlock(tip, &queue)
+	e.processOneBlock(tip, &queue, false)
 
 	if n := e.Pending.Count(); n != 4 {
 		t.Fatalf("buffer holds %d entries, want the block and its three stored ancestors", n)
 	}
-	if dropped := e.Pending.DiscardAtOrBelow(10); dropped != 4 {
+	if dropped, _ := e.Pending.DiscardAtOrBelow(10); dropped != 4 {
 		t.Fatalf("slot sweep dropped %d entries, want 4: some linked entries carry no slot", dropped)
 	}
 	if n := e.Pending.Count(); n != 0 {
@@ -146,6 +149,7 @@ func TestStoredAncestorWalkRecordsSlots(t *testing.T) {
 // stored block whose parent has a state.
 func TestStoredAncestorWalkQueuesConnectableBlock(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 4)
 	genesis := e.Store.Head()
 	first := walkRoot(1, 0xD0)
 	parent := genesis
@@ -159,7 +163,7 @@ func TestStoredAncestorWalkQueuesConnectableBlock(t *testing.T) {
 	}
 	tip := &types.SignedBlock{Block: &types.Block{Slot: 4, ParentRoot: walkRoot(3, 0xD0), Body: &types.BlockBody{}}}
 	var queue []*types.SignedBlock
-	e.processOneBlock(tip, &queue)
+	e.processOneBlock(tip, &queue, false)
 
 	if len(queue) != 1 || queue[0].Block.Slot != 1 {
 		t.Fatalf("queue = %d blocks, want block 1 (root 0x%x) ready to import", len(queue), first)
@@ -225,7 +229,7 @@ func TestRejectedPreFinalizedBlockDropsItsWaitingChildren(t *testing.T) {
 	e.Pending.AddChild(arrivedRoot, child)
 
 	var queue []*types.SignedBlock
-	e.processOneBlock(arrived, &queue)
+	e.processOneBlock(arrived, &queue, false)
 
 	if n := e.Pending.Count(); n != 0 {
 		t.Fatalf("children of a rejected pre-finalized block stayed pending (%d)", n)
@@ -236,6 +240,7 @@ func TestRejectedPreFinalizedBlockDropsItsWaitingChildren(t *testing.T) {
 // the finalized slot: everything the walk linked goes with it.
 func TestStaleBranchDropsEntriesLinkedAboveFinalized(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 220)
 	const top, finalizedSlot = 300, 200
 	canonicalChainWithPrunedStates(e, top, finalizedSlot)
 
@@ -248,10 +253,7 @@ func TestStaleBranchDropsEntriesLinkedAboveFinalized(t *testing.T) {
 	}
 	var queue []*types.SignedBlock
 	first := &types.SignedBlock{Block: &types.Block{Slot: 220, ParentRoot: walkRoot(210, 0xD0), Body: &types.BlockBody{}}}
-	e.processOneBlock(first, &queue)
-	firstRoot, _ := first.Block.HashTreeRoot()
-	second := &types.SignedBlock{Block: &types.Block{Slot: 221, ParentRoot: firstRoot, Body: &types.BlockBody{}}}
-	e.processOneBlock(second, &queue)
+	e.processOneBlock(first, &queue, false)
 
 	if n, m := e.Pending.Count(), e.Pending.Entries(); n != 0 || m != 0 {
 		t.Fatalf("stale branch left count=%d entries=%d in the pending buffer", n, m)
@@ -259,12 +261,17 @@ func TestStaleBranchDropsEntriesLinkedAboveFinalized(t *testing.T) {
 	if len(queue) != 0 {
 		t.Fatalf("stale branch queued %d blocks", len(queue))
 	}
+	firstRoot, _ := first.Block.HashTreeRoot()
+	if e.Store.GetSignedBlock(firstRoot) != nil {
+		t.Fatal("dropped stale block still on disk")
+	}
 }
 
 // After a restart the buffer is empty but pending blocks are still on disk: a
 // new tip on top of them walks to the first one whose parent has a state.
 func TestStoredAncestorWalkConnectsAfterRestart(t *testing.T) {
 	e := makeTestEngine()
+	admitPendingBlocks(e, 306)
 	const top, finalizedSlot = 300, 300
 	canonicalChainWithPrunedStates(e, top, finalizedSlot)
 
@@ -279,7 +286,7 @@ func TestStoredAncestorWalkConnectsAfterRestart(t *testing.T) {
 	}
 	tip := &types.SignedBlock{Block: &types.Block{Slot: 306, ParentRoot: walkRoot(305, 0xD0), Body: &types.BlockBody{}}}
 	var queue []*types.SignedBlock
-	e.processOneBlock(tip, &queue)
+	e.processOneBlock(tip, &queue, false)
 
 	if len(queue) != 1 || queue[0].Block.Slot != 301 {
 		t.Fatalf("queue = %d blocks, want block 301 ready to import", len(queue))

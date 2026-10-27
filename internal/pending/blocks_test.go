@@ -50,7 +50,7 @@ func TestBlockBuffer_DepthTracking(t *testing.T) {
 		t.Fatalf("expected inherited depth 3, got %d", parentDepth+1)
 	}
 
-	b.ClearDepth(root3)
+	b.MarkImported(root3)
 	if _, ok := b.Depth(root3); ok {
 		t.Fatal("depth should be cleared")
 	}
@@ -175,7 +175,8 @@ func TestBlockBuffer_ZeroValueAndNilGuards(t *testing.T) {
 	nilBuffer.AddChild(parent, child)
 	nilBuffer.SetParent(child, parent)
 	nilBuffer.SetDepth(child, 3)
-	nilBuffer.ClearDepth(child)
+	nilBuffer.MarkImported(child)
+	nilBuffer.MarkStored(child)
 	nilBuffer.ClearEntry(child)
 	nilBuffer.RemoveChild(parent, child)
 	nilBuffer.DiscardSubtree(child)
@@ -261,13 +262,13 @@ func TestBlockBuffer_DiscardAtOrBelow(t *testing.T) {
 	b.SetParent(root(3), missing)
 	b.AddChild(missing, root(3))
 
-	if got := b.DiscardAtOrBelow(5); got != 2 {
+	if got, _ := b.DiscardAtOrBelow(5); got != 2 {
 		t.Fatalf("dropped %d entries, want r1 and the r2 waiting on it", got)
 	}
 	if b.Count() != 1 || b.ChildCount(missing) != 1 {
 		t.Fatalf("count=%d children(missing)=%d, want only r3 left", b.Count(), b.ChildCount(missing))
 	}
-	if got := b.DiscardAtOrBelow(19); got != 0 {
+	if got, _ := b.DiscardAtOrBelow(19); got != 0 {
 		t.Fatalf("dropped %d entries above the slot", got)
 	}
 }

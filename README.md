@@ -17,7 +17,7 @@ Gean is:
 
 ### Prerequisites
 
-- [Go](https://go.dev/doc/install) 1.25+
+- [Go](https://go.dev/doc/install) 1.26+
 - [Rust](https://www.rust-lang.org/tools/install) 1.92.0
 - [uv](https://docs.astral.sh/uv/)
 - [Docker](https://www.docker.com/get-started/)
@@ -98,6 +98,7 @@ Gean is a single Go module. Consensus logic lives in `internal/`, and XMSS signa
 | [`internal/node`](internal/node) | Engine: single dispatch loop, tick-driven duties, gossip handling, and workers |
 | [`internal/dutygate`](internal/dutygate) | Suspends duties while the node lags sync or the network stalls |
 | [`internal/role`](internal/role) | Runtime aggregator role toggle |
+| [`internal/lifecycle`](internal/lifecycle) | Goroutine groups that shutdown joins before closing storage and keys |
 | **Consensus** | |
 | [`internal/types`](internal/types) | Consensus containers and generated SSZ encoding |
 | [`internal/genesis`](internal/genesis) | Genesis config, validators, and state |

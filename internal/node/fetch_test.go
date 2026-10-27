@@ -124,9 +124,36 @@ func TestProcessOneBlockClearsFetchMarker(t *testing.T) {
 	e.fetchInFlight[blockRoot] = true
 
 	var queue []*types.SignedBlock
-	e.processOneBlock(signed, &queue)
+	e.processOneBlock(signed, &queue, false)
 
 	if e.fetchInFlight[blockRoot] {
 		t.Fatal("receiving the block should clear its fetch marker")
+	}
+}
+
+// An imported block whose state was pruned in a finality stall is still
+// imported. Re-delivering it must not buffer it and rebuild its ancestors.
+func TestProcessOneBlockIgnoresImportedBlockWithPrunedState(t *testing.T) {
+	e := makeTestEngine()
+	genesis := [32]byte{0x01}
+	parent := [32]byte{0x0a}
+	e.Store.InsertBlockHeader(parent, &types.BlockHeader{Slot: 1, ParentRoot: genesis})
+	e.Store.InsertLiveChainEntry(1, parent, genesis)
+
+	signed := &types.SignedBlock{
+		Block: &types.Block{Slot: 2, ParentRoot: parent, Body: &types.BlockBody{}},
+		Proof: &types.MultiMessageAggregate{},
+	}
+	root, err := signed.Block.HashTreeRoot()
+	if err != nil {
+		t.Fatalf("block root: %v", err)
+	}
+	e.Store.InsertBlockHeader(root, &types.BlockHeader{Slot: 2, ParentRoot: parent})
+	e.Store.InsertLiveChainEntry(2, root, parent)
+
+	e.onBlock(signed)
+
+	if n := e.Pending.Count(); n != 0 {
+		t.Fatalf("re-delivered imported block left %d pending entries, want 0", n)
 	}
 }

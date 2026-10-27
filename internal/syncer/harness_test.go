@@ -29,7 +29,8 @@ type mockSyncP2P struct {
 	rangeCalls     atomic.Int32
 	lastRangeCount uint64
 	rangeBlock     chan struct{}
-	rangeDeadline  atomic.Bool // a range call's context carried a deadline
+	rangeEntered   chan struct{} // receives once per call, before rangeBlock
+	rangeDeadline  atomic.Bool   // a range call's context carried a deadline
 
 	retryBatches  [][]*types.SignedBlock
 	retryErr      error
@@ -37,6 +38,7 @@ type mockSyncP2P struct {
 	retryExcluded [][]libp2ppeer.ID // excluded set as each retry call saw it
 	retryFails    []libp2ppeer.ID   // peers each retry call reports as failed
 	onRange       func()
+	onRetry       func()
 
 	rootBlocks []*types.SignedBlock
 	rootErr    error
@@ -65,6 +67,9 @@ func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.
 	m.lastRangeCount = count
 	m.mu.Unlock()
 
+	if m.rangeEntered != nil {
+		m.rangeEntered <- struct{}{}
+	}
 	if m.rangeBlock != nil {
 		<-m.rangeBlock
 	}
@@ -81,6 +86,9 @@ func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.
 
 func (m *mockSyncP2P) FetchBlocksByRangeWithRetry(ctx context.Context, excluded map[libp2ppeer.ID]bool, startSlot, count uint64) ([]*types.SignedBlock, libp2ppeer.ID, error) {
 	m.retryCalls.Add(1)
+	if m.onRetry != nil {
+		m.onRetry()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	seen := make([]libp2ppeer.ID, 0, len(excluded))

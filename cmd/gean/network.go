@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/geanlabs/gean/internal/lifecycle"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/node"
 	"github.com/geanlabs/gean/internal/p2p"
@@ -72,21 +73,24 @@ func registerReqRespHandlers(p2pHost *p2p.Host, s *store.ConsensusStore) {
 	)
 }
 
-func startNodeNetworking(ctx context.Context, n *node.Engine, s *store.ConsensusStore, p2pHost *p2p.Host, bootnodes []multiaddr.Multiaddr) {
+// startNodeNetworking starts the engine and the sync driver and connects to the
+// network. The re-announce timer runs on tasks.
+func startNodeNetworking(ctx context.Context, n *node.Engine, s *store.ConsensusStore, p2pHost *p2p.Host, bootnodes []multiaddr.Multiaddr, tasks *lifecycle.Group) *syncer.SyncDriver {
 	p2pHost.StartGossipListeners(n)
-	go n.Run(ctx)
+	n.Start(ctx)
 
 	syncDriver := syncer.NewSyncDriver(ctx, n, s, p2pHost)
 	p2pHost.Hooks.PeerStatus = syncDriver.OnPeerConnected
-	go syncDriver.Run()
+	syncDriver.Start()
 
 	p2pHost.ConnectBootnodes(ctx, bootnodes)
 	p2pHost.StartBootnodeRedial(ctx, bootnodes)
-	scheduleSubscriptionReannounce(ctx, p2pHost)
+	scheduleSubscriptionReannounce(ctx, p2pHost, tasks)
+	return syncDriver
 }
 
-func scheduleSubscriptionReannounce(ctx context.Context, p2pHost *p2p.Host) {
-	go func() {
+func scheduleSubscriptionReannounce(ctx context.Context, p2pHost *p2p.Host, tasks *lifecycle.Group) {
+	tasks.Go(func() {
 		select {
 		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
@@ -95,5 +99,5 @@ func scheduleSubscriptionReannounce(ctx context.Context, p2pHost *p2p.Host) {
 		if err := p2pHost.ReannounceSubscriptions(); err != nil {
 			logger.Error(logger.Network, "re-announce subscriptions failed: %v", err)
 		}
-	}()
+	})
 }

@@ -3,12 +3,14 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/geanlabs/gean/internal/api"
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/store"
 )
 
-func startAPIServer(address string, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) error {
-	return api.StartAPIServer(address, s, fc, aggCtl)
+func newAPIServer(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.Server {
+	return api.NewAPIServer(s, fc, aggCtl)
 }

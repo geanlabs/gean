@@ -12,6 +12,26 @@ func (e *Engine) bufferMissingParentBlock(
 	queue *[]*types.SignedBlock,
 ) {
 	block := signedBlock.Block
+	// A pending block is written to disk before its signature can be checked, so
+	// first turn away what import would reject anyway: a block past the future
+	// horizon (blockprocessor's currentSlot+1), or one whose proposer is not the
+	// slot's. The registry is fixed at genesis, so the head's validator count holds.
+	if currentSlot := e.Store.Time() / types.IntervalsPerSlot; block.Slot > currentSlot+1 {
+		logger.Warn(logger.Chain, "rejecting pending block beyond future horizon slot=%d current_slot=%d block_root=0x%x",
+			block.Slot, currentSlot, blockRoot)
+		return
+	}
+	keys := e.Store.ValidatorKeys(e.Store.Head())
+	if keys == nil {
+		logger.Error(logger.Chain, "rejecting pending block: head state has no validators slot=%d block_root=0x%x",
+			block.Slot, blockRoot)
+		return
+	}
+	if !types.IsProposer(block.Slot, block.ProposerIndex, uint64(keys.Len())) {
+		logger.Warn(logger.Chain, "rejecting pending block with wrong proposer slot=%d proposer=%d block_root=0x%x",
+			block.Slot, block.ProposerIndex, blockRoot)
+		return
+	}
 	if e.Pending.Count() >= MaxPendingBlocks && !e.evictFarthestPending(block.Slot) {
 		logger.Warn(logger.Chain, "pending block cache full (%d), rejecting block slot=%d block_root=0x%x",
 			MaxPendingBlocks, block.Slot, blockRoot)
@@ -36,24 +56,14 @@ func (e *Engine) bufferMissingParentBlock(
 	missingRoot := e.Pending.ResolveAncestor(parentRoot)
 	e.Pending.SetParent(blockRoot, parentRoot)
 	e.Store.StorePendingBlock(blockRoot, signedBlock)
+	e.Pending.MarkStored(blockRoot)
 	e.Pending.AddChild(parentRoot, blockRoot)
 
-	missingRoot, outcome := e.queueStoredAncestor(missingRoot, queue)
-	switch outcome {
-	case ancestorQueued:
-	case ancestorMissing:
-		e.queueMissingBlockFetch(missingRoot)
-	case ancestorBelowFinalized:
-		// The branch leaves the chain below finalization, so it can never be
-		// canonical: drop it whole instead of fetching toward genesis.
-		logger.Warn(logger.Chain, "discarding pending branch below the finalized slot: block slot=%d block_root=0x%x ancestor=0x%x",
-			block.Slot, blockRoot, missingRoot)
-		e.Pending.DiscardSubtree(missingRoot)
-	case ancestorTooDeep:
-		logger.Warn(logger.Chain, "stored ancestor walk exceeded %d blocks, discarding pending branch: block slot=%d block_root=0x%x",
-			MaxBlockFetchDepth, block.Slot, blockRoot)
-		e.Pending.DiscardSubtree(missingRoot)
+	missingRoot, handled := e.queueStoredAncestor(missingRoot, queue)
+	if handled {
+		return
 	}
+	e.queueMissingBlockFetch(missingRoot)
 }
 
 // evictFarthestPending frees a slot in the full pending buffer for a block at
@@ -70,53 +80,50 @@ func (e *Engine) evictFarthestPending(incomingSlot uint64) bool {
 	}
 	logger.Warn(logger.Chain, "pending block cache full (%d), evicting slot=%d block_root=0x%x to admit slot=%d",
 		MaxPendingBlocks, evictSlot, evictRoot, incomingSlot)
-	e.Pending.DiscardSubtree(evictRoot)
+	e.discardPending(evictRoot)
 	return true
 }
 
-type ancestorOutcome int
+// discardPending drops a pending subtree and deletes from disk the blocks
+// bufferMissingParentBlock stored and that were not imported since. Imported
+// blocks below finality also lack a state, so a state check cannot tell them apart.
+func (e *Engine) discardPending(root [32]byte) {
+	e.Store.DeletePendingBlocks(e.Pending.DiscardSubtree(root))
+}
 
-const (
-	// ancestorQueued: a stored block whose parent has a state was queued for import.
-	ancestorQueued ancestorOutcome = iota
-	// ancestorMissing: the returned root has no stored header and must be fetched.
-	ancestorMissing
-	// ancestorBelowFinalized: the walk reached a stored block at or below the
-	// finalized slot without meeting a state, so the branch split from the chain
-	// before finalization. The returned root heads everything the walk linked.
-	ancestorBelowFinalized
-	// ancestorTooDeep: the walk passed MaxBlockFetchDepth stored blocks. A gap
-	// that deep is range sync's to close, not a by-root walk's.
-	ancestorTooDeep
-)
-
-// queueStoredAncestor walks back from missingRoot through blocks whose headers
-// are stored but whose states are not, linking each into the pending buffer, until
-// it finds one whose parent has a state and queues it for import.
-//
-// The walk ends at the finalized slot. Below it, canonical blocks keep their
-// headers while their states are pruned, so a branch that split off before
-// finalization would otherwise be walked header by header all the way to genesis
-// on the dispatch loop, and every step would be linked into the buffer.
-func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, ancestorOutcome) {
+// queueStoredAncestor walks up stored headers from missingRoot. It reports true
+// when the walk is handled here: the first block whose parent has a state is
+// queued for import, or the walk reached a stateless block at or below
+// finality, which nothing above can import through, and the subtree is dropped.
+// A walk past MaxBlockFetchDepth stored blocks is dropped too: a gap that deep
+// is range sync's to close, not the dispatch loop's.
+func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, bool) {
 	finalizedSlot := e.Store.LatestFinalized().Slot
 	for steps := 0; ; steps++ {
 		header := e.Store.GetBlockHeader(missingRoot)
 		if header == nil {
-			return missingRoot, ancestorMissing
-		}
-		if header.Slot <= finalizedSlot {
-			return missingRoot, ancestorBelowFinalized
+			return missingRoot, false
 		}
 		if e.Store.HasState(header.ParentRoot) {
 			if storedBlock := e.Store.GetSignedBlock(missingRoot); storedBlock != nil {
 				*queue = append(*queue, storedBlock)
 			}
-			return missingRoot, ancestorQueued
+			return missingRoot, true
+		}
+		if header.Slot <= finalizedSlot {
+			logger.Warn(logger.Chain, "pending chain reaches stateless block at or below finality slot=%d block_root=0x%x finalized_slot=%d, discarding",
+				header.Slot, missingRoot, finalizedSlot)
+			e.discardPending(missingRoot)
+			return missingRoot, true
 		}
 		if steps >= MaxBlockFetchDepth {
-			return missingRoot, ancestorTooDeep
+			logger.Warn(logger.Chain, "stored ancestor walk exceeded %d blocks slot=%d block_root=0x%x, discarding",
+				MaxBlockFetchDepth, header.Slot, missingRoot)
+			e.discardPending(missingRoot)
+			return missingRoot, true
 		}
+		// Every linked entry carries its slot, so eviction and the finalization
+		// sweep can see it.
 		e.Pending.SetSlot(missingRoot, header.Slot)
 		e.Pending.AddChild(header.ParentRoot, missingRoot)
 		e.Pending.SetParent(missingRoot, header.ParentRoot)
@@ -145,7 +152,9 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 }
 
 func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
-	if discarded := e.Pending.DiscardAtOrBelow(finalizedSlot); discarded > 0 {
+	discarded, stored := e.Pending.DiscardAtOrBelow(finalizedSlot)
+	e.Store.DeletePendingBlocks(stored)
+	if discarded > 0 {
 		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
 	}
 
@@ -166,7 +175,7 @@ func (e *Engine) onFailedRoot(failedRoot [32]byte) {
 
 	discarded := 0
 	for childRoot := range children {
-		e.Pending.DiscardSubtree(childRoot)
+		e.discardPending(childRoot)
 		discarded++
 	}
 	logger.Warn(logger.Sync, "fetch exhausted for root 0x%x, discarded %d pending child block(s)", failedRoot, discarded)

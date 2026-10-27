@@ -68,10 +68,11 @@ func handleBlocksByRootRequest(stream network.Stream, blockByRootFn func(root [3
 	}
 }
 
-func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][32]byte) ([]*types.SignedBlock, error) {
+func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][32]byte) (blocks []*types.SignedBlock, err error) {
 	if err := validateRootCount(len(roots)); err != nil {
 		return nil, err
 	}
+	defer func(parent context.Context) { h.recordRequest(parent, peerID, err) }(ctx)
 
 	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
 	defer cancel()
@@ -90,7 +91,6 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 	}
 	stream.CloseWrite()
 
-	var blocks []*types.SignedBlock
 	requestedRoots := requestedRootSet(roots)
 	seenRoots := make(map[[32]byte]bool, len(roots))
 	reader := bufio.NewReader(io.LimitReader(stream, int64(MaxCompressedPayloadSize)*int64(len(roots))))
