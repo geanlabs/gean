@@ -130,7 +130,7 @@ func TestBuildProposalSkipsStaleSlot(t *testing.T) {
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
 	e := &Engine{Store: s}
-	if result := e.buildProposal(1, 0); result.signedBlock != nil || !result.retryable {
+	if result := e.buildProposal(proposalDuty{slot: 1}); result.signedBlock != nil || !result.retryable {
 		t.Fatalf("buildProposal result=%v, want retryable failure before signing", result)
 	}
 }
@@ -287,13 +287,32 @@ func TestProposalGateCancellationReportsRetryableFailure(t *testing.T) {
 	}
 }
 
+// The gate wait ends at slot start plus three intervals, however early the
+// proposal started. Every slot of the test chain is long past that point.
+func TestProposalGateWaitEndsAtSlotDeadline(t *testing.T) {
+	e := proposalTestEngine(t)
+	e.ProvingGate = proving.NewGate()
+	if !e.ProvingGate.Acquire(context.Background(), false) {
+		t.Fatal("could not occupy prover")
+	}
+	defer e.ProvingGate.Release(false)
+	start := time.Now()
+	result := e.proveProposal(context.Background(), proposalDuty{slot: 1})
+	if !result.retryable || result.signedBlock != nil {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if waited := time.Since(start); waited >= types.MillisecondsPerInterval*time.Millisecond {
+		t.Fatalf("gate wait took %s after the slot's deadline had passed", waited)
+	}
+}
+
 func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 	e := proposalTestEngine(t)
 	// A closed key reaches Sign and fails without native signing or real keys.
 	e.Keys = xmss.NewKeyManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
 	e.maybePropose(1, 0)
 	duty := <-e.ProposalCh
-	result := e.buildProposal(duty.slot, duty.validatorID)
+	result := e.buildProposal(duty)
 	if result.retryable || result.signedBlock != nil {
 		t.Fatalf("unexpected signing failure: %+v", result)
 	}
@@ -433,24 +452,90 @@ func TestTickAtInterval4StartsNextProposal(t *testing.T) {
 }
 
 // A block handled after the interval-4 tick starts the next proposal.
-func TestDispatchBlockStartsNextProposal(t *testing.T) {
-	e := earlyProposalEngine(t)
-	e.BlockCh = make(chan *types.SignedBlock, 1)
-	e.fetchInFlight = map[[32]byte]bool{}
-	e.Store.SetTime(4)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); e.dispatch(ctx, nil) }()
-	defer func() { cancel(); <-done }()
-
-	e.BlockCh <- blockAtSlot(0)
-	select {
-	case duty := <-e.ProposalCh:
-		if duty.slot != 1 {
-			t.Fatalf("duty slot=%d, want 1", duty.slot)
+// An early duty makes the interval-0 tick skip its slot. A failure before
+// signing that arrives before the slot starts is left to that tick; one that
+// arrives after it is retried once, as a non-early duty.
+func TestEarlyProposalFailureRetriesOnceAfterSlotStart(t *testing.T) {
+	takeDuty := func(e *Engine) proposalDuty {
+		t.Helper()
+		select {
+		case duty := <-e.ProposalCh:
+			return duty
+		default:
+			t.Fatal("no proposal duty queued")
+			return proposalDuty{}
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("block event did not start the next proposal")
+	}
+	tick := func(e *Engine, interval uint64) {
+		e.tickAt(time.UnixMilli(int64(proposalTestGenesisMs + interval*types.MillisecondsPerInterval)))
+	}
+	ctx := context.Background()
+
+	// Before the slot starts: no immediate retry, the interval-0 tick proposes.
+	e := earlyProposalEngine(t)
+	tick(e, 3)
+	tick(e, 4)
+	early := takeDuty(e)
+	e.acceptProposal(ctx, &proposalResult{duty: early, retryable: true})
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("failure before the slot started was retried at once")
+	}
+	tick(e, types.IntervalsPerSlot)
+	if duty := takeDuty(e); duty.slot != 1 || duty.early {
+		t.Fatalf("interval-0 duty=%+v, want slot 1, not early", duty)
+	}
+
+	// After the slot starts: the interval-0 tick has already skipped the slot.
+	e = earlyProposalEngine(t)
+	tick(e, 3)
+	tick(e, 4)
+	early = takeDuty(e)
+	tick(e, types.IntervalsPerSlot)
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("interval-0 tick started a second proposal while the early one was in flight")
+	}
+	e.acceptProposal(ctx, &proposalResult{duty: early, retryable: true})
+	retry := takeDuty(e)
+	if retry.slot != 1 || retry.early {
+		t.Fatalf("retry=%+v, want slot 1, not early", retry)
+	}
+	e.acceptProposal(ctx, &proposalResult{duty: retry, retryable: true})
+	if len(e.ProposalCh) != 0 {
+		t.Fatal("the retry was retried again")
+	}
+}
+
+func TestDispatchBlockStartsNextProposal(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		send func(e *Engine)
+	}{
+		{name: "gossip_block", send: func(e *Engine) { e.BlockCh <- blockAtSlot(0) }},
+		// Our own slot-0 block, accepted after the interval-4 tick.
+		{name: "own_proposal", send: func(e *Engine) {
+			e.ProposalResultCh <- &proposalResult{duty: proposalDuty{slot: 0}, signedBlock: blockAtSlot(0)}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := earlyProposalEngine(t)
+			e.BlockCh = make(chan *types.SignedBlock, 1)
+			e.fetchInFlight = map[[32]byte]bool{}
+			e.Store.SetTime(4)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { defer close(done); e.dispatch(ctx, nil) }()
+			defer func() { cancel(); <-done }()
+
+			tc.send(e)
+			select {
+			case duty := <-e.ProposalCh:
+				if duty.slot != 1 {
+					t.Fatalf("duty slot=%d, want 1", duty.slot)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("event did not start the next proposal")
+			}
+		})
 	}
 }
 

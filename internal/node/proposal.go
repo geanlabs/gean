@@ -19,6 +19,9 @@ import (
 type proposalDuty struct {
 	slot        uint64
 	validatorID uint64
+	// early marks a duty taken before its slot started, which makes the
+	// interval-0 trigger skip the slot.
+	early bool
 }
 
 type proposalResult struct {
@@ -51,17 +54,23 @@ func (e *Engine) maybeProposeEarly() {
 // waitForSlotStart holds a proposal that finished early until its slot begins,
 // and reports false if ctx ends first.
 func (e *Engine) waitForSlotStart(ctx context.Context, slot uint64) bool {
-	wait := time.Until(time.UnixMilli(int64(e.slotStartMs(slot))))
-	if wait <= 0 {
-		return true
-	}
-	timer := time.NewTimer(wait)
+	start := time.UnixMilli(int64(e.slotStartMs(slot)))
+	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return true
-	case <-ctx.Done():
-		return false
+	// Timers measure a duration on the monotonic clock; the slot start is on the
+	// wall clock. Re-check after every wake so a stepped wall clock can never
+	// release the block early.
+	for {
+		wait := time.Until(start)
+		if wait <= 0 {
+			return true
+		}
+		timer.Reset(wait)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return false
+		}
 	}
 }
 
@@ -79,9 +88,10 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 		metrics.IncBlocksSkippedLag()
 		return
 	}
+	duty := proposalDuty{slot: slot, validatorID: validatorID, early: e.Store.Time()/types.IntervalsPerSlot < slot}
 	select {
-	case e.ProposalCh <- proposalDuty{slot: slot, validatorID: validatorID}:
-		e.lastProposalDuty = proposalDuty{slot: slot, validatorID: validatorID}
+	case e.ProposalCh <- duty:
+		e.lastProposalDuty = duty
 		e.proposalReserved = true
 		metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
 	default:
@@ -116,7 +126,10 @@ func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposal
 		metrics.IncProofOperation("proposal", "skipped_stale")
 		return failed
 	}
-	deadline, cancel := context.WithTimeout(ctx, 3*types.MillisecondsPerInterval*time.Millisecond)
+	// The gate wait ends at the same point in the slot however early the
+	// proposal started.
+	deadlineMs := e.slotStartMs(duty.slot) + 3*types.MillisecondsPerInterval
+	deadline, cancel := context.WithDeadline(ctx, time.UnixMilli(int64(deadlineMs)))
 	defer cancel()
 	if e.ProvingGate != nil {
 		waitStart := time.Now()
@@ -129,11 +142,12 @@ func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposal
 		}
 		defer e.ProvingGate.Release(true)
 	}
-	return e.buildProposal(duty.slot, duty.validatorID)
+	return e.buildProposal(duty)
 }
 
-func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
-	result := &proposalResult{duty: proposalDuty{slot: slot, validatorID: validatorID}, retryable: true}
+func (e *Engine) buildProposal(duty proposalDuty) *proposalResult {
+	slot, validatorID := duty.slot, duty.validatorID
+	result := &proposalResult{duty: duty, retryable: true}
 	logger.Info(logger.Validator, "proposing block slot=%d validator=%d", slot, validatorID)
 
 	block, attSigProofs, err := e.produceBlockWithSignatures(slot, validatorID)
@@ -197,6 +211,11 @@ func (e *Engine) buildProposal(slot, validatorID uint64) *proposalResult {
 func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 	if result != nil && result.retryable && result.duty == e.lastProposalDuty {
 		e.proposalReserved = false
+		// An early duty made the interval-0 trigger skip the slot. If the slot
+		// has started, that trigger is gone: retry once now, as a non-early duty.
+		if result.duty.early && e.Store.Time()/types.IntervalsPerSlot >= result.duty.slot {
+			e.maybePropose(result.duty.slot, result.duty.validatorID)
+		}
 	}
 	if result == nil || result.signedBlock == nil || result.signedBlock.Block == nil {
 		return
