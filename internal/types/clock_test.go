@@ -115,3 +115,40 @@ func TestClockDerivationsHandleOverflow(t *testing.T) {
 		t.Fatalf("IntervalsFromSlot overflow=%d, want max", got)
 	}
 }
+
+func TestNextIntervalBoundaryMs(t *testing.T) {
+	const gt = 1700000000
+	const gtMs = gt * 1000
+	const iv = uint64(MillisecondsPerInterval)
+	tests := []struct {
+		name      string
+		currentMs uint64
+		want      uint64
+	}{
+		{"long_before_genesis", gtMs - 5000, gtMs},
+		{"1ms_before_genesis", gtMs - 1, gtMs},
+		{"at_genesis_is_a_full_interval_away", gtMs, gtMs + iv},
+		{"1ms_after_genesis", gtMs + 1, gtMs + iv},
+		{"1ms_before_boundary", gtMs + iv - 1, gtMs + iv},
+		{"on_boundary_is_a_full_interval_away", gtMs + iv, gtMs + 2*iv},
+		{"into_last_interval_rolls_to_next_slot", gtMs + 4*iv + 10, gtMs + uint64(MillisecondsPerSlot)},
+		{"deep_into_the_chain", gtMs + 57456*uint64(MillisecondsPerSlot) + 790, gtMs + 57456*uint64(MillisecondsPerSlot) + iv},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := NextIntervalBoundaryMs(gt, tt.currentMs)
+			if !ok || got != tt.want {
+				t.Fatalf("NextIntervalBoundaryMs(%d, %d) = (%d, %v), want (%d, true)", gt, tt.currentMs, got, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestNextIntervalBoundaryMsOverflow(t *testing.T) {
+	if _, ok := NextIntervalBoundaryMs(^uint64(0)/1000+1, 0); ok {
+		t.Fatal("genesis beyond uint64 milliseconds must report !ok")
+	}
+	if _, ok := NextIntervalBoundaryMs(0, ^uint64(0)); ok {
+		t.Fatal("a boundary past uint64 must report !ok")
+	}
+}

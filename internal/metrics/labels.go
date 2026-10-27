@@ -33,6 +33,15 @@ const (
 	AggGroupSkipError           = "error"
 )
 
+// What a proof, or a group left unproved, would do for justification if a
+// block carried it on top of the head state.
+const (
+	ProofValueIgnored    = "ignored"      // fails a process_attestations filter
+	ProofValueNoNewVotes = "no_new_votes" // every voter already counted or held
+	ProofValueAddsVotes  = "adds_votes"   // adds voters, target stays below 2/3
+	ProofValueJustifies  = "justifies"    // brings the target to 2/3
+)
+
 var aggregationGroupSkipReasons = []string{
 	AggGroupSkipTargetJustified,
 	AggGroupSkipTooFewSigners,

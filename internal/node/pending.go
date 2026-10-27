@@ -95,9 +95,11 @@ func (e *Engine) discardPending(root [32]byte) {
 // when the walk is handled here: the first block whose parent has a state is
 // queued for import, or the walk reached a stateless block at or below
 // finality, which nothing above can import through, and the subtree is dropped.
+// A walk past MaxBlockFetchDepth stored blocks is dropped too: a gap that deep
+// is range sync's to close, not the dispatch loop's.
 func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, bool) {
 	finalizedSlot := e.Store.LatestFinalized().Slot
-	for {
+	for steps := 0; ; steps++ {
 		header := e.Store.GetBlockHeader(missingRoot)
 		if header == nil {
 			return missingRoot, false
@@ -114,6 +116,15 @@ func (e *Engine) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.Signe
 			e.discardPending(missingRoot)
 			return missingRoot, true
 		}
+		if steps >= MaxBlockFetchDepth {
+			logger.Warn(logger.Chain, "stored ancestor walk exceeded %d blocks slot=%d block_root=0x%x, discarding",
+				MaxBlockFetchDepth, header.Slot, missingRoot)
+			e.discardPending(missingRoot)
+			return missingRoot, true
+		}
+		// Every linked entry carries its slot, so eviction and the finalization
+		// sweep can see it.
+		e.Pending.SetSlot(missingRoot, header.Slot)
 		e.Pending.AddChild(header.ParentRoot, missingRoot)
 		e.Pending.SetParent(missingRoot, header.ParentRoot)
 		missingRoot = header.ParentRoot
@@ -141,18 +152,8 @@ func (e *Engine) collectPendingChildren(parentRoot [32]byte, queue *[]*types.Sig
 }
 
 func (e *Engine) discardFinalizedPending(finalizedSlot uint64) {
-	discarded := 0
-
-	for _, pair := range e.Pending.Pairs() {
-		parentRoot, childRoot := pair[0], pair[1]
-		header := e.Store.GetBlockHeader(childRoot)
-		if header != nil && header.Slot <= finalizedSlot {
-			e.discardPending(childRoot)
-			e.Pending.RemoveChild(parentRoot, childRoot)
-			discarded++
-		}
-	}
-
+	discarded, stored := e.Pending.DiscardAtOrBelow(finalizedSlot)
+	e.Store.DeletePendingBlocks(stored)
 	if discarded > 0 {
 		logger.Info(logger.Store, "discarded %d finalized pending blocks (finalized_slot=%d)", discarded, finalizedSlot)
 	}

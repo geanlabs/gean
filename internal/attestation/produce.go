@@ -8,8 +8,8 @@ import (
 
 func ProduceAttestationData(s *store.ConsensusStore, slot uint64) *types.AttestationData {
 	headRoot := s.Head()
-	headState := s.GetState(headRoot)
-	if headState == nil || headState.LatestBlockHeader == nil || headState.LatestJustified == nil {
+	headSummary, ok := s.StateSummary(headRoot)
+	if !ok {
 		return nil
 	}
 
@@ -26,7 +26,7 @@ func ProduceAttestationData(s *store.ConsensusStore, slot uint64) *types.Attesta
 
 	// Source from the head chain's own justified checkpoint, not the store's global
 	// one: the store may have justified on a minority fork the head never extended.
-	justified := headState.LatestJustified
+	justified := headSummary.Justified
 	source := &types.Checkpoint{Root: justified.Root, Slot: justified.Slot}
 	// Genesis justified root is the zero placeholder; resolve it to a real block.
 	if types.IsZeroRoot(source.Root) {

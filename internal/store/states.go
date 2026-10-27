@@ -24,13 +24,26 @@ func (s *ConsensusStore) GetState(root [32]byte) *types.State {
 	return st
 }
 
+// HasState reports whether a post-state is stored for root, without reading it:
+// a state grows with the chain's history. A state stored by this process has its
+// summary in memory; one written before a restart is checked through
+// ReadView.Has, which never copies the value out.
 func (s *ConsensusStore) HasState(root [32]byte) bool {
+	if s == nil {
+		return false
+	}
+	s.stateSummariesMu.Lock()
+	_, summarized := s.stateSummaries[root]
+	s.stateSummariesMu.Unlock()
+	if summarized {
+		return true
+	}
 	rv, err := s.beginRead("has state")
 	if err != nil {
 		return false
 	}
-	val, err := rv.Get(storage.TableStates, root[:])
-	return err == nil && val != nil
+	has, err := rv.Has(storage.TableStates, root[:])
+	return err == nil && has
 }
 
 func (s *ConsensusStore) InsertState(root [32]byte, state *types.State) {
@@ -47,7 +60,11 @@ func (s *ConsensusStore) PutState(root [32]byte, state *types.State) error {
 	if err != nil {
 		return fmt.Errorf("insert state: marshal: %w", err)
 	}
-	return s.putOne(storage.TableStates, root[:], data, "insert state")
+	if err := s.putOne(storage.TableStates, root[:], data, "insert state"); err != nil {
+		return err
+	}
+	s.NoteStoredState(root, state)
+	return nil
 }
 
 func (s *ConsensusStore) StatesCount() int {

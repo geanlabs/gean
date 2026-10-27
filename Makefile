@@ -16,13 +16,17 @@ LEAN_SPEC_COMMIT_HASH := eca701efeb5931010fe63925cd203c9ee55b2dbc
 help: ## Show help for each Makefile recipe
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+# leanVM's prover does binary-field arithmetic with carryless multiplication. On x86 the
+# Haswell baseline provides PCLMULQDQ; on aarch64 PMULL is gated behind the `aes` target
+# feature, which Linux aarch64 targets do not enable by default. Without it the prover
+# falls back to scalar code.
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 	@cd xmss/rust && \
-		if [ "$$(uname -m)" = "x86_64" ]; then \
-			CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked; \
-		else \
-			cargo build --profile multisig-release --locked; \
-		fi
+		case "$$(uname -m)" in \
+			x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
+			aarch64|arm64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
+			*) cargo build --profile multisig-release --locked ;; \
+		esac
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
