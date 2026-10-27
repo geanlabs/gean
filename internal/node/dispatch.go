@@ -51,10 +51,11 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 
 		case result := <-e.ProposalResultCh:
 			timeEvent("proposal_result", func() {
-				e.acceptProposal(ctx, result)
-				// Our own block accepted after the interval-4 tick settles the next
+				// Our own block imported after the interval-4 tick settles the next
 				// proposal's parent too.
-				e.maybeProposeEarly()
+				if e.acceptProposal(ctx, result) {
+					e.maybeProposeEarly()
+				}
 			})
 
 		case root := <-e.FailedRootCh:

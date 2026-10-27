@@ -506,34 +506,59 @@ func TestEarlyProposalFailureRetriesOnceAfterSlotStart(t *testing.T) {
 }
 
 func TestDispatchBlockStartsNextProposal(t *testing.T) {
+	e := earlyProposalEngine(t)
+	e.BlockCh = make(chan *types.SignedBlock, 1)
+	e.fetchInFlight = map[[32]byte]bool{}
+	e.Store.SetTime(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); e.dispatch(ctx, nil) }()
+	defer func() { cancel(); <-done }()
+
+	e.BlockCh <- blockAtSlot(0)
+	select {
+	case duty := <-e.ProposalCh:
+		if duty.slot != 1 {
+			t.Fatalf("duty slot=%d, want 1", duty.slot)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("block did not start the next proposal")
+	}
+}
+
+// Only our own block being imported settles the next proposal's parent. A
+// result that imports nothing must not start it: after a retryable failure that
+// would requeue the failed duty until interval 0.
+func TestDispatchProposalResultWithoutImportStartsNothing(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		send func(e *Engine)
+		name   string
+		result func(e *Engine) *proposalResult
 	}{
-		{name: "gossip_block", send: func(e *Engine) { e.BlockCh <- blockAtSlot(0) }},
-		// Our own slot-0 block, accepted after the interval-4 tick.
-		{name: "own_proposal", send: func(e *Engine) {
-			e.ProposalResultCh <- &proposalResult{duty: proposalDuty{slot: 0}, signedBlock: blockAtSlot(0)}
+		{name: "retryable_failure", result: func(e *Engine) *proposalResult {
+			e.tickAt(time.UnixMilli(int64(proposalTestGenesisMs + 3*types.MillisecondsPerInterval)))
+			e.tickAt(time.UnixMilli(int64(proposalTestGenesisMs + 4*types.MillisecondsPerInterval)))
+			return &proposalResult{duty: <-e.ProposalCh, retryable: true}
+		}},
+		// Head is already at the block's slot, so it is discarded.
+		{name: "discarded_block", result: func(e *Engine) *proposalResult {
+			e.Store.SetTime(4)
+			return &proposalResult{duty: proposalDuty{slot: 0}, signedBlock: blockAtSlot(0)}
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := earlyProposalEngine(t)
-			e.BlockCh = make(chan *types.SignedBlock, 1)
-			e.fetchInFlight = map[[32]byte]bool{}
-			e.Store.SetTime(4)
+			result := tc.result(e)
+			// Unbuffered: the second send returns only once the first result is handled.
+			e.ProposalResultCh = make(chan *proposalResult)
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() { defer close(done); e.dispatch(ctx, nil) }()
 			defer func() { cancel(); <-done }()
 
-			tc.send(e)
-			select {
-			case duty := <-e.ProposalCh:
-				if duty.slot != 1 {
-					t.Fatalf("duty slot=%d, want 1", duty.slot)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatal("event did not start the next proposal")
+			e.ProposalResultCh <- result
+			e.ProposalResultCh <- nil
+			if len(e.ProposalCh) != 0 {
+				t.Fatal("result without an import started a proposal")
 			}
 		})
 	}

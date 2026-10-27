@@ -208,7 +208,8 @@ func (e *Engine) buildProposal(duty proposalDuty) *proposalResult {
 	}
 }
 
-func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
+// acceptProposal reports whether it imported our block.
+func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) bool {
 	if result != nil && result.retryable && result.duty == e.lastProposalDuty {
 		e.proposalReserved = false
 		// An early duty made the interval-0 trigger skip the slot. If the slot
@@ -218,7 +219,7 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		}
 	}
 	if result == nil || result.signedBlock == nil || result.signedBlock.Block == nil {
-		return
+		return false
 	}
 	block := result.signedBlock.Block
 	// The slot's key has signed this block and cannot sign another, so publish it
@@ -229,12 +230,12 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 		metrics.IncProofOperation("proposal", "canceled")
 		logger.Warn(logger.Validator, "discarding proposal slot=%d: head moved head_slot=%d head=0x%x parent=0x%x",
 			block.Slot, e.Store.HeadSlot(), e.Store.Head(), block.ParentRoot)
-		return
+		return false
 	}
 	e.onBlock(result.signedBlock)
 	if !e.Store.HasState(result.blockRoot) {
 		metrics.IncProofOperation("proposal", "error")
-		return
+		return false
 	}
 	metrics.IncProofOperation("proposal", "success")
 
@@ -256,6 +257,7 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) {
 	}
 	logger.Info(logger.Validator, "proposed block slot=%d block_root=0x%x attestations=%d",
 		block.Slot, result.blockRoot, attestationCount)
+	return true
 }
 
 func (e *Engine) mergeBlockProof(
