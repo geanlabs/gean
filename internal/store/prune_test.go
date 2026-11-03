@@ -334,3 +334,55 @@ func TestPruneOnFinalizationDropsOldProofs(t *testing.T) {
 		}
 	})
 }
+
+// Finalization keeps a vote exactly while its head lies under the finalized
+// block, whatever its target. The shape: 1 -> 2 -> 3 -> 4 with the orphaned branch
+// 2 -> 5(4), finalizing block 3. Every pool applies the same rule.
+func TestPruneOnFinalizationKeepsVotesByHead(t *testing.T) {
+	root := func(b byte) [32]byte { return [32]byte{b} }
+	fc := forkchoice.New(1, root(1), [32]byte{})
+	fc.OnBlock(2, root(2), root(1))
+	fc.OnBlock(3, root(3), root(2))
+	fc.OnBlock(4, root(4), root(3))
+	fc.OnBlock(4, root(5), root(2))
+	const finalized = uint64(3)
+
+	votes := []struct {
+		name     string
+		dataRoot byte
+		head     *types.Checkpoint
+		target   uint64
+		kept     bool
+	}{
+		{"head above finalized, target at finalized", 1, &types.Checkpoint{Root: root(4), Slot: 4}, finalized, true},
+		{"head at finalized", 2, &types.Checkpoint{Root: root(3), Slot: 3}, finalized, false},
+		{"head on orphaned branch, target above finalized", 3, &types.Checkpoint{Root: root(5), Slot: 4}, 4, false},
+		{"head unknown to fork choice", 4, &types.Checkpoint{Root: root(9), Slot: 9}, 9, false},
+	}
+
+	s := makeTestStore()
+	participants := types.BitlistFromIndices([]uint64{0})
+	for _, v := range votes {
+		data := &types.AttestationData{Slot: v.head.Slot, Head: v.head, Target: &types.Checkpoint{Slot: v.target}, Source: &types.Checkpoint{}}
+		dataRoot := root(v.dataRoot)
+		s.AttestationSignatures.Insert(dataRoot, data, 0, [types.SignatureSize]byte{})
+		proof := &types.SingleMessageAggregate{Participants: participants, Proof: []byte{1}}
+		s.KnownPayloads.Push(dataRoot, data, proof)
+		s.NewPayloads.Push(dataRoot, data, proof)
+	}
+
+	store.PruneOnFinalization(s, fc, 0, finalized, root(3))
+
+	sigs, known, fresh := s.AttestationSignatures.Snapshot(), s.KnownPayloads.Entries(), s.NewPayloads.Entries()
+	for _, v := range votes {
+		t.Run(v.name, func(t *testing.T) {
+			dataRoot := root(v.dataRoot)
+			_, inSigs := sigs[dataRoot]
+			_, inKnown := known[dataRoot]
+			_, inNew := fresh[dataRoot]
+			if inSigs != v.kept || inKnown != v.kept || inNew != v.kept {
+				t.Fatalf("signatures=%v known=%v new=%v, want all %v", inSigs, inKnown, inNew, v.kept)
+			}
+		})
+	}
+}

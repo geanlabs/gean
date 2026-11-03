@@ -203,30 +203,29 @@ func outranksVote(slotA uint64, rootA [32]byte, slotB uint64, rootB [32]byte) bo
 	return bytes.Compare(rootA[:], rootB[:]) > 0
 }
 
-func (pb *PayloadBuffer) PruneBelow(finalizedSlot uint64) int {
-	return pb.pruneBelow(finalizedSlot, false)
+// PruneHeads drops entries whose vote head fails keep; see
+// AttestationSignatureMap.PruneHeads.
+func (pb *PayloadBuffer) PruneHeads(keep func(*types.Checkpoint) bool) int {
+	return pb.pruneWhere(func(data *types.AttestationData) bool {
+		return data.Head == nil || !keep(data.Head)
+	})
 }
 
-// PruneStaleBelow drops entries whose target sits strictly below cutoff. Unlike
-// PruneBelow it is not keyed on finalization, so it still clears the buffer
-// while finalization is stalled — the one situation where nothing else does.
+// PruneStaleBelow drops entries whose target sits strictly below cutoff. It is
+// not keyed on finalization, so it still clears the buffer while finalization is
+// stalled — the one situation where nothing else does.
 func (pb *PayloadBuffer) PruneStaleBelow(cutoff uint64) int {
-	return pb.pruneBelow(cutoff, true)
+	return pb.pruneWhere(func(data *types.AttestationData) bool {
+		return data.Target == nil || data.Target.Slot < cutoff
+	})
 }
 
-func (pb *PayloadBuffer) pruneBelow(bound uint64, strict bool) int {
+func (pb *PayloadBuffer) pruneWhere(stale func(*types.AttestationData) bool) int {
 	if pb == nil {
 		return 0
 	}
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
-
-	stale := func(slot uint64) bool {
-		if strict {
-			return slot < bound
-		}
-		return slot <= bound
-	}
 
 	pruned := 0
 	var newOrder [][32]byte
@@ -235,7 +234,7 @@ func (pb *PayloadBuffer) pruneBelow(bound uint64, strict bool) int {
 		if !ok {
 			continue
 		}
-		if !validPayloadEntry(entry) || entry.Data.Target == nil || stale(entry.Data.Target.Slot) {
+		if !validPayloadEntry(entry) || stale(entry.Data) {
 			pb.totalProofs -= len(entry.Proofs)
 			delete(pb.data, dataRoot)
 			pruned++

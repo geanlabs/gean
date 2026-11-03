@@ -60,24 +60,6 @@ func TestAttestationSignatureCountForSlot(t *testing.T) {
 	}
 }
 
-func TestAttestationSignaturePruneBelow(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(0)
-	var sig [types.SignatureSize]byte
-	for i := range uint64(5) {
-		var dr [32]byte
-		dr[0] = byte(i)
-		gsm.Insert(dr, &types.AttestationData{Slot: i}, 0, sig)
-	}
-
-	pruned := gsm.PruneBelow(2)
-	if pruned != 3 {
-		t.Fatalf("expected 3 pruned, got %d", pruned)
-	}
-	if gsm.Len() != 2 {
-		t.Fatalf("expected 2 remaining, got %d", gsm.Len())
-	}
-}
-
 func TestAttestationSignatureRejectsNilData(t *testing.T) {
 	gsm := store.NewAttestationSignatureMap(0)
 	var sig [types.SignatureSize]byte

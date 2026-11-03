@@ -64,9 +64,19 @@ func PruneOnFinalization(s *ConsensusStore, fc *forkchoice.ForkChoice, oldFinali
 	prunedChain := pruneFinalizedHistory(s, historyCutoff)
 	s.pruneBlockIndexBelow(newFinalizedSlot)
 
-	prunedSigs := s.AttestationSignatures.PruneBelow(newFinalizedSlot)
-	prunedKnown := s.KnownPayloads.PruneBelow(newFinalizedSlot)
-	prunedNew := s.NewPayloads.PruneBelow(newFinalizedSlot)
+	// A vote stays while its head lies under the finalized block. The slot check
+	// covers the head's ancestors, and nonCanonical the branches finalization
+	// orphaned, which can sit above the finalized slot.
+	orphaned := make(map[[32]byte]bool, len(nonCanonical))
+	for _, root := range nonCanonical {
+		orphaned[root] = true
+	}
+	headUnderFinalized := func(head *types.Checkpoint) bool {
+		return head.Slot > newFinalizedSlot && fc.NodeIndex(head.Root) >= 0 && !orphaned[head.Root]
+	}
+	prunedSigs := s.AttestationSignatures.PruneHeads(headUnderFinalized)
+	prunedKnown := s.KnownPayloads.PruneHeads(headUnderFinalized)
+	prunedNew := s.NewPayloads.PruneHeads(headUnderFinalized)
 
 	logger.Info(logger.Store, "pruning: finalized_slot=%d states=%d blocks=%d history=%d gossip_sigs=%d payloads=%d non_canonical=%d",
 		newFinalizedSlot, prunedStates, prunedBlocks, prunedChain, prunedSigs,

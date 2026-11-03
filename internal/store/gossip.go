@@ -143,19 +143,19 @@ func (m *AttestationSignatureMap) Delete(keys []AttestationDeleteKey) {
 	}
 }
 
-// PruneBelow drops signatures whose target checkpoint is finalized. The target
-// is the right key: it is what decides whether a vote can still advance
-// finality, and it is what the payload buffers prune on, so the two pools now
-// clear the same data roots instead of each keeping what the other dropped.
-func (m *AttestationSignatureMap) PruneBelow(finalizedSlot uint64) int {
-	return m.pruneWhere(func(entry *AttestationDataEntry) bool {
-		return entryTargetSlot(entry) <= finalizedSlot
+// PruneHeads drops signatures whose vote head fails keep. A vote keeps its
+// fork-choice weight until its head leaves the finalized subtree, whatever its
+// target, so finalization prunes on the head (leanSpec prune_stale_attestation_data).
+func (m *AttestationSignatureMap) PruneHeads(keep func(*types.Checkpoint) bool) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pruneLocked(func(_ [32]byte, entry *AttestationDataEntry) bool {
+		return entry == nil || entry.Data == nil || entry.Data.Head == nil || !keep(entry.Data.Head)
 	})
 }
 
-// entryTargetSlot is the slot a vote's staleness is judged on. The target
-// checkpoint decides whether the vote can still advance finality; validation
-// guarantees one, and a malformed entry without one falls back to the
+// entryTargetSlot is the slot PruneStaleBelow judges a vote on. Validation
+// guarantees a target; a malformed entry without one falls back to the
 // attestation slot, matching how orderedGroups reads the same data.
 func entryTargetSlot(entry *AttestationDataEntry) uint64 {
 	if entry.Data.Target != nil {
@@ -165,7 +165,7 @@ func entryTargetSlot(entry *AttestationDataEntry) uint64 {
 }
 
 // PruneStaleBelow drops signatures whose target sits below cutoff. It exists for
-// the case PruneBelow cannot cover: while finalization is stalled the finalized
+// the case PruneHeads cannot cover: while finalization is stalled the finalized
 // slot does not move, so a finalization-keyed prune never fires and the pool
 // grows for as long as the stall lasts.
 //
@@ -179,14 +179,6 @@ func (m *AttestationSignatureMap) PruneStaleBelow(cutoff uint64) int {
 	defer m.mu.Unlock()
 	return m.pruneLocked(func(_ [32]byte, entry *AttestationDataEntry) bool {
 		return entry == nil || entry.Data == nil || entryTargetSlot(entry) < cutoff
-	})
-}
-
-func (m *AttestationSignatureMap) pruneWhere(stale func(*AttestationDataEntry) bool) int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.pruneLocked(func(_ [32]byte, entry *AttestationDataEntry) bool {
-		return entry == nil || entry.Data == nil || stale(entry)
 	})
 }
 
