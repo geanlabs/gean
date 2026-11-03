@@ -22,6 +22,9 @@ type aggregationGroup struct {
 	// currentSlot marks a vote cast in the slot being aggregated for, as opposed
 	// to a backlog entry carried over from an earlier one.
 	currentSlot bool
+	// settled marks a target the head state already justifies. Such a vote can no
+	// longer advance justification, but its head still carries fork-choice weight.
+	settled bool
 }
 
 // orderedGroups lists the snapshot's aggregation work current-slot first, then
@@ -42,6 +45,9 @@ type aggregationGroup struct {
 // moving; ordering newest-first would advance the head while the finalization
 // frontier starves — the shape of the observed stall (head advancing, finality
 // lagging). Only the group order changes; every aggregate produced is spec-valid.
+//
+// Groups with a settled target come after all others, so they only use budget
+// nothing else needs.
 // groupSkips counts the groups a session dropped, by reason. Without it a
 // session that drops every group is reported as produced=0, which reads exactly
 // like having nothing to aggregate — the ambiguity that hid an aggregator
@@ -92,7 +98,7 @@ func (g groupSkips) summary() string {
 	return b.String()
 }
 
-func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
+func orderedGroups(snap *Snapshot) []aggregationGroup {
 	dataRoots := make(map[[32]byte]bool)
 	for dr := range snap.attSigs {
 		dataRoots[dr] = true
@@ -114,26 +120,24 @@ func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 		if attData.Target != nil {
 			targetSlot = attData.Target.Slot
 		}
-		// Skip targets already justified in the head state. process_attestations
-		// ignores a vote once its target is justified, so proving it spends the
-		// session budget on an aggregate that can no longer advance finality —
-		// budget that a still-unjustified target needs. Only a definite "yes"
-		// skips: an out-of-range target (beyond the tracked bitfield, i.e. a fresh
-		// slot) returns an error and is kept.
+		// Only a definite "yes" settles: an out-of-range target (beyond the tracked
+		// bitfield, i.e. a fresh slot) returns an error and is treated as open.
+		settled := false
 		if snap.headState != nil && snap.headState.LatestFinalized != nil {
 			justified, err := statetransition.IsSlotJustified(snap.headState, snap.headState.LatestFinalized.Slot, targetSlot)
-			if err == nil && justified {
-				skips.add(metrics.AggGroupSkipTargetJustified)
-				continue
-			}
+			settled = err == nil && justified
 		}
 		groups = append(groups, aggregationGroup{
 			dataRoot:    dr,
 			targetSlot:  targetSlot,
 			currentSlot: attData.Slot == snap.slot,
+			settled:     settled,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].settled != groups[j].settled {
+			return groups[j].settled
+		}
 		if groups[i].currentSlot != groups[j].currentSlot {
 			return groups[i].currentSlot
 		}
@@ -274,7 +278,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	attempted := false
 	attempts := 0
 
-	groups := orderedGroups(snap, skips)
+	groups := orderedGroups(snap)
 	votes := voteState(snap.headState, snap.headRoot)
 	// stopAt is the first group the session left unproved when it stopped early.
 	stopAt := len(groups)
@@ -419,7 +423,9 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			*rawPubkeysBuf = (*rawPubkeysBuf)[:kept]
 			*rawSigsBuf = (*rawSigsBuf)[:kept]
 
-			if len(*rawIDsBuf)+len(*childProofsBuf) < 2 {
+			// One raw signature is enough. With none, a lone child proof is
+			// already valid, so only merging two or more adds anything.
+			if len(*rawIDsBuf) == 0 && len(*childProofsBuf) < 2 {
 				skips.add(metrics.AggGroupSkipTooFewSigners)
 				return
 			}

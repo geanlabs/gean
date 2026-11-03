@@ -177,9 +177,9 @@ sits behind the sync-lag duty gate — a node marked syncing still aggregates. T
 instead of). `lean_aggregation_dispatch_dropped_total` rising means the worker was still busy with
 the previous slot's session when the next was dispatched.
 
-`lean_aggregation_groups_skipped_total{reason=}` is normally dominated by `target_justified`, which
-is correct: the target is already justified so the vote cannot advance anything. That dominance
-hides the other reasons — look at them individually, not at the total.
+`lean_aggregation_groups_skipped_total{reason=}` counts each reason separately, so look at them
+individually, not at the total. Groups whose target is already justified are ordered last rather
+than skipped, so under load they show up as `session_cap` or `budget`.
 
 Log lines: `aggregation worker:` per completed session (`produced=`, `duration=`), `aggregation
 session ...` for budget truncation/overrun, `aggregation skipped:` and `aggregation yielded to
