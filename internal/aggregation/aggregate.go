@@ -22,6 +22,9 @@ type aggregationGroup struct {
 	// currentSlot marks a vote cast in the slot being aggregated for, as opposed
 	// to a backlog entry carried over from an earlier one.
 	currentSlot bool
+	// settled marks a target the head state already justifies. Such a vote can no
+	// longer advance justification, but its head still carries fork-choice weight.
+	settled bool
 }
 
 // orderedGroups lists the snapshot's aggregation work current-slot first, then
@@ -42,6 +45,9 @@ type aggregationGroup struct {
 // moving; ordering newest-first would advance the head while the finalization
 // frontier starves — the shape of the observed stall (head advancing, finality
 // lagging). Only the group order changes; every aggregate produced is spec-valid.
+//
+// Within each tier, settled targets follow all open ones, newest target first:
+// they are worth only their head votes, and a newer head vote is worth more.
 // groupSkips counts the groups a session dropped, by reason. Without it a
 // session that drops every group is reported as produced=0, which reads exactly
 // like having nothing to aggregate — the ambiguity that hid an aggregator
@@ -114,30 +120,40 @@ func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 		if attData.Target != nil {
 			targetSlot = attData.Target.Slot
 		}
-		// Skip targets already justified in the head state. process_attestations
-		// ignores a vote once its target is justified, so proving it spends the
-		// session budget on an aggregate that can no longer advance finality —
-		// budget that a still-unjustified target needs. Only a definite "yes"
-		// skips: an out-of-range target (beyond the tracked bitfield, i.e. a fresh
-		// slot) returns an error and is kept.
+		// Skip a target below the finalized slot. A justified target at or above it
+		// is kept for its head votes: once every honest vote names a settled target,
+		// dropping them leaves nothing to prove, the new pool is empty when the safe
+		// target is computed, and the safe target stalls on the justified root. Only
+		// a definite "yes" settles: an out-of-range target (beyond the tracked
+		// bitfield, i.e. a fresh slot) returns an error and stays open.
+		settled := false
 		if snap.headState != nil && snap.headState.LatestFinalized != nil {
-			justified, err := statetransition.IsSlotJustified(snap.headState, snap.headState.LatestFinalized.Slot, targetSlot)
-			if err == nil && justified {
-				skips.add(metrics.AggGroupSkipTargetJustified)
+			finalizedSlot := snap.headState.LatestFinalized.Slot
+			if targetSlot < finalizedSlot {
+				skips.add(metrics.AggGroupSkipTargetFinalized)
 				continue
 			}
+			justified, err := statetransition.IsSlotJustified(snap.headState, finalizedSlot, targetSlot)
+			settled = err == nil && justified
 		}
 		groups = append(groups, aggregationGroup{
 			dataRoot:    dr,
 			targetSlot:  targetSlot,
 			currentSlot: attData.Slot == snap.slot,
+			settled:     settled,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool {
 		if groups[i].currentSlot != groups[j].currentSlot {
 			return groups[i].currentSlot
 		}
+		if groups[i].settled != groups[j].settled {
+			return groups[j].settled
+		}
 		if groups[i].targetSlot != groups[j].targetSlot {
+			if groups[i].settled {
+				return groups[i].targetSlot > groups[j].targetSlot
+			}
 			return groups[i].targetSlot < groups[j].targetSlot
 		}
 		return bytes.Compare(groups[i].dataRoot[:], groups[j].dataRoot[:]) < 0

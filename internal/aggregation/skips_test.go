@@ -43,32 +43,24 @@ func TestAggregateResolvesSignersWithoutTargetState(t *testing.T) {
 	}
 }
 
-func TestOrderedGroupsCountsJustifiedSkips(t *testing.T) {
+func TestOrderedGroupsCountsTargetsBelowFinalized(t *testing.T) {
 	const finalized = uint64(100)
-	const justifiedTarget = uint64(105)
-	const openTarget = uint64(106)
-
-	justifiedSlots := types.BitlistExtend(nil, 10)
-	types.BitlistSet(justifiedSlots, justifiedTarget-finalized-1)
 	snap := &Snapshot{
-		headState: &types.State{
-			LatestFinalized: &types.Checkpoint{Slot: finalized},
-			JustifiedSlots:  justifiedSlots,
-		},
+		headState: &types.State{LatestFinalized: &types.Checkpoint{Slot: finalized}},
 		attSigs: map[[32]byte]*store.AttestationDataEntry{
-			rootByte(1): {Data: &types.AttestationData{Slot: justifiedTarget, Target: &types.Checkpoint{Slot: justifiedTarget}}},
-			rootByte(2): {Data: &types.AttestationData{Slot: openTarget, Target: &types.Checkpoint{Slot: openTarget}}},
+			rootByte(1): {Data: &types.AttestationData{Slot: finalized, Target: &types.Checkpoint{Slot: finalized - 1}}},
+			rootByte(2): {Data: &types.AttestationData{Slot: finalized, Target: &types.Checkpoint{Slot: finalized}}},
 		},
 	}
 
 	skips := groupSkips{}
 	ordered := orderedGroups(snap, skips)
 
-	if len(ordered) != 1 {
-		t.Fatalf("groups=%d, want 1", len(ordered))
+	if len(ordered) != 1 || ordered[0].targetSlot != finalized {
+		t.Fatalf("groups=%+v, want only the target at the finalized slot", ordered)
 	}
-	if got := skips[metrics.AggGroupSkipTargetJustified]; got != 1 {
-		t.Errorf("target_justified skips=%d, want 1", got)
+	if got := skips[metrics.AggGroupSkipTargetFinalized]; got != 1 {
+		t.Errorf("target_finalized skips=%d, want 1", got)
 	}
 }
 
@@ -81,11 +73,11 @@ func TestGroupSkipsSummary(t *testing.T) {
 
 	skips := groupSkips{
 		metrics.AggGroupSkipTooFewSigners:   2,
-		metrics.AggGroupSkipTargetJustified: 5,
+		metrics.AggGroupSkipTargetFinalized: 5,
 	}
 	got := skips.summary()
 
-	for _, want := range []string{"target_justified=5", "too_few_signers=2"} {
+	for _, want := range []string{"target_finalized=5", "too_few_signers=2"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary %q missing %q", got, want)
 		}
