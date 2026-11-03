@@ -46,8 +46,9 @@ type aggregationGroup struct {
 // frontier starves — the shape of the observed stall (head advancing, finality
 // lagging). Only the group order changes; every aggregate produced is spec-valid.
 //
-// Within each tier, settled targets follow all open ones, newest target first:
-// they are worth only their head votes, and a newer head vote is worth more.
+// Settled targets follow all open ones, whatever their slot, so they cannot push
+// a target that can still advance finality out of a capped session. They are
+// worth only their head votes, so among them a newer target goes first.
 // groupSkips counts the groups a session dropped, by reason. Without it a
 // session that drops every group is reported as produced=0, which reads exactly
 // like having nothing to aggregate — the ambiguity that hid an aggregator
@@ -144,11 +145,11 @@ func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool {
-		if groups[i].currentSlot != groups[j].currentSlot {
-			return groups[i].currentSlot
-		}
 		if groups[i].settled != groups[j].settled {
 			return groups[j].settled
+		}
+		if groups[i].currentSlot != groups[j].currentSlot {
+			return groups[i].currentSlot
 		}
 		if groups[i].targetSlot != groups[j].targetSlot {
 			if groups[i].settled {

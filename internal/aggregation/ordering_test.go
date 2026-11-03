@@ -73,9 +73,8 @@ func TestTruncatingAggregatorKeepsFrontier(t *testing.T) {
 }
 
 // TestOrderedGroupsRanksJustifiedTargets: a vote for a justified target cannot
-// advance finality but still carries head weight, so its group is kept. Within
-// each tier it follows the open targets, newest first; a current-slot group still
-// precedes all backlog.
+// advance finality but still carries head weight, so its group is kept. It follows
+// every open target, even backlog, so it cannot crowd one out of a capped session.
 func TestOrderedGroupsRanksJustifiedTargets(t *testing.T) {
 	const finalized = uint64(100)
 	const currentSlot = uint64(110)
@@ -102,7 +101,7 @@ func TestOrderedGroupsRanksJustifiedTargets(t *testing.T) {
 	}
 
 	ordered := orderedGroups(snap, groupSkips{})
-	want := []byte{2, 1, 3, 5, 4}
+	want := []byte{2, 3, 1, 5, 4}
 	if len(ordered) != len(want) {
 		t.Fatalf("groups=%d, want %d (justified targets kept)", len(ordered), len(want))
 	}
