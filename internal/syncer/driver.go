@@ -23,6 +23,9 @@ type SyncDriver struct {
 	// horizonReported latches the beyond-window report so it is stated once per
 	// episode rather than once per peer per poll.
 	horizonReported bool
+	// reconciling is set while a marooned pass runs. Every peer ahead of our
+	// finalized slot would otherwise fetch the same range in the same poll.
+	reconciling bool
 
 	// tasks tracks Run, the per-peer polls and new-peer status checks, which all
 	// read the store, so shutdown can join them before closing it.
