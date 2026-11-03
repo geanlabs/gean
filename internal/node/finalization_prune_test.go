@@ -1,10 +1,27 @@
 package node
 
 import (
+	"bytes"
+	"errors"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/types"
 )
+
+// addFinalizationBlock stores a block whose post-state carries finalizedIn.
+func addFinalizationBlock(e *Engine, genesis, root, parent [32]byte, slot uint64, finalizedIn *types.Checkpoint) {
+	e.Store.InsertBlockHeader(root, &types.BlockHeader{Slot: slot, ParentRoot: parent})
+	e.Store.InsertState(root, &types.State{
+		Slot:                     slot,
+		LatestBlockHeader:        &types.BlockHeader{Slot: slot, ParentRoot: parent},
+		LatestJustified:          &types.Checkpoint{Root: genesis, Slot: 0},
+		LatestFinalized:          finalizedIn,
+		JustifiedSlots:           types.NewBitlistSSZ(0),
+		JustificationsValidators: types.NewBitlistSSZ(0),
+	})
+	e.FC.OnBlock(slot, root, parent)
+}
 
 // Finalization pruning is the only thing that shrinks TableStates and
 // TableBlockHeaders, and it reads its delete list from fork choice. For a long
@@ -27,18 +44,8 @@ func TestFinalizationPrunesAncestorAndLosingBranch(t *testing.T) {
 	rootC := [32]byte{0x0c}
 	rootX := [32]byte{0x0f}
 
-	// finalizedIn is the checkpoint a block's post-state carries.
 	add := func(root, parent [32]byte, slot uint64, finalizedIn *types.Checkpoint) {
-		e.Store.InsertBlockHeader(root, &types.BlockHeader{Slot: slot, ParentRoot: parent})
-		e.Store.InsertState(root, &types.State{
-			Slot:                     slot,
-			LatestBlockHeader:        &types.BlockHeader{Slot: slot, ParentRoot: parent},
-			LatestJustified:          &types.Checkpoint{Root: genesis, Slot: 0},
-			LatestFinalized:          finalizedIn,
-			JustifiedSlots:           types.NewBitlistSSZ(0),
-			JustificationsValidators: types.NewBitlistSSZ(0),
-		})
-		e.FC.OnBlock(slot, root, parent)
+		addFinalizationBlock(e, genesis, root, parent, slot, finalizedIn)
 	}
 
 	genesisCP := &types.Checkpoint{Root: genesis, Slot: 0}
@@ -76,5 +83,72 @@ func TestFinalizationPrunesAncestorAndLosingBranch(t *testing.T) {
 	}
 	if !e.Store.HasState(rootC) {
 		t.Error("head state was pruned")
+	}
+}
+
+type headWriteFailingBackend struct {
+	storage.Backend
+}
+
+func (b headWriteFailingBackend) BeginWrite() (storage.WriteBatch, error) {
+	wb, err := b.Backend.BeginWrite()
+	return headWriteFailingBatch{wb}, err
+}
+
+type headWriteFailingBatch struct {
+	storage.WriteBatch
+}
+
+func (b headWriteFailingBatch) PutBatch(table storage.Table, entries []storage.KV) error {
+	for _, kv := range entries {
+		if table == storage.TableMetadata && bytes.Equal(kv.Key, storage.KeyHead) {
+			return errors.New("head write failed")
+		}
+	}
+	return b.WriteBatch.PutBatch(table, entries)
+}
+
+// A reorg that advances finalization prunes the old head's branch. The new head
+// must be stored first, and if it cannot be, nothing may be pruned: metadata
+// would name a deleted head and startup could not restore the chain.
+//
+// genesis -> a(1) -> x(2) is the old head; a -> b(2) -> c(3) wins and c finalizes b.
+func TestReorgPersistsHeadBeforeFinalizationPrune(t *testing.T) {
+	genesis := [32]byte{0x01}
+	rootA := [32]byte{0x0a}
+	rootB := [32]byte{0x0b}
+	rootC := [32]byte{0x0c}
+	rootX := [32]byte{0x09} // below rootB, so the unweighted tiebreak picks b's branch
+
+	for _, tc := range []struct {
+		name       string
+		failHead   bool
+		wantHead   [32]byte
+		wantPruned bool
+	}{
+		{name: "head stored then old branch pruned", wantHead: rootC, wantPruned: true},
+		{name: "head write fails and nothing is pruned", failHead: true, wantHead: rootX},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := makeTestEngine()
+			genesisCP := &types.Checkpoint{Root: genesis, Slot: 0}
+			addFinalizationBlock(e, genesis, rootA, genesis, 1, genesisCP)
+			addFinalizationBlock(e, genesis, rootX, rootA, 2, genesisCP)
+			addFinalizationBlock(e, genesis, rootB, rootA, 2, genesisCP)
+			addFinalizationBlock(e, genesis, rootC, rootB, 3, &types.Checkpoint{Root: rootB, Slot: 2})
+			e.Store.SetHead(rootX)
+			if tc.failHead {
+				e.Store.Backend = headWriteFailingBackend{e.Store.Backend}
+			}
+
+			e.updateHead()
+
+			if got := e.Store.Head(); got != tc.wantHead {
+				t.Fatalf("head=%x, want %x", got, tc.wantHead)
+			}
+			if pruned := e.Store.GetBlockHeader(rootX) == nil; pruned != tc.wantPruned {
+				t.Fatalf("old head pruned=%v, want %v", pruned, tc.wantPruned)
+			}
+		})
 	}
 }
