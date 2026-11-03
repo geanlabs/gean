@@ -1,0 +1,74 @@
+{
+  "$schema": "https://fundingjson.org/schema/v1.1.0.json",
+  "version": "v1.1.0",
+  "entity": {
+    "type": "organisation",
+    "role": "owner",
+    "name": "Gean Labs",
+    "email": "longs@geanlabs.com",
+    "description": "Gean Labs is an African post-quantum infrastructure company. We build Gean, an open-source consensus client for Lean Ethereum, Ethereum's post-quantum consensus redesign. Gean Labs is the first team in Africa contributing a client to Ethereum's core protocol.",
+    "webpageUrl": {
+      "url": "https://github.com/geanlabs"
+    }
+  },
+  "projects": [
+    {
+      "guid": "gean",
+      "name": "Gean",
+      "description": "Gean is an open-source, post-quantum consensus client for Lean Ethereum, written in Go. It replaces BLS signatures with hash-based XMSS signatures and zero-knowledge signature aggregation so Ethereum's validator set can stay secure against quantum attacks, and it implements Lean Ethereum's faster finality and simpler protocol. Gean runs on the multi-client post-quantum devnets alongside the other independent Lean Ethereum clients, strengthening client diversity as Ethereum prepares for its post-quantum transition.",
+      "webpageUrl": {
+        "url": "https://github.com/geanlabs/gean"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/geanlabs/gean"
+      },
+      "licenses": ["spdx:MIT"],
+      "tags": ["ethereum", "blockchain", "consensus", "post-quantum", "cryptography", "distributed-systems", "golang", "networking"]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "usd-account",
+        "type": "payment-provider",
+        "description": "USD business account for Gean Labs via a payment provider. Receiving details are shared on request: email longs@geanlabs.com."
+      },
+      {
+        "guid": "github-sponsors",
+        "type": "payment-provider",
+        "address": "https://github.com/sponsors/geanlabs",
+        "description": "One-time or recurring sponsorship through GitHub Sponsors."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "maintenance",
+        "status": "active",
+        "name": "Client maintenance and devnet infrastructure",
+        "description": "Covers engineering time to keep Gean in step with Lean Ethereum protocol upgrades and multi-client devnets, plus the servers used to run long-running devnet and interop tests.",
+        "amount": 10000,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": ["usd-account", "github-sponsors"]
+      },
+      {
+        "guid": "any-amount",
+        "status": "active",
+        "name": "Goodwill support",
+        "description": "Support Gean with any amount.",
+        "amount": 0,
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": ["usd-account", "github-sponsors"]
+      }
+    ],
+    "history": [
+      {
+        "year": 2026,
+        "income": 10000,
+        "currency": "USD",
+        "description": "Ethereum Foundation Ecosystem Support Program grant for Gean."
+      }
+    ]
+  }
+}
