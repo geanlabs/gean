@@ -7,6 +7,7 @@ import (
 	"github.com/geanlabs/gean/internal/attestation"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -25,8 +26,19 @@ func (e *Engine) produceAttestations(slot uint64) {
 		return
 	}
 
+	dataRoot, err := attData.HashTreeRoot()
+	if err != nil {
+		logger.Error(logger.Validator, "attestation root failed slot=%d: %v", slot, err)
+		return
+	}
+
 	for _, vid := range e.Keys.ValidatorIDs() {
 		prodStart := time.Now()
+
+		if err := e.Store.ReserveSignature(store.SigningAttestation, vid, slot, dataRoot); err != nil {
+			logger.Error(logger.Validator, "attestation not signed validator=%d: %v", vid, err)
+			continue
+		}
 
 		sStart := time.Now()
 		sig, err := e.Keys.SignAttestation(vid, attData)
@@ -45,11 +57,6 @@ func (e *Engine) produceAttestations(slot uint64) {
 		logger.Info(logger.Validator, "produced attestation slot=%d validator=%d", slot, vid)
 
 		if e.AggCtl != nil && e.AggCtl.Get() {
-			dataRoot, err := attData.HashTreeRoot()
-			if err != nil {
-				logger.Error(logger.Validator, "attestation root failed validator=%d: %v", vid, err)
-				continue
-			}
 			e.Store.AttestationSignatures.Insert(dataRoot, attData, vid, sig)
 		}
 

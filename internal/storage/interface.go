@@ -29,6 +29,10 @@ type WriteBatch interface {
 	DeleteBatch(table Table, keys [][]byte) error
 
 	Commit() error
+
+	// CommitSync returns only once the batch is durable, for a write that must
+	// survive a crash. Commit does not wait for the disk.
+	CommitSync() error
 }
 
 type Iterator interface {

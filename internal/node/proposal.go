@@ -181,6 +181,10 @@ func (e *Engine) buildProposal(duty proposalDuty) *proposalResult {
 	}
 	// A signing error must not permit another candidate to use this duty.
 	result.retryable = false
+	if err := e.Store.ReserveSignature(store.SigningProposal, validatorID, slot, blockRoot); err != nil {
+		logger.Error(logger.Validator, "block not signed slot=%d: %v", slot, err)
+		return result
+	}
 	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
 	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {

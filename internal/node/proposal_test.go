@@ -323,6 +323,30 @@ func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 	}
 }
 
+// Both signing duties record the message before reaching the key, so a closed key
+// that fails in Sign still leaves the slot reserved against any other message.
+func TestSigningDutiesReserveBeforeSigning(t *testing.T) {
+	other := [32]byte{0xee}
+	closedKey := map[uint64]*xmss.ValidatorKeyPair{0: {}}
+
+	t.Run("attestation", func(t *testing.T) {
+		e := makeTestEngine()
+		e.Keys = xmss.NewKeyManager(closedKey, nil)
+		e.produceAttestations(1)
+		if err := e.Store.ReserveSignature(store.SigningAttestation, 0, 1, other); !errors.Is(err, store.ErrSigningConflict) {
+			t.Fatalf("err=%v, want the slot reserved", err)
+		}
+	})
+	t.Run("proposal", func(t *testing.T) {
+		e := proposalTestEngine(t)
+		e.Keys = xmss.NewKeyManager(nil, closedKey)
+		e.buildProposal(proposalDuty{slot: 1, validatorID: 0})
+		if err := e.Store.ReserveSignature(store.SigningProposal, 0, 1, other); !errors.Is(err, store.ErrSigningConflict) {
+			t.Fatalf("err=%v, want the slot reserved", err)
+		}
+	})
+}
+
 // The proposer's key has signed the block by the time it is proved, so a parent
 // change mid-proof must not stop the proof: the block is still published.
 func TestBlockProofContinuesWhenParentChanges(t *testing.T) {
