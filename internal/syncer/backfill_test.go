@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -94,10 +95,50 @@ func TestSyncDriver_CheckAndBackfill_CapsRangeCount(t *testing.T) {
 	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: types.MaxRequestBlocks + 100})
 
 	mock.mu.Lock()
-	got := mock.lastRangeCount
+	got := mock.rangeCounts[0]
 	mock.mu.Unlock()
 	if got != types.MaxRequestBlocks {
 		t.Fatalf("range count=%d, want %d", got, types.MaxRequestBlocks)
+	}
+}
+
+// A full batch of skipped slots must not end the pass: every later pass would
+// ask for the same empty batch and never reach the blocks behind it.
+func TestSyncDriver_CheckAndBackfill_AdvancesPastEmptyRange(t *testing.T) {
+	n, store := makeTestSyncHarness()
+	first := uint64(types.MaxRequestBlocks + 1)
+	mock := &mockSyncP2P{
+		rangeBatches: [][]*types.SignedBlock{
+			nil,
+			makeSyncRange(store.Head(), first, first+1),
+		},
+	}
+	sd := NewSyncDriver(context.Background(), n, store, mock)
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: first + 1})
+
+	if want := []uint64{1, first}; !slices.Equal(mock.rangeStarts, want) {
+		t.Fatalf("range starts=%v, want %v", mock.rangeStarts, want)
+	}
+	if got := drainBlockCh(t, n, 2, 100*time.Millisecond); len(got) != 2 {
+		t.Fatalf("expected 2 blocks fed to engine, got %d", len(got))
+	}
+}
+
+// A fallback peer never claimed the range, so its empty answer says nothing
+// about whether the slots were skipped.
+func TestSyncDriver_CheckAndBackfill_StopsOnEmptyFallbackRange(t *testing.T) {
+	n, store := makeTestSyncHarness()
+	mock := &mockSyncP2P{
+		rangeErr:     fmt.Errorf("simulated range fetch failure"),
+		retryBatches: [][]*types.SignedBlock{nil},
+	}
+	sd := NewSyncDriver(context.Background(), n, store, mock)
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: types.MaxRequestBlocks + 100})
+
+	if got := mock.retryCalls.Load(); got != 1 {
+		t.Fatalf("retry calls=%d, want 1", got)
 	}
 }
 

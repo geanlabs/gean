@@ -69,9 +69,9 @@ func (sd *SyncDriver) Run() {
 		case <-sd.ctx.Done():
 			return
 		case <-ticker.C:
-			if sd.node.GetSyncStatus() == SyncSyncing {
-				sd.refreshSyncFromPeers(sd.ctx)
-			}
+			// Unconditional: a node on the wrong fork with a current head looks
+			// synced, and only a peer's status reveals it is marooned.
+			sd.refreshSyncFromPeers(sd.ctx)
 		}
 	}
 }

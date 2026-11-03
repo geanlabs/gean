@@ -73,8 +73,14 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 			}
 		}
 		if len(blocks) == 0 {
-			logger.Info(logger.Sync, "sync: peer %s returned empty range at start_slot=%d, stopping", peerID, startSlot)
-			return
+			// Only the status peer claims to hold this range, so its empty answer
+			// means the slots were skipped. A fallback peer may just not have them.
+			if excluded != nil {
+				logger.Info(logger.Sync, "sync: peer %s returned empty range at start_slot=%d, stopping", servedBy, startSlot)
+				return
+			}
+			startSlot += count
+			continue
 		}
 
 		lastSlot, ok := sd.feedBlocks(ctx, servedBy, blocks, startSlot)
