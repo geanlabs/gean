@@ -1,6 +1,7 @@
 package blockprocessor
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/geanlabs/gean/internal/store"
@@ -72,5 +73,26 @@ func TestValidateBlockAttestationsRejectsDuplicateData(t *testing.T) {
 	se, ok := err.(*store.StoreError)
 	if !ok || se.Kind != store.ErrDuplicateAttestationData {
 		t.Fatalf("expected duplicate attestation error, got %v", err)
+	}
+}
+
+func TestValidateBlockAttestationsDistinctDataCap(t *testing.T) {
+	blockWith := func(n int) *types.Block {
+		atts := make([]*types.AggregatedAttestation, n)
+		for i := range atts {
+			att := processorAttestation()
+			att.Data.Slot = uint64(i + 1)
+			atts[i] = att
+		}
+		return processorBlock(atts...)
+	}
+
+	if err := validateBlockAttestations(blockWith(types.MaxAttestationsData)); err != nil {
+		t.Fatalf("block at the cap rejected: %v", err)
+	}
+	err := validateBlockAttestations(blockWith(types.MaxAttestationsData + 1))
+	var se *store.StoreError
+	if !errors.As(err, &se) || se.Kind != store.ErrTooManyAttestationData {
+		t.Fatalf("block over the cap: got %v", err)
 	}
 }
