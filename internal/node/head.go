@@ -28,7 +28,10 @@ func (e *Engine) updateHead() {
 	e.updateFinalizedFromHead(newHead)
 
 	if newHead != oldHead {
-		e.Store.SetHead(newHead)
+		if err := e.persistHead(newHead); err != nil {
+			logger.Error(logger.Forkchoice, "%v", err)
+			return
+		}
 		if !types.IsZeroRoot(oldHead) {
 			newHeader := e.Store.GetBlockHeader(newHead)
 			if newHeader == nil {
@@ -92,11 +95,22 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 	// running maximum: a higher-finalized fork that loses head selection must not
 	// latch finalization above the head, so the checkpoint moves down when the head
 	// reorgs onto a chain that finalized fewer slots.
-	e.Store.SetLatestFinalized(derived)
+	if err := e.Store.PutLatestFinalized(derived); err != nil {
+		logger.Error(logger.Forkchoice, "%v", err)
+		return
+	}
 
 	// Pruning is irreversible, so it only runs when finalization genuinely
 	// advances; a downward move keeps the existing pruned horizon.
 	if derived.Slot > oldSlot {
+		// A reorg that advances finalization prunes the old head's branch, so the
+		// new head must be stored first: a crash after the prune would otherwise
+		// leave metadata naming a head that no longer exists, and startup would
+		// fall back to genesis or checkpoint sync.
+		if err := e.persistHead(headRoot); err != nil {
+			logger.Error(logger.Forkchoice, "skipping finalization prune: %v", err)
+			return
+		}
 		metrics.IncFinalization("success")
 		logger.Info(logger.Forkchoice, "finalized advanced slot=%d root=0x%x", derived.Slot, derived.Root)
 		// Order matters and is not interchangeable. PruneOnFinalization asks fork
@@ -113,6 +127,13 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 		}
 		e.discardFinalizedPending(derived.Slot)
 	}
+}
+
+func (e *Engine) persistHead(root [32]byte) error {
+	if e.Store.Head() == root {
+		return nil
+	}
+	return e.Store.PutHead(root)
 }
 
 func (e *Engine) updateSafeTarget() {
