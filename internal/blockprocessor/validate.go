@@ -39,10 +39,10 @@ func validateSignedBlock(signedBlock *types.SignedBlock, verify bool) (*types.Bl
 	return signedBlock.Block, nil
 }
 
-// validateBlockAttestations enforces the wire-level prohibition on exact-duplicate
-// AttestationData. The per-block cap on the distinct-data count lives in the state
-// transition, where it binds every caller; split aggregates sharing one data entry
-// are a legitimate, idempotently merged input and so are not rejected here.
+// validateBlockAttestations rejects exact-duplicate AttestationData and blocks over
+// the distinct-data cap. It runs before signature verification, whose setup expands
+// every participant of every attestation, so a block over the cap costs nothing
+// beyond this check. The state transition keeps its own cap check for other callers.
 func validateBlockAttestations(block *types.Block) error {
 	seen := make(map[[32]byte]bool)
 	for _, att := range block.Body.Attestations {
@@ -61,6 +61,12 @@ func validateBlockAttestations(block *types.Block) error {
 			}
 		}
 		seen[dataRoot] = true
+	}
+	if len(seen) > types.MaxAttestationsData {
+		return &store.StoreError{
+			Kind:    store.ErrTooManyAttestationData,
+			Message: fmt.Sprintf("block has %d distinct AttestationData, max %d", len(seen), types.MaxAttestationsData),
+		}
 	}
 	return nil
 }
