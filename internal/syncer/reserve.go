@@ -18,6 +18,22 @@ func (sd *SyncDriver) tryReserve(peerID libp2ppeer.ID) bool {
 	return true
 }
 
+func (sd *SyncDriver) tryStartReconcile() bool {
+	sd.mu.Lock()
+	defer sd.mu.Unlock()
+	if sd.reconciling {
+		return false
+	}
+	sd.reconciling = true
+	return true
+}
+
+func (sd *SyncDriver) endReconcile() {
+	sd.mu.Lock()
+	defer sd.mu.Unlock()
+	sd.reconciling = false
+}
+
 func (sd *SyncDriver) release(peerID libp2ppeer.ID) {
 	if sd == nil {
 		return

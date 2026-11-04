@@ -3,6 +3,8 @@ package syncer
 import (
 	"context"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
@@ -72,4 +74,29 @@ func TestSyncDriverNilDependenciesReturnDefaults(t *testing.T) {
 	if nilDriver.shouldBackfill(&p2p.StatusMessage{HeadSlot: 10}) {
 		t.Fatal("nil driver should not backfill")
 	}
+}
+
+// A marooned node's head keeps pace, so nothing local says it needs to sync. The
+// periodic poll is what fetches the peer status that reveals it.
+func TestRunPollsMaroonedNodeWithCurrentHead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		n, st := makeTestSyncHarness()
+		mock := &mockSyncP2P{
+			peers:      []libp2ppeer.ID{"p1"},
+			statusResp: &p2p.StatusMessage{FinalizedSlot: forkReconcileFinalizedThreshold + 1},
+		}
+		st.SetLatestFinalized(&types.Checkpoint{Slot: 0})
+		sd := NewSyncDriver(ctx, n, st, mock)
+		sd.Start()
+
+		time.Sleep(pollInterval + time.Second)
+		synctest.Wait()
+		cancel()
+		sd.Wait()
+
+		if mock.statusCalls.Load() == 0 {
+			t.Fatal("periodic poll did not request peer status")
+		}
+	})
 }

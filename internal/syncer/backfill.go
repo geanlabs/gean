@@ -32,6 +32,10 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 
 	startSlot := sd.store.HeadSlot() + 1
 	if sd.marooned(peerStatus) {
+		if !sd.tryStartReconcile() {
+			return
+		}
+		defer sd.endReconcile()
 		// Reconciliation: start below the fork point (our finalized slot) so the
 		// range covers the divergence and fork choice can switch onto the peer's
 		// canonical chain. Starting at our head would only re-fetch our own tip.
@@ -41,6 +45,7 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 	// of this pass asks other peers, and every peer that fails is excluded until
 	// the pass ends, so a stalled peer costs one request timeout, not one per batch.
 	var excluded map[libp2ppeer.ID]bool
+	emptyBatches := 0
 	for startSlot <= peerStatus.HeadSlot {
 		if err := ctx.Err(); err != nil {
 			return
@@ -73,9 +78,21 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 			}
 		}
 		if len(blocks) == 0 {
-			logger.Info(logger.Sync, "sync: peer %s returned empty range at start_slot=%d, stopping", peerID, startSlot)
-			return
+			// Only the status peer claims to hold this range, so its empty answer
+			// means the slots were skipped. A fallback peer may just not have them.
+			if excluded != nil {
+				logger.Info(logger.Sync, "sync: peer %s returned empty range at start_slot=%d, stopping", servedBy, startSlot)
+				return
+			}
+			emptyBatches++
+			if emptyBatches == maxEmptyRangeBatches {
+				logger.Info(logger.Sync, "sync: peer %s returned %d empty ranges up to start_slot=%d, stopping", servedBy, emptyBatches, startSlot)
+				return
+			}
+			startSlot += count
+			continue
 		}
+		emptyBatches = 0
 
 		lastSlot, ok := sd.feedBlocks(ctx, servedBy, blocks, startSlot)
 		if !ok {

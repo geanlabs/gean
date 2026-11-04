@@ -21,16 +21,18 @@ type mockSyncP2P struct {
 
 	peers []libp2ppeer.ID
 
-	statusResp *p2p.StatusMessage
-	statusErr  error
+	statusResp  *p2p.StatusMessage
+	statusErr   error
+	statusCalls atomic.Int32
 
-	rangeBatches   [][]*types.SignedBlock
-	rangeErr       error
-	rangeCalls     atomic.Int32
-	lastRangeCount uint64
-	rangeBlock     chan struct{}
-	rangeEntered   chan struct{} // receives once per call, before rangeBlock
-	rangeDeadline  atomic.Bool   // a range call's context carried a deadline
+	rangeBatches  [][]*types.SignedBlock
+	rangeErr      error
+	rangeCalls    atomic.Int32
+	rangeStarts   []uint64
+	rangeCounts   []uint64
+	rangeBlock    chan struct{}
+	rangeEntered  chan struct{} // receives once per call, before rangeBlock
+	rangeDeadline atomic.Bool   // a range call's context carried a deadline
 
 	retryBatches  [][]*types.SignedBlock
 	retryErr      error
@@ -52,6 +54,7 @@ func (m *mockSyncP2P) Peers() []libp2ppeer.ID {
 }
 
 func (m *mockSyncP2P) SendStatusRequest(ctx context.Context, peerID libp2ppeer.ID, ourStatus *p2p.StatusMessage) (*p2p.StatusMessage, error) {
+	m.statusCalls.Add(1)
 	return m.statusResp, m.statusErr
 }
 
@@ -64,7 +67,8 @@ func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.
 		m.rangeDeadline.Store(true)
 	}
 	m.mu.Lock()
-	m.lastRangeCount = count
+	m.rangeStarts = append(m.rangeStarts, startSlot)
+	m.rangeCounts = append(m.rangeCounts, count)
 	m.mu.Unlock()
 
 	if m.rangeEntered != nil {
@@ -115,11 +119,8 @@ func (m *mockSyncP2P) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots
 }
 
 type testNode struct {
-	status  SyncStatus
 	BlockCh chan *types.SignedBlock
 }
-
-func (n *testNode) GetSyncStatus() SyncStatus { return n.status }
 
 func (n *testNode) OnBlock(block *types.SignedBlock) {
 	n.BlockCh <- block
@@ -140,7 +141,7 @@ func makeTestSyncHarness() (*testNode, *store.ConsensusStore) {
 	root := mustHeaderRoot(header)
 	store.SetHead(root)
 	store.InsertBlockHeader(root, header)
-	return &testNode{status: SyncSyncing, BlockCh: make(chan *types.SignedBlock, 16)}, store
+	return &testNode{BlockCh: make(chan *types.SignedBlock, 16)}, store
 }
 
 func makeSyncRange(parentRoot [32]byte, slots ...uint64) []*types.SignedBlock {

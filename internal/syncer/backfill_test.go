@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -94,10 +95,97 @@ func TestSyncDriver_CheckAndBackfill_CapsRangeCount(t *testing.T) {
 	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: types.MaxRequestBlocks + 100})
 
 	mock.mu.Lock()
-	got := mock.lastRangeCount
+	got := mock.rangeCounts[0]
 	mock.mu.Unlock()
 	if got != types.MaxRequestBlocks {
 		t.Fatalf("range count=%d, want %d", got, types.MaxRequestBlocks)
+	}
+}
+
+// A full batch of skipped slots must not end the pass: every later pass would
+// ask for the same empty batch and never reach the blocks behind it.
+func TestSyncDriver_CheckAndBackfill_AdvancesPastEmptyRange(t *testing.T) {
+	n, store := makeTestSyncHarness()
+	first := uint64(types.MaxRequestBlocks + 1)
+	mock := &mockSyncP2P{
+		rangeBatches: [][]*types.SignedBlock{
+			nil,
+			makeSyncRange(store.Head(), first, first+1),
+		},
+	}
+	sd := NewSyncDriver(context.Background(), n, store, mock)
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: first + 1})
+
+	if want := []uint64{1, first}; !slices.Equal(mock.rangeStarts, want) {
+		t.Fatalf("range starts=%v, want %v", mock.rangeStarts, want)
+	}
+	if got := drainBlockCh(t, n, 2, 100*time.Millisecond); len(got) != 2 {
+		t.Fatalf("expected 2 blocks fed to engine, got %d", len(got))
+	}
+}
+
+// A fallback peer never claimed the range, so its empty answer says nothing
+// about whether the slots were skipped.
+func TestSyncDriver_CheckAndBackfill_StopsOnEmptyFallbackRange(t *testing.T) {
+	n, store := makeTestSyncHarness()
+	mock := &mockSyncP2P{
+		rangeErr:     fmt.Errorf("simulated range fetch failure"),
+		retryBatches: [][]*types.SignedBlock{nil},
+	}
+	sd := NewSyncDriver(context.Background(), n, store, mock)
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: types.MaxRequestBlocks + 100})
+
+	if got := mock.retryCalls.Load(); got != 1 {
+		t.Fatalf("retry calls=%d, want 1", got)
+	}
+}
+
+// A peer claiming a far head during a long finality stall must not get a request
+// per batch of the stall by answering empty. A delivered block restarts the count.
+func TestSyncDriver_CheckAndBackfill_EndsPassAfterEmptyBatches(t *testing.T) {
+	n, st := makeTestSyncHarness()
+	headSlot := uint64(100_000)
+	header := &types.BlockHeader{Slot: headSlot}
+	root := mustHeaderRoot(header)
+	st.InsertBlockHeader(root, header)
+	st.SetHead(root)
+	st.SetLatestFinalized(&types.Checkpoint{Slot: 0})
+	blockSlot := uint64(maxEmptyRangeBatches-1)*types.MaxRequestBlocks + 1
+	batches := make([][]*types.SignedBlock, maxEmptyRangeBatches-1)
+	batches = append(batches, makeSyncRange(root, blockSlot))
+	mock := &mockSyncP2P{rangeBatches: batches}
+	sd := NewSyncDriver(context.Background(), n, st, mock)
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), &p2p.StatusMessage{HeadSlot: headSlot, FinalizedSlot: 100})
+
+	if got, want := mock.rangeCalls.Load(), int32(2*maxEmptyRangeBatches); got != want {
+		t.Fatalf("range calls=%d, want %d", got, want)
+	}
+}
+
+// Every peer ahead of our finalized slot would otherwise fetch the same range.
+func TestSyncDriver_CheckAndBackfill_RunsOneMaroonedPass(t *testing.T) {
+	n, st := makeTestSyncHarness()
+	st.SetLatestFinalized(&types.Checkpoint{Slot: 0})
+	status := &p2p.StatusMessage{HeadSlot: 1, FinalizedSlot: forkReconcileFinalizedThreshold + 1}
+	mock := &mockSyncP2P{}
+	sd := NewSyncDriver(context.Background(), n, st, mock)
+	// p2 polls while p1's request is in flight.
+	mock.onRange = func() {
+		mock.onRange = nil
+		sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p2"), status)
+	}
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p1"), status)
+	if got := mock.rangeCalls.Load(); got != 1 {
+		t.Fatalf("range calls with a pass running=%d, want 1", got)
+	}
+
+	sd.checkAndBackfill(context.Background(), libp2ppeer.ID("p2"), status)
+	if got := mock.rangeCalls.Load(); got != 2 {
+		t.Fatalf("range calls after the pass ended=%d, want 2", got)
 	}
 }
 
