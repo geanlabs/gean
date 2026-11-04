@@ -72,35 +72,43 @@ func TestTruncatingAggregatorKeepsFrontier(t *testing.T) {
 	}
 }
 
-// TestOrderedGroupsSkipsJustifiedTargets: a group whose target is already
-// justified in the head state is dropped, so the session budget goes to targets
-// that can still advance finality. An out-of-range (fresh) target is kept.
-func TestOrderedGroupsSkipsJustifiedTargets(t *testing.T) {
+// TestOrderedGroupsRanksJustifiedTargets: a vote for a justified target cannot
+// advance finality but still carries head weight, so its group is kept. It follows
+// every open target, even backlog, so it cannot crowd one out of a capped session.
+func TestOrderedGroupsRanksJustifiedTargets(t *testing.T) {
 	const finalized = uint64(100)
-	const justifiedTarget = uint64(105)
-	const openTarget = uint64(106)
-
+	const currentSlot = uint64(110)
 	justifiedSlots := types.BitlistExtend(nil, 10)
-	types.BitlistSet(justifiedSlots, justifiedTarget-finalized-1) // mark slot 105 justified
-	headState := &types.State{
-		LatestFinalized: &types.Checkpoint{Slot: finalized},
-		JustifiedSlots:  justifiedSlots,
+	for _, slot := range []uint64{102, 104, 105} {
+		types.BitlistSet(justifiedSlots, slot-finalized-1)
 	}
-
+	group := func(slot, target uint64) *store.AttestationDataEntry {
+		return &store.AttestationDataEntry{Data: &types.AttestationData{Slot: slot, Target: &types.Checkpoint{Slot: target}}}
+	}
 	snap := &Snapshot{
-		headState: headState,
+		slot: currentSlot,
+		headState: &types.State{
+			LatestFinalized: &types.Checkpoint{Slot: finalized},
+			JustifiedSlots:  justifiedSlots,
+		},
 		attSigs: map[[32]byte]*store.AttestationDataEntry{
-			rootByte(1): {Data: &types.AttestationData{Slot: justifiedTarget, Target: &types.Checkpoint{Slot: justifiedTarget}}},
-			rootByte(2): {Data: &types.AttestationData{Slot: openTarget, Target: &types.Checkpoint{Slot: openTarget}}},
+			rootByte(1): group(currentSlot, 105), // current, settled
+			rootByte(2): group(currentSlot, 106), // current, open
+			rootByte(3): group(107, 103),         // backlog, open
+			rootByte(4): group(107, 102),         // backlog, settled
+			rootByte(5): group(107, 104),         // backlog, settled, newer target
 		},
 	}
 
 	ordered := orderedGroups(snap, groupSkips{})
-	if len(ordered) != 1 {
-		t.Fatalf("groups=%d, want 1 (justified target skipped)", len(ordered))
+	want := []byte{2, 3, 1, 5, 4}
+	if len(ordered) != len(want) {
+		t.Fatalf("groups=%d, want %d (justified targets kept)", len(ordered), len(want))
 	}
-	if ordered[0].targetSlot != openTarget {
-		t.Fatalf("kept target=%d, want %d (the still-open one)", ordered[0].targetSlot, openTarget)
+	for i, root := range want {
+		if ordered[i].dataRoot != rootByte(root) {
+			t.Fatalf("position %d is group %d, want %d", i, ordered[i].dataRoot[0], root)
+		}
 	}
 }
 
