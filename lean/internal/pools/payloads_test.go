@@ -1,15 +1,15 @@
-package store_test
+package pools_test
 
 import (
 	"sync"
 	"testing"
 
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func TestPayloadBufferPushAndExtract(t *testing.T) {
-	pb := store.NewPayloadBuffer(100)
+	pb := pools.NewPayloadBuffer(100)
 	var dr [32]byte
 	dr[0] = 1
 	data := &types.AttestationData{Slot: 5, Head: &types.Checkpoint{Slot: 5}}
@@ -44,7 +44,7 @@ func TestPayloadBufferEqualSlotTieKeepsLargerDataRoot(t *testing.T) {
 	bits := types.BitlistFromIndices([]uint64{0})
 
 	for _, largeFirst := range []bool{false, true} {
-		pb := store.NewPayloadBuffer(10)
+		pb := pools.NewPayloadBuffer(10)
 		push := func(root [32]byte, d *types.AttestationData) {
 			pb.Push(root, d, &types.SingleMessageAggregate{Participants: bits, Proof: []byte{0x01}})
 		}
@@ -68,7 +68,7 @@ func TestPayloadBufferEqualSlotTieKeepsLargerDataRoot(t *testing.T) {
 }
 
 func TestPayloadBufferDataOnlyHasNoWeight(t *testing.T) {
-	pb := store.NewPayloadBuffer(10)
+	pb := pools.NewPayloadBuffer(10)
 	root := [32]byte{1}
 	pb.PushData(root, &types.AttestationData{Slot: 3, Head: &types.Checkpoint{Slot: 3}})
 
@@ -81,7 +81,7 @@ func TestPayloadBufferDataOnlyHasNoWeight(t *testing.T) {
 }
 
 func TestPayloadBufferPushPrunesSubsetProofs(t *testing.T) {
-	pb := store.NewPayloadBuffer(10)
+	pb := pools.NewPayloadBuffer(10)
 	root := [32]byte{1}
 	data := &types.AttestationData{Slot: 3}
 	for _, index := range []uint64{0, 1} {
@@ -103,7 +103,7 @@ func TestPayloadBufferPushPrunesSubsetProofs(t *testing.T) {
 }
 
 func TestPayloadBufferPushPreservesOverlappingProofs(t *testing.T) {
-	pb := store.NewPayloadBuffer(10)
+	pb := pools.NewPayloadBuffer(10)
 	root := [32]byte{1}
 	data := &types.AttestationData{Slot: 3}
 	for i, indices := range [][]uint64{{0, 1}, {1, 2}} {
@@ -119,7 +119,7 @@ func TestPayloadBufferPushPreservesOverlappingProofs(t *testing.T) {
 }
 
 func TestPayloadBufferFIFOEviction(t *testing.T) {
-	pb := store.NewPayloadBuffer(2)
+	pb := pools.NewPayloadBuffer(2)
 
 	for i := range byte(5) {
 		var dr [32]byte
@@ -137,7 +137,7 @@ func TestPayloadBufferFIFOEviction(t *testing.T) {
 }
 
 func TestPayloadBufferRejectsMalformedPush(t *testing.T) {
-	pb := store.NewPayloadBuffer(10)
+	pb := pools.NewPayloadBuffer(10)
 	var dr [32]byte
 
 	pb.Push(dr, nil, &types.SingleMessageAggregate{Participants: types.NewBitlistSSZ(1)})
@@ -154,7 +154,7 @@ func TestPayloadBufferRejectsMalformedPush(t *testing.T) {
 }
 
 func TestPayloadBufferEntriesReturnsSnapshot(t *testing.T) {
-	pb := store.NewPayloadBuffer(10)
+	pb := pools.NewPayloadBuffer(10)
 	var dr [32]byte
 	dr[0] = 1
 	bits := types.NewBitlistSSZ(1)
@@ -194,7 +194,7 @@ func TestPayloadBufferEntriesReturnsSnapshot(t *testing.T) {
 }
 
 func TestPayloadBufferConcurrentAccess(t *testing.T) {
-	pb := store.NewPayloadBuffer(0)
+	pb := pools.NewPayloadBuffer(0)
 	var wg sync.WaitGroup
 
 	for worker := 0; worker < 8; worker++ {
@@ -226,7 +226,7 @@ func TestPayloadBufferConcurrentAccess(t *testing.T) {
 }
 
 func TestPromoteNewToKnown(t *testing.T) {
-	s := makeTestStore()
+	s := pools.New()
 
 	var dr [32]byte
 	dr[0] = 1
@@ -254,7 +254,7 @@ func TestPromoteNewToKnown(t *testing.T) {
 }
 
 func TestExtractLatestNewAttestations(t *testing.T) {
-	s := makeTestStore()
+	s := pools.New()
 
 	var dr1 [32]byte
 	dr1[0] = 1
@@ -268,7 +268,7 @@ func TestExtractLatestNewAttestations(t *testing.T) {
 	types.BitlistSet(bits2, 1)
 	s.NewPayloads.Push(dr2, &types.AttestationData{Slot: 8, Head: &types.Checkpoint{Slot: 8}}, &types.SingleMessageAggregate{Participants: bits2, Proof: []byte{0x01}})
 
-	got := s.ExtractLatestNewAttestations()
+	got := s.NewPayloads.ExtractLatestAttestations(0)
 	if _, found := got[0]; found {
 		t.Fatal("validator 0 lives only in known pool; must not appear")
 	}
@@ -295,7 +295,7 @@ func TestExtractLatestAttestationsSkipsStaleHeads(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pb := store.NewPayloadBuffer(100)
+			pb := pools.NewPayloadBuffer(100)
 			for _, data := range tt.votes {
 				bits := types.NewBitlistSSZ(1)
 				types.BitlistSet(bits, 0)

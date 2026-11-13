@@ -12,8 +12,8 @@ import (
 	"github.com/geanlabs/gean/lean/consensus/statetransition"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 type aggregationGroup struct {
@@ -268,11 +268,11 @@ func (e *unitCostEstimator) childDuration() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
-func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+func aggregateFromSnapshot(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator) ([]*types.SignedAggregatedAttestation, []pools.PayloadKV, []pools.AttestationDeleteKey, bool, groupSkips) {
 	return aggregateFromSnapshotWithProver(shouldYield, snap, cache, deadline, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
 }
 
-func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []pools.PayloadKV, []pools.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
 	if snap == nil || cache == nil || snap.headState == nil {
 		return nil, nil, nil, false, skips
@@ -285,8 +285,8 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 	}
 
 	var newAggregates []*types.SignedAggregatedAttestation
-	var payloadEntries []store.PayloadKV
-	var keysToDelete []store.AttestationDeleteKey
+	var payloadEntries []pools.PayloadKV
+	var keysToDelete []pools.AttestationDeleteKey
 	truncated := false
 	attempted := false
 	attempts := 0
@@ -377,7 +377,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 			covered := make(map[uint64]bool)
 
 			if gossipEntry != nil && len(gossipEntry.Signatures) > 0 {
-				sortedSigs := make([]store.AttestationSignatureEntry, len(gossipEntry.Signatures))
+				sortedSigs := make([]pools.AttestationSignatureEntry, len(gossipEntry.Signatures))
 				copy(sortedSigs, gossipEntry.Signatures)
 				sort.Slice(sortedSigs, func(i, j int) bool {
 					return sortedSigs[i].ValidatorID < sortedSigs[j].ValidatorID
@@ -502,7 +502,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 				Proof: proof,
 			})
 
-			payloadEntries = append(payloadEntries, store.PayloadKV{
+			payloadEntries = append(payloadEntries, pools.PayloadKV{
 				DataRoot: dataRoot,
 				Data:     attData,
 				Proof:    proof,
@@ -520,7 +520,7 @@ func aggregateFromSnapshotWithProver(shouldYield func() bool, snap *Snapshot, ca
 					if !represented[sig.ValidatorID] {
 						continue
 					}
-					keysToDelete = append(keysToDelete, store.AttestationDeleteKey{
+					keysToDelete = append(keysToDelete, pools.AttestationDeleteKey{
 						ValidatorID: sig.ValidatorID,
 						DataRoot:    dataRoot,
 					})

@@ -10,8 +10,8 @@ import (
 	"github.com/geanlabs/gean/lean/consensus/statetransition"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover"
-	"github.com/geanlabs/gean/lean/internal/store"
 	"github.com/geanlabs/gean/lean/internal/validator"
 )
 
@@ -44,6 +44,7 @@ func proposalHeadState(t *testing.T) (*types.State, [32]byte) {
 
 func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	s := makeTestStore()
+	p := pools.New()
 	headState, parentRoot := proposalHeadState(t)
 	s.SetHead(parentRoot)
 	s.InsertState(parentRoot, headState)
@@ -59,12 +60,12 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash attestation data: %v", err)
 	}
-	s.NewPayloads.Push(dataRoot, data, &types.SingleMessageAggregate{
+	p.NewPayloads.Push(dataRoot, data, &types.SingleMessageAggregate{
 		Participants: types.BitlistFromIndices([]uint64{0}),
 		Proof:        []byte{0x01},
 	})
 
-	e := &Engine{Store: s}
+	e := &Engine{Pools: p, Store: s}
 	block, sigs, err := e.produceBlockWithSignatures(1, 0)
 	if err != nil {
 		t.Fatalf("produce block: %v", err)
@@ -75,18 +76,18 @@ func TestProduceBlockWithSignaturesDoesNotPromoteNewPayloads(t *testing.T) {
 	if len(sigs) != 0 {
 		t.Fatalf("signature proofs=%d, want 0", len(sigs))
 	}
-	if s.NewPayloads.Len() != 1 || s.KnownPayloads.Len() != 0 {
-		t.Fatalf("payload promotion changed buffers: new=%d known=%d", s.NewPayloads.Len(), s.KnownPayloads.Len())
+	if p.NewPayloads.Len() != 1 || p.KnownPayloads.Len() != 0 {
+		t.Fatalf("payload promotion changed buffers: new=%d known=%d", p.NewPayloads.Len(), p.KnownPayloads.Len())
 	}
 }
 
 func TestPayloadsFromEntriesCopiesMapAndProofSlice(t *testing.T) {
 	root := [32]byte{0x01}
-	entry := &store.PayloadEntry{
+	entry := &pools.PayloadEntry{
 		Data:   &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}, Target: &types.Checkpoint{}},
 		Proofs: []*types.SingleMessageAggregate{{Participants: types.BitlistFromIndices([]uint64{1})}},
 	}
-	original := map[[32]byte]*store.PayloadEntry{
+	original := map[[32]byte]*pools.PayloadEntry{
 		root: entry,
 	}
 
@@ -114,7 +115,7 @@ func TestProduceBlockWithSignaturesStaleHeadReturnsSlotError(t *testing.T) {
 	s.InsertState(parentRoot, headState)
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
-	e := &Engine{Store: s}
+	e := &Engine{Pools: pools.New(), Store: s}
 	_, _, err := e.produceBlockWithSignatures(1, 0)
 	var stale *statetransition.StateSlotIsNewerError
 	if !errors.As(err, &stale) {
@@ -130,7 +131,7 @@ func TestBuildProposalSkipsStaleSlot(t *testing.T) {
 	s.InsertState(parentRoot, headState)
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
-	e := &Engine{Store: s}
+	e := &Engine{Pools: pools.New(), Store: s}
 	if result := e.buildProposal(validator.ProposalDuty{Slot: 1}); result.signedBlock != nil || !result.retryable {
 		t.Fatalf("buildProposal result=%v, want retryable failure before signing", result)
 	}
@@ -144,7 +145,7 @@ func TestProduceBlockWithSignaturesRejectsNonProposer(t *testing.T) {
 	s.InsertState(parentRoot, headState)
 	s.InsertBlockHeader(parentRoot, headState.LatestBlockHeader)
 
-	e := &Engine{Store: s}
+	e := &Engine{Pools: pools.New(), Store: s}
 	block, sigs, err := e.produceBlockWithSignatures(1, 0)
 	if err == nil {
 		t.Fatal("expected non-proposer error")
@@ -161,7 +162,7 @@ func proposalTestEngine(t *testing.T) *Engine {
 	s.SetHead(root)
 	s.InsertState(root, state)
 	s.InsertBlockHeader(root, state.LatestBlockHeader)
-	return &Engine{Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan validator.ProposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
+	return &Engine{Pools: pools.New(), Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan validator.ProposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
 }
 
 func TestProposalDutyReservedThroughCompletion(t *testing.T) {

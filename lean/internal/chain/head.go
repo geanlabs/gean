@@ -8,7 +8,7 @@ import (
 )
 
 func (e *Engine) updateHead() {
-	attestations := e.Store.ExtractLatestKnownAttestations()
+	attestations := e.Pools.KnownPayloads.ExtractLatestAttestations(e.Store.LatestFinalized().Slot)
 	justifiedRoot := e.Store.LatestJustified().Root
 
 	// FindHead echoes back a justified root it doesn't know, freezing the
@@ -47,9 +47,9 @@ func (e *Engine) updateHead() {
 			metrics.SetLatestFinalizedSlot(finalized.Slot)
 			metrics.SetJustifiedSlot(justified.Slot)
 			metrics.SetFinalizedSlot(finalized.Slot)
-			metrics.SetGossipSignatures(e.Store.AttestationSignatures.Len())
-			metrics.SetNewAggregatedPayloads(e.Store.NewPayloads.Len())
-			metrics.SetKnownAggregatedPayloads(e.Store.KnownPayloads.Len())
+			metrics.SetGossipSignatures(e.Pools.AttestationSignatures.Len())
+			metrics.SetNewAggregatedPayloads(e.Pools.NewPayloads.Len())
+			metrics.SetKnownAggregatedPayloads(e.Pools.KnownPayloads.Len())
 			metrics.SetPendingAttestationsTotal(e.PendingAttestations.Total())
 
 			if isReorg {
@@ -121,7 +121,14 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 		// nothing to report — canonical is length 1 so canonical[1:] is empty, and
 		// nonCanonical is empty — so the database prune silently deletes nothing
 		// and TableStates/TableBlockHeaders grow for the life of the chain.
-		store.PruneOnFinalization(e.Store, e.FC, oldSlot, derived.Slot, derived.Root)
+		if pruned := store.PruneOnFinalization(e.Store, e.FC, oldSlot, derived.Slot, derived.Root); pruned != nil {
+			prunedSigs := e.Pools.AttestationSignatures.PruneBelow(derived.Slot)
+			prunedKnown := e.Pools.KnownPayloads.PruneBelow(derived.Slot)
+			prunedNew := e.Pools.NewPayloads.PruneBelow(derived.Slot)
+			logger.Info(logger.Store, "pruning: finalized_slot=%d states=%d blocks=%d history=%d gossip_sigs=%d payloads=%d non_canonical=%d",
+				derived.Slot, pruned.States, pruned.Blocks, pruned.History, prunedSigs,
+				prunedKnown+prunedNew, pruned.NonCanonical)
+		}
 		if derived.Slot > 0 {
 			e.FC.Prune(derived.Root)
 		}
@@ -145,7 +152,7 @@ func (e *Engine) updateSafeTarget() {
 	}
 	numValidators := headSummary.NumValidators
 
-	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators, e.Store.ExtractLatestNewAttestations())
+	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators, e.Pools.NewPayloads.ExtractLatestAttestations(e.Store.LatestFinalized().Slot))
 	e.Store.SetSafeTarget(safeTarget)
 
 	safeHeader := e.Store.GetBlockHeader(safeTarget)

@@ -1,12 +1,17 @@
-package store
+package chain
 
 import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/pools"
+	"github.com/geanlabs/gean/lean/internal/store"
 )
 
+// OnTick advances the persisted interval clock and promotes live payloads in
+// interval order. A failed time write stops before that interval's promotion.
 func OnTick(
-	s *ConsensusStore,
+	s *store.ConsensusStore,
+	p *pools.Attestations,
 	timestampMs uint64,
 	hasProposal bool,
 ) {
@@ -44,10 +49,10 @@ func OnTick(
 		switch interval {
 		case 0:
 			if shouldSignalProposal {
-				s.PromoteNewToKnown()
+				p.PromoteNewToKnown()
 			}
 		case 4:
-			s.PromoteNewToKnown()
+			p.PromoteNewToKnown()
 		}
 	}
 }

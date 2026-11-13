@@ -9,8 +9,8 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 // The signatures are only decoded: the injected prover tests scheduling and
@@ -19,7 +19,7 @@ func budgetTestSnapshot() *Snapshot {
 	snap := aggregateTestSnapshot(5, 6, 7)
 	snap.headState.Validators = []*types.Validator{{Index: 0}, {Index: 1}, {Index: 2}}
 	for _, dr := range [][32]byte{rootByte(2), rootByte(3)} {
-		snap.attSigs[dr].Signatures = []store.AttestationSignatureEntry{{ValidatorID: 0}, {ValidatorID: 1}, {ValidatorID: 2}}
+		snap.attSigs[dr].Signatures = []pools.AttestationSignatureEntry{{ValidatorID: 0}, {ValidatorID: 1}, {ValidatorID: 2}}
 	}
 	return snap
 }

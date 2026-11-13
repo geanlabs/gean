@@ -4,12 +4,13 @@ package aggregation
 
 import (
 	"fmt"
-	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/crypto/xmss"
-	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 	"testing"
 	"time"
+
+	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
+	"github.com/geanlabs/gean/lean/internal/prover/shadow"
 )
 
 func TestRawFirstCrypto(t *testing.T) {
@@ -21,7 +22,7 @@ func TestRawFirstCrypto(t *testing.T) {
 	}
 	var pks []xmss.CPubKey
 	var sigs []xmss.CSig
-	var entries []store.AttestationSignatureEntry
+	var entries []pools.AttestationSignatureEntry
 	for i := 0; i < 3; i++ {
 		kp, err := xmss.GenerateKeyPair(fmt.Sprintf("raw-first-test-%d", i), 0, 1<<10)
 		if err != nil {
@@ -39,7 +40,7 @@ func TestRawFirstCrypto(t *testing.T) {
 		validator := &types.Validator{Index: uint64(i)}
 		copy(validator.AttestationPubkey[:], pkBytes[:])
 		snap.headState.Validators = append(snap.headState.Validators, validator)
-		entries = append(entries, store.AttestationSignatureEntry{ValidatorID: uint64(i), Signature: sigBytes})
+		entries = append(entries, pools.AttestationSignatureEntry{ValidatorID: uint64(i), Signature: sigBytes})
 		pk, err := xmss.ParsePublicKey(pkBytes)
 		if err != nil {
 			t.Fatal(err)
@@ -57,14 +58,14 @@ func TestRawFirstCrypto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snap.newEntries[dr] = &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{{Participants: types.BitlistFromIndices([]uint64{0, 1}), Proof: child}}}
+	snap.newEntries[dr] = &pools.PayloadEntry{Proofs: []*types.SingleMessageAggregate{{Participants: types.BitlistFromIndices([]uint64{0, 1}), Proof: child}}}
 	cache := xmss.NewPubKeyCache()
 	defer cache.Close()
 	for _, overlap := range []bool{false, true} {
 		snap.attSigs[dr].Signatures = entries
 		wantRaw, wantChild := 3, 0
 		if overlap {
-			snap.attSigs[dr].Signatures = []store.AttestationSignatureEntry{entries[0], entries[2]}
+			snap.attSigs[dr].Signatures = []pools.AttestationSignatureEntry{entries[0], entries[2]}
 			wantRaw, wantChild = 1, 1
 		}
 		prove := func(rawPKs []xmss.CPubKey, rawSigs []xmss.CSig, children []xmss.ChildProof, msg [32]byte, s uint32) ([]byte, error) {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 // Attestation-aggregate coverage reporting. Pure observability: nothing here
@@ -109,8 +109,8 @@ func (e *Engine) coverageValidatorCount() int {
 // Returns nil when the buffer is empty so the caller can keep its previous
 // snapshot: a node that saw nothing this tick should still report the round it
 // last observed.
-func snapshotNewPayloadParticipants(s *store.ConsensusStore) map[uint64][][]byte {
-	entries := s.NewPayloads.Entries()
+func snapshotNewPayloadParticipants(p *pools.Attestations) map[uint64][][]byte {
+	entries := p.NewPayloads.Entries()
 	if len(entries) == 0 {
 		return nil
 	}
@@ -148,7 +148,7 @@ func (e *Engine) reportPostBlockCoverage(reportingSlot uint64) {
 	for _, participants := range e.coveragePreMerge[reportingSlot] {
 		timely.add(participants)
 	}
-	for _, participants := range snapshotNewPayloadParticipants(e.Store)[reportingSlot] {
+	for _, participants := range snapshotNewPayloadParticipants(e.Pools)[reportingSlot] {
 		late.add(participants)
 	}
 	if head := e.Store.GetSignedBlock(e.Store.Head()); head != nil && head.Block != nil && head.Block.Body != nil {
@@ -208,7 +208,7 @@ func (e *Engine) reportAggStartNewCoverage() {
 		return
 	}
 	set := newCoverageSet(validatorCount, e.CommitteeCount)
-	for _, bySlot := range snapshotNewPayloadParticipants(e.Store) {
+	for _, bySlot := range snapshotNewPayloadParticipants(e.Pools) {
 		for _, participants := range bySlot {
 			set.add(participants)
 		}

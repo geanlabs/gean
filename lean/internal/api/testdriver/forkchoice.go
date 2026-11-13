@@ -8,6 +8,7 @@ import (
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/forkchoice"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/specfixtures"
 	"github.com/geanlabs/gean/lean/internal/store"
 )
@@ -105,6 +106,7 @@ func (sess *Session) ForkChoiceInitHandler() http.HandlerFunc {
 
 		sess.mu.Lock()
 		sess.store = consensusStore
+		sess.pools = pools.New()
 		sess.fc = fc
 		sess.labelRoots = make(map[string][32]byte)
 		sess.mu.Unlock()

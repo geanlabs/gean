@@ -11,6 +11,7 @@ import (
 	"github.com/geanlabs/gean/lean/crypto/xmss"
 	"github.com/geanlabs/gean/lean/internal/aggregation/role"
 	"github.com/geanlabs/gean/lean/internal/chain"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
 )
 
@@ -166,7 +167,8 @@ func Run(cfg Config, stop <-chan struct{}) error {
 		VerifySignature:            cfg.ShadowVerifySignatureRate,
 		VerifyAggregatedSignatures: cfg.ShadowVerifyAggregatedSignaturesRate,
 	}
-	n := chain.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
+	attestations := pools.New()
+	n := chain.New(s, attestations, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
 	c.waitEngine = n.Wait
 	syncDriver := startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes, &c.tasks)

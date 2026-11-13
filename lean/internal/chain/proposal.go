@@ -13,7 +13,7 @@ import (
 	"github.com/geanlabs/gean/lean/crypto/xmss"
 	"github.com/geanlabs/gean/lean/internal/blockbuilder"
 	"github.com/geanlabs/gean/lean/internal/blockbuilder/attestationproof"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/validator"
 )
 
@@ -346,7 +346,7 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		ProposerIndex:   validatorIndex,
 		ParentRoot:      headRoot,
 		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
-		Payloads:        payloadsFromEntries(e.Store.KnownPayloads.Entries()),
+		Payloads:        payloadsFromEntries(e.Pools.KnownPayloads.Entries()),
 		ProofMerger:     attestationproof.NewMerger(e.Store.PubKeyCache),
 	})
 	if err != nil {
@@ -367,7 +367,7 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 	return result.Block, result.AttestationProofs, nil
 }
 
-func payloadsFromEntries(entries map[[32]byte]*store.PayloadEntry) []blockbuilder.AttestationPayload {
+func payloadsFromEntries(entries map[[32]byte]*pools.PayloadEntry) []blockbuilder.AttestationPayload {
 	payloads := make([]blockbuilder.AttestationPayload, 0, len(entries))
 	for dataRoot, entry := range entries {
 		payload := blockbuilder.AttestationPayload{DataRoot: dataRoot}

@@ -6,7 +6,7 @@ import (
 
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 // maxChildProofsPerGroup bounds how many child proofs one group may fold in.
@@ -43,7 +43,7 @@ const maxChildProofsPerGroup = 2
 // where one wide proof would do, and every extra child is a recursive input the
 // prover pays for.
 func selectChildProofs(
-	entry *store.PayloadEntry,
+	entry *pools.PayloadEntry,
 	state *types.State,
 	children *[]xmss.ChildProof,
 	covered map[uint64]bool,

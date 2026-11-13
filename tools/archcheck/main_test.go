@@ -15,6 +15,34 @@ func TestBoundaries(t *testing.T) {
 		wantErr bool
 	}{
 		{
+			name: "live pools depend only on their protocol data",
+			files: map[string]string{
+				"lean/internal/pools/payloads.go": `package pools; import "github.com/geanlabs/gean/lean/consensus/types"`,
+			},
+		},
+		{
+			name: "live pools cannot acquire persistence",
+			files: map[string]string{
+				"lean/internal/pools/payloads.go": `package pools; import "github.com/geanlabs/gean/internal/storage"`,
+			},
+			want: "lean/internal/pools -> internal/storage",
+		},
+		{
+			name: "store cannot regain live pool ownership",
+			files: map[string]string{
+				"lean/internal/store/store.go": `package store; import "github.com/geanlabs/gean/lean/internal/pools"`,
+			},
+			want: "lean/internal/store -> lean/internal/pools",
+		},
+		{
+			name: "aggregation cannot reach the store through its helpers",
+			files: map[string]string{
+				"lean/internal/aggregation/worker.go": `package aggregation; import "github.com/geanlabs/gean/lean/internal/prover"`,
+				"lean/internal/prover/helper.go":      `package prover; import "github.com/geanlabs/gean/lean/internal/store"`,
+			},
+			want: "lean/internal/aggregation -> lean/internal/prover -> lean/internal/store",
+		},
+		{
 			name: "current consensus",
 			files: map[string]string{
 				"lean/consensus/forkchoice/votes.go": `package forkchoice; import "github.com/geanlabs/gean/lean/consensus/types"`,

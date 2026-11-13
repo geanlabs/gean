@@ -8,8 +8,8 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 // A target whose own state was never stored must no longer cost its group.
@@ -23,7 +23,7 @@ func TestAggregateResolvesSignersWithoutTargetState(t *testing.T) {
 			LatestFinalized: &types.Checkpoint{Slot: 0},
 			Validators:      make([]*types.Validator, 8),
 		},
-		attSigs: map[[32]byte]*store.AttestationDataEntry{
+		attSigs: map[[32]byte]*pools.AttestationDataEntry{
 			rootByte(1): {Data: &types.AttestationData{Slot: 42, Target: target}},
 			rootByte(2): {Data: &types.AttestationData{Slot: 43, Target: target}},
 		},
@@ -47,7 +47,7 @@ func TestOrderedGroupsCountsTargetsBelowFinalized(t *testing.T) {
 	const finalized = uint64(100)
 	snap := &Snapshot{
 		headState: &types.State{LatestFinalized: &types.Checkpoint{Slot: finalized}},
-		attSigs: map[[32]byte]*store.AttestationDataEntry{
+		attSigs: map[[32]byte]*pools.AttestationDataEntry{
 			rootByte(1): {Data: &types.AttestationData{Slot: finalized, Target: &types.Checkpoint{Slot: finalized - 1}}},
 			rootByte(2): {Data: &types.AttestationData{Slot: finalized, Target: &types.Checkpoint{Slot: finalized}}},
 		},

@@ -23,8 +23,8 @@ func TestOnGossipAggregatedAttestationRejectsMissingProof(t *testing.T) {
 		Data:  attData,
 		Proof: nil,
 	})
-	if e.Store.NewPayloads.Len() != 0 {
-		t.Fatalf("payloads=%d, want 0 after nil proof", e.Store.NewPayloads.Len())
+	if e.Pools.NewPayloads.Len() != 0 {
+		t.Fatalf("payloads=%d, want 0 after nil proof", e.Pools.NewPayloads.Len())
 	}
 
 	e.onGossipAggregatedAttestation(&types.SignedAggregatedAttestation{
@@ -34,8 +34,8 @@ func TestOnGossipAggregatedAttestationRejectsMissingProof(t *testing.T) {
 			Proof:        nil,
 		},
 	})
-	if e.Store.NewPayloads.Len() != 0 {
-		t.Fatalf("payloads=%d, want 0 after empty proof", e.Store.NewPayloads.Len())
+	if e.Pools.NewPayloads.Len() != 0 {
+		t.Fatalf("payloads=%d, want 0 after empty proof", e.Pools.NewPayloads.Len())
 	}
 }
 

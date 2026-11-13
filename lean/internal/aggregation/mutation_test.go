@@ -3,16 +3,15 @@ package aggregation
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func TestApplyAggregationMutationsTargetsNewPool(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
+	s := pools.New()
 	participants := types.NewBitlistSSZ(1)
 	types.BitlistSet(participants, 0)
-	payloads := []store.PayloadKV{{
+	payloads := []pools.PayloadKV{{
 		DataRoot: [32]byte{0x01},
 		Data:     &types.AttestationData{Head: &types.Checkpoint{}, Source: &types.Checkpoint{}, Target: &types.Checkpoint{}},
 		Proof:    &types.SingleMessageAggregate{Participants: participants, Proof: []byte{1}},

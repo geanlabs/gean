@@ -78,8 +78,8 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 		peerCount = e.P2P.ConnectedPeers()
 	}
 
-	gossipSigs := e.Store.AttestationSignatures.Len()
-	knownPayloads := e.Store.KnownPayloads.Len()
+	gossipSigs := e.Pools.AttestationSignatures.Len()
+	knownPayloads := e.Pools.KnownPayloads.Len()
 	fcNodesCount := 0
 	if e.FC != nil {
 		fcNodesCount = e.FC.Len()
@@ -107,7 +107,7 @@ func (e *Engine) logChainStatus(currentSlot uint64) {
 // runGossipMeshGauge samples the mesh-peer gauge on its own goroutine. The
 // underlying ListPeers is a synchronous round-trip through the libp2p pubsub
 // event loop, so on a node busy serving req/resp it can block for seconds. Off
-// the tick loop that is a slow gauge; on it, it delayed store.OnTick and stalled
+// the tick loop that is a slow gauge; on it, it delayed OnTick and stalled
 // the store clock. Sampling is coarse by nature — a slow cadence loses nothing.
 func (e *Engine) runGossipMeshGauge(ctx context.Context) {
 	if e.P2P == nil {

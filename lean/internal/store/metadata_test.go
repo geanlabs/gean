@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
@@ -65,21 +64,6 @@ func TestPutMetadataReturnsWriteErrors(t *testing.T) {
 	}
 	if err := s.PutConfig(nil); err == nil {
 		t.Fatal("expected PutConfig nil config error")
-	}
-}
-
-func TestOnTickReturnsWhenTimeWriteFails(t *testing.T) {
-	s := store.NewConsensusStore(failingWriteBackend{InMemoryBackend: storage.NewInMemoryBackend()})
-	done := make(chan struct{})
-	go func() {
-		store.OnTick(s, types.MillisecondsPerInterval*10, false)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("OnTick did not return after metadata write failure")
 	}
 }
 

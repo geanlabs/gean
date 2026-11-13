@@ -55,6 +55,19 @@ func TestFinalizationPrunesAncestorAndLosingBranch(t *testing.T) {
 	// c's post-state is what drives finalization: it finalizes b at slot 2.
 	add(rootC, rootB, 3, &types.Checkpoint{Root: rootB, Slot: 2})
 
+	// All live pools prune by target slot after the persisted chain is pruned.
+	for _, slot := range []uint64{2, 3} {
+		data := &types.AttestationData{Slot: 4, Target: &types.Checkpoint{Slot: slot}}
+		root := [32]byte{byte(slot)}
+		proof := &types.SingleMessageAggregate{
+			Participants: types.BitlistFromIndices([]uint64{0}),
+			Proof:        []byte{1},
+		}
+		e.Pools.AttestationSignatures.Insert(root, data, 0, [types.SignatureSize]byte{})
+		e.Pools.KnownPayloads.Push(root, data, proof)
+		e.Pools.NewPayloads.Push(root, data, proof)
+	}
+
 	e.Store.SetHead(rootC)
 	e.updateFinalizedFromHead(rootC)
 
@@ -83,6 +96,15 @@ func TestFinalizationPrunesAncestorAndLosingBranch(t *testing.T) {
 	}
 	if !e.Store.HasState(rootC) {
 		t.Error("head state was pruned")
+	}
+	if e.Pools.AttestationSignatures.Len() != 1 || e.Pools.KnownPayloads.Len() != 1 || e.Pools.NewPayloads.Len() != 1 {
+		t.Fatal("live pools did not retain only the vote above finalization")
+	}
+	if e.Pools.AttestationSignatures.Has([32]byte{2}, 0) || !e.Pools.AttestationSignatures.Has([32]byte{3}, 0) {
+		t.Fatal("signature pruning did not use the finalized target boundary")
+	}
+	if e.Pools.KnownPayloads.Entries()[[32]byte{3}] == nil || e.Pools.NewPayloads.Entries()[[32]byte{3}] == nil {
+		t.Fatal("payload pruning removed the fresh target")
 	}
 }
 

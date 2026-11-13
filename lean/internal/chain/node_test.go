@@ -12,6 +12,7 @@ import (
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/internal/aggregation/role"
 	"github.com/geanlabs/gean/lean/internal/network/syncer"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
 	"github.com/geanlabs/gean/lean/internal/store"
 	"github.com/geanlabs/gean/lean/internal/validator/dutygate"
@@ -48,7 +49,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
-	return New(s, fc, nil, nil, role.New(false), 1, shadow.Rates{})
+	return New(s, pools.New(), fc, nil, nil, role.New(false), 1, shadow.Rates{})
 }
 
 func TestEngineCreation(t *testing.T) {
@@ -225,7 +226,7 @@ func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 		genesis := e.Store.Head()
 
 		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
-		e.Store.KnownPayloads.Push(dataRoot, data, proof)
+		e.Pools.KnownPayloads.Push(dataRoot, data, proof)
 
 		e.updateSafeTarget()
 
@@ -239,7 +240,7 @@ func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 		e, block2 := makeSafeTargetEngine(t, numValidators)
 
 		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
-		e.Store.NewPayloads.Push(dataRoot, data, proof)
+		e.Pools.NewPayloads.Push(dataRoot, data, proof)
 
 		e.updateSafeTarget()
 
@@ -254,16 +255,16 @@ func TestUpdateSafeTarget_IgnoresKnownPool(t *testing.T) {
 		genesis := e.Store.Head()
 
 		dataRoot, data, proof := planAggregatedVoteForBlock(t, block2, 2, numValidators, 4)
-		e.Store.NewPayloads.Push(dataRoot, data, proof)
+		e.Pools.NewPayloads.Push(dataRoot, data, proof)
 		e.updateSafeTarget()
 		if e.Store.SafeTarget() != block2 {
 			t.Fatalf("precondition: 4-of-6 new-pool votes should reach block_2; got 0x%x", e.Store.SafeTarget())
 		}
 
 		// The next slot's pool holds one vote; the four promoted votes must not count.
-		e.Store.PromoteNewToKnown()
+		e.Pools.PromoteNewToKnown()
 		dataRoot, data, proof = planAggregatedVoteForBlock(t, block2, 2, numValidators, 1)
-		e.Store.NewPayloads.Push(dataRoot, data, proof)
+		e.Pools.NewPayloads.Push(dataRoot, data, proof)
 		e.updateSafeTarget()
 
 		if e.Store.SafeTarget() != genesis {

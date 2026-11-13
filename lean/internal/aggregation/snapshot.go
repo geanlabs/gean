@@ -2,48 +2,46 @@ package aggregation
 
 import (
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 type Snapshot struct {
 	headState    *types.State
 	headRoot     [32]byte
 	slot         uint64
-	attSigs      map[[32]byte]*store.AttestationDataEntry
-	newEntries   map[[32]byte]*store.PayloadEntry
-	knownEntries map[[32]byte]*store.PayloadEntry
+	attSigs      map[[32]byte]*pools.AttestationDataEntry
+	newEntries   map[[32]byte]*pools.PayloadEntry
+	knownEntries map[[32]byte]*pools.PayloadEntry
 }
 
-// SnapshotInputs copies the aggregation inputs out of the store. headState is
-// supplied by the caller rather than fetched here: GetState decodes the whole
-// state from SSZ on every call, and the dispatcher has already resolved it to
-// decide whether to run at all.
-func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64) *Snapshot {
+// SnapshotInputs copies the live pools. The caller supplies the head state and
+// root already resolved for this dispatch, so aggregation needs no store access.
+func SnapshotInputs(p *pools.Attestations, headState *types.State, headRoot [32]byte, slot uint64) *Snapshot {
 	if headState == nil {
 		return nil
 	}
-	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
+	if p.AttestationSignatures.Len() == 0 && p.NewPayloads.Len() == 0 {
 		return nil
 	}
 
 	snap := &Snapshot{
 		headState:    headState,
-		headRoot:     s.Head(),
+		headRoot:     headRoot,
 		slot:         slot,
-		attSigs:      s.AttestationSignatures.Snapshot(),
-		newEntries:   make(map[[32]byte]*store.PayloadEntry),
-		knownEntries: make(map[[32]byte]*store.PayloadEntry),
+		attSigs:      p.AttestationSignatures.Snapshot(),
+		newEntries:   make(map[[32]byte]*pools.PayloadEntry),
+		knownEntries: make(map[[32]byte]*pools.PayloadEntry),
 	}
 
 	dataRoots := make(map[[32]byte]bool)
 	for dr := range snap.attSigs {
 		dataRoots[dr] = true
 	}
-	for dr, entry := range s.NewPayloads.Entries() {
+	for dr, entry := range p.NewPayloads.Entries() {
 		dataRoots[dr] = true
 		snap.newEntries[dr] = entry
 	}
-	knownEntries := s.KnownPayloads.Entries()
+	knownEntries := p.KnownPayloads.Entries()
 	for dr := range dataRoots {
 		if entry := knownEntries[dr]; entry != nil {
 			snap.knownEntries[dr] = entry

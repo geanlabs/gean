@@ -6,11 +6,11 @@ import (
 
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func TestSelectChildProofsSkipsOutOfRangeParticipant(t *testing.T) {
-	entry := &store.PayloadEntry{
+	entry := &pools.PayloadEntry{
 		Proofs: []*types.SingleMessageAggregate{{
 			Participants: types.BitlistFromIndices([]uint64{2}),
 			Proof:        []byte{1},
@@ -54,7 +54,7 @@ func TestSelectChildProofsAdmitsFirstChildThenPricesTheRest(t *testing.T) {
 		{name: "budget_short_of_second", remaining: 3 * time.Second, childCost: 5 * time.Second, want: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			entry := &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(0), proof(1)}}
+			entry := &pools.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(0), proof(1)}}
 			cache := xmss.NewPubKeyCache()
 			defer cache.Close()
 
@@ -81,8 +81,8 @@ func TestSelectChildProofsCapsChildrenPerGroup(t *testing.T) {
 	proof := func(ids ...uint64) *types.SingleMessageAggregate {
 		return &types.SingleMessageAggregate{Participants: types.BitlistFromIndices(ids), Proof: []byte{1}}
 	}
-	newEntry := &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(0, 1), proof(2, 3)}}
-	knownEntry := &store.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(4, 5)}}
+	newEntry := &pools.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(0, 1), proof(2, 3)}}
+	knownEntry := &pools.PayloadEntry{Proofs: []*types.SingleMessageAggregate{proof(4, 5)}}
 
 	cache := xmss.NewPubKeyCache()
 	defer cache.Close()

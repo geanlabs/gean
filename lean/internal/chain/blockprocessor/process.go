@@ -7,18 +7,19 @@ import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/store"
 )
 
-func OnBlock(s *store.ConsensusStore, signedBlock *types.SignedBlock) error {
-	return onBlockCore(s, signedBlock, true)
+func OnBlock(s *store.ConsensusStore, known *pools.PayloadBuffer, signedBlock *types.SignedBlock) error {
+	return onBlockCore(s, known, signedBlock, true)
 }
 
-func OnBlockWithoutVerification(s *store.ConsensusStore, signedBlock *types.SignedBlock) error {
-	return onBlockCore(s, signedBlock, false)
+func OnBlockWithoutVerification(s *store.ConsensusStore, known *pools.PayloadBuffer, signedBlock *types.SignedBlock) error {
+	return onBlockCore(s, known, signedBlock, false)
 }
 
-func onBlockCore(s *store.ConsensusStore, signedBlock *types.SignedBlock, verify bool) error {
+func onBlockCore(s *store.ConsensusStore, known *pools.PayloadBuffer, signedBlock *types.SignedBlock, verify bool) error {
 	start := time.Now()
 	if err := validateStore(s); err != nil {
 		return err
@@ -81,7 +82,7 @@ func onBlockCore(s *store.ConsensusStore, signedBlock *types.SignedBlock, verify
 	if err := persistBlock(s, blockRoot, signedBlock, postState); err != nil {
 		return err
 	}
-	importBlockAttestations(s, signedBlock)
+	importBlockAttestations(known, signedBlock)
 
 	logBlockProcessed(s, block, blockRoot, time.Since(start))
 	return nil

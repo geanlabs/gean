@@ -68,7 +68,7 @@ func (sess *Session) applyTick(step *specfixtures.ForkChoiceStep) error {
 		interval := next % types.IntervalsPerSlot
 		signalProposal := hasProposal && next == target
 		if interval == 4 || (interval == 0 && signalProposal) {
-			sess.store.PromoteNewToKnown()
+			sess.pools.PromoteNewToKnown()
 		}
 		if interval == 0 || interval == 4 {
 			sess.updateHeadFromKnown(sess.store.LatestJustified().Root)
@@ -103,7 +103,7 @@ func (sess *Session) applyBlock(step *specfixtures.ForkChoiceStep) error {
 		}
 	}
 
-	if err := blockprocessor.OnBlockWithoutVerification(sess.store, signedBlock); err != nil {
+	if err := blockprocessor.OnBlockWithoutVerification(sess.store, sess.pools.KnownPayloads, signedBlock); err != nil {
 		return err
 	}
 
@@ -130,7 +130,7 @@ func (sess *Session) applyBlock(step *specfixtures.ForkChoiceStep) error {
 			if err != nil {
 				continue
 			}
-			sess.store.KnownPayloads.Push(dataRoot, att.Data, &types.SingleMessageAggregate{
+			sess.pools.KnownPayloads.Push(dataRoot, att.Data, &types.SingleMessageAggregate{
 				Participants: att.AggregationBits,
 				Proof:        []byte{0x01},
 			})
@@ -143,8 +143,8 @@ func (sess *Session) applyBlock(step *specfixtures.ForkChoiceStep) error {
 	// Promote new payloads to known, then reflect the just-promoted votes into the
 	// known tracker — the next head update re-derives known votes from the promoted
 	// pool, so a vote gossiped as "new" would otherwise stay absent from the tracker.
-	sess.store.PromoteNewToKnown()
-	for vid, data := range sess.store.ExtractLatestKnownAttestations() {
+	sess.pools.PromoteNewToKnown()
+	for vid, data := range sess.pools.KnownPayloads.ExtractLatestAttestations(sess.store.LatestFinalized().Slot) {
 		sess.fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 	}
 	return nil
@@ -191,11 +191,11 @@ func (sess *Session) applyAttestation(step *specfixtures.ForkChoiceStep) error {
 	}
 
 	participants := types.BitlistFromIndices([]uint64{step.Attestation.ValidatorID})
-	sess.store.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants})
+	sess.pools.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants})
 
 	var sig [types.SignatureSize]byte
 	copy(sig[:], signature)
-	sess.store.AttestationSignatures.Insert(dataRoot, attData, step.Attestation.ValidatorID, sig)
+	sess.pools.AttestationSignatures.Insert(dataRoot, attData, step.Attestation.ValidatorID, sig)
 
 	// Gossip lands in the new pool only; the head keeps reflecting the known pool
 	// until a slot-boundary tick promotes these votes, so recompute from the known
@@ -243,7 +243,7 @@ func (sess *Session) applyAggregatedAttestation(step *specfixtures.ForkChoiceSte
 		}
 	}
 
-	sess.store.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants, Proof: proofData})
+	sess.pools.NewPayloads.Push(dataRoot, attData, &types.SingleMessageAggregate{Participants: participants, Proof: proofData})
 
 	sess.updateHeadFromKnown(sess.store.LatestJustified().Root)
 	return nil
@@ -252,7 +252,7 @@ func (sess *Session) applyAggregatedAttestation(step *specfixtures.ForkChoiceSte
 // updateHeadFromKnown reflects the current known-pool votes into fork choice and
 // recomputes the head, without promoting the new pool.
 func (sess *Session) updateHeadFromKnown(justifiedRoot [32]byte) {
-	for vid, data := range sess.store.ExtractLatestKnownAttestations() {
+	for vid, data := range sess.pools.KnownPayloads.ExtractLatestAttestations(sess.store.LatestFinalized().Slot) {
 		sess.fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 	}
 	sess.updateHead(justifiedRoot)
@@ -281,7 +281,7 @@ func (sess *Session) refreshSafeTarget() {
 	}
 	justifiedRoot := sess.store.LatestJustified().Root
 	numValidators := uint64(len(headState.Validators))
-	safeTarget := sess.fc.UpdateSafeTarget(justifiedRoot, numValidators, sess.store.ExtractLatestNewAttestations())
+	safeTarget := sess.fc.UpdateSafeTarget(justifiedRoot, numValidators, sess.pools.NewPayloads.ExtractLatestAttestations(sess.store.LatestFinalized().Slot))
 	sess.store.SetSafeTarget(safeTarget)
 }
 

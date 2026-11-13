@@ -10,15 +10,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/lean/internal/validator"
-
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/forkchoice"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/internal/chain/attestation"
 	"github.com/geanlabs/gean/lean/internal/chain/blockprocessor"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/validator"
 )
 
 type fcFixture map[string]fcTest
@@ -371,6 +371,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	// 2. Initialize store with in-memory backend.
 	backend := storage.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
+	p := pools.New()
 
 	// Store config from anchor state.
 	s.SetConfig(anchorState.Config)
@@ -465,7 +466,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// Process block through store (no signature verification).
-			if err := blockprocessor.OnBlockWithoutVerification(s, signedBlock); err != nil {
+			if err := blockprocessor.OnBlockWithoutVerification(s, p.KnownPayloads, signedBlock); err != nil {
 				if step.Valid {
 					t.Fatalf("step %d: OnBlockWithoutVerification failed: %v", i, err)
 				}
@@ -496,14 +497,14 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				if err != nil {
 					continue
 				}
-				s.KnownPayloads.Push(dataRoot, att.Data, &types.SingleMessageAggregate{
+				p.KnownPayloads.Push(dataRoot, att.Data, &types.SingleMessageAggregate{
 					Participants: att.AggregationBits,
 					Proof:        []byte{0x01},
 				})
 			}
 
 			// Update head: extract known attestations, feed to fork choice, compute head.
-			attestations := s.ExtractLatestKnownAttestations()
+			attestations := p.KnownPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
 			justifiedRoot := s.LatestJustified().Root
 
 			for vid, data := range attestations {
@@ -513,19 +514,19 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			simulateUpdateHead(s, fc, justifiedRoot)
 
 			// Promote new payloads to known (so next updateHead sees them).
-			s.PromoteNewToKnown()
+			p.PromoteNewToKnown()
 
 			// Reflect the just-promoted votes into the fork-choice known tracker,
 			// as the Engine's next updateHead re-derives known votes from the
 			// promoted pool. Without this, a vote gossiped as "new" is promoted in
 			// the payload pool but stays absent from the tracker the checks read.
-			for vid, data := range s.ExtractLatestKnownAttestations() {
+			for vid, data := range p.KnownPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot) {
 				fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 			}
 
 			// Validate checks if present.
 			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
+				validateChecks(t, i, step.Checks, s, p, fc, labelRoots)
 			}
 
 		case "attestation":
@@ -571,7 +572,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				// Validation correctly rejected — no state mutation, just
 				// assert any checks the fixture carried then continue.
 				if step.Checks != nil {
-					validateChecks(t, i, step.Checks, s, fc, labelRoots)
+					validateChecks(t, i, step.Checks, s, p, fc, labelRoots)
 				}
 				continue
 			}
@@ -582,18 +583,18 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				Participants: participants,
 				Proof:        nil,
 			}
-			s.NewPayloads.Push(dataRoot, attData, proof)
+			p.NewPayloads.Push(dataRoot, attData, proof)
 
 			// Record the raw per-validator signature, mirroring the spec's
 			// attestation_signatures pool that the "signatures" check reads.
 			var sig [types.SignatureSize]byte
 			copy(sig[:], signature)
-			s.AttestationSignatures.Insert(dataRoot, attData, att.ValidatorID, sig)
+			p.AttestationSignatures.Insert(dataRoot, attData, att.ValidatorID, sig)
 
 			// Gossip lands in the new pool only. The head keeps reflecting the
 			// known pool until a slot-boundary tick promotes these votes, so
 			// recompute from the known pool here without promoting.
-			knownAtts := s.ExtractLatestKnownAttestations()
+			knownAtts := p.KnownPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
 			justifiedRoot := s.LatestJustified().Root
 			for vid, data := range knownAtts {
 				fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
@@ -601,7 +602,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			simulateUpdateHead(s, fc, justifiedRoot)
 
 			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
+				validateChecks(t, i, step.Checks, s, p, fc, labelRoots)
 			}
 
 		case "gossipAggregatedAttestation":
@@ -650,7 +651,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 			if !step.Valid {
 				if step.Checks != nil {
-					validateChecks(t, i, step.Checks, s, fc, labelRoots)
+					validateChecks(t, i, step.Checks, s, p, fc, labelRoots)
 				}
 				continue
 			}
@@ -659,12 +660,12 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				Participants: participants,
 				Proof:        proofData,
 			}
-			s.NewPayloads.Push(dataRoot, attData, proof)
+			p.NewPayloads.Push(dataRoot, attData, proof)
 
 			// Gossip lands in the new pool only. The head keeps reflecting the
 			// known pool until a slot-boundary tick promotes these votes, so
 			// recompute from the known pool here without promoting.
-			knownAtts := s.ExtractLatestKnownAttestations()
+			knownAtts := p.KnownPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
 			justifiedRoot := s.LatestJustified().Root
 			for vid, data := range knownAtts {
 				fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
@@ -672,7 +673,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			simulateUpdateHead(s, fc, justifiedRoot)
 
 			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
+				validateChecks(t, i, step.Checks, s, p, fc, labelRoots)
 			}
 
 		case "tick":
@@ -705,10 +706,10 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				interval := next % types.IntervalsPerSlot
 				signalProposal := hasProposal && next == target
 				if interval == 4 || (interval == 0 && signalProposal) {
-					s.PromoteNewToKnown()
+					p.PromoteNewToKnown()
 				}
 				if interval == 0 || interval == 4 {
-					knownAtts := s.ExtractLatestKnownAttestations()
+					knownAtts := p.KnownPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
 					for vid, data := range knownAtts {
 						fc.SetKnownVote(vid, data.Head.Root, data.Slot, data)
 					}
@@ -722,7 +723,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
+				validateChecks(t, i, step.Checks, s, p, fc, labelRoots)
 			}
 
 		default:
@@ -731,7 +732,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	}
 }
 
-func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.ConsensusStore, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
+func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.ConsensusStore, p *pools.Attestations, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
 	t.Helper()
 
 	headRoot := s.Head()
@@ -810,7 +811,7 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 	// fires this at interval 3; the runner cannot model interval cadence
 	// directly, so it runs on demand whenever a safeTarget* check is set.
 	if checks.SafeTarget != nil || checks.SafeTargetSlot != nil || checks.SafeTargetRootLabel != nil {
-		simulateUpdateSafeTarget(s, fc)
+		simulateUpdateSafeTarget(s, p, fc)
 	}
 	st := s.SafeTarget()
 	if checks.SafeTarget != nil {
@@ -859,11 +860,11 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 	}
 
 	if len(checks.CanonicalEquivocationHeadAmong) > 0 {
-		validateCanonicalEquivocationHead(t, stepIdx, checks.CanonicalEquivocationHeadAmong, s, headRoot, labelRoots)
+		validateCanonicalEquivocationHead(t, stepIdx, checks.CanonicalEquivocationHeadAmong, p, headRoot, labelRoots)
 	}
 
 	for _, ac := range checks.AttestationChecks {
-		validateAttestationCheck(t, stepIdx, s, fc, ac)
+		validateAttestationCheck(t, stepIdx, p, fc, ac)
 	}
 }
 
@@ -871,7 +872,7 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 // the equal-slot equivocation tie breaks toward the fork carrying the largest
 // attestation-data root, read from the accepted aggregated pool rather than hardcoded,
 // so the assertion is independent of the signature scheme (roots embed validator keys).
-func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []string, s *store.ConsensusStore, headRoot [32]byte, labelRoots map[string][32]byte) {
+func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []string, p *pools.Attestations, headRoot [32]byte, labelRoots map[string][32]byte) {
 	t.Helper()
 	if len(forkLabels) < 2 {
 		t.Fatalf("step %d check: canonicalEquivocationHeadAmong needs >=2 forks, got %v", stepIdx, forkLabels)
@@ -890,7 +891,7 @@ func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []s
 	// Scan the whole accepted aggregated pool (new + promoted): a tick check may run
 	// before the slot-boundary promotion moves votes from the new pool into the known one.
 	maxAttRoot := make(map[string][32]byte, len(forkLabels))
-	scan := func(entries map[[32]byte]*store.PayloadEntry) {
+	scan := func(entries map[[32]byte]*pools.PayloadEntry) {
 		for _, entry := range entries {
 			if entry.Data == nil || entry.Data.Target == nil {
 				continue
@@ -909,8 +910,8 @@ func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []s
 			}
 		}
 	}
-	scan(s.NewPayloads.Entries())
-	scan(s.KnownPayloads.Entries())
+	scan(p.NewPayloads.Entries())
+	scan(p.KnownPayloads.Entries())
 
 	var winner string
 	var winnerRoot [32]byte
@@ -930,7 +931,7 @@ func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []s
 	}
 }
 
-func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore, fc *forkchoice.ForkChoice, ac fcAttestationCheck) {
+func validateAttestationCheck(t *testing.T, stepIdx int, p *pools.Attestations, fc *forkchoice.ForkChoice, ac fcAttestationCheck) {
 	t.Helper()
 	var target *forkchoice.VoteTarget
 	switch ac.Location {
@@ -945,7 +946,7 @@ func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore
 			target = tracker.LatestKnown
 		}
 	case "signatures":
-		target = latestSignatureVote(s, ac.Validator)
+		target = latestSignatureVote(p, ac.Validator)
 	default:
 		t.Fatalf("step %d: attestationCheck v=%d: unsupported location %q (want \"new\", \"known\" or \"signatures\")",
 			stepIdx, ac.Validator, ac.Location)
@@ -983,9 +984,9 @@ func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore
 // attestation-signature pool and return the validator's highest-slot vote
 // (first seen wins on equal slots, matching the fork-choice rule). Returns nil
 // when the validator has no signature recorded.
-func latestSignatureVote(s *store.ConsensusStore, validator uint64) *forkchoice.VoteTarget {
+func latestSignatureVote(p *pools.Attestations, validator uint64) *forkchoice.VoteTarget {
 	var latest *types.AttestationData
-	for _, entry := range s.AttestationSignatures.Snapshot() {
+	for _, entry := range p.AttestationSignatures.Snapshot() {
 		for _, sig := range entry.Signatures {
 			if sig.ValidatorID != validator {
 				continue
@@ -1014,13 +1015,13 @@ func simulateUpdateHead(s *store.ConsensusStore, fc *forkchoice.ForkChoice, just
 	}
 }
 
-func simulateUpdateSafeTarget(s *store.ConsensusStore, fc *forkchoice.ForkChoice) {
+func simulateUpdateSafeTarget(s *store.ConsensusStore, p *pools.Attestations, fc *forkchoice.ForkChoice) {
 	headState := s.GetState(s.Head())
 	if headState == nil {
 		return
 	}
 	justifiedRoot := s.LatestJustified().Root
 	numValidators := uint64(len(headState.Validators))
-	safeTarget := fc.UpdateSafeTarget(justifiedRoot, numValidators, s.ExtractLatestNewAttestations())
+	safeTarget := fc.UpdateSafeTarget(justifiedRoot, numValidators, p.NewPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot))
 	s.SetSafeTarget(safeTarget)
 }

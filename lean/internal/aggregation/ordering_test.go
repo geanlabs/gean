@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func rootByte(b byte) [32]byte {
@@ -16,9 +16,9 @@ func rootByte(b byte) [32]byte {
 // snapshotWithTargets builds a snapshot whose only content is one attestation
 // group per entry, each voting for the given target slot.
 func snapshotWithTargets(targets map[byte]uint64) *Snapshot {
-	attSigs := make(map[[32]byte]*store.AttestationDataEntry, len(targets))
+	attSigs := make(map[[32]byte]*pools.AttestationDataEntry, len(targets))
 	for id, targetSlot := range targets {
-		attSigs[rootByte(id)] = &store.AttestationDataEntry{
+		attSigs[rootByte(id)] = &pools.AttestationDataEntry{
 			Data: &types.AttestationData{
 				Slot:   targetSlot,
 				Target: &types.Checkpoint{Slot: targetSlot},
@@ -82,8 +82,8 @@ func TestOrderedGroupsRanksJustifiedTargets(t *testing.T) {
 	for _, slot := range []uint64{102, 104, 105} {
 		types.BitlistSet(justifiedSlots, slot-finalized-1)
 	}
-	group := func(slot, target uint64) *store.AttestationDataEntry {
-		return &store.AttestationDataEntry{Data: &types.AttestationData{Slot: slot, Target: &types.Checkpoint{Slot: target}}}
+	group := func(slot, target uint64) *pools.AttestationDataEntry {
+		return &pools.AttestationDataEntry{Data: &types.AttestationData{Slot: slot, Target: &types.Checkpoint{Slot: target}}}
 	}
 	snap := &Snapshot{
 		slot: currentSlot,
@@ -91,7 +91,7 @@ func TestOrderedGroupsRanksJustifiedTargets(t *testing.T) {
 			LatestFinalized: &types.Checkpoint{Slot: finalized},
 			JustifiedSlots:  justifiedSlots,
 		},
-		attSigs: map[[32]byte]*store.AttestationDataEntry{
+		attSigs: map[[32]byte]*pools.AttestationDataEntry{
 			rootByte(1): group(currentSlot, 105), // current, settled
 			rootByte(2): group(currentSlot, 106), // current, open
 			rootByte(3): group(107, 103),         // backlog, open

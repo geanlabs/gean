@@ -3,38 +3,37 @@ package blockprocessor
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func TestImportBlockAttestationsAddsKnownPayload(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
+	known := pools.New().KnownPayloads
 	att := processorAttestation()
 	types.BitlistSet(att.AggregationBits, 0)
 
-	importBlockAttestations(s, &types.SignedBlock{
+	importBlockAttestations(known, &types.SignedBlock{
 		Block: processorBlock(att),
 		Proof: &types.MultiMessageAggregate{},
 	})
 
-	if s.KnownPayloads.Len() != 1 {
-		t.Fatalf("known payloads=%d, want 1", s.KnownPayloads.Len())
+	if known.Len() != 1 {
+		t.Fatalf("known payloads=%d, want 1", known.Len())
 	}
-	if s.KnownPayloads.TotalProofs() != 0 {
+	if known.TotalProofs() != 0 {
 		t.Fatal("block attestation must not gain head weight at import")
 	}
 }
 
 func TestImportBlockAttestationsSkipsMalformedEntries(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
+	known := pools.New().KnownPayloads
 
-	importBlockAttestations(s, &types.SignedBlock{
+	importBlockAttestations(known, &types.SignedBlock{
 		Block: processorBlock(&types.AggregatedAttestation{}),
 		Proof: &types.MultiMessageAggregate{},
 	})
 
-	if s.KnownPayloads.Len() != 0 {
-		t.Fatalf("known payloads=%d, want 0", s.KnownPayloads.Len())
+	if known.Len() != 0 {
+		t.Fatalf("known payloads=%d, want 0", known.Len())
 	}
 }
