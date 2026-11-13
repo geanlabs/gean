@@ -37,11 +37,13 @@ func (l *stepLog) components() *components {
 		waitSync:     func() { l.add("sync") },
 		waitEngine:   func() { l.add("engine") },
 		closeStore:   func() error { l.add("store"); return nil },
+		freePubKeys:  func() { l.add("pubkeys") },
 		freeKeys:     func() { l.add("keys") },
 	}
 }
 
-// The database and keys stay open until the engine, held mid-proof, returns.
+// The database and both key sets stay open until the engine, held mid-proof,
+// returns.
 func TestTeardownKeepsResourcesUntilEngineReturns(t *testing.T) {
 	var log stepLog
 	c := log.components()
@@ -59,25 +61,26 @@ func TestTeardownKeepsResourcesUntilEngineReturns(t *testing.T) {
 	}()
 	<-entered
 	for _, step := range log.get() {
-		if step == "store" || step == "keys" {
+		if step == "store" || step == "pubkeys" || step == "keys" {
 			t.Fatalf("%s closed while the engine was still running: %v", step, log.get())
 		}
 	}
 	close(release)
 	<-done
 
-	want := []string{"cancel", "network", "sync", "engine", "store", "keys"}
+	want := []string{"cancel", "network", "sync", "engine", "store", "pubkeys", "keys"}
 	if got := log.get(); !slices.Equal(got, want) {
 		t.Fatalf("teardown order=%v, want %v", got, want)
 	}
 }
 
-// A startup that failed before the engine and sync driver existed still
-// closes the network before the database, and the database before the keys.
+// A startup that failed before the engine, its decoded-key cache and the sync
+// driver existed still closes the network before the database, and the
+// database before the keys.
 func TestTeardownAfterPartialStartup(t *testing.T) {
 	var log stepLog
 	c := log.components()
-	c.waitSync, c.waitEngine = nil, nil
+	c.waitSync, c.waitEngine, c.freePubKeys = nil, nil, nil
 	c.teardown()
 
 	want := []string{"cancel", "network", "store", "keys"}

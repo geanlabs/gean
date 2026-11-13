@@ -61,7 +61,7 @@ func rules(pkg string) []boundary {
 	case within(pkg, []string{"lean/internal/pools"}):
 		result = append(result, boundary{name: "live pools", allowed: []string{"lean/internal/pools", "lean/consensus/types"}, noC: true})
 	case within(pkg, []string{"lean/internal/store"}):
-		result = append(result, boundary{name: "store ownership", forbidden: []string{"lean/internal/pools"}})
+		result = append(result, boundary{name: "store ownership", forbidden: []string{"lean/internal/pools", "lean/crypto"}, noC: true})
 	case within(pkg, []string{"lean/internal/aggregation"}):
 		result = append(result, boundary{name: "aggregation inputs", forbidden: []string{"lean/internal/store"}})
 	}

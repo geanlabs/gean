@@ -43,6 +43,10 @@ type Engine struct {
 	AggCtl         *role.Controller
 	DutyGate       *dutygate.Gate
 	CommitteeCount uint64
+	// PubKeyCache holds validator public keys decoded into native handles for
+	// signature verification, proving and proof merging. Node assembly owns it
+	// and frees it after the engine and its workers have stopped.
+	PubKeyCache *xmss.PubKeyCache
 	// AggregateSubnetIDs are the attestation subnets this node subscribes to as
 	// an aggregator. Empty means every subnet. Set by the caller after New.
 	AggregateSubnetIDs []uint64
@@ -132,6 +136,7 @@ func New(
 	fc *forkchoice.ForkChoice,
 	p2pHost *network.Host,
 	keys *xmss.KeyManager,
+	pubKeys *xmss.PubKeyCache,
 	aggCtl *role.Controller,
 	committeeCount uint64,
 	shadowRates shadow.Rates,
@@ -143,6 +148,7 @@ func New(
 		FC:                  fc,
 		P2P:                 p2pHost,
 		Keys:                keys,
+		PubKeyCache:         pubKeys,
 		AggCtl:              aggCtl,
 		DutyGate:            dutygate.New(logDutyGateEvent),
 		CommitteeCount:      committeeCount,

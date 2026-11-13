@@ -4,10 +4,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 var (
@@ -15,7 +13,6 @@ var (
 	benchFixtureErr  error
 	benchKeyPair     *xmss.ValidatorKeyPair
 	benchState       *types.State
-	benchStore       *store.ConsensusStore
 	benchTargetRoot  [32]byte
 	benchPubkey      xmss.CPubKey
 )
@@ -73,8 +70,6 @@ func buildBenchFixture() {
 		return
 	}
 
-	benchStore = store.NewConsensusStore(storage.NewInMemoryBackend())
-	benchStore.InsertState(benchTargetRoot, benchState)
 }
 
 func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
@@ -160,9 +155,11 @@ func benchN(b *testing.B, n int) {
 		b.Fatalf("build signed block: %v", err)
 	}
 
+	cache := xmss.NewPubKeyCache()
+	defer cache.Close()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := verifyBlockSignatures(benchStore, signedBlock, benchState); err != nil {
+		if err := verifyBlockSignatures(cache, signedBlock, benchState); err != nil {
 			b.Fatalf("verify failed: %v", err)
 		}
 	}

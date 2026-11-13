@@ -12,6 +12,7 @@ import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/crypto/xmss"
 	"github.com/geanlabs/gean/lean/internal/chain/blockprocessor"
 	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/store"
@@ -226,7 +227,9 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	}
 
 	// 5. Call OnBlock WITH signature verification.
-	err = blockprocessor.OnBlock(s, pools.New().KnownPayloads, signedBlock)
+	cache := xmss.NewPubKeyCache()
+	defer cache.Close()
+	err = blockprocessor.OnBlock(s, cache, pools.New().KnownPayloads, signedBlock)
 
 	// 6. Check result against expectation.
 	expectFailure := tt.RejectionReason != nil

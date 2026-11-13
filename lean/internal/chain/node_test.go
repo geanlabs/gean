@@ -10,6 +10,7 @@ import (
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/forkchoice"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/crypto/xmss"
 	"github.com/geanlabs/gean/lean/internal/aggregation/role"
 	"github.com/geanlabs/gean/lean/internal/network/syncer"
 	"github.com/geanlabs/gean/lean/internal/pools"
@@ -49,7 +50,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
-	return New(s, pools.New(), fc, nil, nil, role.New(false), 1, shadow.Rates{})
+	return New(s, pools.New(), fc, nil, nil, xmss.NewPubKeyCache(), role.New(false), 1, shadow.Rates{})
 }
 
 func TestEngineCreation(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 )
 
 func TestOnBlockRejectsNilStore(t *testing.T) {
-	if err := OnBlock(nil, nil, nil); err == nil {
+	if err := OnBlock(nil, nil, nil, nil); err == nil {
 		t.Fatal("expected nil store error")
 	}
 }
