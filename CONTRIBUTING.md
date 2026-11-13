@@ -11,8 +11,8 @@ Security vulnerabilities must not be reported in public issues. Follow [SECURITY
   link an issue.
 - For larger changes, discuss the approach in the issue before writing code.
 - [leanSpec](https://github.com/leanEthereum/leanSpec) is the source of truth for protocol behavior;
-  divergence from it is a bug even when nothing crashes. Spec tests run against its latest released
-  fixtures (`make spec-fixtures`).
+  divergence from it is a bug even when nothing crashes. Spec tests run against its released fixtures,
+  pinned by checksum in the [`Makefile`](Makefile) (`make spec-fixtures`).
 
 ## Development setup
 

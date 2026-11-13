@@ -46,4 +46,25 @@ jobs:
             cargo-${{ runner.os }}-
 
       - name: Run spec tests
-        run: make test-spec
+        shell: bash
+        run: make test-spec | tee spec-tests.log
+
+      # A passing job does not mean every suite ran: report the suites that skipped,
+      # and why, as a warning and in the job summary.
+      - name: Report spec coverage
+        shell: bash
+        run: |
+          skipped=$(grep -E '^--- SKIP: TestSpec' spec-tests.log | awk '{print $3}' | paste -sd ' ' -)
+          if [ -z "$skipped" ]; then
+            echo "All spec suites ran." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          reason=$(grep -m1 -o 'not validated: .*' spec-tests.log || true)
+          echo "::warning title=Spec coverage incomplete::Not validated against the specification: $skipped. ${reason}"
+          {
+            echo "### Spec coverage incomplete"
+            echo
+            echo "These suites skipped and are **not validated** against the specification: $skipped"
+            echo
+            echo "${reason}"
+          } >> "$GITHUB_STEP_SUMMARY"

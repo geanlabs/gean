@@ -72,11 +72,13 @@ via the environment if your budget differs.
 
 ## Current status
 
-Gean tracks Lean Consensus devnet-5. Spec tests run against leanSpec's latest
-released fixtures (`make spec-fixtures` downloads them and checks the release's
-SHA-256). Those fixtures still use the earlier Poseidon-line keys (52 bytes), so
-the suites that carry XMSS keys or signatures skip with the reason until leanSpec
-publishes fixtures for the BLAKE2s line; the rest must pass. The XMSS FFI builds against leanVM
+Gean tracks Lean Consensus devnet-5. Spec tests run against leanSpec's released
+fixtures, pinned by SHA-256 in the [`Makefile`](Makefile) (`make spec-fixtures`
+downloads and checks them). Those fixtures still use the earlier Poseidon-line keys
+(52 bytes), so state transition, fork choice, signature, proof, sync and API
+behaviour is **not yet validated** against the specification: those suites skip,
+and CI reports them as a coverage warning. `pinnedFixtureKeySize` in
+`lean/spectests/scheme_test.go` records this status. The other suites must pass. The XMSS FFI builds against leanVM
 `48a904208d682848dac0e18ef8b01ebfc40df9ad`, the BLAKE2s line: keys and proofs
 from the earlier Poseidon line do not verify against it, and validator keys must
 come from a keygen built on the same rev.

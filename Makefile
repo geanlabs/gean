@@ -8,11 +8,15 @@ TESTNET_DIR ?= testnet
 NUM_VALIDATORS ?= 5
 NUM_NODES ?= 3
 
-# leanSpec's latest released fixtures, checked against the release's SHA-256. Must be defined
-# before the test-spec/test-all rules that reference it: Make expands a rule's prerequisites when
-# it reads the rule. Run `make spec-fixtures` again after deleting leanSpec/fixtures to refresh.
-LEAN_SPEC_FIXTURES_URL ?= https://github.com/leanEthereum/leanSpec/releases/latest/download/fixtures-prod-scheme.tar.gz
-LEAN_SPEC_FIXTURES := leanSpec/fixtures/.release
+# leanSpec spec fixtures, pinned by checksum: leanSpec republishes them under a rolling `latest`
+# tag, so the SHA-256 is what fixes the release. Pinned: leanSpec@0b7d33e, released 2026-09-02.
+# When leanSpec publishes a new release the download fails the check; review the release, then
+# update the checksum here and pinnedFixtureKeySize in
+# lean/spectests/scheme_test.go. Must be defined before the test-spec/test-all rules that
+# reference it: Make expands a rule's prerequisites when it reads the rule.
+LEAN_SPEC_FIXTURES_URL := https://github.com/leanEthereum/leanSpec/releases/download/latest/fixtures-prod-scheme.tar.gz
+LEAN_SPEC_FIXTURES_SHA256 := 21d9de7056b4e658031dc09e50c0e9dc1b0206089253258ce69ecff01154d4bd
+LEAN_SPEC_FIXTURES := leanSpec/fixtures/.sha256-$(LEAN_SPEC_FIXTURES_SHA256)
 STATICCHECK_VERSION := v0.8.1
 
 help: ## Show help for each Makefile recipe
@@ -130,21 +134,21 @@ run-node2: build ## Run node2 on port 9002
 
 # --- leanSpec fixtures ---
 
-spec-fixtures: $(LEAN_SPEC_FIXTURES) ## Download and verify leanSpec's latest released fixtures
+spec-fixtures: $(LEAN_SPEC_FIXTURES) ## Download leanSpec's fixtures and check them against the pinned SHA-256
 
 # Downloads into leanSpec/download and replaces leanSpec/fixtures only after the checksum matches.
 $(LEAN_SPEC_FIXTURES):
 	rm -rf leanSpec/download
 	mkdir -p leanSpec/download
 	curl -fsSL -o leanSpec/download/fixtures.tar.gz "$(LEAN_SPEC_FIXTURES_URL)"
-	curl -fsSL -o leanSpec/download/fixtures.tar.gz.sha256 "$(LEAN_SPEC_FIXTURES_URL).sha256"
-	cd leanSpec/download && echo "$$(cut -d' ' -f1 fixtures.tar.gz.sha256)  fixtures.tar.gz" | sha256sum --check --quiet
+	@cd leanSpec/download && echo "$(LEAN_SPEC_FIXTURES_SHA256)  fixtures.tar.gz" | sha256sum --check --quiet || { \
+		echo "leanSpec fixtures: download does not match LEAN_SPEC_FIXTURES_SHA256; leanSpec has published a" >&2; \
+		echo "new release. Review it, then update the pin in the Makefile." >&2; exit 1; }
 	rm -rf leanSpec/fixtures
 	mkdir -p leanSpec/fixtures
 	tar -xzf leanSpec/download/fixtures.tar.gz -C leanSpec/fixtures --strip-components=1
-	sha256sum leanSpec/download/fixtures.tar.gz > $@
 	rm -rf leanSpec/download
-	@echo "leanSpec fixtures: $$(cut -d' ' -f1 $@)"
+	touch $@
 
 # --- Docker ---
 
