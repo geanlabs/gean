@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  GO_VERSION: "1.26.10"
+  GO_VERSION: "1.26.11"
   RUST_VERSION: "1.92"
 
 jobs:

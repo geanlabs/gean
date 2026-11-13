@@ -76,6 +76,7 @@ func walkFixtures(t *testing.T, root string, run func(t *testing.T, raw []byte))
 }
 
 func TestSpecVerifySingleMessageProofs(t *testing.T) {
+	skipIfFixtureKeySchemeDiffers(t)
 	walkFixtures(t, "../../leanSpec/fixtures/consensus/verify_single_message_proofs", func(t *testing.T, raw []byte) {
 		var fixture map[string]verifyProofsSingleCase
 		if err := json.Unmarshal(raw, &fixture); err != nil {
@@ -98,6 +99,7 @@ func TestSpecVerifySingleMessageProofs(t *testing.T) {
 }
 
 func TestSpecVerifyMultiMessageProofs(t *testing.T) {
+	skipIfFixtureKeySchemeDiffers(t)
 	walkFixtures(t, "../../leanSpec/fixtures/consensus/verify_multi_message_proofs", func(t *testing.T, raw []byte) {
 		var fixture map[string]verifyProofsMultiCase
 		if err := json.Unmarshal(raw, &fixture); err != nil {

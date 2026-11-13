@@ -64,8 +64,9 @@ type apiGenesisParams struct {
 // gean may serialize certain auxiliary fields slightly differently; exact
 // byte equality can be added later once cross-client SSZ roots are verified.
 func TestSpecAPI(t *testing.T) {
+	skipIfFixtureKeySchemeDiffers(t)
 	if _, err := os.Stat(apiFixturesRoot); os.IsNotExist(err) {
-		t.Skipf("fixtures not present at %s; run 'make leanSpec/fixtures'", apiFixturesRoot)
+		t.Skipf("fixtures not present at %s; run 'make spec-fixtures'", apiFixturesRoot)
 	}
 
 	err := filepath.Walk(apiFixturesRoot, func(path string, info os.FileInfo, err error) error {

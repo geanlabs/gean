@@ -24,7 +24,8 @@ RUN cd lean/crypto/xmss/rust && \
       x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
       aarch64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
       *) cargo build --profile multisig-release --locked ;; \
-    esac
+    esac && \
+    objcopy --remove-section=.llvmbc --remove-section=.llvmcmd target/multisig-release/libcgo_glue.a
 
 # Copy Go module files for dependency caching
 COPY go.mod go.sum ./

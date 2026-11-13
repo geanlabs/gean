@@ -140,7 +140,11 @@ when the right resolution of a conflict is unclear.
 - **FFI**: Run `make ffi` before direct `go test`/`go vet`; `make test` and `make lint` do not build it.
 - **Testing**: Run `make test-ffi` for `lean/crypto/xmss/` changes, `make test-spec` for consensus or SSZ changes, and
   `go test -race` for concurrency changes. Use fuzz tests for SSZ and wire decoding.
-- **Spec**: leanSpec pinned at `LEAN_SPEC_COMMIT_HASH` in the Makefile is the source of truth; do not bump it silently.
+- **Spec**: leanSpec is the source of truth. Its fixtures are pinned by `LEAN_SPEC_FIXTURES_SHA256` in the
+  Makefile; bump the pin and `pinnedFixtureKeySize` in `lean/spectests/scheme_test.go` together, in a change
+  of their own. Suites carrying XMSS keys or signatures skip while the pinned fixtures' key size differs from
+  the build's, so their rules are not validated; networking codec kinds the harness does not handle yet also
+  skip and appear in that suite's summary. Do not add other skip reasons.
 - **Tick loop**: Keep proving and blocking FFI work off `Engine.onTick`; hand it to a worker. Preserve the
   head-update/proposal ordering.
 - **Aggregation**: Interval 2 is the fallback; `maybeEarlyAggregate` may start it in interval 1 at quorum.

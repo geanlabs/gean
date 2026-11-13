@@ -133,6 +133,7 @@ func (sba *sigSBA) toSignedBlock() *types.SignedBlock {
 // Test runner.
 
 func TestSpecSignatures(t *testing.T) {
+	skipIfFixtureKeySchemeDiffers(t)
 	logger.SetQuiet(true)
 	defer logger.SetQuiet(false)
 

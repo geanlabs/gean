@@ -40,7 +40,7 @@ type justifiabilityOutput struct {
 // delta = slot - finalizedSlot, which we cross-check for fixture integrity.
 func TestSpecJustifiability(t *testing.T) {
 	if _, err := os.Stat(justifiabilityFixturesRoot); os.IsNotExist(err) {
-		t.Skipf("fixtures not present at %s; run 'make leanSpec/fixtures'", justifiabilityFixturesRoot)
+		t.Skipf("fixtures not present at %s; run 'make spec-fixtures'", justifiabilityFixturesRoot)
 	}
 
 	err := filepath.Walk(justifiabilityFixturesRoot, func(path string, info os.FileInfo, err error) error {

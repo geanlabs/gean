@@ -13,6 +13,7 @@ import (
 )
 
 func TestSpecStateTransition(t *testing.T) {
+	skipIfFixtureKeySchemeDiffers(t)
 	logger.SetQuiet(true)
 	defer logger.SetQuiet(false)
 

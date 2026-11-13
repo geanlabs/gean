@@ -10,13 +10,13 @@ Security vulnerabilities must not be reported in public issues. Follow [SECURITY
 - Open or find an issue describing the bug or feature. PRs targeting `main` or a `devnet-N` branch must
   link an issue.
 - For larger changes, discuss the approach in the issue before writing code.
-- The pinned [leanSpec](https://github.com/leanEthereum/leanSpec) revision (`LEAN_SPEC_COMMIT_HASH` in
-  the [`Makefile`](Makefile)) is the source of truth for protocol behavior. Divergence from it is a bug
-  even when nothing crashes. Do not bump the pin as part of an unrelated change.
+- [leanSpec](https://github.com/leanEthereum/leanSpec) is the source of truth for protocol behavior;
+  divergence from it is a bug even when nothing crashes. Spec tests run against its released fixtures,
+  pinned by checksum in the [`Makefile`](Makefile) (`make spec-fixtures`).
 
 ## Development setup
 
-Install the prerequisites listed in the [README](README.md#prerequisites) (Go, Rust, uv, Docker), then:
+Install the prerequisites listed in the [README](README.md#prerequisites) (Go, Rust, Docker), then:
 
 ```sh
 make build       # Build the Rust FFI and Go binaries
