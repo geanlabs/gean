@@ -22,6 +22,11 @@ help: ## Show help for each Makefile recipe
 # Haswell baseline provides PCLMULQDQ; on aarch64 PMULL is gated behind the `aes` target
 # feature, which Linux aarch64 targets do not enable by default. Without it the prover
 # falls back to scalar code.
+#
+# Go 1.26.11 and later refuse cgo archives that carry LLVM bitcode sections. The only members
+# that do are compiler_builtins objects, which ship precompiled with Rust's standard library;
+# the linker drops these sections from the binary anyway, so stripping them changes no code.
+# Done on Linux only; macOS archives would need their __LLVM segment removed instead.
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 	@cd lean/crypto/xmss/rust && \
 		case "$$(uname -m)" in \
@@ -29,6 +34,9 @@ ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 			aarch64|arm64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
 			*) cargo build --profile multisig-release --locked ;; \
 		esac
+	@if [ "$$(uname -s)" = Linux ]; then \
+		objcopy --remove-section=.llvmbc --remove-section=.llvmcmd lean/crypto/xmss/rust/target/multisig-release/libcgo_glue.a; \
+	fi
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
