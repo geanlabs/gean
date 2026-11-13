@@ -54,7 +54,7 @@ jobs:
       - name: Report spec coverage
         shell: bash
         run: |
-          skipped=$(grep -E '^--- SKIP: TestSpec' spec-tests.log | awk '{print $3}' | paste -sd ' ' -)
+          skipped=$(awk '/^--- SKIP: TestSpec/ {print $3}' spec-tests.log | paste -sd ' ' -)
           if [ -z "$skipped" ]; then
             echo "All spec suites ran." >> "$GITHUB_STEP_SUMMARY"
             exit 0
