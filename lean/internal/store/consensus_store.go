@@ -5,12 +5,10 @@ import (
 	"sync/atomic"
 
 	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/lean/crypto/xmss"
 )
 
 type ConsensusStore struct {
-	Backend     storage.Backend
-	PubKeyCache *xmss.PubKeyCache
+	Backend storage.Backend
 
 	// maxBlockSlot is the highest slot of any block header this store has
 	// written: a high-water mark, not a live maximum over the table. It answers
@@ -85,7 +83,6 @@ func (s *ConsensusStore) ObserveStoredBlockSlot(slot uint64) {
 func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 	return &ConsensusStore{
 		Backend:        backend,
-		PubKeyCache:    xmss.NewPubKeyCache(),
 		validatorKeys:  make(map[[32]byte]*ValidatorKeys, validatorKeysCacheSize),
 		stateSummaries: make(map[[32]byte]StateSummary),
 	}

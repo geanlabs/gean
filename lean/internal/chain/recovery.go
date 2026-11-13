@@ -156,7 +156,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 					candidate.att.Data,
 					append([]*types.SingleMessageAggregate{recovered}, locals...),
 					state,
-					attestationproof.NewMerger(e.Store.PubKeyCache),
+					attestationproof.NewMerger(e.PubKeyCache),
 				)
 				if mergeErr == nil && coversParticipants(combined, candidate.att.AggregationBits) {
 					recovered = combined
@@ -246,7 +246,7 @@ func (e *Engine) blockProofClaims(block *types.Block, state *types.State) ([][]x
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
 				return nil, nil, fmt.Errorf("validator %d out of range", index)
 			}
-			key, err := e.Store.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
+			key, err := e.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -262,7 +262,7 @@ func (e *Engine) blockProofClaims(block *types.Block, state *types.State) ([][]x
 	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
 		return nil, nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
 	}
-	key, err := e.Store.PubKeyCache.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
+	key, err := e.PubKeyCache.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
 	if err != nil {
 		return nil, nil, err
 	}

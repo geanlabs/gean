@@ -3,14 +3,13 @@ package blockprocessor
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/crypto/xmss"
 	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 func TestVerifyBlockSignaturesRejectsMissingProof(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
-	err := verifyBlockSignatures(s, &types.SignedBlock{
+	err := verifyBlockSignatures(xmss.NewPubKeyCache(), &types.SignedBlock{
 		Block: processorBlock(),
 		Proof: &types.MultiMessageAggregate{},
 	}, &types.State{Validators: []*types.Validator{{}}})
@@ -21,8 +20,7 @@ func TestVerifyBlockSignaturesRejectsMissingProof(t *testing.T) {
 }
 
 func TestVerifyBlockSignaturesRejectsEmptyParticipants(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
-	err := verifyBlockSignatures(s, &types.SignedBlock{
+	err := verifyBlockSignatures(xmss.NewPubKeyCache(), &types.SignedBlock{
 		Block: processorBlock(processorAttestation()),
 		Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
 	}, &types.State{Validators: []*types.Validator{{}}})
@@ -33,11 +31,10 @@ func TestVerifyBlockSignaturesRejectsEmptyParticipants(t *testing.T) {
 }
 
 func TestVerifyBlockSignaturesRejectsAttestationSlotOverflow(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
 	att := processorAttestation()
 	att.Data.Slot = ^uint64(0)
 	types.BitlistSet(att.AggregationBits, 0)
-	err := verifyBlockSignatures(s, &types.SignedBlock{
+	err := verifyBlockSignatures(xmss.NewPubKeyCache(), &types.SignedBlock{
 		Block: processorBlock(att),
 		Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
 	}, &types.State{Validators: []*types.Validator{{}}})
@@ -48,10 +45,9 @@ func TestVerifyBlockSignaturesRejectsAttestationSlotOverflow(t *testing.T) {
 }
 
 func TestVerifyBlockSignaturesRejectsBlockSlotOverflow(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
 	block := processorBlock()
 	block.Slot = ^uint64(0)
-	err := verifyBlockSignatures(s, &types.SignedBlock{
+	err := verifyBlockSignatures(xmss.NewPubKeyCache(), &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
 	}, &types.State{Validators: []*types.Validator{{}}})
@@ -62,8 +58,7 @@ func TestVerifyBlockSignaturesRejectsBlockSlotOverflow(t *testing.T) {
 }
 
 func TestVerifyBlockSignaturesRejectsNilProposerValidator(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
-	err := verifyBlockSignatures(s, &types.SignedBlock{
+	err := verifyBlockSignatures(xmss.NewPubKeyCache(), &types.SignedBlock{
 		Block: processorBlock(),
 		Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
 	}, &types.State{Validators: []*types.Validator{nil}})

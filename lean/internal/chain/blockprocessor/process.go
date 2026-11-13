@@ -7,19 +7,20 @@ import (
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/crypto/xmss"
 	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/store"
 )
 
-func OnBlock(s *store.ConsensusStore, known *pools.PayloadBuffer, signedBlock *types.SignedBlock) error {
-	return onBlockCore(s, known, signedBlock, true)
+func OnBlock(s *store.ConsensusStore, cache *xmss.PubKeyCache, known *pools.PayloadBuffer, signedBlock *types.SignedBlock) error {
+	return onBlockCore(s, cache, known, signedBlock, true)
 }
 
 func OnBlockWithoutVerification(s *store.ConsensusStore, known *pools.PayloadBuffer, signedBlock *types.SignedBlock) error {
-	return onBlockCore(s, known, signedBlock, false)
+	return onBlockCore(s, nil, known, signedBlock, false)
 }
 
-func onBlockCore(s *store.ConsensusStore, known *pools.PayloadBuffer, signedBlock *types.SignedBlock, verify bool) error {
+func onBlockCore(s *store.ConsensusStore, cache *xmss.PubKeyCache, known *pools.PayloadBuffer, signedBlock *types.SignedBlock, verify bool) error {
 	start := time.Now()
 	if err := validateStore(s); err != nil {
 		return err
@@ -64,7 +65,7 @@ func onBlockCore(s *store.ConsensusStore, known *pools.PayloadBuffer, signedBloc
 
 	if verify {
 		verifyStart := time.Now()
-		err := verifyBlockSignatures(s, signedBlock, parentState)
+		err := verifyBlockSignatures(cache, signedBlock, parentState)
 		metrics.ObserveBlockSignatureVerificationTime(time.Since(verifyStart).Seconds())
 		if err != nil {
 			return err

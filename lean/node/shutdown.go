@@ -24,12 +24,14 @@ type components struct {
 	waitEngine   func()
 	closeStore   func() error
 	freeKeys     func()
+	freePubKeys  func()
 }
 
 // teardown stops admission, cancels the background work, joins everything
-// that uses the database or the validator keys, and only then closes the
-// database and frees the keys. No step has a deadline that frees a resource
-// still in use; a second signal exits without freeing anything.
+// that uses the database, the validator keys or the decoded public keys, and
+// only then closes the database and frees the keys. No step has a deadline
+// that frees a resource still in use; a second signal exits without freeing
+// anything.
 func (c *components) teardown() {
 	for _, srv := range c.servers {
 		srv.shutdown()
@@ -51,6 +53,9 @@ func (c *components) teardown() {
 		if err := c.closeStore(); err != nil {
 			logger.Error(logger.Node, "close database: %v", err)
 		}
+	}
+	if c.freePubKeys != nil {
+		c.freePubKeys()
 	}
 	c.freeKeys()
 }

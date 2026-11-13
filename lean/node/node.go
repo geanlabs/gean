@@ -168,7 +168,9 @@ func Run(cfg Config, stop <-chan struct{}) error {
 		VerifyAggregatedSignatures: cfg.ShadowVerifyAggregatedSignaturesRate,
 	}
 	attestations := pools.New()
-	n := chain.New(s, attestations, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
+	pubKeys := xmss.NewPubKeyCache()
+	c.freePubKeys = pubKeys.Close
+	n := chain.New(s, attestations, fc, p2pHost, inputs.keyManager, pubKeys, aggCtl, cfg.CommitteeCount, shadowRates)
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
 	c.waitEngine = n.Wait
 	syncDriver := startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes, &c.tasks)

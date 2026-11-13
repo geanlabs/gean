@@ -35,6 +35,13 @@ func TestBoundaries(t *testing.T) {
 			want: "lean/internal/store -> lean/internal/pools",
 		},
 		{
+			name: "store cannot regain native key handles",
+			files: map[string]string{
+				"lean/internal/store/store.go": `package store; import "github.com/geanlabs/gean/lean/crypto/xmss"`,
+			},
+			want: "lean/internal/store -> lean/crypto/xmss",
+		},
+		{
 			name: "aggregation cannot reach the store through its helpers",
 			files: map[string]string{
 				"lean/internal/aggregation/worker.go": `package aggregation; import "github.com/geanlabs/gean/lean/internal/prover"`,

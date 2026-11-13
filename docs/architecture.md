@@ -84,10 +84,12 @@ it cannot see standard-library calls such as `time.Now()`, `os.ReadFile` or a
 rule keeps each protocol's services private to its tree. New shared code goes into the root `internal/` only when both protocols
 use it; until then it stays in the protocol that needs it.
 
-The live pools depend only on Lean types. The store cannot import the pools,
-and aggregation cannot import the store, including through helper packages.
-Node assembly creates one pool set and passes it to the chain; workers receive
-the pools and snapshots they use rather than persistence access.
+The live pools depend only on Lean types. The store cannot import the pools or
+Lean crypto and uses no cgo, and aggregation cannot import the store, including
+through helper packages. Node assembly creates one pool set and one decoded
+public-key cache and passes them to the chain; workers receive the pools,
+snapshots and cache they use rather than persistence access. Node teardown
+frees the cache after the engine and its workers have stopped.
 
 ## Runtime owners
 
@@ -162,9 +164,9 @@ differ from the target:
   `lean/internal/chain/blockprocessor`, `lean/internal/chain/attestation`,
   `lean/internal/chain/pending` and `lean/internal/blockbuilder/attestationproof`.
   Extracting their ownership dissolves them.
-- `lean/internal/store` owns durable data, persistence indexes/caches and the
-  decoded-key cache. The live pools have been extracted; separating native
-  verification-cache ownership remains before further store changes.
+- `lean/internal/store` owns durable data and its persistence indexes and
+  caches. The live pools and the decoded public-key cache have been extracted;
+  splitting the remaining store responsibilities is still to do.
 - Proposal signing and proving still run in the chain's proposal worker;
   `lean/internal/validator` holds the reservation and the decisions around it.
 - `lean/internal/network` holds all networking. The shared libp2p transport is
