@@ -1,0 +1,196 @@
+package syncer
+
+import (
+	"context"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+
+	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/network"
+	"github.com/geanlabs/gean/lean/internal/store"
+)
+
+type mockSyncP2P struct {
+	mu sync.Mutex
+
+	peers []libp2ppeer.ID
+
+	statusResp  *network.StatusMessage
+	statusErr   error
+	statusCalls atomic.Int32
+
+	rangeBatches  [][]*types.SignedBlock
+	rangeErr      error
+	rangeCalls    atomic.Int32
+	rangeStarts   []uint64
+	rangeCounts   []uint64
+	rangeBlock    chan struct{}
+	rangeEntered  chan struct{} // receives once per call, before rangeBlock
+	rangeDeadline atomic.Bool   // a range call's context carried a deadline
+
+	retryBatches  [][]*types.SignedBlock
+	retryErr      error
+	retryCalls    atomic.Int32
+	retryExcluded [][]libp2ppeer.ID // excluded set as each retry call saw it
+	retryFails    []libp2ppeer.ID   // peers each retry call reports as failed
+	onRange       func()
+	onRetry       func()
+
+	rootBlocks []*types.SignedBlock
+	rootErr    error
+	rootCalls  atomic.Int32
+}
+
+func (m *mockSyncP2P) Peers() []libp2ppeer.ID {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.peers
+}
+
+func (m *mockSyncP2P) SendStatusRequest(ctx context.Context, peerID libp2ppeer.ID, ourStatus *network.StatusMessage) (*network.StatusMessage, error) {
+	m.statusCalls.Add(1)
+	return m.statusResp, m.statusErr
+}
+
+func (m *mockSyncP2P) FetchBlocksByRange(ctx context.Context, peerID libp2ppeer.ID, startSlot, count uint64) ([]*types.SignedBlock, error) {
+	m.rangeCalls.Add(1)
+	if m.onRange != nil {
+		m.onRange()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		m.rangeDeadline.Store(true)
+	}
+	m.mu.Lock()
+	m.rangeStarts = append(m.rangeStarts, startSlot)
+	m.rangeCounts = append(m.rangeCounts, count)
+	m.mu.Unlock()
+
+	if m.rangeEntered != nil {
+		m.rangeEntered <- struct{}{}
+	}
+	if m.rangeBlock != nil {
+		<-m.rangeBlock
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.rangeBatches) == 0 {
+		return nil, m.rangeErr
+	}
+	batch := m.rangeBatches[0]
+	m.rangeBatches = m.rangeBatches[1:]
+	return batch, m.rangeErr
+}
+
+func (m *mockSyncP2P) FetchBlocksByRangeWithRetry(ctx context.Context, excluded map[libp2ppeer.ID]bool, startSlot, count uint64) ([]*types.SignedBlock, libp2ppeer.ID, error) {
+	m.retryCalls.Add(1)
+	if m.onRetry != nil {
+		m.onRetry()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := make([]libp2ppeer.ID, 0, len(excluded))
+	for id := range excluded {
+		seen = append(seen, id)
+	}
+	slices.Sort(seen)
+	m.retryExcluded = append(m.retryExcluded, seen)
+	if len(m.retryFails) > 0 {
+		excluded[m.retryFails[0]] = true
+		m.retryFails = m.retryFails[1:]
+	}
+	if len(m.retryBatches) == 0 {
+		return nil, "", m.retryErr
+	}
+	batch := m.retryBatches[0]
+	m.retryBatches = m.retryBatches[1:]
+	return batch, "retry-peer", nil
+}
+
+func (m *mockSyncP2P) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error) {
+	m.rootCalls.Add(1)
+	return m.rootBlocks, nil, m.rootErr
+}
+
+type testNode struct {
+	BlockCh chan *types.SignedBlock
+}
+
+func (n *testNode) OnBlock(block *types.SignedBlock) {
+	n.BlockCh <- block
+}
+
+func (n *testNode) OnSyncBlock(ctx context.Context, block *types.SignedBlock) bool {
+	select {
+	case n.BlockCh <- block:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func makeTestSyncHarness() (*testNode, *store.ConsensusStore) {
+	store := store.NewConsensusStore(storage.NewInMemoryBackend())
+	header := &types.BlockHeader{Slot: 0}
+	root := mustHeaderRoot(header)
+	store.SetHead(root)
+	store.InsertBlockHeader(root, header)
+	return &testNode{BlockCh: make(chan *types.SignedBlock, 16)}, store
+}
+
+func makeSyncRange(parentRoot [32]byte, slots ...uint64) []*types.SignedBlock {
+	blocks := make([]*types.SignedBlock, 0, len(slots))
+	for _, slot := range slots {
+		block, root := makeSyncBlock(slot, parentRoot)
+		blocks = append(blocks, block)
+		parentRoot = root
+	}
+	return blocks
+}
+
+func makeSyncBlock(slot uint64, parentRoot [32]byte) (*types.SignedBlock, [32]byte) {
+	body := &types.BlockBody{}
+	bodyRoot, err := body.HashTreeRoot()
+	if err != nil {
+		panic(err)
+	}
+	header := &types.BlockHeader{Slot: slot, ParentRoot: parentRoot, BodyRoot: bodyRoot}
+	root := mustHeaderRoot(header)
+	return &types.SignedBlock{
+		Block: &types.Block{
+			Slot:       slot,
+			ParentRoot: parentRoot,
+			Body:       body,
+		},
+		Proof: &types.MultiMessageAggregate{},
+	}, root
+}
+
+func mustHeaderRoot(header *types.BlockHeader) [32]byte {
+	root, err := header.HashTreeRoot()
+	if err != nil {
+		panic(err)
+	}
+	return root
+}
+
+func drainBlockCh(t *testing.T, n *testNode, expected int, timeout time.Duration) []*types.SignedBlock {
+	t.Helper()
+	var out []*types.SignedBlock
+	deadline := time.After(timeout)
+	for len(out) < expected {
+		select {
+		case b := <-n.BlockCh:
+			out = append(out, b)
+		case <-deadline:
+			return out
+		}
+	}
+	return out
+}

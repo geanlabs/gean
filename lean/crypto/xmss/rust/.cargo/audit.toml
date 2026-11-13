@@ -1,0 +1,12 @@
+# cargo-audit configuration for the XMSS FFI workspace.
+
+[advisories]
+ignore = [
+    # crypto-bigint 0.5.5: timing variability in operations meant to be
+    # constant-time. Cargo.lock carries it only through alloy-primitives ->
+    # k256 -> elliptic-curve, which no workspace crate compiles:
+    # `cargo tree -i crypto-bigint@0.5.5 --target all -e all` prints nothing.
+    # The patched release (>= 0.7.6) is a major bump elliptic-curve 0.13 cannot
+    # take. Remove this entry once Cargo.lock no longer contains 0.5.5.
+    "RUSTSEC-2026-0387",
+]

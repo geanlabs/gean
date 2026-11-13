@@ -2,10 +2,9 @@ name: Lint & Format
 
 on:
   pull_request:
-    branches: [main]
 
 env:
-  GO_VERSION: "1.26.10"
+  GO_VERSION: "1.26.11"
   RUST_VERSION: "1.92"
 
 jobs:
@@ -22,14 +21,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Run go vet
-        run: go vet ./...
-
-      - name: Install and run staticcheck
-        continue-on-error: true
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          staticcheck ./...
+      - name: Check architecture boundaries
+        run: make check-architecture
 
       - name: Check go fmt
         run: |
@@ -60,19 +53,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/rust/target
-          key: cargo-lint-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
+            lean/crypto/xmss/rust/target
+          key: cargo-lint-${{ runner.os }}-${{ hashFiles('lean/crypto/xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-lint-${{ runner.os }}-
 
       - name: Check Rust formatting
-        working-directory: xmss/rust
+        working-directory: lean/crypto/xmss/rust
         run: |
           rustup component add --toolchain 1.92.0-x86_64-unknown-linux-gnu rustfmt
           cargo fmt --check
 
       - name: Run Clippy
-        working-directory: xmss/rust
+        working-directory: lean/crypto/xmss/rust
         run: |
           rustup component add --toolchain 1.92.0-x86_64-unknown-linux-gnu clippy
           cargo clippy -- -D warnings -A clippy::missing_safety_doc

@@ -2,19 +2,20 @@ name: Security Audit
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - "go.mod"
       - "go.sum"
-      - "xmss/rust/Cargo.toml"
-      - "xmss/rust/Cargo.lock"
+      - "lean/crypto/xmss/rust/Cargo.toml"
+      - "lean/crypto/xmss/rust/Cargo.lock"
+      - "lean/crypto/xmss/rust/.cargo/audit.toml"
+      - ".github/workflows/security-audit.yml"
   schedule:
     # Runs every Monday at 08:00 UTC
     - cron: "0 8 * * 1"
   workflow_dispatch:
 
 env:
-  GO_VERSION: "1.26.10"
+  GO_VERSION: "1.26.11"
   RUST_VERSION: "1.92"
 
 jobs:
@@ -53,5 +54,5 @@ jobs:
         run: cargo install --locked cargo-audit
 
       - name: Run cargo audit
-        working-directory: xmss/rust
+        working-directory: lean/crypto/xmss/rust
         run: cargo audit

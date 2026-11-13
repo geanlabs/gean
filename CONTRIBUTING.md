@@ -10,13 +10,13 @@ Security vulnerabilities must not be reported in public issues. Follow [SECURITY
 - Open or find an issue describing the bug or feature. PRs targeting `main` or a `devnet-N` branch must
   link an issue.
 - For larger changes, discuss the approach in the issue before writing code.
-- The pinned [leanSpec](https://github.com/leanEthereum/leanSpec) revision (`LEAN_SPEC_COMMIT_HASH` in
-  the [`Makefile`](Makefile)) is the source of truth for protocol behavior. Divergence from it is a bug
-  even when nothing crashes. Do not bump the pin as part of an unrelated change.
+- [leanSpec](https://github.com/leanEthereum/leanSpec) is the source of truth for protocol behavior;
+  divergence from it is a bug even when nothing crashes. Spec tests run against its released fixtures,
+  pinned by checksum in the [`Makefile`](Makefile) (`make spec-fixtures`).
 
 ## Development setup
 
-Install the prerequisites listed in the [README](README.md#prerequisites) (Go, Rust, uv, Docker), then:
+Install the prerequisites listed in the [README](README.md#prerequisites) (Go, Rust, Docker), then:
 
 ```sh
 make build       # Build the Rust FFI and Go binaries
@@ -53,9 +53,9 @@ property, so code should be easy to read and audit.
   Log or return an error, not both.
 - Use package-level `Err*` sentinels for errors callers branch on.
 - Do not `panic` outside tests. Pass `ctx context.Context` first and propagate cancellation.
-- Do not edit generated `internal/types/*_encoding.go` files; run `make sszgen`.
+- Do not edit generated `lean/consensus/types/*_encoding.go` files; run `make sszgen`.
 
-### Rust style (`xmss/rust/`)
+### Rust style (`lean/crypto/xmss/rust/`)
 
 - `cargo fmt`; Clippy runs with `-D warnings`.
 - Wrap FFI function bodies that can panic in `ffi_guard!`, and free owned native objects exactly once.
@@ -66,7 +66,7 @@ property, so code should be easy to read and audit.
   must fail without the fix.
 - Prefer adding a case to an existing table-driven test over writing a new test. Use plain `testing`, no
   assertion libraries, and `t.TempDir()` for databases and files.
-- Run `make test-spec` for consensus or SSZ changes, `make test-ffi` for `xmss/` changes, and
+- Run `make test-spec` for consensus or SSZ changes, `make test-ffi` for `lean/crypto/xmss/` changes, and
   `go test -race` for concurrency changes.
 - For performance changes, include real measurements from benchmarks or metrics.
 
