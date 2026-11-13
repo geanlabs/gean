@@ -26,18 +26,24 @@ const netCodecFixturesRoot = "../../leanSpec/fixtures/consensus/networking_codec
 type netFixtureOuter map[string]netFixture
 
 type netFixture struct {
-	Network   string                 `json:"network"`
-	LeanEnv   string                 `json:"leanEnv"`
-	CodecName string                 `json:"codecName"`
-	Input     map[string]interface{} `json:"input"`
-	Output    map[string]interface{} `json:"output"`
+	Network string `json:"network"`
+	LeanEnv string `json:"leanEnv"`
+	// Codec names the codec under test in "kind" and carries that codec's
+	// inputs alongside it.
+	Codec  map[string]interface{} `json:"codec"`
+	Output map[string]interface{} `json:"output"`
+}
+
+func (fx netFixture) kind() string {
+	kind, _ := fx.Codec["kind"].(string)
+	return kind
 }
 
 // TestSpecNetworkingCodec runs every JSON fixture under the networking_codec
 // directory and dispatches by codec name. Unsupported codecs are skipped.
 func TestSpecNetworkingCodec(t *testing.T) {
 	if _, err := os.Stat(netCodecFixturesRoot); os.IsNotExist(err) {
-		t.Skipf("fixtures not present at %s; run 'make leanSpec/fixtures' to generate", netCodecFixturesRoot)
+		t.Skipf("fixtures not present at %s; run 'make spec-fixtures'", netCodecFixturesRoot)
 	}
 
 	var passed, failed, skipped int
@@ -64,20 +70,27 @@ func TestSpecNetworkingCodec(t *testing.T) {
 			name := shortName(testID, path)
 
 			t.Run(name, func(t *testing.T) {
-				result := runNetCodecFixture(t, fx)
-				entry := perCodec[fx.CodecName]
-				switch result {
-				case "pass":
-					entry[0]++
-					passed++
-				case "fail":
-					entry[1]++
-					failed++
-				case "skip":
-					entry[2]++
-					skipped++
-				}
-				perCodec[fx.CodecName] = entry
+				var result string
+				// Deferred so a t.Skipf, which ends the subtest early, is still counted.
+				defer func() {
+					if t.Skipped() {
+						result = "skip"
+					}
+					entry := perCodec[fx.kind()]
+					switch result {
+					case "pass":
+						entry[0]++
+						passed++
+					case "fail":
+						entry[1]++
+						failed++
+					case "skip":
+						entry[2]++
+						skipped++
+					}
+					perCodec[fx.kind()] = entry
+				}()
+				result = runNetCodecFixture(t, fx)
 			})
 		}
 		return nil
@@ -96,7 +109,7 @@ func TestSpecNetworkingCodec(t *testing.T) {
 // runNetCodecFixture dispatches one fixture to the appropriate gean primitive.
 // Returns "pass", "fail", or "skip".
 func runNetCodecFixture(t *testing.T, fx netFixture) string {
-	switch fx.CodecName {
+	switch fx.kind() {
 	case "varint":
 		return testVarint(t, fx)
 	case "gossip_topic":
@@ -108,12 +121,12 @@ func runNetCodecFixture(t *testing.T, fx netFixture) string {
 	case "discv5_message":
 		return testDiscv5Message(t, fx)
 	default:
-		t.Skipf("codec %q not yet wired into gean test harness", fx.CodecName)
+		t.Skipf("codec %q not yet wired into gean test harness", fx.kind())
 		return "skip"
 	}
 }
 func testVarint(t *testing.T, fx netFixture) string {
-	val, ok := fx.Input["value"].(float64)
+	val, ok := fx.Codec["value"].(float64)
 	if !ok {
 		t.Errorf("missing or non-numeric input.value")
 		return "fail"
@@ -144,9 +157,9 @@ func testVarint(t *testing.T, fx netFixture) string {
 	return "pass"
 }
 func testGossipTopic(t *testing.T, fx netFixture) string {
-	kind, _ := fx.Input["kind"].(string)
-	forkDigest, _ := fx.Input["forkDigest"].(string)
-	subnetID, hasSubnet := fx.Input["subnetId"].(float64)
+	kind, _ := fx.Codec["topicKind"].(string)
+	forkDigest, _ := fx.Codec["networkName"].(string)
+	subnetID, hasSubnet := fx.Codec["subnetId"].(float64)
 	wantTopic, _ := fx.Output["topicString"].(string)
 
 	// The fixture parameterizes on forkDigest; exercise gean's builder with the
@@ -183,9 +196,9 @@ func testGossipTopic(t *testing.T, fx netFixture) string {
 //
 //	SHA256(domain || uint64_le(len(topic)) || topic || data)[:20]
 func testGossipMessageID(t *testing.T, fx netFixture) string {
-	topicHex, _ := fx.Input["topic"].(string)
-	dataHex, _ := fx.Input["data"].(string)
-	domainHex, _ := fx.Input["domain"].(string)
+	topicHex, _ := fx.Codec["topic"].(string)
+	dataHex, _ := fx.Codec["data"].(string)
+	domainHex, _ := fx.Codec["domain"].(string)
 	wantHex, _ := fx.Output["messageId"].(string)
 
 	topic, err := decodeHex(topicHex)
@@ -225,9 +238,10 @@ func testGossipMessageID(t *testing.T, fx netFixture) string {
 	return "pass"
 }
 func testENR(t *testing.T, fx netFixture) string {
-	enrStr, _ := fx.Input["enrString"].(string)
+	enrStr, _ := fx.Codec["enrString"].(string)
 	wantMultiaddr, _ := fx.Output["multiaddr"].(string)
 	wantValid, _ := fx.Output["isValid"].(bool)
+	wantSeq, hasSeq := fx.Output["seq"].(float64)
 
 	fields, err := network.DecodeENR(enrStr)
 	if err != nil {
@@ -242,6 +256,10 @@ func testENR(t *testing.T, fx netFixture) string {
 		return "fail"
 	}
 
+	if hasSeq && fields.Seq != uint64(wantSeq) {
+		t.Errorf("seq: got %d, want %.0f", fields.Seq, wantSeq)
+		return "fail"
+	}
 	if wantMultiaddr != "" && fields.Multiaddr != wantMultiaddr {
 		t.Errorf("multiaddr: got %q, want %q", fields.Multiaddr, wantMultiaddr)
 		return "fail"
@@ -259,7 +277,7 @@ var discv5TypeByte = map[string]byte{
 }
 
 func testDiscv5Message(t *testing.T, fx netFixture) string {
-	msgType, _ := fx.Input["type"].(string)
+	msgType, _ := fx.Codec["type"].(string)
 	wantHex, _ := fx.Output["encoded"].(string)
 	want, err := decodeHex(wantHex)
 	if err != nil {
@@ -274,7 +292,7 @@ func testDiscv5Message(t *testing.T, fx netFixture) string {
 	}
 
 	var fields []interface{}
-	reqIDHex, _ := fx.Input["requestId"].(string)
+	reqIDHex, _ := fx.Codec["requestId"].(string)
 	reqID, _ := decodeHex(reqIDHex)
 	// Strip leading zeros per discv5 minimal encoding.
 	for len(reqID) > 1 && reqID[0] == 0 {
@@ -284,16 +302,16 @@ func testDiscv5Message(t *testing.T, fx netFixture) string {
 
 	switch msgType {
 	case "ping":
-		enrSeq := uint64(fx.Input["enrSeq"].(float64))
+		enrSeq := uint64(fx.Codec["enrSeq"].(float64))
 		fields = append(fields, enrSeq)
 	case "pong":
-		enrSeq := uint64(fx.Input["enrSeq"].(float64))
-		ipHex, _ := fx.Input["recipientIp"].(string)
+		enrSeq := uint64(fx.Codec["enrSeq"].(float64))
+		ipHex, _ := fx.Codec["recipientIp"].(string)
 		ip, _ := decodeHex(ipHex)
-		port := uint16(fx.Input["recipientPort"].(float64))
+		port := uint16(fx.Codec["recipientPort"].(float64))
 		fields = append(fields, enrSeq, ip, port)
 	case "findnode":
-		dists, _ := fx.Input["distances"].([]interface{})
+		dists, _ := fx.Codec["distances"].([]interface{})
 		var ds []uint64
 		for _, d := range dists {
 			ds = append(ds, uint64(d.(float64)))

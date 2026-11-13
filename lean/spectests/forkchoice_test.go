@@ -303,6 +303,7 @@ func (fb *fcBlock) toBlock() *types.Block {
 	return block
 }
 func TestSpecForkChoice(t *testing.T) {
+	skipIfFixtureKeySchemeDiffers(t)
 	logger.SetQuiet(true)
 	defer logger.SetQuiet(false)
 

@@ -131,6 +131,9 @@ func TestSpecSSZ(t *testing.T) {
 				name := shortName(testID, path)
 				fx := fx
 				t.Run(name, func(t *testing.T) {
+					if carriesXMSSMaterial(fx.Value) {
+						skipIfFixtureKeySchemeDiffers(t)
+					}
 					runSSZFixture(t, fx)
 				})
 			}
@@ -142,7 +145,7 @@ func TestSpecSSZ(t *testing.T) {
 	}
 
 	if walked == 0 {
-		t.Skip("no ssz fixtures found; run 'make leanSpec/fixtures'")
+		t.Skip("no ssz fixtures found; run 'make spec-fixtures'")
 	}
 }
 

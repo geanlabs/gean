@@ -2,21 +2,18 @@ name: Spec Tests
 
 on:
   pull_request:
-    branches: [main]
     paths:
-      - "lean/consensus/statetransition/**"
-      - "lean/consensus/forkchoice/**"
+      - "lean/consensus/**"
       - "lean/spectests/**"
-      - "lean/consensus/types/**"
+      - "lean/internal/specfixtures/**"
       - "Makefile"
+      - ".github/workflows/spec-tests.yml"
 
 env:
-  GO_VERSION: "1.26.10"
-  # Fixture generation compiles the spec's prover toolchain (lean-multisig-py ->
-  # leanMultisig -> Plonky3), which uses nightly-only features (e.g.
-  # maybe_uninit_slice). This job builds no gean FFI — that stays pinned to
-  # 1.92 via lean/crypto/xmss/rust/rust-toolchain.toml — so nightly here is isolated.
-  RUST_VERSION: "nightly"
+  GO_VERSION: "1.26.11"
+  # Builds the XMSS FFI the signature and proof suites link against; matches
+  # lean/crypto/xmss/rust/rust-toolchain.toml. Fixtures are downloaded, not generated.
+  RUST_VERSION: "1.92"
 
 jobs:
   spec-tests:
@@ -47,9 +44,6 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('lean/crypto/xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
 
       - name: Run spec tests
         run: make test-spec

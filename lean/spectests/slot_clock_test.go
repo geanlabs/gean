@@ -60,7 +60,7 @@ type slotClockConfig struct {
 // direction.
 func TestSpecSlotClock(t *testing.T) {
 	if _, err := os.Stat(slotClockFixturesRoot); os.IsNotExist(err) {
-		t.Skipf("fixtures not present at %s; run 'make leanSpec/fixtures'", slotClockFixturesRoot)
+		t.Skipf("fixtures not present at %s; run 'make spec-fixtures'", slotClockFixturesRoot)
 	}
 
 	err := filepath.Walk(slotClockFixturesRoot, func(path string, info os.FileInfo, err error) error {

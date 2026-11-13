@@ -70,8 +70,9 @@ func verifyCheckpointStructural(state *types.State) bool {
 // structural verdict matches the spec-generated boolean. Also pins the
 // extracted validator count and anchor slot.
 func TestSpecSync(t *testing.T) {
+	skipIfFixtureKeySchemeDiffers(t)
 	if _, err := os.Stat(syncFixturesRoot); os.IsNotExist(err) {
-		t.Skipf("fixtures not present at %s; run 'make leanSpec/fixtures'", syncFixturesRoot)
+		t.Skipf("fixtures not present at %s; run 'make spec-fixtures'", syncFixturesRoot)
 	}
 
 	err := filepath.Walk(syncFixturesRoot, func(path string, info os.FileInfo, err error) error {

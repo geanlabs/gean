@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint check-architecture check-go fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all spec-fixtures lint check-architecture check-go fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -8,10 +8,11 @@ TESTNET_DIR ?= testnet
 NUM_VALIDATORS ?= 5
 NUM_NODES ?= 3
 
-# Pinned leanSpec revision for spec fixtures. Must be defined before the test-spec/test-all
-# rules that reference it: Make expands a rule's prerequisites when it reads the rule, so a
-# definition placed after those rules would expand to empty in their prerequisites.
-LEAN_SPEC_COMMIT_HASH := eca701efeb5931010fe63925cd203c9ee55b2dbc
+# leanSpec's latest released fixtures, checked against the release's SHA-256. Must be defined
+# before the test-spec/test-all rules that reference it: Make expands a rule's prerequisites when
+# it reads the rule. Run `make spec-fixtures` again after deleting leanSpec/fixtures to refresh.
+LEAN_SPEC_FIXTURES_URL ?= https://github.com/leanEthereum/leanSpec/releases/latest/download/fixtures-prod-scheme.tar.gz
+LEAN_SPEC_FIXTURES := leanSpec/fixtures/.release
 STATICCHECK_VERSION := v0.8.1
 
 help: ## Show help for each Makefile recipe
@@ -40,10 +41,10 @@ test: ## Run unit tests (excludes crypto FFI and spec tests)
 test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
 	go test ./lean/crypto/xmss/ -v -count=1
 
-test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec fixture tests only (fast, excludes xmss FFI)
-	go test ./lean/spectests/  -count=1 -tags=spectests
+test-spec: ffi $(LEAN_SPEC_FIXTURES) ## Run spec fixture tests; lists cases skipped for a key-scheme mismatch
+	go test ./lean/spectests/ -v -count=1 -tags=spectests
 
-test-all: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run all tests including spec fixtures and xmss FFI (slow)
+test-all: ffi $(LEAN_SPEC_FIXTURES) ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
 
 check-architecture: ## Check package boundaries and the boundary checker's regression tests (no FFI)
@@ -119,23 +120,23 @@ run-node2: build ## Run node2 on port 9002
 		--api-port 5054 \
 		--metrics-port 8082
 
-# --- leanSpec fixtures --- (LEAN_SPEC_COMMIT_HASH is defined near the top, before test-spec)
+# --- leanSpec fixtures ---
 
-leanSpec/.git: ## Clone leanSpec
-	git clone https://github.com/leanEthereum/leanSpec.git --single-branch
+spec-fixtures: $(LEAN_SPEC_FIXTURES) ## Download and verify leanSpec's latest released fixtures
 
-leanSpec/.pinned-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.git
-	cd leanSpec && git fetch origin $(LEAN_SPEC_COMMIT_HASH) && git checkout --detach $(LEAN_SPEC_COMMIT_HASH)
-	touch $@
-
-leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.pinned-$(LEAN_SPEC_COMMIT_HASH)
-	@cd leanSpec && for attempt in 1 2 3; do \
-		uv run keys --download --scheme=prod && break; \
-		test $$attempt -eq 3 && exit 1; \
-		sleep $$((attempt * 5)); \
-	done
-	cd leanSpec && uv run fill --clean --fork=lstar --scheme=prod --output=fixtures
-	touch $@
+# Downloads into leanSpec/download and replaces leanSpec/fixtures only after the checksum matches.
+$(LEAN_SPEC_FIXTURES):
+	rm -rf leanSpec/download
+	mkdir -p leanSpec/download
+	curl -fsSL -o leanSpec/download/fixtures.tar.gz "$(LEAN_SPEC_FIXTURES_URL)"
+	curl -fsSL -o leanSpec/download/fixtures.tar.gz.sha256 "$(LEAN_SPEC_FIXTURES_URL).sha256"
+	cd leanSpec/download && echo "$$(cut -d' ' -f1 fixtures.tar.gz.sha256)  fixtures.tar.gz" | sha256sum --check --quiet
+	rm -rf leanSpec/fixtures
+	mkdir -p leanSpec/fixtures
+	tar -xzf leanSpec/download/fixtures.tar.gz -C leanSpec/fixtures --strip-components=1
+	sha256sum leanSpec/download/fixtures.tar.gz > $@
+	rm -rf leanSpec/download
+	@echo "leanSpec fixtures: $$(cut -d' ' -f1 $@)"
 
 # --- Docker ---
 
