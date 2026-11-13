@@ -27,6 +27,7 @@ gean/
 │   │   ├── network/              #   OWNER: network loop: libp2p, topics, request/response, peers
 │   │   │   └── syncer/           #     Range, by-root and checkpoint sync
 │   │   ├── store/                #   Lean schema on top of internal/storage
+│   │   ├── pools/                #   Bounded signatures and new/known attestation payloads
 │   │   ├── validator/            #   Attestation production, proposer selection, proposal reservation
 │   │   ├── aggregation/          #   Aggregator role, sessions and proof results
 │   │   ├── prover/               #   One proof at a time, proposals first
@@ -83,6 +84,11 @@ it cannot see standard-library calls such as `time.Now()`, `os.ReadFile` or a
 rule keeps each protocol's services private to its tree. New shared code goes into the root `internal/` only when both protocols
 use it; until then it stays in the protocol that needs it.
 
+The live pools depend only on Lean types. The store cannot import the pools,
+and aggregation cannot import the store, including through helper packages.
+Node assembly creates one pool set and passes it to the chain; workers receive
+the pools and snapshots they use rather than persistence access.
+
 ## Runtime owners
 
 The target for each protocol is two owners. The chain loop is the only writer
@@ -110,6 +116,12 @@ must preserve until a deliberate ownership change replaces them:
   verification inserts into `AttestationSignatures`; aggregate verification,
   recovery and the aggregation worker push into `NewPayloads`. Each pool
   guards itself with a mutex. Do not add pool fields or caches that bypass it.
+
+The pools live in `lean/internal/pools`, independently of `ConsensusStore`.
+The chain advances the persisted clock before each interval's promotion, and
+prunes live pools after finalization's persistence pruning. Aggregation receives
+the head state/root and pool snapshots explicitly. Its worker applies completed
+results directly to the shared pools in the existing order.
 
 Moving those reads and writes behind the chain loop is a scheduling change with
 its own ordering tests, not part of a package move.
@@ -150,9 +162,9 @@ differ from the target:
   `lean/internal/chain/blockprocessor`, `lean/internal/chain/attestation`,
   `lean/internal/chain/pending` and `lean/internal/blockbuilder/attestationproof`.
   Extracting their ownership dissolves them.
-- `lean/internal/store` still combines durable data, synchronized pools and the
-  decoded-key cache. Split those owners before moving the schema behind
-  `internal/storage`.
+- `lean/internal/store` owns durable data, persistence indexes/caches and the
+  decoded-key cache. The live pools have been extracted; separating native
+  verification-cache ownership remains before further store changes.
 - Proposal signing and proving still run in the chain's proposal worker;
   `lean/internal/validator` holds the reservation and the decisions around it.
 - `lean/internal/network` holds all networking. The shared libp2p transport is
@@ -161,7 +173,8 @@ differ from the target:
   node startup so Lean consensus holds rules only.
 - `beacon/` has README files only. Before any Beacon code, pin the first
   supported network, consensus-spec release and fork range. The first milestone
-  is a validating follower; the validator client follows.
+  is a validating follower; the validator client follows. Beacon implementation
+  waits until the Lean refactor and its stability validation are complete.
 - `gean` has no subcommands yet: today it runs the Lean node directly from its
   flags. `gean beacon`, `gean lean` and `gean validator` subcommands, and recording
   protocol and network identity in each data directory, arrive with the Beacon
@@ -196,7 +209,8 @@ Lean 4 here is the programming language and theorem prover, not Lean Ethereum.
 The proposal: write the most critical rules as executable Lean 4 definitions
 with machine-checked proofs about them, while Go keeps networking, storage,
 process lifecycle and native integration. It is parked until the consensus and
-store boundaries above are extracted; nothing in the Go layout depends on it,
+store boundaries above are extracted and the Lean implementation is validated;
+nothing in the Go layout depends on it,
 because consensus rules already sit in their own pure packages.
 
 When it resumes:

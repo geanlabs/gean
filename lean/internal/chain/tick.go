@@ -59,11 +59,11 @@ func (e *Engine) tickAt(now time.Time) {
 
 	// Capture before OnTick promotes new payloads into known, so the timely
 	// section reflects what had arrived by the promotion boundary.
-	if snap := snapshotNewPayloadParticipants(e.Store); snap != nil {
+	if snap := snapshotNewPayloadParticipants(e.Pools); snap != nil {
 		e.coveragePreMerge = snap
 	}
 
-	store.OnTick(e.Store, timestampMs, hasProposal)
+	OnTick(e.Store, e.Pools, timestampMs, hasProposal)
 
 	if currentInterval == 2 {
 		e.reportAggStartNewCoverage()
@@ -95,7 +95,7 @@ func (e *Engine) tickAt(now time.Time) {
 		e.updateSafeTarget()
 		finalized := e.Store.LatestFinalized()
 		headSlot := e.Store.HeadSlot()
-		store.PruneStaleAttestationPools(e.Store, headSlot, finalized.Slot)
+		pruneStaleAttestationPools(e.Pools, headSlot, finalized.Slot)
 		store.PruneStaleStates(e.Store, e.FC, e.Store.Head(), headSlot, finalized, e.Store.LatestJustified())
 		store.PeriodicPrune(e.Store, e.FC, currentSlot, finalized.Slot)
 	}
@@ -132,7 +132,7 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 	// deadline and MaxGroupsPerSession, so an aggregate built on a stale view
 	// costs one bounded proving budget and is dropped by peers — strictly better
 	// than not producing one at all.
-	if e.Store.AttestationSignatures.Len() == 0 && e.Store.NewPayloads.Len() == 0 {
+	if e.Pools.AttestationSignatures.Len() == 0 && e.Pools.NewPayloads.Len() == 0 {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
 	}
@@ -142,7 +142,7 @@ func (e *Engine) dispatchAggregationCycle(nowMs, currentSlot uint64, isAggregato
 		return
 	}
 
-	snap := aggregation.SnapshotInputs(e.Store, headState, currentSlot)
+	snap := aggregation.SnapshotInputs(e.Pools, headState, e.Store.Head(), currentSlot)
 	if snap == nil {
 		metrics.IncAggregatorSkipped(metrics.AggregatorSkipOther)
 		return
@@ -229,7 +229,7 @@ func (e *Engine) maybeEarlyAggregate(nowMs uint64) {
 	// justification. Scoped to the slot, the threshold is reached only in late
 	// interval 1 once votes are in — a modest proving lead that still carries
 	// decisive weight, with the interval-2 dispatch as the fallback below quorum.
-	if e.Store.AttestationSignatures.SignatureCountForSlot(slot) < earlyAggregationQuorum(e.expectedVotersPerSlot()) {
+	if e.Pools.AttestationSignatures.SignatureCountForSlot(slot) < earlyAggregationQuorum(e.expectedVotersPerSlot()) {
 		return
 	}
 	e.dispatchAggregationCycle(nowMs, slot, isAgg)

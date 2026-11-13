@@ -7,8 +7,8 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 // A session's cost is otherwise whatever the backlog costs. The cap counts
@@ -29,7 +29,7 @@ func TestAggregateFromSnapshotCapsGroupsPerSession(t *testing.T) {
 			snap.headState.Validators = []*types.Validator{{Index: 0}, {Index: 1}}
 			for i := range 4 {
 				dr := rootByte(byte(i + 1))
-				snap.attSigs[dr].Signatures = []store.AttestationSignatureEntry{
+				snap.attSigs[dr].Signatures = []pools.AttestationSignatureEntry{
 					{ValidatorID: 0}, {ValidatorID: 1},
 				}
 			}

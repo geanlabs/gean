@@ -1,4 +1,4 @@
-package store
+package pools
 
 import (
 	"bytes"
@@ -278,27 +278,6 @@ type PayloadKV struct {
 	DataRoot [32]byte
 	Data     *types.AttestationData
 	Proof    *types.SingleMessageAggregate
-}
-
-func (s *ConsensusStore) PromoteNewToKnown() {
-	if s == nil || s.NewPayloads == nil || s.KnownPayloads == nil {
-		return
-	}
-	s.KnownPayloads.PushBatch(s.NewPayloads.Drain())
-}
-
-func (s *ConsensusStore) ExtractLatestKnownAttestations() map[uint64]*types.AttestationData {
-	if s == nil || s.KnownPayloads == nil {
-		return map[uint64]*types.AttestationData{}
-	}
-	return s.KnownPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
-}
-
-func (s *ConsensusStore) ExtractLatestNewAttestations() map[uint64]*types.AttestationData {
-	if s == nil || s.NewPayloads == nil {
-		return map[uint64]*types.AttestationData{}
-	}
-	return s.NewPayloads.ExtractLatestAttestations(s.LatestFinalized().Slot)
 }
 
 func validPayloadEntry(entry *PayloadEntry) bool {

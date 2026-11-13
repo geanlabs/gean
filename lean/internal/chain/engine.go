@@ -14,6 +14,7 @@ import (
 	"github.com/geanlabs/gean/lean/internal/aggregation/role"
 	"github.com/geanlabs/gean/lean/internal/chain/pending"
 	"github.com/geanlabs/gean/lean/internal/network"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
 	"github.com/geanlabs/gean/lean/internal/store"
@@ -35,6 +36,7 @@ const (
 
 type Engine struct {
 	Store          *store.ConsensusStore
+	Pools          *pools.Attestations
 	FC             *forkchoice.ForkChoice
 	P2P            *network.Host
 	Keys           *xmss.KeyManager
@@ -126,6 +128,7 @@ type Engine struct {
 
 func New(
 	s *store.ConsensusStore,
+	attestations *pools.Attestations,
 	fc *forkchoice.ForkChoice,
 	p2pHost *network.Host,
 	keys *xmss.KeyManager,
@@ -136,6 +139,7 @@ func New(
 	network.SetClientGitCommit(gitCommit)
 	e := &Engine{
 		Store:               s,
+		Pools:               attestations,
 		FC:                  fc,
 		P2P:                 p2pHost,
 		Keys:                keys,

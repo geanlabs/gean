@@ -9,8 +9,8 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 const valueTestValidators = 6 // 2/3 is 4 votes
@@ -120,20 +120,20 @@ func TestProofValueCountsVotesForTheHeadBlock(t *testing.T) {
 func valueTestSnapshot(signers ...[]uint64) *Snapshot {
 	snap := &Snapshot{
 		headState:    valueTestState(),
-		attSigs:      make(map[[32]byte]*store.AttestationDataEntry),
-		newEntries:   make(map[[32]byte]*store.PayloadEntry),
-		knownEntries: make(map[[32]byte]*store.PayloadEntry),
+		attSigs:      make(map[[32]byte]*pools.AttestationDataEntry),
+		newEntries:   make(map[[32]byte]*pools.PayloadEntry),
+		knownEntries: make(map[[32]byte]*pools.PayloadEntry),
 	}
 	for i, ids := range signers {
 		data := valueTestData(0, 1, 2)
 		data.Slot = uint64(10 + i) // distinct data per group
-		entry := &store.AttestationDataEntry{Data: data}
+		entry := &pools.AttestationDataEntry{Data: data}
 		for _, id := range ids {
-			entry.Signatures = append(entry.Signatures, store.AttestationSignatureEntry{ValidatorID: id})
+			entry.Signatures = append(entry.Signatures, pools.AttestationSignatureEntry{ValidatorID: id})
 		}
 		snap.attSigs[rootByte(byte(i+1))] = entry
 	}
-	snap.newEntries[rootByte(1)] = &store.PayloadEntry{
+	snap.newEntries[rootByte(1)] = &pools.PayloadEntry{
 		Data:   snap.attSigs[rootByte(1)].Data,
 		Proofs: []*types.SingleMessageAggregate{{Participants: types.BitlistFromIndices([]uint64{2}), Proof: []byte{1}}},
 	}

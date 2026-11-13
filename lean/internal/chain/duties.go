@@ -4,11 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/geanlabs/gean/lean/internal/validator"
-
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/validator"
 )
 
 func (e *Engine) produceAttestations(slot uint64) {
@@ -51,7 +50,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 				logger.Error(logger.Validator, "attestation root failed validator=%d: %v", vid, err)
 				continue
 			}
-			e.Store.AttestationSignatures.Insert(dataRoot, attData, vid, sig)
+			e.Pools.AttestationSignatures.Insert(dataRoot, attData, vid, sig)
 		}
 
 		if e.P2P != nil {

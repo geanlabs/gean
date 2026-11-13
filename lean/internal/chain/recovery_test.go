@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func aggAttWithSource(source *types.Checkpoint, headTag byte, bits []uint64) *types.AggregatedAttestation {
@@ -19,8 +19,8 @@ func aggAttWithSource(source *types.Checkpoint, headTag byte, bits []uint64) *ty
 	}
 }
 
-func noEntries() map[[32]byte]*store.PayloadEntry {
-	return map[[32]byte]*store.PayloadEntry{}
+func noEntries() map[[32]byte]*pools.PayloadEntry {
+	return map[[32]byte]*pools.PayloadEntry{}
 }
 
 // Only votes whose source equals the head's justified checkpoint are recoverable;
@@ -55,7 +55,7 @@ func TestSelectRecoveryCandidatesSkipsFullyCovered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash tree root: %v", err)
 	}
-	known := map[[32]byte]*store.PayloadEntry{
+	known := map[[32]byte]*pools.PayloadEntry{
 		root: {Proofs: []*types.SingleMessageAggregate{
 			{Participants: types.BitlistFromIndices([]uint64{0, 1, 2})},
 		}},

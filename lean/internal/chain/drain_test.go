@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func blockAtSlot(slot uint64) *types.SignedBlock {
@@ -23,6 +24,7 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 	const capacity = 8
 
 	e := &Engine{
+		Pools:   pools.New(),
 		Store:   makeTestStore(),
 		BlockCh: make(chan *types.SignedBlock, capacity),
 	}
@@ -64,6 +66,7 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 
 func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
 	e := &Engine{
+		Pools:   pools.New(),
 		Store:   makeTestStore(),
 		BlockCh: make(chan *types.SignedBlock, 4),
 	}
@@ -87,6 +90,7 @@ func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
 // producer, everything queued on entry is imported.
 func TestDrainPendingBlocks_ConsumesEveryQueuedBlock(t *testing.T) {
 	e := &Engine{
+		Pools:   pools.New(),
 		Store:   makeTestStore(),
 		BlockCh: make(chan *types.SignedBlock, 16),
 	}

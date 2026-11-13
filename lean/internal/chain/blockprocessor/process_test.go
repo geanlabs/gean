@@ -9,17 +9,18 @@ import (
 	"github.com/geanlabs/gean/lean/consensus/forkchoice"
 	"github.com/geanlabs/gean/lean/consensus/statetransition"
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 func TestOnBlockRejectsNilStore(t *testing.T) {
-	if err := OnBlock(nil, nil); err == nil {
+	if err := OnBlock(nil, nil, nil); err == nil {
 		t.Fatal("expected nil store error")
 	}
 }
 
 func TestOnBlockRejectsNilStoreBackend(t *testing.T) {
-	err := OnBlockWithoutVerification(&store.ConsensusStore{}, &types.SignedBlock{
+	err := OnBlockWithoutVerification(&store.ConsensusStore{}, pools.New().KnownPayloads, &types.SignedBlock{
 		Block: &types.Block{Body: &types.BlockBody{}},
 	})
 	if err == nil {
@@ -34,7 +35,7 @@ func TestOnBlockWithoutVerificationPersistsBlock(t *testing.T) {
 	s, parentState, parentRoot := processorStoreWithParent(t)
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
 
-	if err := OnBlockWithoutVerification(s, &types.SignedBlock{
+	if err := OnBlockWithoutVerification(s, pools.New().KnownPayloads, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	}); err != nil {
@@ -65,7 +66,7 @@ func TestOnBlockWithoutVerificationReturnsPersistenceError(t *testing.T) {
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
 	s.Backend = failingProcessorWriteBackend{InMemoryBackend: s.Backend.(*storage.InMemoryBackend)}
 
-	err := OnBlockWithoutVerification(s, &types.SignedBlock{
+	err := OnBlockWithoutVerification(s, pools.New().KnownPayloads, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	})
@@ -279,7 +280,7 @@ func TestPruneStaleStatesReachesStatesRebuiltBelowItsMark(t *testing.T) {
 	headSlot := uint64(store.StateRetentionSlots + 10)
 	store.PruneStaleStates(s, fc, head, headSlot, finalized, finalized)
 
-	if err := OnBlockWithoutVerification(s, &types.SignedBlock{
+	if err := OnBlockWithoutVerification(s, pools.New().KnownPayloads, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	}); err != nil {

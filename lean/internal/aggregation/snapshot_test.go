@@ -3,13 +3,12 @@ package aggregation
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func TestSnapshotInputsCapturesPayloadAndTargetState(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
+	s := pools.New()
 
 	var headRoot [32]byte
 	headRoot[0] = 1
@@ -22,8 +21,6 @@ func TestSnapshotInputsCapturesPayloadAndTargetState(t *testing.T) {
 		JustifiedSlots:           types.NewBitlistSSZ(0),
 		JustificationsValidators: types.NewBitlistSSZ(0),
 	}
-	s.SetHead(headRoot)
-	s.InsertState(headRoot, headState)
 
 	attData := &types.AttestationData{
 		Slot:   1,
@@ -39,7 +36,7 @@ func TestSnapshotInputsCapturesPayloadAndTargetState(t *testing.T) {
 		Proof:        []byte{1},
 	})
 
-	snap := SnapshotInputs(s, headState, 1)
+	snap := SnapshotInputs(s, headState, headRoot, 1)
 	if snap == nil {
 		t.Fatal("snapshot is nil")
 	}
@@ -52,12 +49,12 @@ func TestSnapshotInputsCapturesPayloadAndTargetState(t *testing.T) {
 }
 
 func TestSnapshotInputsReturnsNilWithoutWork(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
-	if snap := SnapshotInputs(s, &types.State{}, 0); snap != nil {
+	s := pools.New()
+	if snap := SnapshotInputs(s, &types.State{}, [32]byte{}, 0); snap != nil {
 		t.Fatalf("snapshot=%v, want nil", snap)
 	}
 	// A caller with no head state has nothing to resolve signers against.
-	if snap := SnapshotInputs(s, nil, 0); snap != nil {
+	if snap := SnapshotInputs(s, nil, [32]byte{}, 0); snap != nil {
 		t.Fatalf("snapshot=%v, want nil without a head state", snap)
 	}
 }

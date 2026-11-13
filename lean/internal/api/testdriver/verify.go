@@ -8,6 +8,7 @@ import (
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/internal/chain/blockprocessor"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/specfixtures"
 	"github.com/geanlabs/gean/lean/internal/store"
 )
@@ -59,7 +60,7 @@ func VerifySignaturesHandler() http.HandlerFunc {
 			return
 		}
 
-		if err := blockprocessor.OnBlock(consensusStore, signedBlock); err != nil {
+		if err := blockprocessor.OnBlock(consensusStore, pools.New().KnownPayloads, signedBlock); err != nil {
 			writeVerifyFailure(w, err.Error())
 			return
 		}

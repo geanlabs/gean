@@ -112,7 +112,8 @@ Gean is a single Go module organised by protocol. Everything Lean-specific lives
 | [`lean/internal/chain/pending`](lean/internal/chain/pending) | Buffers for blocks and attestations awaiting unknown parents |
 | [`lean/internal/validator`](lean/internal/validator) | Attestation production, proposer selection, and the proposal reservation |
 | [`lean/internal/validator/dutygate`](lean/internal/validator/dutygate) | Suspends duties while the node lags sync or the network stalls |
-| [`lean/internal/store`](lean/internal/store) | Consensus store: blocks, states, gossip buffers, and pruning |
+| [`lean/internal/store`](lean/internal/store) | Blocks, states, persistence indexes/caches, decoded-key cache, and database pruning |
+| [`lean/internal/pools`](lean/internal/pools) | Bounded, synchronized attestation signatures and new/known payloads; independent of storage and native crypto |
 | [`lean/internal/network`](lean/internal/network) | libp2p host, gossipsub topics, req/resp protocols, ENR, and peer dialing |
 | [`lean/internal/network/syncer`](lean/internal/network/syncer) | Range sync from peers ahead of the local head |
 | [`lean/internal/network/checkpoint`](lean/internal/network/checkpoint) | Checkpoint sync: fetch and verify an anchor state and block |

@@ -7,8 +7,8 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 func TestAggregationMessageRejectsNilData(t *testing.T) {
@@ -56,14 +56,14 @@ func aggregateTestSnapshot(slots ...uint64) *Snapshot {
 		// SnapshotInputs never yields a nil head state; signer resolution reads
 		// its validator registry.
 		headState:    &types.State{LatestFinalized: &types.Checkpoint{Slot: 0}},
-		attSigs:      make(map[[32]byte]*store.AttestationDataEntry),
-		newEntries:   make(map[[32]byte]*store.PayloadEntry),
-		knownEntries: make(map[[32]byte]*store.PayloadEntry),
+		attSigs:      make(map[[32]byte]*pools.AttestationDataEntry),
+		newEntries:   make(map[[32]byte]*pools.PayloadEntry),
+		knownEntries: make(map[[32]byte]*pools.PayloadEntry),
 	}
 	for i, slot := range slots {
 		var dr [32]byte
 		dr[0] = byte(i + 1)
-		snap.attSigs[dr] = &store.AttestationDataEntry{
+		snap.attSigs[dr] = &pools.AttestationDataEntry{
 			Data: &types.AttestationData{
 				Slot:   slot,
 				Head:   &types.Checkpoint{},

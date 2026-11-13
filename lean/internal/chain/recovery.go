@@ -12,7 +12,7 @@ import (
 	"github.com/geanlabs/gean/lean/internal/aggregation"
 	"github.com/geanlabs/gean/lean/internal/blockbuilder/attestationproof"
 	"github.com/geanlabs/gean/lean/internal/network/syncer"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 const maxRecoverySplits = 4
@@ -110,8 +110,8 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		return
 	}
 
-	newEntries := e.Store.NewPayloads.Entries()
-	knownEntries := e.Store.KnownPayloads.Entries()
+	newEntries := e.Pools.NewPayloads.Entries()
+	knownEntries := e.Pools.KnownPayloads.Entries()
 	candidates := selectRecoveryCandidates(block.Body.Attestations, &headSummary.Justified, newEntries, knownEntries)
 
 	for _, candidate := range candidates {
@@ -172,7 +172,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		} else {
 			metrics.IncProofOperation("recovery", "success")
 			metrics.ObserveProofSize("type1", len(proof))
-			e.Store.NewPayloads.Push(candidate.root, candidate.att.Data, recovered)
+			e.Pools.NewPayloads.Push(candidate.root, candidate.att.Data, recovered)
 			if e.P2P != nil {
 				_ = e.P2P.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
 					Data:  candidate.att.Data,
@@ -191,7 +191,7 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 func selectRecoveryCandidates(
 	attestations []*types.AggregatedAttestation,
 	headJustified *types.Checkpoint,
-	newEntries, knownEntries map[[32]byte]*store.PayloadEntry,
+	newEntries, knownEntries map[[32]byte]*pools.PayloadEntry,
 ) []recoveryCandidate {
 	candidates := make([]recoveryCandidate, 0, len(attestations))
 	for _, att := range attestations {
@@ -275,7 +275,7 @@ func (e *Engine) blockProofClaims(block *types.Block, state *types.State) ([][]x
 	return groups, bindings, nil
 }
 
-func localCoverage(entries ...*store.PayloadEntry) map[uint64]bool {
+func localCoverage(entries ...*pools.PayloadEntry) map[uint64]bool {
 	covered := make(map[uint64]bool)
 	for _, entry := range entries {
 		for _, proof := range localProofs(entry) {
@@ -287,7 +287,7 @@ func localCoverage(entries ...*store.PayloadEntry) map[uint64]bool {
 	return covered
 }
 
-func localProofs(entry *store.PayloadEntry) []*types.SingleMessageAggregate {
+func localProofs(entry *pools.PayloadEntry) []*types.SingleMessageAggregate {
 	if entry == nil {
 		return nil
 	}

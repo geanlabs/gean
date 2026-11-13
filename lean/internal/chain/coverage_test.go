@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/lean/consensus/types"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 // validatorRegistry builds a registry of n real entries; a slice of nil
@@ -114,14 +115,14 @@ func TestCoverageSetOrUnionsBothDimensions(t *testing.T) {
 }
 
 func TestSnapshotNewPayloadParticipantsEmptyIsNil(t *testing.T) {
-	s := makeTestStore()
+	s := pools.New()
 	if got := snapshotNewPayloadParticipants(s); got != nil {
 		t.Errorf("empty buffer snapshot=%v, want nil so the caller keeps its last round", got)
 	}
 }
 
 func TestSnapshotNewPayloadParticipantsGroupsBySlot(t *testing.T) {
-	s := makeTestStore()
+	s := pools.New()
 	for _, tc := range []struct {
 		root byte
 		slot uint64
@@ -158,7 +159,7 @@ func TestSnapshotNewPayloadParticipantsGroupsBySlot(t *testing.T) {
 func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 	const reportingSlot = uint64(7)
 
-	e := &Engine{Store: makeTestStore(), CommitteeCount: 2}
+	e := &Engine{Pools: pools.New(), Store: makeTestStore(), CommitteeCount: 2}
 
 	headState := &types.State{
 		Slot:            reportingSlot + 1,
@@ -225,7 +226,7 @@ func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 // A report for a round with no data must not panic and must leave the gauges
 // recordable — an empty round is a real reading.
 func TestReportPostBlockCoverageEmptyRoundIsSafe(t *testing.T) {
-	e := &Engine{Store: makeTestStore(), CommitteeCount: 2}
+	e := &Engine{Pools: pools.New(), Store: makeTestStore(), CommitteeCount: 2}
 	var headRoot [32]byte
 	headRoot[0] = 0xBB
 	if err := e.Store.PutState(headRoot, &types.State{
@@ -244,7 +245,7 @@ func TestReportPostBlockCoverageEmptyRoundIsSafe(t *testing.T) {
 // Without a head state there is no registry to measure against; the emitters
 // must return rather than divide by a zero committee or index a nil slice.
 func TestCoverageEmittersWithoutHeadState(t *testing.T) {
-	e := &Engine{Store: makeTestStore(), CommitteeCount: 2}
+	e := &Engine{Pools: pools.New(), Store: makeTestStore(), CommitteeCount: 2}
 	e.reportPostBlockCoverage(1)
 	e.reportAggStartNewCoverage()
 	e.reportProposalCoverage(nil)

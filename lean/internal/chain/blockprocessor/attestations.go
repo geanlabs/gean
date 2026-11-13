@@ -2,11 +2,11 @@ package blockprocessor
 
 import (
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
-func importBlockAttestations(s *store.ConsensusStore, signedBlock *types.SignedBlock) {
-	if s == nil || s.KnownPayloads == nil || signedBlock == nil ||
+func importBlockAttestations(known *pools.PayloadBuffer, signedBlock *types.SignedBlock) {
+	if known == nil || signedBlock == nil ||
 		signedBlock.Block == nil || signedBlock.Block.Body == nil {
 		return
 	}
@@ -16,7 +16,7 @@ func importBlockAttestations(s *store.ConsensusStore, signedBlock *types.SignedB
 		}
 		root, err := att.Data.HashTreeRoot()
 		if err == nil {
-			s.KnownPayloads.PushData(root, att.Data)
+			known.PushData(root, att.Data)
 		}
 	}
 }

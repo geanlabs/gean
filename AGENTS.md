@@ -107,7 +107,8 @@ The packages below describe the current implementation; migrate them in bounded,
   and stops the node; `lean/spectests/` runs leanSpec fixtures.
 - `lean/internal/`: Lean node services. `chain/` is the engine loop (tick-driven duties in `tick.go`,
   event dispatch, block import, pending blocks); `validator/` attestation production, proposer
-  selection and the proposal reservation; `store/` the consensus store; `network/` libp2p, gossip,
+  selection and the proposal reservation; `store/` persistence and its caches; `pools/` the live,
+  synchronized attestation buffers; `network/` libp2p, gossip,
   req/resp, sync and checkpoint sync; `aggregation/`, `prover/`, `blockbuilder/`, `api/`.
 - `internal/`: mechanics shared by every protocol (storage, lifecycle, logger, metrics); no protocol types.
 - `beacon/`: reserved Beacon Chain layout, README files only until Beacon work starts.

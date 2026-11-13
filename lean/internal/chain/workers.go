@@ -13,7 +13,7 @@ func (e *Engine) startWorkers(ctx context.Context) {
 	for _, run := range []func(){
 		func() { e.runFetchBatcher(ctx) },
 		func() {
-			aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
+			aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Pools, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
 		},
 		func() { e.runProposalWorker(ctx) },
 		func() { e.runRecoveryWorker(ctx) },
@@ -52,7 +52,7 @@ func (e *Engine) runAttestationWorker(ctx context.Context) {
 
 // runAggregationWorker verifies gossiped aggregates off the dispatch loop.
 // Verification is a recursive XMSS proof check — the most expensive verify gean
-// does — and on the loop it delayed store.OnTick, stalling the store clock.
+// does — and on the loop it delayed OnTick, stalling the store clock.
 // Unlike single attestations these are not fanned out per message: the check is
 // CPU-bound, so serialising it here bounds the cost instead of thrashing. The
 // buffers it writes are mutex-protected, so a worker goroutine is safe.

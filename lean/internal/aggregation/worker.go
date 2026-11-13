@@ -8,9 +8,9 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 type Publisher interface {
@@ -44,7 +44,7 @@ const AcquirePatience = 750 * time.Millisecond
 func RunWorker(
 	ctx context.Context,
 	dispatches <-chan Dispatch,
-	consensusStore *store.ConsensusStore,
+	attestations *pools.Attestations,
 	cache *xmss.PubKeyCache,
 	publisher Publisher,
 	gate *prover.Gate,
@@ -130,7 +130,7 @@ func RunWorker(
 					logger.Info(logger.Signature, "aggregation session truncated after partial output: slot=%d produced=%d duration=%v budget=%v", dispatch.Slot, len(aggs), workerElapsed, budget)
 				}
 			}
-			applyAggregationMutations(consensusStore, payloads, deletes)
+			applyAggregationMutations(attestations, payloads, deletes)
 			publishCtx, cancelPublish := context.WithTimeout(ctx, types.MillisecondsPerInterval*time.Millisecond)
 			publishAggregates(publishCtx, publisher, aggs)
 			cancelPublish()

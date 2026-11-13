@@ -7,8 +7,8 @@ import (
 
 	"github.com/geanlabs/gean/lean/consensus/types"
 	"github.com/geanlabs/gean/lean/crypto/xmss"
+	"github.com/geanlabs/gean/lean/internal/pools"
 	"github.com/geanlabs/gean/lean/internal/prover/shadow"
-	"github.com/geanlabs/gean/lean/internal/store"
 )
 
 func TestRawFirstSelection(t *testing.T) {
@@ -40,9 +40,9 @@ func TestRawFirstSelection(t *testing.T) {
 			snap.headState.Validators = []*types.Validator{{Index: 0}, {Index: 1}, {Index: 2}, {Index: 3}}
 			dr := rootByte(1)
 			for _, id := range tc.raw {
-				snap.attSigs[dr].Signatures = append(snap.attSigs[dr].Signatures, store.AttestationSignatureEntry{ValidatorID: id})
+				snap.attSigs[dr].Signatures = append(snap.attSigs[dr].Signatures, pools.AttestationSignatureEntry{ValidatorID: id})
 			}
-			entry := &store.PayloadEntry{}
+			entry := &pools.PayloadEntry{}
 			for _, ids := range tc.children {
 				entry.Proofs = append(entry.Proofs, &types.SingleMessageAggregate{Participants: types.BitlistFromIndices(ids), Proof: []byte{1}})
 			}

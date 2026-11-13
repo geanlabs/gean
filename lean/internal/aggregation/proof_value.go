@@ -7,7 +7,7 @@ import (
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/lean/consensus/statetransition"
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 // voteState is the head state as the next block's header leaves it, which is
@@ -76,7 +76,7 @@ func proofValue(state *types.State, data *types.AttestationData, voters []uint64
 // data root, new or known.
 func heldVoters(snap *Snapshot, dataRoot [32]byte) map[uint64]bool {
 	held := make(map[uint64]bool)
-	for _, entry := range []*store.PayloadEntry{snap.newEntries[dataRoot], snap.knownEntries[dataRoot]} {
+	for _, entry := range []*pools.PayloadEntry{snap.newEntries[dataRoot], snap.knownEntries[dataRoot]} {
 		if entry == nil {
 			continue
 		}

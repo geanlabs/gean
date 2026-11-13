@@ -257,6 +257,20 @@ func TestForkChoiceInitThenStep(t *testing.T) {
 	if !strings.HasPrefix(stepResp.Snapshot.HeadRoot, "0x") {
 		t.Errorf("snapshot.headRoot: missing 0x prefix in %q", stepResp.Snapshot.HeadRoot)
 	}
+
+	root := [32]byte{1}
+	data := &types.AttestationData{Slot: 1}
+	sess.pools.NewPayloads.PushData(root, data)
+	sess.pools.KnownPayloads.PushData(root, data)
+	sess.pools.AttestationSignatures.Insert(root, data, 0, [types.SignatureSize]byte{})
+	rec = httptest.NewRecorder()
+	sess.ForkChoiceInitHandler()(rec, httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body)))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("reinit: expected 204, got %d", rec.Code)
+	}
+	if sess.store.Time() != 0 || sess.pools.NewPayloads.Len() != 0 || sess.pools.KnownPayloads.Len() != 0 || sess.pools.AttestationSignatures.Len() != 0 {
+		t.Fatal("reinitializing the session retained clock or live pools")
+	}
 }
 
 // TestVerifySignatures_RejectsMalformedAnchor confirms an unparseable anchor

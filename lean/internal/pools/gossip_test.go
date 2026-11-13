@@ -1,14 +1,14 @@
-package store_test
+package pools_test
 
 import (
 	"testing"
 
 	"github.com/geanlabs/gean/lean/consensus/types"
-	"github.com/geanlabs/gean/lean/internal/store"
+	"github.com/geanlabs/gean/lean/internal/pools"
 )
 
 func TestAttestationSignatureInsertAndDelete(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(0)
+	gsm := pools.NewAttestationSignatureMap(0)
 	var dr [32]byte
 	dr[0] = 1
 	data := &types.AttestationData{Slot: 5}
@@ -25,7 +25,7 @@ func TestAttestationSignatureInsertAndDelete(t *testing.T) {
 		t.Fatal("expected 2 signatures")
 	}
 
-	gsm.Delete([]store.AttestationDeleteKey{{ValidatorID: 0, DataRoot: dr}})
+	gsm.Delete([]pools.AttestationDeleteKey{{ValidatorID: 0, DataRoot: dr}})
 	snap = gsm.Snapshot()
 	if len(snap[dr].Signatures) != 1 {
 		t.Fatal("expected 1 signature after delete")
@@ -33,7 +33,7 @@ func TestAttestationSignatureInsertAndDelete(t *testing.T) {
 }
 
 func TestAttestationSignatureCountForSlot(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(0)
+	gsm := pools.NewAttestationSignatureMap(0)
 	var sig [types.SignatureSize]byte
 
 	if gsm.SignatureCountForSlot(1) != 0 {
@@ -61,7 +61,7 @@ func TestAttestationSignatureCountForSlot(t *testing.T) {
 }
 
 func TestAttestationSignaturePruneBelow(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(0)
+	gsm := pools.NewAttestationSignatureMap(0)
 	var sig [types.SignatureSize]byte
 	for i := range uint64(5) {
 		var dr [32]byte
@@ -79,7 +79,7 @@ func TestAttestationSignaturePruneBelow(t *testing.T) {
 }
 
 func TestAttestationSignatureRejectsNilData(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(0)
+	gsm := pools.NewAttestationSignatureMap(0)
 	var sig [types.SignatureSize]byte
 
 	gsm.Insert([32]byte{1}, nil, 0, sig)
@@ -90,7 +90,7 @@ func TestAttestationSignatureRejectsNilData(t *testing.T) {
 }
 
 func TestAttestationSignatureMapZeroValueInsert(t *testing.T) {
-	var gsm store.AttestationSignatureMap
+	var gsm pools.AttestationSignatureMap
 	var sig [types.SignatureSize]byte
 	gsm.Insert([32]byte{1}, &types.AttestationData{Slot: 1}, 0, sig)
 
@@ -100,7 +100,7 @@ func TestAttestationSignatureMapZeroValueInsert(t *testing.T) {
 }
 
 func TestAttestationSignatureSnapshotReturnsCopy(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(0)
+	gsm := pools.NewAttestationSignatureMap(0)
 	var dr [32]byte
 	dr[0] = 1
 	var sig [types.SignatureSize]byte
@@ -132,7 +132,7 @@ func TestAttestationSignatureSnapshotReturnsCopy(t *testing.T) {
 // exactly when that stops. Without a bound the signature map grows for as long
 // as the stall lasts, which is the shape observed on devnet-5.
 func TestAttestationSignatureMapEvictsOldestRootAtCapacity(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(3)
+	gsm := pools.NewAttestationSignatureMap(3)
 
 	data := func(slot uint64) *types.AttestationData {
 		return &types.AttestationData{
@@ -173,7 +173,7 @@ func TestAttestationSignatureMapEvictsOldestRootAtCapacity(t *testing.T) {
 // Storing a vote twice wastes memory and, worse, overstates how many distinct
 // validators have voted — the count the early-aggregation trigger reads.
 func TestAttestationSignatureMapIgnoresDuplicateValidator(t *testing.T) {
-	gsm := store.NewAttestationSignatureMap(0)
+	gsm := pools.NewAttestationSignatureMap(0)
 	data := &types.AttestationData{
 		Slot:   1,
 		Head:   &types.Checkpoint{},
