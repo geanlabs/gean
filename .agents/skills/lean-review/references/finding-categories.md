@@ -39,7 +39,7 @@ code that cannot panic.
 every caller, and state construction. A lookup or a type alone is not proof.
 
 **Not a finding:** validation of untrusted input — gossip and req/resp from
-peers, `internal/api/` requests, CLI flags and config, checkpoint-sync
+peers, `lean/internal/api/` requests, CLI flags and config, checkpoint-sync
 responses. Boundary validation is required, not filler.
 
 ## 4. `duplicates-existing-util`
@@ -47,10 +47,10 @@ responses. Boundary validation is required, not filler.
 The highest-value category; reviewers miss these most.
 
 **Looks like:**
-- Bitlist handling that could call `internal/types/bitlist.go` (`BitlistGet`,
+- Bitlist handling that could call `lean/consensus/types/bitlist.go` (`BitlistGet`,
   `BitlistSet`, `BitlistLen`, `BitlistCount`, `BitlistExtend`, `BitlistIndices`,
   `BitlistFromIndices`, `NewBitlistSSZ`).
-- Root and proposer helpers duplicating `internal/types/helpers.go`
+- Root and proposer helpers duplicating `lean/consensus/types/helpers.go`
   (`IsZeroRoot`, `ProposerIndex`, `IsProposer`, `ShortRoot`).
 - Log formatting that bypasses `logger.Info/Warn/Error` with a component
   constant (`logger.Node`, `logger.Chain`, …) from `internal/logger`.
@@ -83,8 +83,8 @@ such as "mirrors `process_attestations`".
 
 ## 6. `over-validated-boundary`
 
-**Looks like:** `internal/statetransition/` re-checking fields of a block the
-engine already verified; `internal/forkchoice/` re-validating a root just read
+**Looks like:** `lean/consensus/statetransition/` re-checking fields of a block the
+engine already verified; `lean/consensus/forkchoice/` re-validating a root just read
 from the store; a storage backend validating a key built by
 `internal/storage/keys.go`.
 
@@ -92,7 +92,7 @@ from the store; a storage backend validating a key built by
 with no external boundary in between.
 
 **Not a finding:** any caller passes untrusted input, including the hive test
-driver (`internal/api/testdriver/`); then the check is the boundary.
+driver (`lean/internal/api/testdriver/`); then the check is the boundary.
 
 ## Cross-cutting tests
 

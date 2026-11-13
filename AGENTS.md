@@ -31,7 +31,7 @@ Simplicity and minimalism are our core values: code should be easy to read and u
   backward compatible with. Do not add fallback implementations, legacy code paths, compatibility shims,
   data migrations, or retries that mask a failure. Fail loudly and fix the cause. Not fallbacks:
   leanSpec-defined paths such as interval-2 aggregation, and bounded retries of transient failures where
-  repeating is safe and exhaustion returns the error (e.g. `internal/checkpoint`, peer retries).
+  repeating is safe and exhaustion returns the error (e.g. `lean/internal/network/checkpoint`, peer retries).
 - No defensive filler: no nil checks or defaults for impossible cases; never swallow errors.
 - Prove a case is unreachable before removing its guard. Trace input boundaries, callers, and state
   construction; do not assume an invariant from a type or a successful lookup alone.
@@ -59,28 +59,58 @@ Simplicity and minimalism are our core values: code should be easy to read and u
 - Before handoff, justify every new abstraction, dependency, stored field, option, and fallback: what
   concrete requirement needs it, and what becomes simpler or safer because it exists?
 
+## Agent change discipline
+
+- Before a nontrivial edit, identify the required behavior, owning component, invariants, existing
+  implementation/helpers, and covering tests. Use the Principles above as the design standard.
+- Keep each change to one behavior or one ownership extraction. Keep unrelated fixes, dependency
+  upgrades, public API changes, and protocol changes in separate changes.
+- Every new package, abstraction, export, dependency, option, stored field, or worker needs a current
+  caller and a concrete requirement. Explain these briefly in the handoff; no separate design file
+  is needed for routine changes. Planned Beacon support alone does not justify generic scaffolding.
+- After editing, inspect the full diff and search for old callers, duplicate implementations, and
+  code made unused by the change. Remove the obsolete path in the same change. Do not add placeholder
+  uses, empty implementations, or tests whose only purpose is to keep dead code reachable.
+- Run `make check-architecture` and `make check-go`, plus the behavior-specific checks below. The
+  architecture check is source-only and needs no native build; build FFI before `check-go`.
+  Report failures and skips accurately. A skipped check is not a passing check.
+- Use `.agents/skills/lean-review/SKILL.md` before handoff for nontrivial code changes. Its review is
+  report-only; fixes follow the task's authorization and the skill's finding-specific rules.
+- Do not weaken architecture rules, disable CI jobs, add lint suppressions, remove covering tests,
+  or add allowlists to make a change pass. Policy changes require an explicit policy-changing task
+  and a stated reason. This applies to this file and review instructions too.
+- Static analysis cannot prove that exported APIs have real consumers or that similar protocol
+  steps are interchangeable. Review those claims with callers, specifications, and ownership in view.
+
 ## Commands
 
 ```bash
 make build
 make fmt
 make lint
+make check-architecture
+make check-go
 make test
 make test-ffi
 make test-spec
-go test ./internal/node -run TestName -v -count=1
+go test ./lean/internal/chain -run TestName -v -count=1
 ```
 
 ## Architecture
 
-- `cmd/gean/`, `cmd/keygen/`: node binary and testnet/key generation.
-- `internal/node/`: engine, tick-driven duties (`tick.go`), event dispatch, and workers.
-- `internal/statetransition/`, `internal/forkchoice/`, `internal/types/`: spec logic, LMD-GHOST, and SSZ types.
-- `internal/blockprocessor/`, `internal/blockbuilder/`, `internal/attestation/`, `internal/aggregation/`,
-  `internal/proving/`: block import, proposal, attestations, and XMSS proof work.
-- `internal/store/`, `internal/storage/`: consensus store on Pebble (in-memory for tests).
-- `internal/p2p/`, `internal/syncer/`, `internal/pending/`, `internal/checkpoint/`: networking and sync.
-- `xmss/`, `xmss/rust/`: post-quantum XMSS signatures; Go bindings over Rust FFI crates.
+The layout, its boundary rules and the remaining work are in [docs/architecture.md](docs/architecture.md).
+The packages below describe the current implementation; migrate them in bounded, verified steps.
+
+- `cmd/gean/`, `cmd/keygen/`: flag parsing and signals; testnet and key generation.
+- `lean/`: everything Lean. `lean/consensus/` holds the pure rules (types, genesis, statetransition,
+  forkchoice); `lean/crypto/xmss/` the XMSS bindings over Rust FFI crates; `lean/node/` builds, runs
+  and stops the node; `lean/spectests/` runs leanSpec fixtures.
+- `lean/internal/`: Lean node services. `chain/` is the engine loop (tick-driven duties in `tick.go`,
+  event dispatch, block import, pending blocks); `validator/` attestation production, proposer
+  selection and the proposal reservation; `store/` the consensus store; `network/` libp2p, gossip,
+  req/resp, sync and checkpoint sync; `aggregation/`, `prover/`, `blockbuilder/`, `api/`.
+- `internal/`: mechanics shared by every protocol (storage, lifecycle, logger, metrics); no protocol types.
+- `beacon/`: reserved Beacon Chain layout, README files only until Beacon work starts.
 
 ## Testing
 
@@ -92,6 +122,9 @@ go test ./internal/node -run TestName -v -count=1
   mocked cryptography, and unrun checks do not establish correctness for those paths.
 
 ## Commit and PR Style
+
+Never run `git add`, `git commit`, or `git push` without the user's explicit prior approval.
+Ask separately before each action.
 
 Use conventional commits and PR titles: `type(scope): description`, e.g.
 `fix(node): reserve proposal duties through signing and acceptance`. Keep subjects under 72 characters.
@@ -105,7 +138,7 @@ when the right resolution of a conflict is unclear.
 ## Notes
 
 - **FFI**: Run `make ffi` before direct `go test`/`go vet`; `make test` and `make lint` do not build it.
-- **Testing**: Run `make test-ffi` for `xmss/` changes, `make test-spec` for consensus or SSZ changes, and
+- **Testing**: Run `make test-ffi` for `lean/crypto/xmss/` changes, `make test-spec` for consensus or SSZ changes, and
   `go test -race` for concurrency changes. Use fuzz tests for SSZ and wire decoding.
 - **Spec**: leanSpec pinned at `LEAN_SPEC_COMMIT_HASH` in the Makefile is the source of truth; do not bump it silently.
 - **Tick loop**: Keep proving and blocking FFI work off `Engine.onTick`; hand it to a worker. Preserve the
@@ -113,11 +146,11 @@ when the right resolution of a conflict is unclear.
 - **Aggregation**: Interval 2 is the fallback; `maybeEarlyAggregate` may start it in interval 1 at quorum.
   It runs once per slot and is deliberately not behind the sync-lag duty gate.
 - **Fork choice**: `ForkChoice.Prune` must remap vote indices together with pruning nodes.
-- **Storage**: For `internal/store` or `internal/storage` changes, check write ordering and what a crash
+- **Storage**: For `lean/internal/store` or `internal/storage` changes, check write ordering and what a crash
   mid-write leaves on restart.
 - **Logging and metrics**: Use `internal/logger` component constants with `key=value` fields and `0x%x`
   roots. Add metrics in `internal/metrics` with the `lean_` prefix.
-- **Generated code**: Do not edit `internal/types/*_encoding.go`; run `make sszgen`.
+- **Generated code**: Do not edit `lean/consensus/types/*_encoding.go`; run `make sszgen`.
   When SSZ definitions change, inspect the regenerated diff and verify that a second run produces no
   further changes. Keep generator upgrades separate unless required by the task.
 - **Build info**: `gitCommit` is injected via `-ldflags`; do not hardcode it.

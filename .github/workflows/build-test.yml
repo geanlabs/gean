@@ -2,9 +2,8 @@ name: Build & Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, "devnet-*"]
   pull_request:
-    branches: [main]
 
 env:
   GO_VERSION: "1.26.10"
@@ -35,8 +34,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            xmss/rust/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('xmss/rust/Cargo.lock') }}
+            lean/crypto/xmss/rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('lean/crypto/xmss/rust/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 
@@ -46,8 +45,11 @@ jobs:
       - name: Build binaries
         run: make build
 
+      - name: Check Go bugs and unused code
+        run: make check-go
+
       - name: Run unit tests
         run: make test
 
       - name: Run race tests
-        run: go test -race ./internal/node ./internal/store ./internal/proving ./internal/forkchoice ./internal/api -count=1
+        run: go test -race ./lean/internal/chain ./lean/internal/store ./lean/internal/prover ./lean/consensus/forkchoice ./lean/internal/api -count=1

@@ -1,17 +1,12 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"os"
 
 	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/metrics"
-	"github.com/geanlabs/gean/internal/node"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/shadow"
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/lean/node"
 )
 
 func main() {
@@ -22,111 +17,8 @@ func main() {
 		}
 		os.Exit(1)
 	}
-	if err := run(cfg); err != nil {
+	if err := node.Run(cfg, notifyShutdown()); err != nil {
 		logger.Error(logger.Node, "fatal: %v", err)
 		os.Exit(1)
-	}
-}
-
-func run(cfg config) error {
-	logger.Info(logger.Node, "gean consensus client starting")
-	stop := notifyShutdown()
-
-	inputs, err := loadStartupInputs(cfg)
-	if err != nil {
-		return err
-	}
-	// Every exit path, including a failure halfway through startup, tears down
-	// whatever started, in an order that frees nothing still in use.
-	c := &components{freeKeys: inputs.keyManager.Close}
-	defer c.teardown()
-
-	// Committee count is a network-wide parameter: resolve the flag against the
-	// shared config before any subnet routing is wired (p2p subscriptions and
-	// the engine both read cfg.CommitteeCount below).
-	cfg.CommitteeCount = resolveCommitteeCount(cfg.CommitteeCount, cfg.committeeCountSet, inputs.genesisConfig.AttestationCommitteeCount)
-	logger.Info(logger.Node, "attestation committee count: %d", cfg.CommitteeCount)
-
-	backend, s, err := openStore(cfg.DataDir)
-	if err != nil {
-		logger.Error(logger.Node, "open pebble: %v", err)
-		return err
-	}
-	c.closeStore = backend.Close
-
-	if err := bootstrapStore(s, inputs.genesisConfig, cfg.CheckpointURL); err != nil {
-		return err
-	}
-
-	if err := recoverStoreTime(s, inputs.genesisConfig.GenesisTime); err != nil {
-		return err
-	}
-
-	fc, err := node.ForkChoiceFromStore(s)
-	if err != nil {
-		return err
-	}
-
-	// Recover the stored-block high-water mark before any duty runs. Doing it
-	// here rather than lazily keeps the full-table scan off the dispatch loop
-	// entirely, and surfaces a read failure at startup instead of leaving the
-	// duty gate to act on an understated mark.
-	if err := s.SeedMaxStoredBlockSlot(); err != nil {
-		logger.Error(logger.Node, "seed max stored block slot: %v", err)
-		return err
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	c.cancel = cancel
-
-	p2pHost, err := setupP2P(ctx, cfg, inputs.keyManager)
-	if err != nil {
-		logger.Error(logger.Network, "create p2p host: %v", err)
-		return err
-	}
-	c.closeNetwork = p2pHost.Close
-
-	// Handlers must be live before the prover pre-init: the listener is
-	// already accepting connections, and peers that dial during the
-	// multi-second init would fail req/resp protocol negotiation.
-	registerReqRespHandlers(p2pHost, s)
-
-	proving := len(inputs.keyManager.ValidatorIDs()) > 0 || cfg.IsAggregator
-	xmss.SetProverArena(cfg.ProverArena)
-	warnIfMemoryLimited(proving)
-	if err := preinitializeXMSS(proving); err != nil {
-		return err
-	}
-	// The startup steps above cannot be interrupted, so a signal that arrived
-	// during them is honoured here, before the engine starts.
-	select {
-	case <-stop:
-		return nil
-	default:
-	}
-
-	aggCtl := role.NewWithHook(cfg.IsAggregator, metrics.SetIsAggregator)
-	shadowRates := shadow.Rates{
-		AggregateSignatures:        cfg.ShadowAggregateSignaturesRate,
-		VerifySignature:            cfg.ShadowVerifySignatureRate,
-		VerifyAggregatedSignatures: cfg.ShadowVerifyAggregatedSignaturesRate,
-	}
-	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
-	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
-	c.waitEngine = n.Wait
-	syncDriver := startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes, &c.tasks)
-	c.waitSync = syncDriver.Wait
-
-	if c.servers, err = listenHTTP(cfg, s, fc, aggCtl); err != nil {
-		return err
-	}
-	failed := serveHTTP(c.servers, &c.tasks)
-	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", cfg.apiAddress(), cfg.metricsAddress(), cfg.IsAggregator)
-
-	select {
-	case <-stop:
-		return nil
-	case err := <-failed:
-		return err
 	}
 }

@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-all lint check-architecture check-go fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -12,6 +12,7 @@ NUM_NODES ?= 3
 # rules that reference it: Make expands a rule's prerequisites when it reads the rule, so a
 # definition placed after those rules would expand to empty in their prerequisites.
 LEAN_SPEC_COMMIT_HASH := eca701efeb5931010fe63925cd203c9ee55b2dbc
+STATICCHECK_VERSION := v0.8.1
 
 help: ## Show help for each Makefile recipe
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
@@ -21,7 +22,7 @@ help: ## Show help for each Makefile recipe
 # feature, which Linux aarch64 targets do not enable by default. Without it the prover
 # falls back to scalar code.
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
-	@cd xmss/rust && \
+	@cd lean/crypto/xmss/rust && \
 		case "$$(uname -m)" in \
 			x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
 			aarch64|arm64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
@@ -30,43 +31,51 @@ ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
-	@go build -ldflags "-X github.com/geanlabs/gean/internal/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
+	@go build -ldflags "-X github.com/geanlabs/gean/lean/internal/chain.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
 test: ## Run unit tests (excludes crypto FFI and spec tests)
 	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
 
 test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
-	go test ./xmss/ -v -count=1
+	go test ./lean/crypto/xmss/ -v -count=1
 
 test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec fixture tests only (fast, excludes xmss FFI)
-	go test ./internal/spectests/  -count=1 -tags=spectests
+	go test ./lean/spectests/  -count=1 -tags=spectests
 
 test-all: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
 
-lint: ## Run linters for go & rust
+check-architecture: ## Check package boundaries and the boundary checker's regression tests (no FFI)
+	go test ./tools/archcheck -count=1
+	go run ./tools/archcheck
+
+check-go: ## Run vet and pinned bug/unused-code checks (run make ffi first)
 	go vet ./...
-	cd xmss/rust && cargo fmt --check
-	cd xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
+	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) -checks='SA*,U1000' ./...
+	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) -checks='SA*,U1000' -tags=spectests,hive_testdriver,aggregation_diagnostic ./...
+
+lint: check-architecture check-go ## Run linters for go & rust
+	cd lean/crypto/xmss/rust && cargo fmt --check
+	cd lean/crypto/xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
 
 fmt: ## Format all Go code
 	gofmt -w .
-	cd xmss/rust && cargo fmt
+	cd lean/crypto/xmss/rust && cargo fmt
 
 sszgen: ## Regenerate SSZ encoding files from struct tags
-	@rm -f internal/types/*_encoding.go
-	sszgen --path internal/types --objs ChainConfig --output internal/types/config_encoding.go
-	sszgen --path internal/types --objs Checkpoint --output internal/types/checkpoint_encoding.go
-	sszgen --path internal/types --objs Validator --output internal/types/validator_encoding.go
-	sszgen --path internal/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/types/attestation_encoding.go
-	sszgen --path internal/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/types/block_encoding.go
-	sszgen --path internal/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/types/state_encoding.go
-	sszgen --path internal/types --objs BlocksByRangeRequest --output internal/types/blocks_by_range_encoding.go
+	@rm -f lean/consensus/types/*_encoding.go
+	sszgen --path lean/consensus/types --objs ChainConfig --output lean/consensus/types/config_encoding.go
+	sszgen --path lean/consensus/types --objs Checkpoint --output lean/consensus/types/checkpoint_encoding.go
+	sszgen --path lean/consensus/types --objs Validator --output lean/consensus/types/validator_encoding.go
+	sszgen --path lean/consensus/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output lean/consensus/types/attestation_encoding.go
+	sszgen --path lean/consensus/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output lean/consensus/types/block_encoding.go
+	sszgen --path lean/consensus/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output lean/consensus/types/state_encoding.go
+	sszgen --path lean/consensus/types --objs BlocksByRangeRequest --output lean/consensus/types/blocks_by_range_encoding.go
 
 clean: ## Remove build artifacts and generated files
 	rm -rf bin data
-	cd xmss/rust && cargo clean
+	cd lean/crypto/xmss/rust && cargo clean
 
 tidy: ## Tidy Go module dependencies
 	go mod tidy

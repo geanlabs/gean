@@ -82,54 +82,56 @@ come from a keygen built on the same rev.
 
 `LEAN_SPEC_COMMIT_HASH` in the [`Makefile`](Makefile) is the source of truth for
 the spec version; the leanVM rev is pinned in
-[`xmss/rust/hashsig-glue/Cargo.toml`](xmss/rust/hashsig-glue/Cargo.toml) and
-[`xmss/rust/multisig-glue/Cargo.toml`](xmss/rust/multisig-glue/Cargo.toml).
+[`lean/crypto/xmss/rust/hashsig-glue/Cargo.toml`](lean/crypto/xmss/rust/hashsig-glue/Cargo.toml) and
+[`lean/crypto/xmss/rust/multisig-glue/Cargo.toml`](lean/crypto/xmss/rust/multisig-glue/Cargo.toml).
 
 ## Architecture overview
 
-Gean is a single Go module. Consensus logic lives in `internal/`, and XMSS signatures and proofs are Go bindings over Rust FFI crates in `xmss/`.
+Gean is a single Go module organised by protocol. Everything Lean-specific lives under `lean/`: pure consensus rules in `lean/consensus/`, XMSS bindings over Rust FFI crates in `lean/crypto/xmss/`, the node's composition root in `lean/node/`, node services in `lean/internal/`, and spec tests in `lean/spectests/`. Mechanics shared by every protocol live in the root `internal/` and import no protocol types. `beacon/` reserves the Beacon Chain layout: each folder has a README describing what will live there.
 
 | Package | Description |
 | --- | --- |
-| **Binaries** | |
-| [`cmd/gean`](cmd/gean) | Node binary: flags, bootstrap, servers, and shutdown |
+| **Commands** | |
+| [`cmd/gean`](cmd/gean) | Flag parsing and signal handling; starts `lean/node` |
 | [`cmd/keygen`](cmd/keygen) | Testnet configuration and XMSS key generation |
-| **Node** | |
-| [`internal/node`](internal/node) | Engine: single dispatch loop, tick-driven duties, gossip handling, and workers |
-| [`internal/dutygate`](internal/dutygate) | Suspends duties while the node lags sync or the network stalls |
-| [`internal/role`](internal/role) | Runtime aggregator role toggle |
-| [`internal/lifecycle`](internal/lifecycle) | Goroutine groups that shutdown joins before closing storage and keys |
-| **Consensus** | |
-| [`internal/types`](internal/types) | Consensus containers and generated SSZ encoding |
-| [`internal/genesis`](internal/genesis) | Genesis config, validators, and state |
-| [`internal/statetransition`](internal/statetransition) | leanSpec state transition: slots, blocks, justification, and finality |
-| [`internal/forkchoice`](internal/forkchoice) | Proto-array LMD-GHOST, votes, and safe target |
-| **Blocks and attestations** | |
-| [`internal/blockprocessor`](internal/blockprocessor) | Block validation, verification, transition, and persistence |
-| [`internal/blockbuilder`](internal/blockbuilder) | Block proposal: payload selection and planning |
-| [`internal/attestation`](internal/attestation) | Attestation production, validation, and signature verification |
-| [`internal/attestationproof`](internal/attestationproof) | Selection and merging of attestation proofs |
-| [`internal/aggregation`](internal/aggregation) | Signature aggregation into XMSS proofs |
-| [`internal/proving`](internal/proving) | Proving gate shared by proposal and aggregation |
-| [`internal/shadow`](internal/shadow) | Prover cost model for the Shadow network simulator |
-| **Storage** | |
-| [`internal/store`](internal/store) | Consensus store: blocks, states, gossip buffers, and pruning |
+| **Lean consensus** (pure: no I/O, clock, goroutines or cgo) | |
+| [`lean/consensus/types`](lean/consensus/types) | Consensus containers and generated SSZ encoding |
+| [`lean/consensus/genesis`](lean/consensus/genesis) | Genesis config, validators, and state |
+| [`lean/consensus/statetransition`](lean/consensus/statetransition) | leanSpec state transition: slots, blocks, justification, and finality |
+| [`lean/consensus/forkchoice`](lean/consensus/forkchoice) | Proto-array LMD-GHOST, votes, and safe target |
+| **Lean cryptography** | |
+| [`lean/crypto/xmss`](lean/crypto/xmss) | Go bindings for XMSS keys, signatures, and proofs |
+| [`lean/crypto/xmss/rust`](lean/crypto/xmss/rust) | Rust FFI crates: `hashsig-glue` (XMSS), `multisig-glue` (leanVM proofs), and `cgo-glue` (link shim) |
+| **Lean node** | |
+| [`lean/node`](lean/node) | Builds, runs, and stops the node: bootstrap, store, networking, HTTP servers, and teardown |
+| [`lean/internal/chain`](lean/internal/chain) | Engine: single dispatch loop, tick-driven duties, gossip handling, and workers |
+| [`lean/internal/chain/blockprocessor`](lean/internal/chain/blockprocessor) | Block validation, verification, transition, and persistence |
+| [`lean/internal/chain/attestation`](lean/internal/chain/attestation) | Attestation validation and signature verification |
+| [`lean/internal/chain/pending`](lean/internal/chain/pending) | Buffers for blocks and attestations awaiting unknown parents |
+| [`lean/internal/validator`](lean/internal/validator) | Attestation production, proposer selection, and the proposal reservation |
+| [`lean/internal/validator/dutygate`](lean/internal/validator/dutygate) | Suspends duties while the node lags sync or the network stalls |
+| [`lean/internal/store`](lean/internal/store) | Consensus store: blocks, states, gossip buffers, and pruning |
+| [`lean/internal/network`](lean/internal/network) | libp2p host, gossipsub topics, req/resp protocols, ENR, and peer dialing |
+| [`lean/internal/network/syncer`](lean/internal/network/syncer) | Range sync from peers ahead of the local head |
+| [`lean/internal/network/checkpoint`](lean/internal/network/checkpoint) | Checkpoint sync: fetch and verify an anchor state and block |
+| [`lean/internal/aggregation`](lean/internal/aggregation) | Signature aggregation into XMSS proofs |
+| [`lean/internal/aggregation/role`](lean/internal/aggregation/role) | Runtime aggregator role toggle |
+| [`lean/internal/prover`](lean/internal/prover) | Proving gate shared by proposal and aggregation |
+| [`lean/internal/prover/shadow`](lean/internal/prover/shadow) | Prover cost model for the Shadow network simulator |
+| [`lean/internal/blockbuilder`](lean/internal/blockbuilder) | Block proposal: payload selection and planning |
+| [`lean/internal/blockbuilder/attestationproof`](lean/internal/blockbuilder/attestationproof) | Selection and merging of attestation proofs |
+| [`lean/internal/api`](lean/internal/api) | HTTP API, admin routes, metrics, pprof, and the Hive test driver |
+| [`lean/internal/specfixtures`](lean/internal/specfixtures) | leanSpec fixture parsing |
+| [`lean/spectests`](lean/spectests) | leanSpec consensus fixture runners |
+| **Shared mechanics** (no protocol types) | |
 | [`internal/storage`](internal/storage) | Key-value backends: Pebble, and in-memory for tests |
-| **Networking and sync** | |
-| [`internal/p2p`](internal/p2p) | libp2p host, gossipsub, req/resp, ENR, and peer dialing |
-| [`internal/syncer`](internal/syncer) | Range sync from peers ahead of the local head |
-| [`internal/pending`](internal/pending) | Buffers for blocks and attestations awaiting unknown parents |
-| [`internal/checkpoint`](internal/checkpoint) | Checkpoint sync: fetch and verify an anchor state and block |
-| **Interfaces and observability** | |
-| [`internal/api`](internal/api) | HTTP API, admin routes, metrics, pprof, and the Hive test driver |
+| [`internal/lifecycle`](internal/lifecycle) | Goroutine groups that shutdown joins before closing storage and keys |
 | [`internal/metrics`](internal/metrics) | Prometheus metrics (`lean_` prefix) |
 | [`internal/logger`](internal/logger) | Component-scoped logger |
-| **Testing** | |
-| [`internal/spectests`](internal/spectests) | leanSpec consensus fixture runners |
-| [`internal/specfixtures`](internal/specfixtures) | leanSpec fixture parsing |
-| **Cryptography** | |
-| [`xmss`](xmss) | Go bindings for XMSS keys, signatures, and proofs |
-| [`xmss/rust`](xmss/rust) | Rust FFI crates: `hashsig-glue` (XMSS), `multisig-glue` (leanVM proofs), and `cgo-glue` (link shim) |
+| **Beacon Chain** | |
+| [`beacon`](beacon) | Reserved layout, described folder by folder; no code yet |
+
+[docs/architecture.md](docs/architecture.md) describes the layout, its boundary rules, and the remaining work.
 
 ## Philosophy
 

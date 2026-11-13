@@ -53,9 +53,9 @@ property, so code should be easy to read and audit.
   Log or return an error, not both.
 - Use package-level `Err*` sentinels for errors callers branch on.
 - Do not `panic` outside tests. Pass `ctx context.Context` first and propagate cancellation.
-- Do not edit generated `internal/types/*_encoding.go` files; run `make sszgen`.
+- Do not edit generated `lean/consensus/types/*_encoding.go` files; run `make sszgen`.
 
-### Rust style (`xmss/rust/`)
+### Rust style (`lean/crypto/xmss/rust/`)
 
 - `cargo fmt`; Clippy runs with `-D warnings`.
 - Wrap FFI function bodies that can panic in `ffi_guard!`, and free owned native objects exactly once.
@@ -66,7 +66,7 @@ property, so code should be easy to read and audit.
   must fail without the fix.
 - Prefer adding a case to an existing table-driven test over writing a new test. Use plain `testing`, no
   assertion libraries, and `t.TempDir()` for databases and files.
-- Run `make test-spec` for consensus or SSZ changes, `make test-ffi` for `xmss/` changes, and
+- Run `make test-spec` for consensus or SSZ changes, `make test-ffi` for `lean/crypto/xmss/` changes, and
   `go test -race` for concurrency changes.
 - For performance changes, include real measurements from benchmarks or metrics.
 
