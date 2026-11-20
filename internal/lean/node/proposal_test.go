@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/proving"
@@ -160,7 +161,7 @@ func proposalTestEngine(t *testing.T) *Engine {
 	s.SetHead(root)
 	s.InsertState(root, state)
 	s.InsertBlockHeader(root, state.LatestBlockHeader)
-	e := &Engine{Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan proposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
+	e := &Engine{Clock: clock.Real{}, Store: s, Keys: &xmss.KeyManager{}, proposals: newProposer()}
 	e.Aggregator = e.newAggregator()
 	e.Importer = e.newImporter()
 	return e
@@ -172,10 +173,10 @@ func TestProposalDutyReservedThroughCompletion(t *testing.T) {
 			e := proposalTestEngine(t)
 			e.maybePropose(1, 0)
 			if phase != "queued" {
-				<-e.ProposalCh
+				<-e.proposals.duties
 			}
 			if phase == "awaiting_acceptance" {
-				e.ProposalResultCh <- &proposalResult{duty: proposalDuty{slot: 1}}
+				e.proposals.results <- &proposalResult{duty: proposalDuty{slot: 1}}
 			}
 			if phase == "completed" {
 				// A post-sign failure must also retain the reservation.
@@ -186,15 +187,15 @@ func TestProposalDutyReservedThroughCompletion(t *testing.T) {
 			if phase == "queued" {
 				want = 1
 			}
-			if len(e.ProposalCh) != want {
+			if len(e.proposals.duties) != want {
 				t.Fatal("duplicate duty enqueued")
 			}
 			if phase == "queued" {
-				<-e.ProposalCh
+				<-e.proposals.duties
 			}
 			// Advancing duties must not be suppressed by the old reservation.
 			e.maybePropose(2, 0)
-			if len(e.ProposalCh) != 1 {
+			if len(e.proposals.duties) != 1 {
 				t.Fatal("next slot suppressed")
 			}
 		})
@@ -205,10 +206,10 @@ func TestProposalQueueFullDoesNotReserveDuty(t *testing.T) {
 	e := proposalTestEngine(t)
 	e.maybePropose(1, 0)
 	e.maybePropose(2, 0)
-	<-e.ProposalCh
+	<-e.proposals.duties
 	e.maybePropose(2, 0)
 	select {
-	case duty := <-e.ProposalCh:
+	case duty := <-e.proposals.duties:
 		if duty.slot != 2 {
 			t.Fatalf("slot=%d", duty.slot)
 		}
@@ -220,27 +221,27 @@ func TestProposalQueueFullDoesNotReserveDuty(t *testing.T) {
 func TestProposalPreSignFailureReleasesOnlyMatchingDuty(t *testing.T) {
 	e := proposalTestEngine(t)
 	e.maybePropose(1, 0)
-	first := <-e.ProposalCh
+	first := <-e.proposals.duties
 	e.acceptProposal(context.Background(), &proposalResult{duty: first, retryable: true})
 	e.maybePropose(1, 0)
-	if len(e.ProposalCh) != 1 {
+	if len(e.proposals.duties) != 1 {
 		t.Fatal("pre-sign retry suppressed")
 	}
-	<-e.ProposalCh
+	<-e.proposals.duties
 	e.maybePropose(2, 0)
-	second := <-e.ProposalCh
+	second := <-e.proposals.duties
 	e.acceptProposal(context.Background(), &proposalResult{duty: first, retryable: true})
 	e.maybePropose(2, 0)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposals.duties) != 0 {
 		t.Fatal("old completion released newer reservation")
 	}
 	e.acceptProposal(context.Background(), &proposalResult{duty: second, retryable: true})
 	e.maybePropose(1, 0)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposals.duties) != 0 {
 		t.Fatal("old slot admitted after newer duty")
 	}
 	e.maybePropose(2, 0)
-	if len(e.ProposalCh) != 1 {
+	if len(e.proposals.duties) != 1 {
 		t.Fatal("matching retry suppressed")
 	}
 }
@@ -260,13 +261,13 @@ func TestProposalWorkerReportsPreSignFailure(t *testing.T) {
 	}()
 	e.maybePropose(1, 0)
 	select {
-	case result := <-e.ProposalResultCh:
+	case result := <-e.proposals.results:
 		// Empty key manager fails before signing; no real key material needed.
 		if !result.retryable || result.signedBlock != nil || result.duty.slot != 1 {
 			t.Fatalf("unexpected result: %+v", result)
 		}
 		e.acceptProposal(ctx, result)
-		if e.proposalReserved {
+		if e.proposals.reserved {
 			t.Fatal("pre-sign failure retained reservation")
 		}
 	case <-time.After(5 * time.Second):
@@ -314,14 +315,14 @@ func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 	// A closed key reaches Sign and fails without native signing or real keys.
 	e.Keys = xmss.NewKeyManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
 	e.maybePropose(1, 0)
-	duty := <-e.ProposalCh
+	duty := <-e.proposals.duties
 	result := e.buildProposal(duty)
 	if result.retryable || result.signedBlock != nil {
 		t.Fatalf("unexpected signing failure: %+v", result)
 	}
 	e.acceptProposal(context.Background(), result)
 	e.maybePropose(1, 0)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposals.duties) != 0 {
 		t.Fatal("signing error permitted another signing attempt")
 	}
 }
@@ -414,13 +415,13 @@ func TestMaybeProposeEarlyWaitsForTheSlotsBlock(t *testing.T) {
 			e.Store.SetTime(tc.storeTime)
 			e.maybeProposeEarly()
 			select {
-			case duty := <-e.ProposalCh:
+			case duty := <-e.proposals.duties:
 				if duty.slot != tc.wantSlot {
 					t.Fatalf("duty slot=%d, want %d", duty.slot, tc.wantSlot)
 				}
 				// The interval-0 trigger must not start a second proposal for the slot.
 				e.maybePropose(duty.slot, duty.validatorID)
-				if len(e.ProposalCh) != 0 {
+				if len(e.proposals.duties) != 0 {
 					t.Fatal("interval-0 trigger queued a second proposal for the slot")
 				}
 			default:
@@ -438,7 +439,7 @@ func TestTickAtInterval4StartsNextProposal(t *testing.T) {
 
 	e := earlyProposalEngine(t)
 	e.tickAt(interval4)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposals.duties) != 0 {
 		t.Fatal("startup tick started a proposal")
 	}
 
@@ -446,7 +447,7 @@ func TestTickAtInterval4StartsNextProposal(t *testing.T) {
 	e.tickAt(time.UnixMilli(proposalTestGenesisMs + 3*types.MillisecondsPerInterval))
 	e.tickAt(interval4)
 	select {
-	case duty := <-e.ProposalCh:
+	case duty := <-e.proposals.duties:
 		if duty.slot != 1 {
 			t.Fatalf("duty slot=%d, want 1", duty.slot)
 		}
@@ -463,7 +464,7 @@ func TestEarlyProposalFailureRetriesOnceAfterSlotStart(t *testing.T) {
 	takeDuty := func(e *Engine) proposalDuty {
 		t.Helper()
 		select {
-		case duty := <-e.ProposalCh:
+		case duty := <-e.proposals.duties:
 			return duty
 		default:
 			t.Fatal("no proposal duty queued")
@@ -481,7 +482,7 @@ func TestEarlyProposalFailureRetriesOnceAfterSlotStart(t *testing.T) {
 	tick(e, 4)
 	early := takeDuty(e)
 	e.acceptProposal(ctx, &proposalResult{duty: early, retryable: true})
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposals.duties) != 0 {
 		t.Fatal("failure before the slot started was retried at once")
 	}
 	tick(e, types.IntervalsPerSlot)
@@ -495,7 +496,7 @@ func TestEarlyProposalFailureRetriesOnceAfterSlotStart(t *testing.T) {
 	tick(e, 4)
 	early = takeDuty(e)
 	tick(e, types.IntervalsPerSlot)
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposals.duties) != 0 {
 		t.Fatal("interval-0 tick started a second proposal while the early one was in flight")
 	}
 	e.acceptProposal(ctx, &proposalResult{duty: early, retryable: true})
@@ -504,7 +505,7 @@ func TestEarlyProposalFailureRetriesOnceAfterSlotStart(t *testing.T) {
 		t.Fatalf("retry=%+v, want slot 1, not early", retry)
 	}
 	e.acceptProposal(ctx, &proposalResult{duty: retry, retryable: true})
-	if len(e.ProposalCh) != 0 {
+	if len(e.proposals.duties) != 0 {
 		t.Fatal("the retry was retried again")
 	}
 }
@@ -519,7 +520,7 @@ func TestDispatchBlockStartsNextProposal(t *testing.T) {
 
 	e.Importer.SubmitGossip(blockAtSlot(0))
 	select {
-	case duty := <-e.ProposalCh:
+	case duty := <-e.proposals.duties:
 		if duty.slot != 1 {
 			t.Fatalf("duty slot=%d, want 1", duty.slot)
 		}
@@ -539,7 +540,7 @@ func TestDispatchProposalResultWithoutImportStartsNothing(t *testing.T) {
 		{name: "retryable_failure", result: func(e *Engine) *proposalResult {
 			e.tickAt(time.UnixMilli(int64(proposalTestGenesisMs + 3*types.MillisecondsPerInterval)))
 			e.tickAt(time.UnixMilli(int64(proposalTestGenesisMs + 4*types.MillisecondsPerInterval)))
-			return &proposalResult{duty: <-e.ProposalCh, retryable: true}
+			return &proposalResult{duty: <-e.proposals.duties, retryable: true}
 		}},
 		// Head is already at the block's slot, so it is discarded.
 		{name: "discarded_block", result: func(e *Engine) *proposalResult {
@@ -551,15 +552,15 @@ func TestDispatchProposalResultWithoutImportStartsNothing(t *testing.T) {
 			e := earlyProposalEngine(t)
 			result := tc.result(e)
 			// Unbuffered: the second send returns only once the first result is handled.
-			e.ProposalResultCh = make(chan *proposalResult)
+			e.proposals.results = make(chan *proposalResult)
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() { defer close(done); e.dispatch(ctx, nil) }()
 			defer func() { cancel(); <-done }()
 
-			e.ProposalResultCh <- result
-			e.ProposalResultCh <- nil
-			if len(e.ProposalCh) != 0 {
+			e.proposals.results <- result
+			e.proposals.results <- nil
+			if len(e.proposals.duties) != 0 {
 				t.Fatal("result without an import started a proposal")
 			}
 		})

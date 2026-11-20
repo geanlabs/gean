@@ -50,7 +50,7 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 				e.maybeProposeEarly()
 			})
 
-		case result := <-e.ProposalResultCh:
+		case result := <-e.proposals.results:
 			timeEvent("proposal_result", func() {
 				// Our own block imported after the interval-4 tick settles the next
 				// proposal's parent too.

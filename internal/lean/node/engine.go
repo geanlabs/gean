@@ -59,13 +59,12 @@ type Engine struct {
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
 
-	ProposalCh       chan proposalDuty
-	ProposalResultCh chan *proposalResult
-	ProvingGate      *proving.Gate
+	// ProvingGate is the prover token shared by proposals, aggregation and
+	// proof recovery.
+	ProvingGate *proving.Gate
 
-	// Dispatch-owned reservation survives dequeue and result acceptance.
-	lastProposalDuty proposalDuty
-	proposalReserved bool
+	// proposals is the block-proposal duty's state; see proposer.
+	proposals proposer
 
 	// tasks tracks Run and every worker it starts, so shutdown can join them
 	// before closing the database and freeing the keys they use: a worker
@@ -129,8 +128,7 @@ func New(
 		PendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
-		ProposalCh:          make(chan proposalDuty, 1),
-		ProposalResultCh:    make(chan *proposalResult, 1),
+		proposals:           newProposer(),
 		ProvingGate:         proving.NewGate(),
 	}
 	e.Aggregator = e.newAggregator()

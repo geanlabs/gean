@@ -67,15 +67,15 @@ func TestWaitJoinsWorkerHeldInStorage(t *testing.T) {
 // Wait would hang shutdown.
 func TestWaitReturnsWithProposalResultQueueFull(t *testing.T) {
 	e := makeTestEngine()
-	e.ProposalResultCh <- &proposalResult{} // nothing drains it
+	e.proposals.results <- &proposalResult{} // nothing drains it
 
 	ctx, cancel := context.WithCancel(context.Background())
 	e.tasks.Go(func() { e.runProposalWorker(ctx) })
-	// ProposalCh holds one duty, so the second send returns only once the
+	// The duty queue holds one duty, so the second send returns only once the
 	// worker has taken the first. Slot 0 is stale, so the worker answers at
 	// once and blocks on the full result queue.
-	e.ProposalCh <- proposalDuty{}
-	e.ProposalCh <- proposalDuty{}
+	e.proposals.duties <- proposalDuty{}
+	e.proposals.duties <- proposalDuty{}
 
 	cancel()
 	e.Wait()

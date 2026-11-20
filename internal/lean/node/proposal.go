@@ -25,6 +25,24 @@ type proposalDuty struct {
 	early bool
 }
 
+// proposer is the block-proposal duty's state: the queue to the proving
+// worker, the queue of its results, and the reservation that keeps one duty per
+// slot. The reservation is dispatch-owned and survives dequeue and result
+// acceptance.
+type proposer struct {
+	duties   chan proposalDuty
+	results  chan *proposalResult
+	lastDuty proposalDuty
+	reserved bool
+}
+
+func newProposer() proposer {
+	return proposer{
+		duties:  make(chan proposalDuty, 1),
+		results: make(chan *proposalResult, 1),
+	}
+}
+
 type proposalResult struct {
 	duty        proposalDuty
 	retryable   bool // Only failures before a signing attempt may release the duty.
@@ -56,19 +74,19 @@ func (e *Engine) maybeProposeEarly() {
 // and reports false if ctx ends first.
 func (e *Engine) waitForSlotStart(ctx context.Context, slot uint64) bool {
 	start := time.UnixMilli(int64(e.slotStartMs(slot)))
-	timer := time.NewTimer(time.Hour)
+	timer := e.Clock.NewTimer(time.Hour)
 	defer timer.Stop()
 	// Timers measure a duration on the monotonic clock; the slot start is on the
 	// wall clock. Re-check after every wake so a stepped wall clock can never
 	// release the block early.
 	for {
-		wait := time.Until(start)
+		wait := start.Sub(e.Clock.Now())
 		if wait <= 0 {
 			return true
 		}
 		timer.Reset(wait)
 		select {
-		case <-timer.C:
+		case <-timer.C():
 		case <-ctx.Done():
 			return false
 		}
@@ -76,7 +94,7 @@ func (e *Engine) waitForSlotStart(ctx context.Context, slot uint64) bool {
 }
 
 func (e *Engine) maybePropose(slot, validatorID uint64) {
-	if slot < e.lastProposalDuty.slot || (slot == e.lastProposalDuty.slot && e.proposalReserved) {
+	if slot < e.proposals.lastDuty.slot || (slot == e.proposals.lastDuty.slot && e.proposals.reserved) {
 		return
 	}
 	if e.Keys == nil {
@@ -91,10 +109,10 @@ func (e *Engine) maybePropose(slot, validatorID uint64) {
 	}
 	duty := proposalDuty{slot: slot, validatorID: validatorID, early: e.Store.Time()/types.IntervalsPerSlot < slot}
 	select {
-	case e.ProposalCh <- duty:
-		e.lastProposalDuty = duty
-		e.proposalReserved = true
-		metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
+	case e.proposals.duties <- duty:
+		e.proposals.lastDuty = duty
+		e.proposals.reserved = true
+		metrics.SetProvingQueueDepth("proposal", len(e.proposals.duties))
 	default:
 		logger.Warn(logger.Validator, "proposal worker busy slot=%d", slot)
 	}
@@ -105,14 +123,14 @@ func (e *Engine) runProposalWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case duty := <-e.ProposalCh:
-			metrics.SetProvingQueueDepth("proposal", len(e.ProposalCh))
+		case duty := <-e.proposals.duties:
+			metrics.SetProvingQueueDepth("proposal", len(e.proposals.duties))
 			result := e.proveProposal(ctx, duty)
 			if result.signedBlock != nil && !e.waitForSlotStart(ctx, duty.slot) {
 				return
 			}
 			select {
-			case e.ProposalResultCh <- result:
+			case e.proposals.results <- result:
 			case <-ctx.Done():
 				return
 			}
@@ -211,8 +229,8 @@ func (e *Engine) buildProposal(duty proposalDuty) *proposalResult {
 
 // acceptProposal reports whether it imported our block.
 func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) bool {
-	if result != nil && result.retryable && result.duty == e.lastProposalDuty {
-		e.proposalReserved = false
+	if result != nil && result.retryable && result.duty == e.proposals.lastDuty {
+		e.proposals.reserved = false
 		// An early duty made the interval-0 trigger skip the slot. If the slot
 		// has started, that trigger is gone: retry once now, as a non-early duty.
 		if result.duty.early && e.Store.Time()/types.IntervalsPerSlot >= result.duty.slot {
