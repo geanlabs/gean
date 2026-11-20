@@ -110,6 +110,15 @@ func Run(ctx context.Context, cfg Config) error {
 	syncDriver := startNodeNetworking(runCtx, n, s, p2pHost, inputs.bootnodes, &c.tasks)
 	c.waitSync = syncDriver.Wait
 
+	// After the networking start, so a discovered peer gets the status
+	// exchange the sync driver hooks onto new connections.
+	if cfg.Discovery {
+		if err := p2pHost.StartDiscovery(cfg.DiscoveryPort, cfg.DiscoveryAdvertiseIP, inputs.discoveryBootnodes); err != nil {
+			logger.Error(logger.Network, "start discv5: %v", err)
+			return err
+		}
+	}
+
 	if c.servers, err = listenHTTP(cfg, s, fc, aggCtl); err != nil {
 		return err
 	}

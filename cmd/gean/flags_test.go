@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -234,5 +235,52 @@ func TestParseConfig_AggregateSubnetIDsMustBeInRange(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "--aggregate-subnet-ids contains 2") {
 		t.Fatalf("subnet range message not found:\n%s", stderr.String())
+	}
+}
+
+func TestParseConfig_Discovery(t *testing.T) {
+	args := append(validFlagArgs(), "--discovery", "--discovery-port", "9100", "--discovery-advertise-ip", "127.0.0.1")
+	var stderr bytes.Buffer
+	cfg, err := parseConfig(args, &stderr)
+	if err != nil {
+		t.Fatalf("parseConfig returned error: %v\nstderr:\n%s", err, stderr.String())
+	}
+	if !cfg.Discovery || cfg.DiscoveryPort != 9100 || !cfg.DiscoveryAdvertiseIP.Equal(net.IPv4(127, 0, 0, 1)) {
+		t.Fatalf("discovery=%v port=%d ip=%v", cfg.Discovery, cfg.DiscoveryPort, cfg.DiscoveryAdvertiseIP)
+	}
+}
+
+func TestParseConfig_DiscoveryOffByDefault(t *testing.T) {
+	var stderr bytes.Buffer
+	cfg, err := parseConfig(validFlagArgs(), &stderr)
+	if err != nil {
+		t.Fatalf("parseConfig returned error: %v\nstderr:\n%s", err, stderr.String())
+	}
+	if cfg.Discovery {
+		t.Fatal("discovery should be off by default")
+	}
+}
+
+func TestParseConfig_InvalidDiscovery(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"port too high", []string{"--discovery", "--discovery-port", "65536"}, "--discovery-port must be between 0 and 65535"},
+		{"port shared with gossipsub", []string{"--discovery", "--discovery-port", "9000"}, "--discovery-port must differ from --gossipsub-port"},
+		{"advertise ip without discovery", []string{"--discovery-advertise-ip", "127.0.0.1"}, "--discovery-advertise-ip requires --discovery"},
+		{"bad advertise ip", []string{"--discovery", "--discovery-advertise-ip", "not-an-ip"}, "is not an IP address"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			if _, err := parseConfig(append(validFlagArgs(), tt.args...), &stderr); err == nil {
+				t.Fatal("expected invalid discovery flags to fail")
+			}
+			if !strings.Contains(stderr.String(), tt.want) {
+				t.Fatalf("message %q not found:\n%s", tt.want, stderr.String())
+			}
+		})
 	}
 }

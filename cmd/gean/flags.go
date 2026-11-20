@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ func parseConfig(args []string, stderr io.Writer) (lean.Config, error) {
 	fs.SetOutput(stderr)
 
 	aggregateSubnetIDs := ""
+	discoveryAdvertiseIP := ""
 	fs.StringVar(&cfg.ConfigDir, "custom-network-config-dir", "", "Config directory (required)")
 	fs.IntVar(&cfg.GossipPort, "gossipsub-port", 9000, "P2P listen port (QUIC/UDP)")
 	fs.StringVar(&cfg.HTTPAddr, "http-address", "127.0.0.1", "Bind address for API + metrics")
@@ -34,6 +36,9 @@ func parseConfig(args []string, stderr io.Writer) (lean.Config, error) {
 	fs.Uint64Var(&cfg.CommitteeCount, "attestation-committee-count", uint64(types.AttestationCommitteeCount), "Number of attestation subnets (overrides config.yaml ATTESTATION_COMMITTEE_COUNT)")
 	fs.StringVar(&aggregateSubnetIDs, "aggregate-subnet-ids", "", "Comma-separated subnet IDs (requires --is-aggregator)")
 	fs.StringVar(&cfg.DataDir, "data-dir", "./data", "Pebble database directory")
+	fs.BoolVar(&cfg.Discovery, "discovery", false, "Find peers with discv5 (off by default: no other lean client runs it yet)")
+	fs.IntVar(&cfg.DiscoveryPort, "discovery-port", 9001, "discv5 UDP port (requires --discovery; must differ from --gossipsub-port)")
+	fs.StringVar(&discoveryAdvertiseIP, "discovery-advertise-ip", "", "IP to advertise in this node's ENR (requires --discovery; default: learned from peers)")
 	fs.Float64Var(&cfg.ShadowAggregateSignaturesRate, "shadow-xmss-aggregate-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregation cost; n-signature op sleeps n/rate sec (0 disables; env GEAN_SHADOW_XMSS_AGGREGATE_SIGNATURES_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifySignatureRate, "shadow-xmss-verify-signature-rate", 0, "Shadow simulator: signatures/sec rate for gossip-attestation verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_SIGNATURE_RATE)")
 	fs.Float64Var(&cfg.ShadowVerifyAggregatedSignaturesRate, "shadow-xmss-verify-aggregated-signatures-rate", 0, "Shadow simulator: signatures/sec rate for aggregated-signature verify cost (0 disables; env GEAN_SHADOW_XMSS_VERIFY_AGGREGATED_SIGNATURES_RATE)")
@@ -59,6 +64,9 @@ func parseConfig(args []string, stderr io.Writer) (lean.Config, error) {
 		return cfg, err
 	}
 	if err := validatePort("metrics-port", cfg.MetricsPort, stderr); err != nil {
+		return cfg, err
+	}
+	if err := validateDiscovery(&cfg, discoveryAdvertiseIP, stderr); err != nil {
 		return cfg, err
 	}
 	if cfg.CommitteeCount < 1 {
@@ -130,6 +138,30 @@ func validatePort(name string, port int, stderr io.Writer) error {
 	if port < 0 || port > 65535 {
 		fmt.Fprintf(stderr, "--%s must be between 0 and 65535\n", name)
 		return errInvalidConfig
+	}
+	return nil
+}
+
+func validateDiscovery(cfg *lean.Config, advertiseIP string, stderr io.Writer) error {
+	if !cfg.Discovery {
+		if advertiseIP != "" {
+			fmt.Fprintln(stderr, "--discovery-advertise-ip requires --discovery")
+			return errInvalidConfig
+		}
+		return nil
+	}
+	if err := validatePort("discovery-port", cfg.DiscoveryPort, stderr); err != nil {
+		return err
+	}
+	if cfg.DiscoveryPort == cfg.GossipPort {
+		fmt.Fprintln(stderr, "--discovery-port must differ from --gossipsub-port: both bind UDP")
+		return errInvalidConfig
+	}
+	if advertiseIP != "" {
+		if cfg.DiscoveryAdvertiseIP = net.ParseIP(advertiseIP); cfg.DiscoveryAdvertiseIP == nil {
+			fmt.Fprintf(stderr, "--discovery-advertise-ip %q is not an IP address\n", advertiseIP)
+			return errInvalidConfig
+		}
 	}
 	return nil
 }

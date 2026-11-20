@@ -3,6 +3,7 @@ package lean
 import (
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/p2p/discovery"
@@ -16,7 +17,10 @@ import (
 type startupInputs struct {
 	genesisConfig *genesis.GenesisConfig
 	bootnodes     []multiaddr.Multiaddr
-	keyManager    *xmss.KeyManager
+	// discoveryBootnodes are the bootnode ENRs discv5 starts from, loaded
+	// only when discovery runs.
+	discoveryBootnodes []*enode.Node
+	keyManager         *xmss.KeyManager
 }
 
 func loadStartupInputs(cfg Config) (*startupInputs, error) {
@@ -35,6 +39,14 @@ func loadStartupInputs(cfg Config) (*startupInputs, error) {
 		return nil, err
 	}
 	logger.Info(logger.Node, "bootnodes: %d loaded", len(bootnodes))
+
+	var discoveryBootnodes []*enode.Node
+	if cfg.Discovery {
+		if discoveryBootnodes, err = discovery.LoadENRs(paths.bootnodes); err != nil {
+			logger.Error(logger.Node, "load discv5 bootnodes: %v", err)
+			return nil, err
+		}
+	}
 
 	keyManager, err := xmss.LoadValidatorKeys(paths.validators, paths.keysDir, cfg.NodeID)
 	if err != nil {
@@ -59,9 +71,10 @@ func loadStartupInputs(cfg Config) (*startupInputs, error) {
 	logger.Info(logger.Node, "validators: %d keys loaded for %s", len(keyManager.ValidatorIDs()), cfg.NodeID)
 
 	return &startupInputs{
-		genesisConfig: genesisConfig,
-		bootnodes:     bootnodes,
-		keyManager:    keyManager,
+		genesisConfig:      genesisConfig,
+		bootnodes:          bootnodes,
+		discoveryBootnodes: discoveryBootnodes,
+		keyManager:         keyManager,
 	}, nil
 }
 

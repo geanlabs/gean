@@ -51,6 +51,9 @@ func (h *Host) Close() {
 	for _, sub := range h.subs {
 		sub.Cancel()
 	}
+	if h.discovery != nil {
+		h.discovery.Close()
+	}
 	h.host.Close()
 	h.tasks.Close()
 }

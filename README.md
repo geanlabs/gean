@@ -119,6 +119,9 @@ bin/gean lean \
 | `--node-id` | (required) | Node name, e.g. `node0` |
 | `--data-dir` | `./data` | Database directory |
 | `--gossipsub-port` | `9000` | P2P listen port (QUIC over UDP) |
+| `--discovery` | `false` | Find peers with discv5; no other lean client runs it yet |
+| `--discovery-port` | `9001` | discv5 UDP port; needs `--discovery` |
+| `--discovery-advertise-ip` | (learned) | IP to put in this node's ENR; needs `--discovery` |
 | `--http-address` | `127.0.0.1` | Bind address for the API and metrics servers |
 | `--api-port` | `5052` | API port |
 | `--metrics-port` | `5054` | Metrics port |

@@ -27,6 +27,14 @@ type Config struct {
 	AggregateSubnetIDs []uint64
 	DataDir            string
 
+	// Discovery runs discv5 on DiscoveryPort and dials the peers it finds.
+	// Off by default: no other lean client runs discv5 yet.
+	Discovery     bool
+	DiscoveryPort int
+	// DiscoveryAdvertiseIP is the IP put in this node's ENR. Nil leaves it to
+	// discv5, which learns it from what its peers see.
+	DiscoveryAdvertiseIP net.IP
+
 	// Shadow*Rate model XMSS prover cost for the Shadow network simulator, which
 	// does not charge CPU time. Each is in signature-units per second; a
 	// non-positive rate (the default) disables the delay, so real deployments are

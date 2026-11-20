@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/core/lifecycle"
+	"github.com/geanlabs/gean/internal/core/p2p/discovery"
 	"github.com/geanlabs/gean/internal/core/p2p/gossip"
 	"github.com/geanlabs/gean/internal/core/p2p/peers"
 )
@@ -38,7 +39,9 @@ type Host struct {
 	// deliver is set once, when the listeners start, and read again when
 	// subscriptions are re-announced.
 	deliver atomic.Pointer[Deliver]
-	Hooks   Hooks
+	// discovery is discv5, when StartDiscovery has run.
+	discovery *discovery.Service
+	Hooks     Hooks
 
 	// tasks tracks the goroutines the host starts, the req/resp handlers it
 	// runs and the gossip validators pubsub calls, which read the store, so
