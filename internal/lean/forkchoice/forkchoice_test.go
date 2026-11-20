@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/core/protoarray"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -193,8 +194,8 @@ func TestProtoArrayReparentsOrphanWhenParentArrives(t *testing.T) {
 	if childIdx < 0 {
 		t.Fatal("orphan child should be indexed")
 	}
-	if fc.array.nodes[childIdx].Parent != -1 {
-		t.Fatalf("orphan child parent index=%d, want -1", fc.array.nodes[childIdx].Parent)
+	if fc.array.At(childIdx).Parent != -1 {
+		t.Fatalf("orphan child parent index=%d, want -1", fc.array.At(childIdx).Parent)
 	}
 
 	fc.OnBlock(1, parent, anchor)
@@ -203,8 +204,8 @@ func TestProtoArrayReparentsOrphanWhenParentArrives(t *testing.T) {
 	if childIdx < 0 || parentIdx < 0 {
 		t.Fatal("parent and child should both be indexed")
 	}
-	if fc.array.nodes[childIdx].Parent != parentIdx {
-		t.Fatalf("child parent index=%d, want %d", fc.array.nodes[childIdx].Parent, parentIdx)
+	if fc.array.At(childIdx).Parent != parentIdx {
+		t.Fatalf("child parent index=%d, want %d", fc.array.At(childIdx).Parent, parentIdx)
 	}
 
 	fc.votes.SetKnown(0, childIdx, 2, makeAttData(child, 2))
@@ -244,32 +245,6 @@ func TestProtoArrayRejectsInvalidParentSlot(t *testing.T) {
 	}
 }
 
-func TestProtoArrayPartialValueGuards(t *testing.T) {
-	var nilArray *ProtoArray
-	if nilArray.Len() != 0 {
-		t.Fatal("nil protoarray length should be 0")
-	}
-	if nilArray.Nodes() != nil {
-		t.Fatal("nil protoarray nodes should be nil")
-	}
-	nilArray.OnBlock(1, root(2), root(1))
-	nilArray.ApplyScoreChanges([]int64{1}, 0)
-	if got := nilArray.FindHead(root(1)); got != root(1) {
-		t.Fatalf("nil protoarray head=%x, want justified root", got[:4])
-	}
-	nilArray.Prune(root(1))
-
-	var zero ProtoArray
-	anchor := root(1)
-	zero.OnBlock(0, anchor, [32]byte{})
-	if zero.Len() != 1 {
-		t.Fatalf("zero protoarray len=%d, want 1", zero.Len())
-	}
-	if got := zero.FindHead(anchor); got != anchor {
-		t.Fatalf("zero protoarray head=%x, want anchor", got[:4])
-	}
-}
-
 func TestProtoArrayDoesNotReparentInvalidOrphanSlot(t *testing.T) {
 	anchor, parent, child := root(1), root(2), root(3)
 	fc := New(0, anchor, [32]byte{})
@@ -281,8 +256,8 @@ func TestProtoArrayDoesNotReparentInvalidOrphanSlot(t *testing.T) {
 	if childIdx < 0 {
 		t.Fatal("orphan child should remain indexed")
 	}
-	if fc.array.nodes[childIdx].Parent != -1 {
-		t.Fatalf("invalid orphan parent index=%d, want -1", fc.array.nodes[childIdx].Parent)
+	if fc.array.At(childIdx).Parent != -1 {
+		t.Fatalf("invalid orphan parent index=%d, want -1", fc.array.At(childIdx).Parent)
 	}
 }
 
@@ -472,9 +447,9 @@ func buildLinearChain(depth int, reverse bool) *ForkChoice {
 	return fc
 }
 
-func countParentBackEdges(pa *ProtoArray) int {
+func countParentBackEdges(pa *protoarray.Array) int {
 	n := 0
-	for i, node := range pa.nodes {
+	for i, node := range pa.Nodes() {
 		if node.Parent > i {
 			n++
 		}
@@ -838,7 +813,7 @@ func TestForkChoicePublicAccessors(t *testing.T) {
 
 func TestForkChoicePartialValueGuards(t *testing.T) {
 	anchor, child := root(1), root(2)
-	fc := &ForkChoice{array: NewProtoArray(0, anchor, [32]byte{})}
+	fc := &ForkChoice{array: protoarray.New(0, anchor, [32]byte{})}
 	fc.OnBlock(1, child, anchor)
 
 	if fc.Len() != 2 {

@@ -42,7 +42,8 @@ linters:
             - pkg: github.com/geanlabs/gean
               desc: "lean/types is the bottom layer and imports no other gean package"
 
-        # Protocol rules depend only on the standard library and lean/types.
+        # Protocol rules depend only on the standard library, lean/types and,
+        # for fork choice, the chain-agnostic proto-array tree.
         # Strict mode: anything not in the allow list is rejected.
         rules-import-only-types:
           list-mode: strict
@@ -52,6 +53,7 @@ linters:
           allow:
             - $gostd
             - github.com/geanlabs/gean/internal/lean/types
+            - github.com/geanlabs/gean/internal/core/protoarray
 
         storage-imports-nothing:
           files:

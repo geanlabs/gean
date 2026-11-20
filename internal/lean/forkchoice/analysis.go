@@ -4,17 +4,17 @@ func (fc *ForkChoice) GetCanonicalAnalysis(anchorRoot [32]byte) (canonical, nonC
 	if fc == nil || fc.array == nil {
 		return nil, nil
 	}
-	anchorIdx, ok := fc.array.indices[anchorRoot]
+	anchorIdx, ok := fc.array.Index(anchorRoot)
 	if !ok {
 		return nil, nil
 	}
 
 	ancestorSet := make(map[[32]byte]bool)
-	for idx := anchorIdx; idx >= 0; idx = fc.array.nodes[idx].Parent {
-		root := fc.array.nodes[idx].Root
+	for idx := anchorIdx; idx >= 0; idx = fc.array.At(idx).Parent {
+		root := fc.array.At(idx).Root
 		ancestorSet[root] = true
 		canonical = append(canonical, root)
-		if fc.array.nodes[idx].Parent < 0 {
+		if fc.array.At(idx).Parent < 0 {
 			break
 		}
 	}
@@ -22,21 +22,21 @@ func (fc *ForkChoice) GetCanonicalAnalysis(anchorRoot [32]byte) (canonical, nonC
 	descendantSet := map[[32]byte]bool{anchorRoot: true}
 	for changed := true; changed; {
 		changed = false
-		for i := range fc.array.nodes {
-			root := fc.array.nodes[i].Root
+		for i := range fc.array.Len() {
+			root := fc.array.At(i).Root
 			if descendantSet[root] {
 				continue
 			}
-			parent := fc.array.nodes[i].Parent
-			if parent >= 0 && parent < len(fc.array.nodes) && descendantSet[fc.array.nodes[parent].Root] {
+			parent := fc.array.At(i).Parent
+			if parent >= 0 && parent < fc.array.Len() && descendantSet[fc.array.At(parent).Root] {
 				descendantSet[root] = true
 				changed = true
 			}
 		}
 	}
 
-	for i := range fc.array.nodes {
-		root := fc.array.nodes[i].Root
+	for i := range fc.array.Len() {
+		root := fc.array.At(i).Root
 		if ancestorSet[root] || descendantSet[root] {
 			continue
 		}
@@ -53,30 +53,30 @@ func (fc *ForkChoice) ReorgDepth(oldHead, newHead [32]byte) uint64 {
 	if oldHead == newHead {
 		return 0
 	}
-	newIdx, ok := fc.array.indices[newHead]
+	newIdx, ok := fc.array.Index(newHead)
 	if !ok {
 		return 0
 	}
-	oldIdx, ok := fc.array.indices[oldHead]
+	oldIdx, ok := fc.array.Index(oldHead)
 	if !ok {
 		return 0
 	}
 
 	newAncestors := make(map[[32]byte]struct{})
-	for cur := newIdx; cur >= 0; cur = fc.array.nodes[cur].Parent {
-		newAncestors[fc.array.nodes[cur].Root] = struct{}{}
-		if fc.array.nodes[cur].Parent < 0 {
+	for cur := newIdx; cur >= 0; cur = fc.array.At(cur).Parent {
+		newAncestors[fc.array.At(cur).Root] = struct{}{}
+		if fc.array.At(cur).Parent < 0 {
 			break
 		}
 	}
 
 	depth := uint64(0)
-	for cur := oldIdx; cur >= 0; cur = fc.array.nodes[cur].Parent {
-		if _, hit := newAncestors[fc.array.nodes[cur].Root]; hit {
+	for cur := oldIdx; cur >= 0; cur = fc.array.At(cur).Parent {
+		if _, hit := newAncestors[fc.array.At(cur).Root]; hit {
 			return depth
 		}
 		depth++
-		if fc.array.nodes[cur].Parent < 0 {
+		if fc.array.At(cur).Parent < 0 {
 			break
 		}
 	}
@@ -87,7 +87,7 @@ func (fc *ForkChoice) AncestorAtDepth(startRoot [32]byte, depth int) (root [32]b
 	if fc == nil || fc.array == nil {
 		return [32]byte{}, 0, false
 	}
-	idx, ok := fc.array.indices[startRoot]
+	idx, ok := fc.array.Index(startRoot)
 	if !ok {
 		return [32]byte{}, 0, false
 	}
@@ -102,7 +102,7 @@ func (fc *ForkChoice) AncestorAtDepth(startRoot [32]byte, depth int) (root [32]b
 	}
 
 	for remaining > 0 && idx > 0 {
-		parentIdx := fc.array.nodes[idx].Parent
+		parentIdx := fc.array.At(idx).Parent
 		if parentIdx < 0 {
 			break
 		}
@@ -110,7 +110,7 @@ func (fc *ForkChoice) AncestorAtDepth(startRoot [32]byte, depth int) (root [32]b
 		remaining--
 	}
 
-	node := &fc.array.nodes[idx]
+	node := fc.array.At(idx)
 	return node.Root, node.Slot, true
 }
 
@@ -121,12 +121,12 @@ func (fc *ForkChoice) WalkAncestors(root [32]byte, fn func(root [32]byte, slot, 
 	if fc == nil || fc.array == nil {
 		return
 	}
-	idx, ok := fc.array.indices[root]
+	idx, ok := fc.array.Index(root)
 	for ok && idx >= 0 {
-		node := &fc.array.nodes[idx]
+		node := fc.array.At(idx)
 		parentSlot := node.Slot
 		if node.Parent >= 0 {
-			parentSlot = fc.array.nodes[node.Parent].Slot
+			parentSlot = fc.array.At(node.Parent).Slot
 		}
 		if !fn(node.Root, node.Slot, parentSlot) {
 			return

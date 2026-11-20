@@ -65,11 +65,11 @@ func TestRemapIndicesAfterPrune(t *testing.T) {
 	// D (now index 1) has weight 2 (own vote + E's subtree).
 	// E (now index 2) has weight 1 (own vote only).
 	// These should be unchanged from pre-prune values.
-	if fc.array.nodes[1].Weight != 2 {
-		t.Errorf("D weight = %d, want 2 (own + E subtree)", fc.array.nodes[1].Weight)
+	if fc.array.At(1).Weight != 2 {
+		t.Errorf("D weight = %d, want 2 (own + E subtree)", fc.array.At(1).Weight)
 	}
-	if fc.array.nodes[2].Weight != 1 {
-		t.Errorf("E weight = %d, want 1", fc.array.nodes[2].Weight)
+	if fc.array.At(2).Weight != 1 {
+		t.Errorf("E weight = %d, want 1", fc.array.At(2).Weight)
 	}
 }
 

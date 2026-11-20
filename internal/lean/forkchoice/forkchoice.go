@@ -4,11 +4,15 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/geanlabs/gean/internal/core/protoarray"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
+// ProtoNode is one block in the fork-choice tree.
+type ProtoNode = protoarray.Node
+
 type ForkChoice struct {
-	array *ProtoArray
+	array *protoarray.Array
 	votes *VoteStore
 	// nodes is an immutable copy of the array for readers off the dispatch loop,
 	// replaced after each head update and prune so it always carries head weights.
@@ -17,7 +21,7 @@ type ForkChoice struct {
 
 func New(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *ForkChoice {
 	fc := &ForkChoice{
-		array: NewProtoArray(anchorSlot, anchorRoot, anchorParentRoot),
+		array: protoarray.New(anchorSlot, anchorRoot, anchorParentRoot),
 		votes: NewVoteStore(),
 	}
 	fc.publishNodes()
@@ -73,7 +77,7 @@ func (fc *ForkChoice) Prune(finalizedRoot [32]byte) {
 	if fc == nil || fc.array == nil {
 		return
 	}
-	finalizedIdx, ok := fc.array.indices[finalizedRoot]
+	finalizedIdx, ok := fc.array.Index(finalizedRoot)
 	if !ok || finalizedIdx == 0 {
 		return
 	}
@@ -90,7 +94,7 @@ func (fc *ForkChoice) NodeIndex(root [32]byte) int {
 	if fc == nil || fc.array == nil {
 		return -1
 	}
-	if idx, ok := fc.array.indices[root]; ok {
+	if idx, ok := fc.array.Index(root); ok {
 		return idx
 	}
 	return -1

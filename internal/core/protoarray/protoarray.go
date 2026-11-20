@@ -1,11 +1,15 @@
-package forkchoice
+// Package protoarray is the proto-array: the block tree fork choice runs on.
+// It holds each block's subtree weight and best descendant, so finding the head
+// from a justified root is a walk down best-child links. The weights come from
+// the chain's own vote accounting; this package knows nothing of a chain's rules.
+package protoarray
 
 import (
 	"bytes"
 	"sort"
 )
 
-type ProtoNode struct {
+type Node struct {
 	Slot           uint64
 	Root           [32]byte
 	ParentRoot     [32]byte
@@ -15,16 +19,16 @@ type ProtoNode struct {
 	BestDescendant int
 }
 
-type ProtoArray struct {
-	nodes   []ProtoNode
+type Array struct {
+	nodes   []Node
 	indices map[[32]byte]int
 }
 
-func NewProtoArray(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *ProtoArray {
-	pa := &ProtoArray{
+func New(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *Array {
+	pa := &Array{
 		indices: make(map[[32]byte]int),
 	}
-	pa.nodes = append(pa.nodes, ProtoNode{
+	pa.nodes = append(pa.nodes, Node{
 		Slot:           anchorSlot,
 		Root:           anchorRoot,
 		ParentRoot:     anchorParentRoot,
@@ -37,16 +41,16 @@ func NewProtoArray(anchorSlot uint64, anchorRoot, anchorParentRoot [32]byte) *Pr
 	return pa
 }
 
-func (pa *ProtoArray) Nodes() []ProtoNode {
+func (pa *Array) Nodes() []Node {
 	if pa == nil {
 		return nil
 	}
-	out := make([]ProtoNode, len(pa.nodes))
+	out := make([]Node, len(pa.nodes))
 	copy(out, pa.nodes)
 	return out
 }
 
-func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {
+func (pa *Array) OnBlock(slot uint64, root, parentRoot [32]byte) {
 	if pa == nil || root == parentRoot {
 		return
 	}
@@ -65,7 +69,7 @@ func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {
 		parentIdx = idx
 	}
 
-	pa.nodes = append(pa.nodes, ProtoNode{
+	pa.nodes = append(pa.nodes, Node{
 		Slot:           slot,
 		Root:           root,
 		ParentRoot:     parentRoot,
@@ -78,7 +82,7 @@ func (pa *ProtoArray) OnBlock(slot uint64, root, parentRoot [32]byte) {
 	pa.linkOrphanChildren(root, nodeIndex)
 }
 
-func (pa *ProtoArray) linkOrphanChildren(parentRoot [32]byte, parentIdx int) {
+func (pa *Array) linkOrphanChildren(parentRoot [32]byte, parentIdx int) {
 	if parentIdx < 0 || parentIdx >= len(pa.nodes) {
 		return
 	}
@@ -95,7 +99,7 @@ func (pa *ProtoArray) linkOrphanChildren(parentRoot [32]byte, parentIdx int) {
 	}
 }
 
-func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
+func (pa *Array) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 	if pa == nil {
 		return
 	}
@@ -158,7 +162,7 @@ func (pa *ProtoArray) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 	}
 }
 
-func (pa *ProtoArray) descendingSlotOrder() []int {
+func (pa *Array) descendingSlotOrder() []int {
 	order := make([]int, len(pa.nodes))
 	for i := range order {
 		order[i] = i
@@ -173,7 +177,7 @@ func (pa *ProtoArray) descendingSlotOrder() []int {
 	return order
 }
 
-func (pa *ProtoArray) ascendingSlotOrder() []int {
+func (pa *Array) ascendingSlotOrder() []int {
 	order := make([]int, len(pa.nodes))
 	for i := range order {
 		order[i] = i
@@ -188,7 +192,7 @@ func (pa *ProtoArray) ascendingSlotOrder() []int {
 	return order
 }
 
-func (pa *ProtoArray) FindHead(justifiedRoot [32]byte) [32]byte {
+func (pa *Array) FindHead(justifiedRoot [32]byte) [32]byte {
 	if pa == nil {
 		return justifiedRoot
 	}
@@ -203,7 +207,7 @@ func (pa *ProtoArray) FindHead(justifiedRoot [32]byte) [32]byte {
 	return pa.nodes[bestDesc].Root
 }
 
-func (pa *ProtoArray) Prune(finalizedRoot [32]byte) map[int]int {
+func (pa *Array) Prune(finalizedRoot [32]byte) map[int]int {
 	if pa == nil {
 		return nil
 	}
@@ -231,7 +235,7 @@ func (pa *ProtoArray) Prune(finalizedRoot [32]byte) map[int]int {
 	}
 
 	indexMap := make(map[int]int, len(kept))
-	newNodes := make([]ProtoNode, 0, len(kept))
+	newNodes := make([]Node, 0, len(kept))
 	for _, oldIdx := range kept {
 		indexMap[oldIdx] = len(newNodes)
 		newNodes = append(newNodes, pa.nodes[oldIdx])
@@ -259,9 +263,23 @@ func remapProtoIndex(oldIdx int, indexMap map[int]int) int {
 	return -1
 }
 
-func (pa *ProtoArray) Len() int {
+func (pa *Array) Len() int {
 	if pa == nil {
 		return 0
 	}
 	return len(pa.nodes)
+}
+
+// Index returns root's index in the array, and whether the array holds root.
+func (pa *Array) Index(root [32]byte) (int, bool) {
+	if pa == nil {
+		return 0, false
+	}
+	idx, ok := pa.indices[root]
+	return idx, ok
+}
+
+// At returns the node at index i, which must be in range.
+func (pa *Array) At(i int) Node {
+	return pa.nodes[i]
 }
