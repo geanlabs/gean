@@ -1,3 +1,5 @@
+//go:build !fakecrypto
+
 package xmss
 
 import "sync"

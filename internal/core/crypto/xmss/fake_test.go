@@ -1,0 +1,84 @@
+//go:build fakecrypto
+
+package xmss
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// A key written by keygen loads back with the same public key, which is what
+// the node checks against the registry.
+func TestFakeKeyRoundTrip(t *testing.T) {
+	kp, err := GenerateKeyPair("validator 0", 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := kp.PrivateKeyBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "sk")
+	if err := os.WriteFile(path, secret, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadKeypair("", path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := kp.PublicKeyBytes()
+	if got, _ := loaded.PublicKeyBytes(); got != want {
+		t.Fatalf("loaded pubkey %x, want %x", got, want)
+	}
+}
+
+func TestFakeSignAndVerify(t *testing.T) {
+	kp, _ := GenerateKeyPair("validator 0", 0, 1)
+	msg := [32]byte{1}
+	sig, err := kp.Sign(3, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, _ := kp.PublicKeyBytes()
+	if ok, err := VerifySignatureSSZ(pub, 3, msg, sig); !ok || err != nil {
+		t.Fatalf("verify=%v err=%v", ok, err)
+	}
+	if other, _ := kp.Sign(4, msg); other == sig {
+		t.Fatal("signatures for different slots are equal")
+	}
+
+	kp.Close()
+	if _, err := kp.Sign(3, msg); err == nil {
+		t.Fatal("a closed key signed")
+	}
+}
+
+// The fake skips the cryptography, not the input checks.
+func TestFakeRejectsMalformedInput(t *testing.T) {
+	msg := [32]byte{1}
+	if _, err := AggregateSignatures(nil, nil, msg, 1); err != ErrEmptyInput {
+		t.Fatalf("empty aggregate err=%v, want ErrEmptyInput", err)
+	}
+	if err := VerifyAggregatedSignature(nil, nil, msg, 1); err != ErrEmptyInput {
+		t.Fatalf("empty verify err=%v, want ErrEmptyInput", err)
+	}
+	if err := VerifyType2Proof([]byte{1}, [][]CPubKey{{}}, nil); err != ErrCountMismatch {
+		t.Fatalf("mismatched type-2 err=%v, want ErrCountMismatch", err)
+	}
+
+	kp, _ := GenerateKeyPair("validator 0", 0, 1)
+	pk := kp.PublicKey()
+	sig, _ := kp.Sign(1, msg)
+	parsed, err := ParseSignature(sig[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := AggregateSignatures([]CPubKey{pk}, []CSig{parsed}, msg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAggregatedSignature(proof, []CPubKey{pk}, msg, 1); err != nil {
+		t.Fatalf("verify aggregate: %v", err)
+	}
+}

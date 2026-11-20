@@ -1,4 +1,4 @@
-.PHONY: help build ffi test-ffi test test-spec test-sim test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: help build ffi test-ffi test test-spec test-sim test-e2e test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -43,6 +43,9 @@ test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec
 
 test-sim: ffi ## Run the in-process multi-node simulation tests (real XMSS: slow, about 1 GB)
 	go test ./testing/sim/ -v -count=1 -tags=sim
+
+test-e2e: ## Run the end-to-end multi-node test with fake XMSS (no Rust needed)
+	go test ./testing/sim/ -v -count=1 -tags=fakecrypto
 
 test-all: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run all tests including spec fixtures, xmss FFI and simulations (slow)
 	go test ./... -v -count=1 -tags=spectests,sim

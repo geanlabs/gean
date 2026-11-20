@@ -159,6 +159,17 @@ type ForkChoice struct {
 	Finalized Checkpoint `json:"finalized"`
 }
 
+// HeadSlot returns the slot of the head block, or false if the view does not
+// hold it.
+func (fc ForkChoice) HeadSlot() (uint64, bool) {
+	for _, b := range fc.Nodes {
+		if b.Root == fc.Head {
+			return b.Slot, true
+		}
+	}
+	return 0, false
+}
+
 // Checkpoint is a checkpoint as the API serves it.
 type Checkpoint struct {
 	Root string `json:"root"`
