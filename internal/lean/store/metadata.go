@@ -5,12 +5,11 @@ import (
 	"fmt"
 
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 func (s *ConsensusStore) Time() uint64 {
-	return s.getMetadataUint64(storage.KeyTime)
+	return s.getMetadataUint64(keyTime)
 }
 
 func (s *ConsensusStore) SetTime(t uint64) {
@@ -20,11 +19,11 @@ func (s *ConsensusStore) SetTime(t uint64) {
 }
 
 func (s *ConsensusStore) PutTime(t uint64) error {
-	return s.putMetadataUint64(storage.KeyTime, t, "set time")
+	return s.putMetadataUint64(keyTime, t, "set time")
 }
 
 func (s *ConsensusStore) Head() [32]byte {
-	return s.getMetadataRoot(storage.KeyHead)
+	return s.getMetadataRoot(KeyHead)
 }
 
 func (s *ConsensusStore) SetHead(root [32]byte) {
@@ -34,7 +33,7 @@ func (s *ConsensusStore) SetHead(root [32]byte) {
 }
 
 func (s *ConsensusStore) PutHead(root [32]byte) error {
-	if err := s.putMetadataRoot(storage.KeyHead, root, "set head"); err != nil {
+	if err := s.putMetadataRoot(KeyHead, root, "set head"); err != nil {
 		return err
 	}
 	s.moveCanonicalHead(root)
@@ -42,7 +41,7 @@ func (s *ConsensusStore) PutHead(root [32]byte) error {
 }
 
 func (s *ConsensusStore) SafeTarget() [32]byte {
-	return s.getMetadataRoot(storage.KeySafeTarget)
+	return s.getMetadataRoot(keySafeTarget)
 }
 
 func (s *ConsensusStore) SetSafeTarget(root [32]byte) {
@@ -52,11 +51,11 @@ func (s *ConsensusStore) SetSafeTarget(root [32]byte) {
 }
 
 func (s *ConsensusStore) PutSafeTarget(root [32]byte) error {
-	return s.putMetadataRoot(storage.KeySafeTarget, root, "set safe target")
+	return s.putMetadataRoot(keySafeTarget, root, "set safe target")
 }
 
 func (s *ConsensusStore) LatestJustified() *types.Checkpoint {
-	return s.getMetadataCheckpoint(storage.KeyLatestJustified)
+	return s.getMetadataCheckpoint(KeyLatestJustified)
 }
 
 func (s *ConsensusStore) SetLatestJustified(cp *types.Checkpoint) {
@@ -66,11 +65,11 @@ func (s *ConsensusStore) SetLatestJustified(cp *types.Checkpoint) {
 }
 
 func (s *ConsensusStore) PutLatestJustified(cp *types.Checkpoint) error {
-	return s.putMetadataCheckpoint(storage.KeyLatestJustified, cp, "set latest justified")
+	return s.putMetadataCheckpoint(KeyLatestJustified, cp, "set latest justified")
 }
 
 func (s *ConsensusStore) LatestFinalized() *types.Checkpoint {
-	return s.getMetadataCheckpoint(storage.KeyLatestFinalized)
+	return s.getMetadataCheckpoint(keyLatestFinalized)
 }
 
 func (s *ConsensusStore) SetLatestFinalized(cp *types.Checkpoint) {
@@ -80,7 +79,7 @@ func (s *ConsensusStore) SetLatestFinalized(cp *types.Checkpoint) {
 }
 
 func (s *ConsensusStore) PutLatestFinalized(cp *types.Checkpoint) error {
-	return s.putMetadataCheckpoint(storage.KeyLatestFinalized, cp, "set latest finalized")
+	return s.putMetadataCheckpoint(keyLatestFinalized, cp, "set latest finalized")
 }
 
 // DeriveFinalizedFromHead resolves the finalized checkpoint implied by the head's
@@ -140,7 +139,7 @@ func (s *ConsensusStore) Config() *types.ChainConfig {
 	if err != nil {
 		return &types.ChainConfig{}
 	}
-	val, err := rv.Get(storage.TableMetadata, storage.KeyConfig)
+	val, err := rv.Get(TableMetadata, keyConfig)
 	if err != nil || val == nil {
 		return &types.ChainConfig{}
 	}
@@ -165,7 +164,7 @@ func (s *ConsensusStore) PutConfig(cfg *types.ChainConfig) error {
 	if err != nil {
 		return fmt.Errorf("set config: marshal: %w", err)
 	}
-	return s.putMetadata(storage.KeyConfig, data, "set config")
+	return s.putMetadata(keyConfig, data, "set config")
 }
 
 func (s *ConsensusStore) getMetadataUint64(key []byte) uint64 {
@@ -173,7 +172,7 @@ func (s *ConsensusStore) getMetadataUint64(key []byte) uint64 {
 	if err != nil {
 		return 0
 	}
-	val, err := rv.Get(storage.TableMetadata, key)
+	val, err := rv.Get(TableMetadata, key)
 	if err != nil || len(val) < 8 {
 		return 0
 	}
@@ -191,7 +190,7 @@ func (s *ConsensusStore) getMetadataRoot(key []byte) [32]byte {
 	if err != nil {
 		return [32]byte{}
 	}
-	val, err := rv.Get(storage.TableMetadata, key)
+	val, err := rv.Get(TableMetadata, key)
 	if err != nil || len(val) < 32 {
 		return [32]byte{}
 	}
@@ -209,7 +208,7 @@ func (s *ConsensusStore) getMetadataCheckpoint(key []byte) *types.Checkpoint {
 	if err != nil {
 		return &types.Checkpoint{}
 	}
-	val, err := rv.Get(storage.TableMetadata, key)
+	val, err := rv.Get(TableMetadata, key)
 	if err != nil || val == nil {
 		return &types.Checkpoint{}
 	}
@@ -232,5 +231,5 @@ func (s *ConsensusStore) putMetadataCheckpoint(key []byte, cp *types.Checkpoint,
 }
 
 func (s *ConsensusStore) putMetadata(key, value []byte, label string) error {
-	return s.putOne(storage.TableMetadata, key, value, label)
+	return s.putOne(TableMetadata, key, value, label)
 }

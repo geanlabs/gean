@@ -3,7 +3,6 @@ package node
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -140,7 +139,7 @@ func TestGetCanonicalBlocksInRange_ReportsIncompleteChain(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := wb.DeleteBatch(storage.TableSignedBlocks, [][]byte{root[:]}); err != nil {
+				if err := wb.DeleteBatch(store.TableSignedBlocks, [][]byte{root[:]}); err != nil {
 					t.Fatal(err)
 				}
 				if err := wb.Commit(); err != nil {

@@ -4,6 +4,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/lean/store"
+
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/attestation"
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -30,7 +32,7 @@ type stateReadCounterView struct {
 }
 
 func (v *stateReadCounterView) Get(table storage.Table, key []byte) ([]byte, error) {
-	if table == storage.TableStates {
+	if table == store.TableStates {
 		v.owner.reads.Add(1)
 	}
 	return v.ReadView.Get(table, key)

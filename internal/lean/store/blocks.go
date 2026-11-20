@@ -14,7 +14,7 @@ func (s *ConsensusStore) GetBlockHeader(root [32]byte) *types.BlockHeader {
 	if err != nil {
 		return nil
 	}
-	val, err := rv.Get(storage.TableBlockHeaders, root[:])
+	val, err := rv.Get(TableBlockHeaders, root[:])
 	if err != nil || val == nil {
 		return nil
 	}
@@ -31,7 +31,7 @@ func (s *ConsensusStore) HasBlockHeader(root [32]byte) bool {
 	if err != nil {
 		return false
 	}
-	val, err := rv.Get(storage.TableBlockHeaders, root[:])
+	val, err := rv.Get(TableBlockHeaders, root[:])
 	return err == nil && val != nil
 }
 
@@ -49,7 +49,7 @@ func (s *ConsensusStore) PutBlockHeader(root [32]byte, header *types.BlockHeader
 	if err != nil {
 		return fmt.Errorf("insert block header: marshal: %w", err)
 	}
-	if err := s.putOne(storage.TableBlockHeaders, root[:], data, "insert block header"); err != nil {
+	if err := s.putOne(TableBlockHeaders, root[:], data, "insert block header"); err != nil {
 		return err
 	}
 	s.NoteStoredHeader(root, header)
@@ -63,7 +63,7 @@ func (s *ConsensusStore) BlockRoots() (map[[32]byte]bool, error) {
 		return nil, err
 	}
 
-	it, err := rv.PrefixIterator(storage.TableBlockHeaders, nil)
+	it, err := rv.PrefixIterator(TableBlockHeaders, nil)
 	if err != nil {
 		return nil, fmt.Errorf("iterate block headers: %w", err)
 	}
@@ -87,7 +87,7 @@ func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlock {
 	if err != nil {
 		return nil
 	}
-	data, err := rv.Get(storage.TableSignedBlocks, root[:])
+	data, err := rv.Get(TableSignedBlocks, root[:])
 	if err != nil || data == nil {
 		return nil
 	}
@@ -129,11 +129,11 @@ func WriteBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 		return err
 	}
 	if len(bodyData) > 0 {
-		if err := wb.PutBatch(storage.TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}}); err != nil {
+		if err := wb.PutBatch(TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}}); err != nil {
 			return fmt.Errorf("write block data: put body: %w", err)
 		}
 	}
-	if err := wb.PutBatch(storage.TableSignedBlocks, []storage.KV{{Key: root[:], Value: fullData}}); err != nil {
+	if err := wb.PutBatch(TableSignedBlocks, []storage.KV{{Key: root[:], Value: fullData}}); err != nil {
 		return fmt.Errorf("write block data: put signed block: %w", err)
 	}
 	if err := wb.Commit(); err != nil {
@@ -242,7 +242,7 @@ func (s *ConsensusStore) scanMaxStoredBlockSlot() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	it, err := rv.PrefixIterator(storage.TableBlockHeaders, nil)
+	it, err := rv.PrefixIterator(TableBlockHeaders, nil)
 	if err != nil {
 		return 0, fmt.Errorf("iterate block headers: %w", err)
 	}
@@ -282,7 +282,7 @@ func (s *ConsensusStore) LiveChainRange(from, to uint64) ([]LiveChainEntry, erro
 	}
 	// Keys lead with the big-endian slot, so this starts at the first entry at
 	// or above from.
-	it, err := rv.IteratorFrom(storage.TableLiveChain, storage.EncodeLiveChainKey(from, [32]byte{}))
+	it, err := rv.IteratorFrom(TableLiveChain, EncodeLiveChainKey(from, [32]byte{}))
 	if err != nil {
 		return nil, fmt.Errorf("iterate live chain: %w", err)
 	}
@@ -291,10 +291,10 @@ func (s *ConsensusStore) LiveChainRange(from, to uint64) ([]LiveChainEntry, erro
 	var entries []LiveChainEntry
 	for it.Next() {
 		key := it.Key()
-		if len(key) < storage.LiveChainKeySize {
+		slot, root, ok := decodeLiveChainKey(key)
+		if !ok {
 			continue
 		}
-		slot, root := storage.DecodeLiveChainKey(key)
 		if to != 0 && slot >= to {
 			break
 		}
@@ -319,7 +319,7 @@ func (s *ConsensusStore) HasLiveChainEntry(slot uint64, root [32]byte) bool {
 	if err != nil {
 		return false
 	}
-	val, err := rv.Get(storage.TableLiveChain, storage.EncodeLiveChainKey(slot, root))
+	val, err := rv.Get(TableLiveChain, EncodeLiveChainKey(slot, root))
 	return err == nil && val != nil
 }
 
@@ -330,8 +330,8 @@ func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]
 }
 
 func (s *ConsensusStore) PutLiveChainEntry(slot uint64, root, parentRoot [32]byte) error {
-	key := storage.EncodeLiveChainKey(slot, root)
-	return s.putOne(storage.TableLiveChain, key, parentRoot[:], "insert live chain entry")
+	key := EncodeLiveChainKey(slot, root)
+	return s.putOne(TableLiveChain, key, parentRoot[:], "insert live chain entry")
 }
 
 // GetCanonicalBlocksInRange returns the canonical blocks in [startSlot, startSlot+count),

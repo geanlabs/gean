@@ -4,7 +4,6 @@ import (
 	"bytes"
 
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -229,7 +228,7 @@ func pruneStatesByRoots(s *ConsensusStore, roots [][32]byte) int {
 		logger.Error(logger.Store, "%v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(storage.TableStates, keys); err != nil {
+	if err := wb.DeleteBatch(TableStates, keys); err != nil {
 		logger.Error(logger.Store, "prune states: delete failed: %v", err)
 		return 0
 	}
@@ -256,15 +255,15 @@ func pruneBlocksByRoots(s *ConsensusStore, roots [][32]byte) int {
 		logger.Error(logger.Store, "%v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(storage.TableBlockHeaders, keys); err != nil {
+	if err := wb.DeleteBatch(TableBlockHeaders, keys); err != nil {
 		logger.Error(logger.Store, "prune blocks: delete headers failed: %v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(storage.TableBlockBodies, keys); err != nil {
+	if err := wb.DeleteBatch(TableBlockBodies, keys); err != nil {
 		logger.Error(logger.Store, "prune blocks: delete bodies failed: %v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(storage.TableSignedBlocks, keys); err != nil {
+	if err := wb.DeleteBatch(TableSignedBlocks, keys); err != nil {
 		logger.Error(logger.Store, "prune blocks: delete signatures failed: %v", err)
 		return 0
 	}
@@ -287,7 +286,7 @@ func pruneFinalizedHistory(s *ConsensusStore, cutoff uint64) int {
 		return 0
 	}
 
-	iter, err := rv.PrefixIterator(storage.TableLiveChain, nil)
+	iter, err := rv.PrefixIterator(TableLiveChain, nil)
 	if err != nil {
 		return 0
 	}
@@ -296,10 +295,10 @@ func pruneFinalizedHistory(s *ConsensusStore, cutoff uint64) int {
 	var entries, roots [][]byte
 	for iter.Next() {
 		key := iter.Key()
-		if len(key) < storage.LiveChainKeySize {
+		slot, root, ok := decodeLiveChainKey(key)
+		if !ok {
 			continue
 		}
-		slot, root := storage.DecodeLiveChainKey(key)
 		if slot >= cutoff {
 			break
 		}
@@ -316,11 +315,11 @@ func pruneFinalizedHistory(s *ConsensusStore, cutoff uint64) int {
 		logger.Error(logger.Store, "%v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(storage.TableLiveChain, entries); err != nil {
+	if err := wb.DeleteBatch(TableLiveChain, entries); err != nil {
 		logger.Error(logger.Store, "prune finalized history: delete live chain: %v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(storage.TableSignedBlocks, roots); err != nil {
+	if err := wb.DeleteBatch(TableSignedBlocks, roots); err != nil {
 		logger.Error(logger.Store, "prune finalized history: delete signed blocks: %v", err)
 		return 0
 	}

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/geanlabs/gean/internal/lean/store"
+
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/metrics"
-	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/syncer"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -206,7 +207,7 @@ func (e *Engine) recordTableBytes(ctx context.Context) {
 	if e.Store == nil || e.Store.Backend == nil {
 		return
 	}
-	for _, table := range storage.AllTables {
+	for _, table := range store.AllTables {
 		// Bail between tables so a cancelled shutdown does not spend a whole
 		// round on a database that is about to close. Responsiveness only:
 		// Engine.Wait is what actually makes Close safe.

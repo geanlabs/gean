@@ -45,7 +45,7 @@ func TestMaxStoredBlockSlotTracksInserts(t *testing.T) {
 // to prevent.
 //
 // The pending block matters specifically. It is written by storePendingBlock
-// and never imported, so it appears in TableBlockHeaders but not in the live
+// and never imported, so it appears in store.TableBlockHeaders but not in the live
 // chain: an index built only from imported blocks would miss it and read slot
 // 100 here, ten slots behind the truth.
 func TestMaxStoredBlockSlotSeedsFromDiskAfterRestart(t *testing.T) {
@@ -95,7 +95,7 @@ type failOnceView struct {
 
 func (v *failOnceView) PrefixIterator(table storage.Table, prefix []byte) (storage.Iterator, error) {
 	it, err := v.ReadView.PrefixIterator(table, prefix)
-	if err != nil || table != storage.TableBlockHeaders || v.backend.failed {
+	if err != nil || table != store.TableBlockHeaders || v.backend.failed {
 		return it, err
 	}
 	v.backend.failed = true

@@ -1,5 +1,8 @@
 package storage
 
+// Table names a keyspace. Each chain defines its own tables.
+type Table string
+
 type Backend interface {
 	BeginRead() (ReadView, error)
 

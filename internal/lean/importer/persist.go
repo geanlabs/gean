@@ -62,28 +62,28 @@ func persistBlock(
 	if err != nil {
 		return fmt.Errorf("persist block: begin write: %w", err)
 	}
-	if err := putImportBatch(wb, storage.TableBlockHeaders, []storage.KV{{Key: blockRoot[:], Value: headerData}}, "block header"); err != nil {
+	if err := putImportBatch(wb, store.TableBlockHeaders, []storage.KV{{Key: blockRoot[:], Value: headerData}}, "block header"); err != nil {
 		return err
 	}
-	if err := putImportBatch(wb, storage.TableStates, []storage.KV{{Key: blockRoot[:], Value: stateData}}, "post state"); err != nil {
+	if err := putImportBatch(wb, store.TableStates, []storage.KV{{Key: blockRoot[:], Value: stateData}}, "post state"); err != nil {
 		return err
 	}
-	if err := putImportBatch(wb, storage.TableLiveChain, []storage.KV{{
-		Key:   storage.EncodeLiveChainKey(block.Slot, blockRoot),
+	if err := putImportBatch(wb, store.TableLiveChain, []storage.KV{{
+		Key:   store.EncodeLiveChainKey(block.Slot, blockRoot),
 		Value: block.ParentRoot[:],
 	}}, "live chain entry"); err != nil {
 		return err
 	}
 	if len(bodyData) > 0 {
-		if err := putImportBatch(wb, storage.TableBlockBodies, []storage.KV{{Key: blockRoot[:], Value: bodyData}}, "block body"); err != nil {
+		if err := putImportBatch(wb, store.TableBlockBodies, []storage.KV{{Key: blockRoot[:], Value: bodyData}}, "block body"); err != nil {
 			return err
 		}
 	}
-	if err := putImportBatch(wb, storage.TableSignedBlocks, []storage.KV{{Key: blockRoot[:], Value: fullData}}, "signed block"); err != nil {
+	if err := putImportBatch(wb, store.TableSignedBlocks, []storage.KV{{Key: blockRoot[:], Value: fullData}}, "signed block"); err != nil {
 		return err
 	}
 	if len(checkpointEntries) > 0 {
-		if err := putImportBatch(wb, storage.TableMetadata, checkpointEntries, "checkpoints"); err != nil {
+		if err := putImportBatch(wb, store.TableMetadata, checkpointEntries, "checkpoints"); err != nil {
 			return err
 		}
 	}

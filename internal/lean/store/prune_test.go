@@ -95,7 +95,7 @@ func countStates(t *testing.T, s *store.ConsensusStore) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	it, err := rv.PrefixIterator(storage.TableStates, nil)
+	it, err := rv.PrefixIterator(store.TableStates, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

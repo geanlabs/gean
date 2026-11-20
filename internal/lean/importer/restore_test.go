@@ -175,7 +175,7 @@ func TestForkChoiceFromStoreReplaysBlocksWhoseStateWasPruned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := wb.DeleteBatch(storage.TableStates, [][]byte{old[:]}); err != nil {
+	if err := wb.DeleteBatch(store.TableStates, [][]byte{old[:]}); err != nil {
 		t.Fatal(err)
 	}
 	if err := wb.Commit(); err != nil {

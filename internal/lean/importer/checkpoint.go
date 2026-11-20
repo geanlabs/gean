@@ -19,7 +19,7 @@ func justifiedCheckpointChange(s *store.ConsensusStore, postState *types.State) 
 	if !checkpointAdvanced(postState.LatestJustified, s.LatestJustified()) {
 		return nil, nil
 	}
-	entry, err := checkpointEntry(storage.KeyLatestJustified, postState.LatestJustified)
+	entry, err := checkpointEntry(store.KeyLatestJustified, postState.LatestJustified)
 	if err != nil {
 		return nil, err
 	}

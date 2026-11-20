@@ -16,14 +16,14 @@ func TestHasMatchesGet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: begin write: %v", name, err)
 		}
-		if err := wb.PutBatch(TableStates, []KV{{Key: []byte("kept"), Value: []byte("state")}, {Key: []byte("gone"), Value: []byte("state")}}); err != nil {
+		if err := wb.PutBatch(tableB, []KV{{Key: []byte("kept"), Value: []byte("state")}, {Key: []byte("gone"), Value: []byte("state")}}); err != nil {
 			t.Fatalf("%s: put: %v", name, err)
 		}
 		if err := wb.Commit(); err != nil {
 			t.Fatalf("%s: commit: %v", name, err)
 		}
 		wb, _ = backend.BeginWrite()
-		if err := wb.DeleteBatch(TableStates, [][]byte{[]byte("gone")}); err != nil {
+		if err := wb.DeleteBatch(tableB, [][]byte{[]byte("gone")}); err != nil {
 			t.Fatalf("%s: delete: %v", name, err)
 		}
 		if err := wb.Commit(); err != nil {
@@ -37,7 +37,7 @@ func TestHasMatchesGet(t *testing.T) {
 		for _, c := range []struct {
 			table Table
 			key   string
-		}{{TableStates, "kept"}, {TableStates, "gone"}, {TableStates, "never"}, {TableBlockHeaders, "kept"}} {
+		}{{tableB, "kept"}, {tableB, "gone"}, {tableB, "never"}, {tableC, "kept"}} {
 			val, err := rv.Get(c.table, []byte(c.key))
 			if err != nil {
 				t.Fatalf("%s: get %s/%s: %v", name, c.table, c.key, err)

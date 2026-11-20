@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -13,7 +12,7 @@ func (s *ConsensusStore) GetState(root [32]byte) *types.State {
 	if err != nil {
 		return nil
 	}
-	val, err := rv.Get(storage.TableStates, root[:])
+	val, err := rv.Get(TableStates, root[:])
 	if err != nil || val == nil {
 		return nil
 	}
@@ -42,7 +41,7 @@ func (s *ConsensusStore) HasState(root [32]byte) bool {
 	if err != nil {
 		return false
 	}
-	has, err := rv.Has(storage.TableStates, root[:])
+	has, err := rv.Has(TableStates, root[:])
 	return err == nil && has
 }
 
@@ -60,7 +59,7 @@ func (s *ConsensusStore) PutState(root [32]byte, state *types.State) error {
 	if err != nil {
 		return fmt.Errorf("insert state: marshal: %w", err)
 	}
-	if err := s.putOne(storage.TableStates, root[:], data, "insert state"); err != nil {
+	if err := s.putOne(TableStates, root[:], data, "insert state"); err != nil {
 		return err
 	}
 	s.NoteStoredState(root, state)
@@ -72,7 +71,7 @@ func (s *ConsensusStore) StatesCount() int {
 	if err != nil {
 		return 0
 	}
-	it, err := rv.PrefixIterator(storage.TableStates, nil)
+	it, err := rv.PrefixIterator(TableStates, nil)
 	if err != nil {
 		return 0
 	}

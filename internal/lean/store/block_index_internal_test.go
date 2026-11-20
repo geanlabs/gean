@@ -178,7 +178,7 @@ func TestBlockIndexMatchesHeaderWalks(t *testing.T) {
 // After warming up, extending the head must not read the header table: the
 // canonical map moves by one slot and the parent is already in memory.
 func TestBlockIndexHeadExtensionReadsNothing(t *testing.T) {
-	backend := &tableReadCounter{Backend: storage.NewInMemoryBackend(), table: storage.TableBlockHeaders}
+	backend := &tableReadCounter{Backend: storage.NewInMemoryBackend(), table: TableBlockHeaders}
 	s := NewConsensusStore(backend)
 	parent := [32]byte{0x01}
 	storeIndexTestBlock(t, s, parent, types.ZeroRoot, 0)

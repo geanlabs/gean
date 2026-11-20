@@ -11,7 +11,7 @@ import (
 // its answer always matches what the states table holds: after a write, after
 // a restart has emptied memory, and after a prune.
 func TestHasStateNeverReadsStateValues(t *testing.T) {
-	backend := &tableReadCounter{Backend: storage.NewInMemoryBackend(), table: storage.TableStates}
+	backend := &tableReadCounter{Backend: storage.NewInMemoryBackend(), table: TableStates}
 	s := NewConsensusStore(backend)
 	stored, other := [32]byte{0x01}, [32]byte{0x02}
 	s.InsertState(stored, summaryTestState(3, 4))

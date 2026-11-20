@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/lean/store"
+
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -98,7 +100,7 @@ type headWriteFailingBatch struct {
 
 func (b headWriteFailingBatch) PutBatch(table storage.Table, entries []storage.KV) error {
 	for _, kv := range entries {
-		if table == storage.TableMetadata && bytes.Equal(kv.Key, storage.KeyHead) {
+		if table == store.TableMetadata && bytes.Equal(kv.Key, store.KeyHead) {
 			return errors.New("head write failed")
 		}
 	}

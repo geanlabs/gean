@@ -3,6 +3,8 @@ package importer
 import (
 	"testing"
 
+	"github.com/geanlabs/gean/internal/lean/store"
+
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/p2p"
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -28,7 +30,7 @@ type headerReadCounterView struct {
 }
 
 func (v *headerReadCounterView) Get(table storage.Table, key []byte) ([]byte, error) {
-	if table == storage.TableBlockHeaders {
+	if table == store.TableBlockHeaders {
 		v.owner.reads++
 	}
 	return v.ReadView.Get(table, key)
