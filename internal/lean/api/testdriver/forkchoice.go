@@ -59,33 +59,8 @@ func (sess *Session) ForkChoiceInitHandler() http.HandlerFunc {
 		}
 
 		consensusStore := store.NewConsensusStore(storage.NewInMemoryBackend())
-		if err := consensusStore.PutConfig(anchorState.Config); err != nil {
-			writeInitFailure(w, fmt.Sprintf("store config: %v", err))
-			return
-		}
-		if err := consensusStore.PutBlockHeader(anchorRoot, anchorHeader); err != nil {
-			writeInitFailure(w, fmt.Sprintf("store block header: %v", err))
-			return
-		}
-		if err := consensusStore.PutState(anchorRoot, anchorState); err != nil {
-			writeInitFailure(w, fmt.Sprintf("store state: %v", err))
-			return
-		}
-		if err := consensusStore.PutLiveChainEntry(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot); err != nil {
-			writeInitFailure(w, fmt.Sprintf("store live chain entry: %v", err))
-			return
-		}
-		if err := consensusStore.PutHead(anchorRoot); err != nil {
-			writeInitFailure(w, fmt.Sprintf("store head: %v", err))
-			return
-		}
-		anchorCp := &types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot}
-		if err := consensusStore.PutLatestJustified(anchorCp); err != nil {
-			writeInitFailure(w, fmt.Sprintf("store latest justified: %v", err))
-			return
-		}
-		if err := consensusStore.PutLatestFinalized(anchorCp); err != nil {
-			writeInitFailure(w, fmt.Sprintf("store latest finalized: %v", err))
+		if err := consensusStore.PutAnchor(anchorRoot, anchorHeader, anchorState); err != nil {
+			writeInitFailure(w, err.Error())
 			return
 		}
 		if err := consensusStore.StorePendingBlock(anchorRoot, &types.SignedBlock{Block: anchorBlock}); err != nil {

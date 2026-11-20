@@ -88,20 +88,11 @@ func seedStoreFromAnchor(t *testing.T, s *store.ConsensusStore, state *types.Sta
 	if err != nil {
 		t.Fatalf("header htr: %v", err)
 	}
-	anchor := &types.Checkpoint{Root: blockRoot, Slot: header.Slot}
-	for _, put := range []func() error{
-		func() error { return s.PutConfig(state.Config) },
-		func() error { return s.PutHead(blockRoot) },
-		func() error { return s.PutSafeTarget(blockRoot) },
-		func() error { return s.PutLatestJustified(anchor) },
-		func() error { return s.PutLatestFinalized(anchor) },
-		func() error { return s.PutBlockHeader(blockRoot, header) },
-		func() error { return s.PutState(blockRoot, state) },
-		func() error { return s.StorePendingBlock(blockRoot, signed) },
-	} {
-		if err := put(); err != nil {
-			t.Fatalf("seed store: %v", err)
-		}
+	if err := s.PutAnchor(blockRoot, header, state); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+	if err := s.StorePendingBlock(blockRoot, signed); err != nil {
+		t.Fatalf("seed store: %v", err)
 	}
 }
 

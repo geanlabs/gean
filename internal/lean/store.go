@@ -54,30 +54,7 @@ func initStoreFromState(s *store.ConsensusStore, state *types.State) ([32]byte, 
 		return types.ZeroRoot, fmt.Errorf("initialize store: block root: %w", err)
 	}
 
-	anchor := &types.Checkpoint{Root: blockRoot, Slot: header.Slot}
-
-	if err := s.PutConfig(state.Config); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutHead(blockRoot); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutSafeTarget(blockRoot); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutLatestJustified(anchor); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutLatestFinalized(anchor); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutBlockHeader(blockRoot, header); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutState(blockRoot, state); err != nil {
-		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
-	}
-	if err := s.PutLiveChainEntry(state.Slot, blockRoot, header.ParentRoot); err != nil {
+	if err := s.PutAnchor(blockRoot, header, state); err != nil {
 		return types.ZeroRoot, fmt.Errorf("initialize store: %w", err)
 	}
 

@@ -22,7 +22,6 @@ import (
 	"github.com/geanlabs/gean/internal/lean/genesis"
 	"github.com/geanlabs/gean/internal/lean/role"
 	"github.com/geanlabs/gean/internal/lean/store"
-	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 // Spec fixture directory for api endpoint tests.
@@ -123,18 +122,11 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 	// Seed store + fork choice from the genesis state.
 	backend := storage.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
-	s.SetConfig(state.Config)
-
 	header := state.LatestBlockHeader
 	blockRoot, _ := header.HashTreeRoot()
-	anchor := &types.Checkpoint{Root: blockRoot, Slot: 0}
-
-	s.SetHead(blockRoot)
-	s.SetSafeTarget(blockRoot)
-	s.SetLatestJustified(anchor)
-	s.SetLatestFinalized(anchor)
-	s.InsertBlockHeader(blockRoot, header)
-	s.InsertState(blockRoot, state)
+	if err := s.PutAnchor(blockRoot, header, state); err != nil {
+		t.Fatalf("put anchor: %v", err)
+	}
 
 	fc := forkchoice.New(0, blockRoot, [32]byte{})
 

@@ -195,13 +195,9 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 	backend := storage.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 
-	s.SetConfig(anchorState.Config)
-	s.InsertBlockHeader(anchorRoot, header)
-	s.InsertState(anchorRoot, anchorState)
-	s.InsertLiveChainEntry(header.Slot, anchorRoot, header.ParentRoot)
-	s.SetHead(anchorRoot)
-	s.SetLatestJustified(&types.Checkpoint{Root: anchorRoot, Slot: header.Slot})
-	s.SetLatestFinalized(&types.Checkpoint{Root: anchorRoot, Slot: header.Slot})
+	if err := s.PutAnchor(anchorRoot, header, anchorState); err != nil {
+		t.Fatalf("put anchor: %v", err)
+	}
 
 	signedBlock := tt.SignedBlock.toSignedBlock()
 

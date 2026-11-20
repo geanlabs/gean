@@ -46,13 +46,10 @@ func VerifySignaturesHandler() http.HandlerFunc {
 		}
 
 		consensusStore := store.NewConsensusStore(storage.NewInMemoryBackend())
-		consensusStore.SetConfig(anchorState.Config)
-		consensusStore.InsertBlockHeader(anchorRoot, header)
-		consensusStore.InsertState(anchorRoot, anchorState)
-		consensusStore.InsertLiveChainEntry(header.Slot, anchorRoot, header.ParentRoot)
-		consensusStore.SetHead(anchorRoot)
-		consensusStore.SetLatestJustified(&types.Checkpoint{Root: anchorRoot, Slot: header.Slot})
-		consensusStore.SetLatestFinalized(&types.Checkpoint{Root: anchorRoot, Slot: header.Slot})
+		if err := consensusStore.PutAnchor(anchorRoot, header, anchorState); err != nil {
+			writeVerifyFailure(w, err.Error())
+			return
+		}
 
 		signedBlock, err := fixture.SignedBlock.ToSignedBlock()
 		if err != nil {

@@ -357,10 +357,6 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	backend := storage.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 
-	// Store config from anchor state.
-	s.SetConfig(anchorState.Config)
-
-	// Store anchor state + block header.
 	anchorHeader, err := anchorBlock.Header()
 	if err != nil {
 		t.Fatalf("anchor header: %v", err)
@@ -390,17 +386,12 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			anchorBlock.StateRoot, computedStateRoot)
 	}
 
-	s.InsertBlockHeader(anchorRoot, anchorHeader)
-	s.InsertState(anchorRoot, anchorState)
-	s.InsertLiveChainEntry(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot)
-	s.SetHead(anchorRoot)
-	// Seed checkpoints from the anchor block itself, not from
-	// anchorState.LatestJustified/LatestFinalized. The store treats the anchor
-	// as the new genesis: justified/finalized point
-	// at the anchor block, and any pre-anchor history embedded in the state's
-	// checkpoints is intentionally ignored.
-	s.SetLatestJustified(&types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot})
-	s.SetLatestFinalized(&types.Checkpoint{Root: anchorRoot, Slot: anchorBlock.Slot})
+	// The checkpoints start at the anchor block itself, not at
+	// anchorState.LatestJustified/LatestFinalized: the store treats the anchor as
+	// the new genesis and ignores any pre-anchor history in the state.
+	if err := s.PutAnchor(anchorRoot, anchorHeader, anchorState); err != nil {
+		t.Fatalf("put anchor: %v", err)
+	}
 
 	// Store anchor as signed block.
 	anchorSigned := &types.SignedBlock{
