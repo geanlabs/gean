@@ -1,4 +1,4 @@
-package node
+package importer
 
 import (
 	"context"
@@ -11,7 +11,9 @@ import (
 
 const fetchBatchGracePeriod = 50 * time.Millisecond
 
-func (e *Engine) runFetchBatcher(ctx context.Context) {
+// RunFetcher batches missing-parent roots and fetches them from peers until ctx
+// ends. It runs on its own goroutine.
+func (i *Importer) RunFetcher(ctx context.Context) {
 	for {
 		var batch [][32]byte
 		seen := make(map[[32]byte]bool)
@@ -19,7 +21,7 @@ func (e *Engine) runFetchBatcher(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case root := <-e.FetchRootCh:
+		case root := <-i.fetchRoots:
 			batch = append(batch, root)
 			seen[root] = true
 		}
@@ -30,7 +32,7 @@ func (e *Engine) runFetchBatcher(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case root := <-e.FetchRootCh:
+			case root := <-i.fetchRoots:
 				if !seen[root] {
 					batch = append(batch, root)
 					seen[root] = true
@@ -40,16 +42,16 @@ func (e *Engine) runFetchBatcher(ctx context.Context) {
 			}
 		}
 
-		e.fireBatchFetch(ctx, batch)
+		i.fireBatchFetch(ctx, batch)
 	}
 }
 
-func (e *Engine) fireBatchFetch(ctx context.Context, roots [][32]byte) {
-	if e.P2P == nil || len(roots) == 0 {
+func (i *Importer) fireBatchFetch(ctx context.Context, roots [][32]byte) {
+	if i.fetcher == nil || len(roots) == 0 {
 		return
 	}
 	logger.Info(logger.Sync, "batched fetch starting count=%d", len(roots))
-	blocks, missing, err := e.P2P.FetchBlocksByRootBatchWithRetry(ctx, roots)
+	blocks, missing, err := i.fetcher.FetchBlocksByRootBatchWithRetry(ctx, roots)
 	if err != nil {
 		logger.Warn(logger.Sync, "batched fetch failed count=%d err=%v", len(roots), err)
 	}
@@ -57,11 +59,11 @@ func (e *Engine) fireBatchFetch(ctx context.Context, roots [][32]byte) {
 	// backpressure so none are dropped while their in-flight markers say the
 	// fetch succeeded.
 	for _, b := range blocks {
-		if !e.OnSyncBlock(ctx, b) {
+		if !i.SubmitSync(ctx, b) {
 			return
 		}
 	}
-	e.notifyFailedRoots(ctx, missing)
+	i.notifyFailedRoots(ctx, missing)
 }
 
 // notifyFailedRoots hands exhausted roots to the dispatch loop, blocking until each
@@ -72,18 +74,18 @@ func (e *Engine) fireBatchFetch(ctx context.Context, roots [][32]byte) {
 // marooned on its own fork. The marker map belongs to the dispatch loop, so the
 // batcher cannot clear it here; backpressure is the only safe option, and the loop
 // never sends on this channel, so blocking cannot deadlock.
-func (e *Engine) notifyFailedRoots(ctx context.Context, roots [][32]byte) {
+func (i *Importer) notifyFailedRoots(ctx context.Context, roots [][32]byte) {
 	for _, r := range roots {
 		select {
-		case e.FailedRootCh <- r:
+		case i.failedRoots <- r:
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (e *Engine) queueMissingBlockFetch(root [32]byte) {
-	if e.P2P == nil {
+func (i *Importer) queueMissingBlockFetch(root [32]byte) {
+	if i.fetcher == nil {
 		return
 	}
 	// The zero root is genesis's parent: there is no such block to fetch.
@@ -91,15 +93,15 @@ func (e *Engine) queueMissingBlockFetch(root [32]byte) {
 		return
 	}
 	// A missing parent is re-derived on every child that arrives referencing it, so the
-	// same root would otherwise be queued hundreds of times and saturate FetchRootCh with
+	// same root would otherwise be queued hundreds of times and saturate the fetch queue with
 	// duplicates — starving the fetch and freezing the head while far behind. Queue each
 	// root at most once until its block is received or its fetch is exhausted.
-	if e.fetchInFlight[root] {
+	if i.fetchInFlight[root] {
 		return
 	}
 	select {
-	case e.FetchRootCh <- root:
-		e.fetchInFlight[root] = true
+	case i.fetchRoots <- root:
+		i.fetchInFlight[root] = true
 		logger.Info(logger.Sync, "queueing missing block block_root=0x%x for batched fetch", root)
 	default:
 		logger.Warn(logger.Sync, "fetch root channel full, dropping request for 0x%x", root)

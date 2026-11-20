@@ -11,7 +11,7 @@ import (
 // startWorkers starts every worker on e.tasks, so Engine.Wait joins them.
 func (e *Engine) startWorkers(ctx context.Context) {
 	for _, run := range []func(){
-		func() { e.runFetchBatcher(ctx) },
+		func() { e.Importer.RunFetcher(ctx) },
 		func() {
 			aggregation.RunWorker(ctx, e.Clock, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
 		},

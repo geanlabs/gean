@@ -8,6 +8,7 @@ import (
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/metrics"
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/syncer"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -196,4 +197,27 @@ func (e *Engine) sampleGossipMesh() {
 	metrics.SetGossipMeshPeers(e.P2P.MeshPeerCount())
 	sizes := e.P2P.TopicMeshSizes()
 	e.topicMeshSizes.Store(&sizes)
+}
+
+// recordTableBytes refreshes the per-table storage-size gauge.
+//
+// This used to run on the import path, once per block. Both halves of that were
+// wrong: the backend estimate was a full scan of every table (see
+// storage.PebbleBackend.EstimateTableBytes), and the import path is the dispatch
+// goroutine, so the cost landed directly on the slot clock. A storage-size gauge
+// is coarse by nature and does not need per-block resolution; it is sampled on
+// its own goroutine now, like the gossip-mesh gauge.
+func (e *Engine) recordTableBytes(ctx context.Context) {
+	if e.Store == nil || e.Store.Backend == nil {
+		return
+	}
+	for _, table := range storage.AllTables {
+		// Bail between tables so a cancelled shutdown does not spend a whole
+		// round on a database that is about to close. Responsiveness only:
+		// Engine.Wait is what actually makes Close safe.
+		if ctx.Err() != nil {
+			return
+		}
+		metrics.SetTableBytes(string(table), e.Store.Backend.EstimateTableBytes(table))
+	}
 }

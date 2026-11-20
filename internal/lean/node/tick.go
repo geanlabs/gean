@@ -279,7 +279,7 @@ func (e *Engine) expectedVotersPerSlot() uint64 {
 }
 
 func (e *Engine) runAttestationInterval(currentSlot uint64) {
-	e.drainPendingBlocks()
+	e.Importer.Drain()
 	e.updateHead()
 	e.produceAttestations(currentSlot)
 	// Report the previous round: by now the head normally carries the block

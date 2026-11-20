@@ -160,7 +160,9 @@ func proposalTestEngine(t *testing.T) *Engine {
 	s.SetHead(root)
 	s.InsertState(root, state)
 	s.InsertBlockHeader(root, state.LatestBlockHeader)
-	return &Engine{Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan proposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
+	e := &Engine{Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan proposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
+	e.Importer = e.newImporter()
+	return e
 }
 
 func TestProposalDutyReservedThroughCompletion(t *testing.T) {
@@ -389,6 +391,7 @@ func earlyProposalEngine(t *testing.T) *Engine {
 	head := e.Store.Head()
 	e.Store.SetLatestJustified(&types.Checkpoint{Root: head})
 	e.FC = forkchoice.New(0, head, [32]byte{})
+	e.Importer = e.newImporter()
 	return e
 }
 
@@ -507,15 +510,13 @@ func TestEarlyProposalFailureRetriesOnceAfterSlotStart(t *testing.T) {
 
 func TestDispatchBlockStartsNextProposal(t *testing.T) {
 	e := earlyProposalEngine(t)
-	e.BlockCh = make(chan *types.SignedBlock, 1)
-	e.fetchInFlight = map[[32]byte]bool{}
 	e.Store.SetTime(4)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); e.dispatch(ctx, nil) }()
 	defer func() { cancel(); <-done }()
 
-	e.BlockCh <- blockAtSlot(0)
+	e.Importer.SubmitGossip(blockAtSlot(0))
 	select {
 	case duty := <-e.ProposalCh:
 		if duty.slot != 1 {
@@ -615,12 +616,12 @@ func TestAcceptProposalPublishesUnlessUnusable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			e.fetchInFlight = map[[32]byte]bool{root: true}
+			before := e.Importer.ImportAttempts()
 			e.acceptProposal(context.Background(), &proposalResult{
 				blockRoot:   root,
 				signedBlock: &types.SignedBlock{Block: block, Proof: &types.MultiMessageAggregate{Proof: []byte{1}}},
 			})
-			if handled := !e.fetchInFlight[root]; handled != tc.wantHandled {
+			if handled := e.Importer.ImportAttempts() > before; handled != tc.wantHandled {
 				t.Fatalf("handed to import=%v, want %v", handled, tc.wantHandled)
 			}
 		})

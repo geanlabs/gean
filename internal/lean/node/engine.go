@@ -12,6 +12,7 @@ import (
 	"github.com/geanlabs/gean/internal/lean/aggregation"
 	"github.com/geanlabs/gean/internal/lean/dutygate"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
+	"github.com/geanlabs/gean/internal/lean/importer"
 	"github.com/geanlabs/gean/internal/lean/p2p"
 	"github.com/geanlabs/gean/internal/lean/pending"
 	"github.com/geanlabs/gean/internal/lean/proving"
@@ -22,11 +23,6 @@ import (
 )
 
 var gitCommit = "unknown"
-
-const (
-	MaxBlockFetchDepth = 512
-	MaxPendingBlocks   = 1024
-)
 
 const (
 	PendingAttestationsPerRootCap = 8
@@ -54,14 +50,14 @@ type Engine struct {
 	// every attestation arrival.
 	expectedVoters      uint64
 	Shadow              shadow.Rates
-	Pending             *pending.BlockBuffer
 	PendingAttestations *pending.AttestationBuffer
 
-	BlockCh       chan *types.SignedBlock
+	// Importer imports received blocks, holds those whose parent is missing,
+	// and fetches missing parents.
+	Importer *importer.Importer
+
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
-	FailedRootCh  chan [32]byte
-	FetchRootCh   chan [32]byte
 
 	// EarlyAggregateCh is a coalescing (capacity-1) wake-up: an attestation-verify
 	// goroutine pokes it after inserting a signature, and the dispatch loop reacts
@@ -106,10 +102,6 @@ type Engine struct {
 	// the tick loop by the duty gate.
 	maxSeenGossipSlot atomic.Uint64
 
-	// fetchInFlight tracks block roots already queued for by-root fetch so a single
-	// missing parent cannot flood FetchRootCh with duplicate requests. Accessed only
-	// on the dispatch loop (queue on onBlock, clear on receive/exhaustion), so no lock.
-	fetchInFlight  map[[32]byte]bool
 	topicMeshSizes atomic.Pointer[map[string]int]
 
 	// coveragePreMerge holds the new-payload participants captured before the
@@ -141,35 +133,48 @@ func New(
 ) *Engine {
 	p2p.SetClientGitCommit(gitCommit)
 	e := &Engine{
-		Clock:               clock.Real{},
-		Store:               s,
-		FC:                  fc,
-		P2P:                 p2pHost,
-		Keys:                keys,
-		AggCtl:              aggCtl,
-		DutyGate:            dutygate.New(logDutyGateEvent),
-		CommitteeCount:      committeeCount,
-		Shadow:              shadowRates,
-		Pending:             pending.NewBlockBuffer(),
-		PendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
-		// Sized so gossip keeps flowing while the dispatch loop chews through a
-		// fetched batch: sync delivery blocks when full, but gossip drops, and a
-		// large import burst can take minutes of XMSS verification.
-		BlockCh:               make(chan *types.SignedBlock, 256),
+		Clock:                 clock.Real{},
+		Store:                 s,
+		FC:                    fc,
+		P2P:                   p2pHost,
+		Keys:                  keys,
+		AggCtl:                aggCtl,
+		DutyGate:              dutygate.New(logDutyGateEvent),
+		CommitteeCount:        committeeCount,
+		Shadow:                shadowRates,
+		PendingAttestations:   pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
 		AttestationCh:         make(chan *types.SignedAttestation, 256),
 		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),
-		FailedRootCh:          make(chan [32]byte, 64),
-		FetchRootCh:           make(chan [32]byte, 256),
 		EarlyAggregateCh:      make(chan struct{}, 1),
 		AggregationDispatchCh: make(chan aggregation.Dispatch, 1),
 		ProposalCh:            make(chan proposalDuty, 1),
 		ProposalResultCh:      make(chan *proposalResult, 1),
 		RecoveryCh:            make(chan *types.SignedBlock, 8),
 		ProvingGate:           proving.NewGate(),
-		fetchInFlight:         make(map[[32]byte]bool),
 	}
+	e.Importer = e.newImporter()
 	e.configureP2PHooks()
 	return e
+}
+
+// newImporter builds the block importer for e's store and fork choice.
+func (e *Engine) newImporter() *importer.Importer {
+	cfg := importer.Config{
+		Store:               e.Store,
+		FC:                  e.FC,
+		PendingAttestations: e.PendingAttestations,
+		Hooks: importer.Hooks{
+			Imported:    e.dispatchRecovery,
+			UpdateHead:  e.updateHead,
+			Attestation: e.OnGossipAttestation,
+		},
+	}
+	// A nil *p2p.Host in the interface would not compare equal to nil, so only
+	// set the fetcher when there is a host.
+	if e.P2P != nil {
+		cfg.Fetcher = e.P2P
+	}
+	return importer.New(cfg)
 }
 
 // Start runs the engine on a tracked goroutine.

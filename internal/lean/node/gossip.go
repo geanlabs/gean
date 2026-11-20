@@ -44,10 +44,7 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 			}
 			added, dropped := e.PendingAttestations.Add(att.Data.Head.Root, att)
 			if added {
-				select {
-				case e.FetchRootCh <- att.Data.Head.Root:
-				default:
-				}
+				e.Importer.RequestFetch(att.Data.Head.Root)
 			}
 			if dropped > 0 {
 				metrics.IncAttestationsBufferEvicted(dropped)

@@ -42,9 +42,9 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 		case <-e.EarlyAggregateCh:
 			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(clock.UnixMilli(e.Clock)) })
 
-		case block := <-e.BlockCh:
+		case block := <-e.Importer.Blocks():
 			timeEvent("block", func() {
-				e.onBlock(block)
+				e.Importer.Import(block)
 				// This slot's block arriving after the interval-4 tick settles the
 				// next proposal's parent.
 				e.maybeProposeEarly()
@@ -59,8 +59,8 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 				}
 			})
 
-		case root := <-e.FailedRootCh:
-			timeEvent("failed_root", func() { e.onFailedRoot(root) })
+		case root := <-e.Importer.FailedRoots():
+			timeEvent("failed_root", func() { e.Importer.OnFailedRoot(root) })
 		}
 	}
 }

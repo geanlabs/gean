@@ -233,7 +233,7 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) boo
 			block.Slot, e.Store.HeadSlot(), e.Store.Head(), block.ParentRoot)
 		return false
 	}
-	e.onBlock(result.signedBlock)
+	e.Importer.Import(result.signedBlock)
 	if !e.Store.HasState(result.blockRoot) {
 		metrics.IncProofOperation("proposal", "error")
 		return false

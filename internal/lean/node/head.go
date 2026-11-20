@@ -125,7 +125,7 @@ func (e *Engine) updateFinalizedFromHead(headRoot [32]byte) {
 		if derived.Slot > 0 {
 			e.FC.Prune(derived.Root)
 		}
-		e.discardFinalizedPending(derived.Slot)
+		e.Importer.DiscardFinalized(derived.Slot)
 	}
 }
 

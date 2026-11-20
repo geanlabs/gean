@@ -8,6 +8,7 @@ import (
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/metrics"
+	"github.com/geanlabs/gean/internal/lean/importer"
 	"github.com/geanlabs/gean/internal/lean/node"
 	"github.com/geanlabs/gean/internal/lean/role"
 	"github.com/geanlabs/gean/internal/lean/shadow"
@@ -54,7 +55,7 @@ func run(cfg config) error {
 		return err
 	}
 
-	fc, err := node.ForkChoiceFromStore(s)
+	fc, err := importer.ForkChoiceFromStore(s)
 	if err != nil {
 		return err
 	}

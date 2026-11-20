@@ -1,4 +1,4 @@
-package node
+package importer
 
 import (
 	"testing"
@@ -22,12 +22,12 @@ func blockAtSlot(slot uint64) *types.SignedBlock {
 func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 	const capacity = 8
 
-	e := &Engine{
-		Store:   makeTestStore(),
-		BlockCh: make(chan *types.SignedBlock, capacity),
+	imp := &Importer{
+		store:  makeTestStore(),
+		blocks: make(chan *types.SignedBlock, capacity),
 	}
 	for i := 0; i < capacity; i++ {
-		e.BlockCh <- blockAtSlot(uint64(i))
+		imp.blocks <- blockAtSlot(uint64(i))
 	}
 
 	stop := make(chan struct{})
@@ -38,7 +38,7 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 			select {
 			case <-stop:
 				return
-			case e.BlockCh <- blockAtSlot(999):
+			case imp.blocks <- blockAtSlot(999):
 			}
 		}
 	}()
@@ -49,7 +49,7 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 
 	type result struct{ drained int }
 	got := make(chan result, 1)
-	go func() { got <- result{e.drainPendingBlocks()} }()
+	go func() { got <- result{imp.Drain()} }()
 
 	select {
 	case r := <-got:
@@ -63,14 +63,14 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 }
 
 func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
-	e := &Engine{
-		Store:   makeTestStore(),
-		BlockCh: make(chan *types.SignedBlock, 4),
+	imp := &Importer{
+		store:  makeTestStore(),
+		blocks: make(chan *types.SignedBlock, 4),
 	}
 
 	done := make(chan struct{})
 	go func() {
-		if drained := e.drainPendingBlocks(); drained != 0 {
+		if drained := imp.Drain(); drained != 0 {
 			t.Errorf("drained %d blocks from an empty channel, want 0", drained)
 		}
 		close(done)
@@ -86,20 +86,20 @@ func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
 // Bounding the drain must not leave admitted blocks stranded: with no concurrent
 // producer, everything queued on entry is imported.
 func TestDrainPendingBlocks_ConsumesEveryQueuedBlock(t *testing.T) {
-	e := &Engine{
-		Store:   makeTestStore(),
-		BlockCh: make(chan *types.SignedBlock, 16),
+	imp := &Importer{
+		store:  makeTestStore(),
+		blocks: make(chan *types.SignedBlock, 16),
 	}
 
 	const queued = 8
 	for i := 0; i < queued; i++ {
-		e.BlockCh <- blockAtSlot(uint64(i))
+		imp.blocks <- blockAtSlot(uint64(i))
 	}
 
-	if drained := e.drainPendingBlocks(); drained != queued {
+	if drained := imp.Drain(); drained != queued {
 		t.Errorf("drained = %d, want %d", drained, queued)
 	}
-	if remaining := len(e.BlockCh); remaining != 0 {
+	if remaining := len(imp.blocks); remaining != 0 {
 		t.Errorf("expected the queued blocks to be consumed, %d left in channel", remaining)
 	}
 }

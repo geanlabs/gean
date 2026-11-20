@@ -1,4 +1,4 @@
-package node
+package importer
 
 import (
 	"context"
@@ -13,30 +13,30 @@ import (
 // same root floods FetchRootCh and starves the fetch. Each root must be queued at most
 // once until its block is received or its fetch is exhausted.
 func TestQueueMissingBlockFetchDedupes(t *testing.T) {
-	e := makeTestEngine()
-	e.P2P = &p2p.Host{} // non-nil so the fetch path runs; queueMissingBlockFetch calls no P2P method
+	imp := makeTestImporter()
+	imp.fetcher = &p2p.Host{} // non-nil so the fetch path runs; queueMissingBlockFetch calls no P2P method
 
 	var root [32]byte
 	root[0] = 0x77
 
 	for i := 0; i < 10; i++ {
-		e.queueMissingBlockFetch(root)
+		imp.queueMissingBlockFetch(root)
 	}
-	if got := len(e.FetchRootCh); got != 1 {
+	if got := len(imp.fetchRoots); got != 1 {
 		t.Fatalf("FetchRootCh has %d requests after 10 queues, want 1 (deduped)", got)
 	}
-	if !e.fetchInFlight[root] {
+	if !imp.fetchInFlight[root] {
 		t.Fatal("queued root should be marked in-flight")
 	}
 
 	// Exhausting the fetch clears the marker so a later gap can re-request the root.
-	e.onFailedRoot(root)
-	if e.fetchInFlight[root] {
+	imp.OnFailedRoot(root)
+	if imp.fetchInFlight[root] {
 		t.Fatal("onFailedRoot should clear the in-flight marker")
 	}
-	<-e.FetchRootCh // drain the first request so the channel has room
-	e.queueMissingBlockFetch(root)
-	if got := len(e.FetchRootCh); got != 1 {
+	<-imp.fetchRoots // drain the first request so the channel has room
+	imp.queueMissingBlockFetch(root)
+	if got := len(imp.fetchRoots); got != 1 {
 		t.Fatalf("re-queue after exhaustion: FetchRootCh has %d, want 1", got)
 	}
 }
@@ -45,9 +45,9 @@ func TestQueueMissingBlockFetchDedupes(t *testing.T) {
 // root is never re-requested and the gap never closes. Delivery must wait for the
 // dispatch loop rather than drop.
 func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
-	e := makeTestEngine()
-	for len(e.FailedRootCh) < cap(e.FailedRootCh) {
-		e.FailedRootCh <- [32]byte{}
+	imp := makeTestImporter()
+	for len(imp.failedRoots) < cap(imp.failedRoots) {
+		imp.failedRoots <- [32]byte{}
 	}
 
 	var root [32]byte
@@ -55,7 +55,7 @@ func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		e.notifyFailedRoots(context.Background(), [][32]byte{root})
+		imp.notifyFailedRoots(context.Background(), [][32]byte{root})
 		close(done)
 	}()
 
@@ -65,7 +65,7 @@ func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	<-e.FailedRootCh // dispatch loop makes room
+	<-imp.failedRoots // dispatch loop makes room
 	select {
 	case <-done:
 	case <-time.After(time.Second):
@@ -74,8 +74,8 @@ func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 
 	// Drain the backlog to reach the root that was waiting.
 	var delivered bool
-	for len(e.FailedRootCh) > 0 {
-		if <-e.FailedRootCh == root {
+	for len(imp.failedRoots) > 0 {
+		if <-imp.failedRoots == root {
 			delivered = true
 		}
 	}
@@ -86,15 +86,15 @@ func TestNotifyFailedRootsBlocksInsteadOfDropping(t *testing.T) {
 
 // Shutdown must not wedge the fetch batcher on a dispatch loop that has already stopped.
 func TestNotifyFailedRootsAbortsOnContextCancel(t *testing.T) {
-	e := makeTestEngine()
-	for len(e.FailedRootCh) < cap(e.FailedRootCh) {
-		e.FailedRootCh <- [32]byte{}
+	imp := makeTestImporter()
+	for len(imp.failedRoots) < cap(imp.failedRoots) {
+		imp.failedRoots <- [32]byte{}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		e.notifyFailedRoots(ctx, [][32]byte{{0xCD}})
+		imp.notifyFailedRoots(ctx, [][32]byte{{0xCD}})
 		close(done)
 	}()
 
@@ -109,7 +109,7 @@ func TestNotifyFailedRootsAbortsOnContextCancel(t *testing.T) {
 // Receiving the block for a queued root clears its in-flight marker regardless of whether
 // it imports or gets buffered — we hold it now, so there is nothing left to fetch.
 func TestProcessOneBlockClearsFetchMarker(t *testing.T) {
-	e := makeTestEngine()
+	imp := makeTestImporter()
 
 	var parentRoot [32]byte
 	parentRoot[0] = 0x99 // unknown parent → the block will be buffered, not imported
@@ -121,12 +121,12 @@ func TestProcessOneBlockClearsFetchMarker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("block root: %v", err)
 	}
-	e.fetchInFlight[blockRoot] = true
+	imp.fetchInFlight[blockRoot] = true
 
 	var queue []*types.SignedBlock
-	e.processOneBlock(signed, &queue, false)
+	imp.processOneBlock(signed, &queue, false)
 
-	if e.fetchInFlight[blockRoot] {
+	if imp.fetchInFlight[blockRoot] {
 		t.Fatal("receiving the block should clear its fetch marker")
 	}
 }
@@ -134,11 +134,11 @@ func TestProcessOneBlockClearsFetchMarker(t *testing.T) {
 // An imported block whose state was pruned in a finality stall is still
 // imported. Re-delivering it must not buffer it and rebuild its ancestors.
 func TestProcessOneBlockIgnoresImportedBlockWithPrunedState(t *testing.T) {
-	e := makeTestEngine()
+	imp := makeTestImporter()
 	genesis := [32]byte{0x01}
 	parent := [32]byte{0x0a}
-	e.Store.InsertBlockHeader(parent, &types.BlockHeader{Slot: 1, ParentRoot: genesis})
-	e.Store.InsertLiveChainEntry(1, parent, genesis)
+	imp.store.InsertBlockHeader(parent, &types.BlockHeader{Slot: 1, ParentRoot: genesis})
+	imp.store.InsertLiveChainEntry(1, parent, genesis)
 
 	signed := &types.SignedBlock{
 		Block: &types.Block{Slot: 2, ParentRoot: parent, Body: &types.BlockBody{}},
@@ -148,12 +148,12 @@ func TestProcessOneBlockIgnoresImportedBlockWithPrunedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("block root: %v", err)
 	}
-	e.Store.InsertBlockHeader(root, &types.BlockHeader{Slot: 2, ParentRoot: parent})
-	e.Store.InsertLiveChainEntry(2, root, parent)
+	imp.store.InsertBlockHeader(root, &types.BlockHeader{Slot: 2, ParentRoot: parent})
+	imp.store.InsertLiveChainEntry(2, root, parent)
 
-	e.onBlock(signed)
+	imp.Import(signed)
 
-	if n := e.Pending.Count(); n != 0 {
+	if n := imp.Pending.Count(); n != 0 {
 		t.Fatalf("re-delivered imported block left %d pending entries, want 0", n)
 	}
 }
