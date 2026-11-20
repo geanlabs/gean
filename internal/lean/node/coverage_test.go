@@ -3,6 +3,8 @@ package node
 import (
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -153,8 +155,8 @@ func TestSnapshotNewPayloadParticipantsGroupsBySlot(t *testing.T) {
 }
 
 // The emitters are driven off buffers that a single-aggregator devnet leaves
-// empty, so exercise the computation directly: given known votes for a round,
-// the block section and the block-vs-timely diff must both be non-zero.
+// empty, so exercise them directly: given known votes for a round, the report
+// must publish each section's coverage and the block-vs-timely diff.
 func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 	const reportingSlot = uint64(7)
 
@@ -188,38 +190,50 @@ func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 
 	e.reportPostBlockCoverage(reportingSlot)
 
-	// block={0,1,2} timely={2,3} -> block_only={0,1}=2, timely_only={3}=1,
-	// combined={0,1,2,3}=4 across subnets 0 and 1.
-	block := newCoverageSet(len(headState.Validators), e.CommitteeCount)
-	block.add(types.BitlistFromIndices([]uint64{0, 1, 2}))
-	timely := newCoverageSet(len(headState.Validators), e.CommitteeCount)
-	timely.add(types.BitlistFromIndices([]uint64{2, 3}))
-
-	blockOnly, timelyOnly := 0, 0
-	for vid, inBlock := range block.seen {
-		switch {
-		case inBlock && !timely.seen[vid]:
-			blockOnly++
-		case !inBlock && timely.seen[vid]:
-			timelyOnly++
+	// block={0,1,2}, timely={2,3}, nothing late: combined={0,1,2,3} across
+	// subnets 0 and 1, block_only={0,1}, timely_only={3}.
+	for _, c := range []struct {
+		name   string
+		labels map[string]string
+		want   float64
+	}{
+		{"lean_attestation_aggregate_coverage_validators", map[string]string{"section": "block", "subnet": "combined"}, 3},
+		{"lean_attestation_aggregate_coverage_validators", map[string]string{"section": "timely", "subnet": "combined"}, 2},
+		{"lean_attestation_aggregate_coverage_validators", map[string]string{"section": "late", "subnet": "combined"}, 0},
+		{"lean_attestation_aggregate_coverage_validators", map[string]string{"section": "combined", "subnet": "combined"}, 4},
+		{"lean_attestation_aggregate_coverage_subnets", map[string]string{"section": "combined"}, 2},
+		{"lean_attestation_aggregate_coverage_diff_validators", map[string]string{"direction": "block_only"}, 2},
+		{"lean_attestation_aggregate_coverage_diff_validators", map[string]string{"direction": "timely_only"}, 1},
+	} {
+		if got := gaugeValue(t, c.name, c.labels); got != c.want {
+			t.Errorf("%s%v=%v, want %v", c.name, c.labels, got, c.want)
 		}
 	}
-	if blockOnly != 2 || timelyOnly != 1 {
-		t.Errorf("diff block_only=%d timely_only=%d, want 2 and 1", blockOnly, timelyOnly)
-	}
+}
 
-	combined := newCoverageSet(len(headState.Validators), e.CommitteeCount)
-	combined.or(block)
-	combined.or(timely)
-	total := 0
-	for _, seen := range combined.seen {
-		if seen {
-			total++
+// gaugeValue reads one gauge series from the default registry.
+func gaugeValue(t *testing.T, name string, labels map[string]string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+	series:
+		for _, m := range family.GetMetric() {
+			for _, label := range m.GetLabel() {
+				if want, ok := labels[label.GetName()]; ok && want != label.GetValue() {
+					continue series
+				}
+			}
+			return m.GetGauge().GetValue()
 		}
 	}
-	if total != 4 {
-		t.Errorf("combined validators=%d, want 4", total)
-	}
+	t.Fatalf("no %s series with labels %v", name, labels)
+	return 0
 }
 
 // A report for a round with no data must not panic and must leave the gauges
