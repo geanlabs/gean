@@ -1,6 +1,6 @@
 package node
 
-import "github.com/geanlabs/gean/internal/logger"
+import "github.com/geanlabs/gean/internal/core/logger"
 
 // replayPendingAttestations re-submits the attestations buffered for headRoot
 // through the gossip queue. One root holds at most PendingAttestationsPerRootCap,

@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/types"
 )
 

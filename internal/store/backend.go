@@ -3,7 +3,7 @@ package store
 import (
 	"fmt"
 
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/storage"
 )
 
 func (s *ConsensusStore) beginRead(label string) (storage.ReadView, error) {

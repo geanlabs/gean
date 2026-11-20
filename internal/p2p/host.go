@@ -8,7 +8,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 
-	"github.com/geanlabs/gean/internal/lifecycle"
+	"github.com/geanlabs/gean/internal/core/lifecycle"
 )
 
 type Host struct {

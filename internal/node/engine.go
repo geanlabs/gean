@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/aggregation"
-	"github.com/geanlabs/gean/internal/clock"
+	"github.com/geanlabs/gean/internal/core/clock"
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
+	"github.com/geanlabs/gean/internal/core/lifecycle"
+	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/dutygate"
 	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/lifecycle"
-	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/p2p"
 	"github.com/geanlabs/gean/internal/pending"
 	"github.com/geanlabs/gean/internal/proving"
@@ -18,7 +19,6 @@ import (
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 var gitCommit = "unknown"

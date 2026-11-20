@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/geanlabs/gean/internal/clock"
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/core/clock"
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
+	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/metrics"
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 type aggregationGroup struct {

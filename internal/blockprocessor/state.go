@@ -3,7 +3,7 @@ package blockprocessor
 import (
 	"time"
 
-	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/core/metrics"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/types"
 )

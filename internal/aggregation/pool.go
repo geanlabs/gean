@@ -3,7 +3,7 @@ package aggregation
 import (
 	"sync"
 
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 )
 
 var (

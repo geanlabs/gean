@@ -1,6 +1,6 @@
 package node
 
-import "github.com/geanlabs/gean/internal/logger"
+import "github.com/geanlabs/gean/internal/core/logger"
 
 // drainPendingBlocks imports the blocks already queued when the drain starts and
 // no more. Sync delivery blocks on BlockCh, so a producer refills every slot the

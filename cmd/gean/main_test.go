@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/clock"
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/clock"
+	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )

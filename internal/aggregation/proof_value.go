@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"slices"
 
-	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/core/metrics"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"

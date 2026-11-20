@@ -68,14 +68,14 @@ linters:
 
         storage-imports-nothing:
           files:
-            - "**/internal/storage/**"
+            - "**/internal/core/storage/**"
           deny:
             - pkg: github.com/geanlabs/gean
               desc: "storage is generic and imports no other gean package"
 
         # Target layering (plan §3). These packages don't exist yet; the rules
-        # start matching as code moves in. Blocking from Phase 9 (lean) and
-        # Phase 19 (core).
+        # start matching as code moves in. Blocking from Phase 8 (lean) and
+        # Phase 18 (core).
         core-is-chain-agnostic:
           files:
             - "**/internal/core/**"

@@ -3,7 +3,7 @@ package p2p
 import (
 	"fmt"
 
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/core/logger"
 )
 
 func (h *Host) JoinTopic(topic string) error {

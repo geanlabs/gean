@@ -15,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Rust FFI dependencies first for better caching
-COPY xmss/rust/ xmss/rust/
+COPY internal/core/crypto/xmss/rust/ internal/core/crypto/xmss/rust/
 
 # Detect the build-stage architecture: legacy builders do not populate TARGETARCH.
 # Same flags as make ffi: Haswell on x86_64, +aes (PMULL) on aarch64.
-RUN cd xmss/rust && \
+RUN cd internal/core/crypto/xmss/rust && \
     case "$(uname -m)" in \
       x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
       aarch64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \

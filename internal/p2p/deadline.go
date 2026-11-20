@@ -10,7 +10,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 
-	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/core/metrics"
 )
 
 // Req/resp streams are bounded by an idle deadline, reset before every read and

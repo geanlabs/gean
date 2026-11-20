@@ -21,7 +21,7 @@ help: ## Show help for each Makefile recipe
 # feature, which Linux aarch64 targets do not enable by default. Without it the prover
 # falls back to scalar code.
 ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
-	@cd xmss/rust && \
+	@cd internal/core/crypto/xmss/rust && \
 		case "$$(uname -m)" in \
 			x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
 			aarch64|arm64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
@@ -37,7 +37,7 @@ test: ## Run unit tests (excludes crypto FFI and spec tests)
 	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
 
 test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
-	go test ./xmss/ -v -count=1
+	go test ./internal/core/crypto/xmss/ -v -count=1
 
 test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec fixture tests only (fast, excludes xmss FFI)
 	go test ./internal/spectests/  -count=1 -tags=spectests
@@ -49,12 +49,12 @@ lint: ## Run linters for go & rust (golangci-lint only reports during the restru
 	@command -v golangci-lint >/dev/null || { echo "golangci-lint not found: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; exit 1; }
 	go vet ./...
 	golangci-lint run --issues-exit-code=0 ./...
-	cd xmss/rust && cargo fmt --check
-	cd xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
+	cd internal/core/crypto/xmss/rust && cargo fmt --check
+	cd internal/core/crypto/xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
 
 fmt: ## Format all Go code
 	gofmt -w .
-	cd xmss/rust && cargo fmt
+	cd internal/core/crypto/xmss/rust && cargo fmt
 
 sszgen: ## Regenerate SSZ encoding files from struct tags
 	@rm -f internal/types/*_encoding.go
@@ -68,7 +68,7 @@ sszgen: ## Regenerate SSZ encoding files from struct tags
 
 clean: ## Remove build artifacts and generated files
 	rm -rf bin data
-	cd xmss/rust && cargo clean
+	cd internal/core/crypto/xmss/rust && cargo clean
 
 tidy: ## Tidy Go module dependencies
 	go mod tidy

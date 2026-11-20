@@ -4,8 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/geanlabs/gean/internal/storage"
-	"github.com/geanlabs/gean/xmss"
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
+	"github.com/geanlabs/gean/internal/core/storage"
 )
 
 // Buffer bounds. These are stall insurance, not an operating limit: while

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/storage"
 )
 
 // HasState answers from the summary or by key, never by reading the state, and

@@ -1,7 +1,7 @@
 package attestation
 
 import (
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )

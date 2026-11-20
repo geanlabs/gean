@@ -3,7 +3,7 @@ package store_test
 import (
 	"sync/atomic"
 
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/storage"
 )
 
 // countingBackend counts the Get calls that reach the backend, so a test can

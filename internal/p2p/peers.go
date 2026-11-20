@@ -8,7 +8,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/core/metrics"
 )
 
 // Request reputation, as in leanSpec's sync peer manager: a peer starts mid-range,

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/clock"
+	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/types"
 )
 

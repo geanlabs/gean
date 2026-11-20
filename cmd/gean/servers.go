@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/api"
+	"github.com/geanlabs/gean/internal/core/lifecycle"
+	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/lifecycle"
-	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/role"
 	"github.com/geanlabs/gean/internal/store"
 )

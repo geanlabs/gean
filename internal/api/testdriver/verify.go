@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/geanlabs/gean/internal/blockprocessor"
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/specfixtures"
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )

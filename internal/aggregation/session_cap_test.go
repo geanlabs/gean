@@ -4,12 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/clock"
-	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/core/clock"
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
+	"github.com/geanlabs/gean/internal/core/metrics"
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 // A session's cost is otherwise whatever the backlog costs. The cap counts

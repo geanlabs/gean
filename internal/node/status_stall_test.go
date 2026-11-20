@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/core/logger"
 )
 
 // A proof that holds the prover past proverStuckAfter is reported once per

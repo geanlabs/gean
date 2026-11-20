@@ -10,8 +10,8 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/p2p"
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )

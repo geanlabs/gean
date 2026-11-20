@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/storage"
 )
 
 // heldBackend holds the first EstimateTableBytes call until release is closed,

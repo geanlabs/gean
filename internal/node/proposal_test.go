@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/proving"
 	"github.com/geanlabs/gean/internal/statetransition"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 func proposalHeadState(t *testing.T) (*types.State, [32]byte) {

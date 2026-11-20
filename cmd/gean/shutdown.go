@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/geanlabs/gean/internal/lifecycle"
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/core/lifecycle"
+	"github.com/geanlabs/gean/internal/core/logger"
 )
 
 // shutdownProgressInterval paces the log line for a shutdown step still

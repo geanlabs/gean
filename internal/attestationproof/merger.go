@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 var ErrMergeUnavailable = errors.New("proof merge unavailable")

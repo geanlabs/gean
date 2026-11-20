@@ -3,8 +3,8 @@ package store
 import (
 	"fmt"
 
-	"github.com/geanlabs/gean/internal/logger"
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/storage"
 )
 
 func (s *ConsensusStore) putOne(table storage.Table, key, value []byte, label string) error {

@@ -3,7 +3,7 @@ package node
 import (
 	"time"
 
-	"github.com/geanlabs/gean/internal/metrics"
+	"github.com/geanlabs/gean/internal/core/metrics"
 )
 
 func (e *Engine) initMetrics() {

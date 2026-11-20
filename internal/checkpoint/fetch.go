@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/core/logger"
 )
 
 const (

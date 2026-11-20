@@ -17,10 +17,10 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/internal/api"
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/genesis"
 	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
 )

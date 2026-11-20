@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/types"
-	"github.com/geanlabs/gean/xmss"
 )
 
 func testData() *types.AttestationData {

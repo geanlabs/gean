@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/logger"
+	"github.com/geanlabs/gean/internal/core/logger"
 )
 
 // A dispatch event that overruns an interval must name itself in the log: the

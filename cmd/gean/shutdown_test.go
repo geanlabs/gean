@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/lifecycle"
+	"github.com/geanlabs/gean/internal/core/lifecycle"
 )
 
 type stepLog struct {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/storage"
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/types"
 )
 
