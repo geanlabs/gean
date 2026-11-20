@@ -259,10 +259,6 @@ func pruneBlocksByRoots(s *ConsensusStore, roots [][32]byte) int {
 		logger.Error(logger.Store, "prune blocks: delete headers failed: %v", err)
 		return 0
 	}
-	if err := wb.DeleteBatch(TableBlockBodies, keys); err != nil {
-		logger.Error(logger.Store, "prune blocks: delete bodies failed: %v", err)
-		return 0
-	}
 	if err := wb.DeleteBatch(TableSignedBlocks, keys); err != nil {
 		logger.Error(logger.Store, "prune blocks: delete signatures failed: %v", err)
 		return 0
@@ -276,7 +272,7 @@ func pruneBlocksByRoots(s *ConsensusStore, roots [][32]byte) int {
 
 // pruneFinalizedHistory deletes, for every live-chain entry below cutoff, the
 // entry and the block's stored signed block, which carries its proof. Headers
-// and bodies stay. Entries are keyed by slot first, so the scan stops at the
+// stay. Entries are keyed by slot first, so the scan stops at the
 // first one at or above cutoff and only touches what it deletes. Non-canonical
 // blocks below finalization were already removed whole; their rows are gone and
 // the deletes are no-ops.

@@ -117,7 +117,7 @@ func WriteBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 	if err != nil {
 		return err
 	}
-	if err := putBlockData(wb, root, signedBlock); err != nil {
+	if err := putSignedBlock(wb, root, signedBlock); err != nil {
 		return fmt.Errorf("write block data: %w", err)
 	}
 	if err := wb.Commit(); err != nil {
@@ -128,19 +128,10 @@ func WriteBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 	return nil
 }
 
-func putBlockData(wb storage.WriteBatch, root [32]byte, signedBlock *types.SignedBlock) error {
+func putSignedBlock(wb storage.WriteBatch, root [32]byte, signedBlock *types.SignedBlock) error {
 	fullData, err := signedBlock.MarshalSSZ()
 	if err != nil {
 		return fmt.Errorf("marshal signed block: %w", err)
-	}
-	bodyData, err := signedBlock.Block.Body.MarshalSSZ()
-	if err != nil {
-		return fmt.Errorf("marshal body: %w", err)
-	}
-	if len(bodyData) > 0 {
-		if err := wb.PutBatch(TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}}); err != nil {
-			return fmt.Errorf("put body: %w", err)
-		}
 	}
 	if err := wb.PutBatch(TableSignedBlocks, []storage.KV{{Key: root[:], Value: fullData}}); err != nil {
 		return fmt.Errorf("put signed block: %w", err)
@@ -148,7 +139,7 @@ func putBlockData(wb storage.WriteBatch, root [32]byte, signedBlock *types.Signe
 	return nil
 }
 
-// PutImportedBlock writes an imported block's header, body, post-state and
+// PutImportedBlock writes an imported block's header, signed block, post-state and
 // live-chain entry in one batch, so a failed write leaves none of them behind.
 // The justified checkpoint joins the batch only when it advances. The finalized
 // checkpoint is deliberately not advanced here: it is re-derived from the
@@ -195,7 +186,7 @@ func (s *ConsensusStore) PutImportedBlock(root [32]byte, signedBlock *types.Sign
 			return fmt.Errorf("put imported block: %w", err)
 		}
 	}
-	if err := putBlockData(wb, root, signedBlock); err != nil {
+	if err := putSignedBlock(wb, root, signedBlock); err != nil {
 		return fmt.Errorf("put imported block: %w", err)
 	}
 	if err := wb.Commit(); err != nil {
@@ -210,7 +201,7 @@ func (s *ConsensusStore) PutImportedBlock(root [32]byte, signedBlock *types.Sign
 	return nil
 }
 
-// DeletePendingBlocks removes the header, body and signed block StorePendingBlock
+// DeletePendingBlocks removes the header and signed block StorePendingBlock
 // wrote for each root. Callers pass only roots that were never imported.
 func (s *ConsensusStore) DeletePendingBlocks(roots [][32]byte) int {
 	return pruneBlocksByRoots(s, roots)

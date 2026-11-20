@@ -52,10 +52,11 @@ func VerifyAggregatedGossipAttestation(s *store.ConsensusStore, attData *types.A
 		return fmt.Errorf("target state not found in store: 0x%x", attData.Target.Root)
 	}
 	participantIDs := types.BitlistIndices(participants)
-	return verifyAggregatedProof(targetKeys, participantIDs, attData, proofData)
+	return verifyAggregatedProof(s.PubKeyCache, targetKeys, participantIDs, attData, proofData)
 }
 
 func verifyAggregatedProof(
+	cache *xmss.PubKeyCache,
 	keys *store.ValidatorKeys,
 	participantIDs []uint64,
 	data *types.AttestationData,
@@ -67,20 +68,12 @@ func verifyAggregatedProof(
 		if !ok {
 			return fmt.Errorf("validator %d out of range (%d)", vid, keys.Len())
 		}
-		pk, err := xmss.ParsePublicKey(pubkey)
+		pk, err := cache.Get(pubkey)
 		if err != nil {
-			for j := range i {
-				xmss.FreePublicKey(parsedPubkeys[j])
-			}
 			return fmt.Errorf("parse pubkey for validator %d: %w", vid, err)
 		}
 		parsedPubkeys[i] = pk
 	}
-	defer func() {
-		for _, pk := range parsedPubkeys {
-			xmss.FreePublicKey(pk)
-		}
-	}()
 
 	dataRoot, err := data.HashTreeRoot()
 	if err != nil {

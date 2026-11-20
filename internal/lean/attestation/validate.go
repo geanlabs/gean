@@ -69,16 +69,16 @@ func ValidateAttestationData(s *store.ConsensusStore, data *types.AttestationDat
 		return err
 	}
 
-	sourceHeader := s.GetBlockHeader(data.Source.Root)
-	if sourceHeader == nil {
+	sourceSlot, _, ok := s.BlockSlotAndParent(data.Source.Root)
+	if !ok {
 		return errUnknownSourceBlock(data.Source.Root)
 	}
-	targetHeader := s.GetBlockHeader(data.Target.Root)
-	if targetHeader == nil {
+	targetSlot, _, ok := s.BlockSlotAndParent(data.Target.Root)
+	if !ok {
 		return errUnknownTargetBlock(data.Target.Root)
 	}
-	headHeader := s.GetBlockHeader(data.Head.Root)
-	if headHeader == nil {
+	headSlot, _, ok := s.BlockSlotAndParent(data.Head.Root)
+	if !ok {
 		return errUnknownHeadBlock(data.Head.Root)
 	}
 
@@ -88,14 +88,14 @@ func ValidateAttestationData(s *store.ConsensusStore, data *types.AttestationDat
 	if data.Head.Slot < data.Target.Slot {
 		return errHeadOlderThanTarget(data.Head.Slot, data.Target.Slot)
 	}
-	if sourceHeader.Slot != data.Source.Slot {
-		return errSourceSlotMismatch(data.Source.Slot, sourceHeader.Slot)
+	if sourceSlot != data.Source.Slot {
+		return errSourceSlotMismatch(data.Source.Slot, sourceSlot)
 	}
-	if targetHeader.Slot != data.Target.Slot {
-		return errTargetSlotMismatch(data.Target.Slot, targetHeader.Slot)
+	if targetSlot != data.Target.Slot {
+		return errTargetSlotMismatch(data.Target.Slot, targetSlot)
 	}
-	if headHeader.Slot != data.Head.Slot {
-		return errHeadSlotMismatch(data.Head.Slot, headHeader.Slot)
+	if headSlot != data.Head.Slot {
+		return errHeadSlotMismatch(data.Head.Slot, headSlot)
 	}
 	if !checkpointIsAncestor(s, data.Source, data.Target) {
 		return errSourceNotAncestorOfTarget()

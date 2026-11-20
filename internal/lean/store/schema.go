@@ -9,7 +9,6 @@ import (
 // Lean's tables. The names are part of the on-disk layout.
 const (
 	TableBlockHeaders storage.Table = "block_headers"
-	TableBlockBodies  storage.Table = "block_bodies"
 	TableSignedBlocks storage.Table = "signed_blocks"
 	TableStates       storage.Table = "states"
 	TableMetadata     storage.Table = "metadata"
@@ -18,7 +17,6 @@ const (
 
 var AllTables = []storage.Table{
 	TableBlockHeaders,
-	TableBlockBodies,
 	TableSignedBlocks,
 	TableStates,
 	TableMetadata,
