@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/core/p2p/gossip"
+	"github.com/geanlabs/gean/internal/core/p2p/host"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -128,7 +129,7 @@ func newGossipTestHost(t *testing.T) *Host {
 	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := NewHost(context.Background(), path, 0, 1, nil, false, nil)
+	h, err := NewHost(context.Background(), host.Config{NodeKeyPath: path}, 1, nil, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

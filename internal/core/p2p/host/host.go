@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	libp2phost "github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 
@@ -49,18 +50,39 @@ type Host struct {
 	tasks lifecycle.Group
 }
 
-// New starts a host listening for QUIC on listenPort, with the secp256k1
-// identity in the hex key file at nodeKeyPath.
-func New(ctx context.Context, nodeKeyPath string, listenPort int) (*Host, error) {
+// Network builds libp2p hosts on a network other than the real one, such as
+// an in-memory network for tests and simulations.
+type Network interface {
+	NewHost(key libp2pcrypto.PrivKey) (libp2phost.Host, error)
+}
+
+// Config is what a host needs.
+type Config struct {
+	// NodeKeyPath is the hex secp256k1 key file holding the node's identity.
+	NodeKeyPath string
+	// ListenPort is the UDP port QUIC listens on.
+	ListenPort int
+	// Network, when set, builds the host on it instead of on QUIC.
+	Network Network
+}
+
+// New starts a host with the identity in cfg.NodeKeyPath, listening for QUIC
+// on cfg.ListenPort or joining cfg.Network.
+func New(ctx context.Context, cfg Config) (*Host, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	privKey, err := loadNodeKey(nodeKeyPath)
+	privKey, err := loadNodeKey(cfg.NodeKeyPath)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("load node key: %w", err)
 	}
 
-	libp2pHost, err := newLibP2PHost(privKey, listenPort)
+	var libp2pHost libp2phost.Host
+	if cfg.Network != nil {
+		libp2pHost, err = cfg.Network.NewHost(privKey)
+	} else {
+		libp2pHost, err = newLibP2PHost(privKey, cfg.ListenPort)
+	}
 	if err != nil {
 		cancel()
 		return nil, err

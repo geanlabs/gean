@@ -21,14 +21,13 @@ type Host struct {
 
 func NewHost(
 	ctx context.Context,
-	nodeKeyPath string,
-	listenPort int,
+	hostCfg host.Config,
 	committeeCount uint64,
 	validatorIDs []uint64,
 	isAggregator bool,
 	aggregateSubnetIDs []uint64,
 ) (*Host, error) {
-	base, err := host.New(ctx, nodeKeyPath, listenPort)
+	base, err := host.New(ctx, hostCfg)
 	if err != nil {
 		return nil, err
 	}

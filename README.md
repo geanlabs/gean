@@ -162,6 +162,7 @@ Run `make help` to list every target.
 | `make test` | Unit tests (no XMSS FFI, no spec fixtures) |
 | `make test-ffi` | XMSS FFI tests |
 | `make test-spec` | leanSpec fixture tests; the first run clones leanSpec at a pinned commit and generates fixtures with `uv` |
+| `make test-sim` | Multi-node simulations: lean nodes in one process on an in-memory network (slow, about 1 GB) |
 | `make test-all` | Everything above |
 | `make lint` | `go vet` and golangci-lint (`.golangci.yml`): package import rules fail the build, other findings are reported; plus `cargo fmt --check` and `clippy` for the Rust code |
 | `make fmt` | Format Go code |

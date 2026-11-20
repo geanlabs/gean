@@ -323,7 +323,7 @@ func scoreTestHost(t *testing.T) *Host {
 	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := NewHost(context.Background(), path, 0, 1, nil, false, nil)
+	h, err := NewHost(context.Background(), host.Config{NodeKeyPath: path}, 1, nil, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func newTestHost(t *testing.T) *Host {
 	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := NewHost(context.Background(), path, 0, 1, nil, false, nil)
+	h, err := NewHost(context.Background(), host.Config{NodeKeyPath: path}, 1, nil, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

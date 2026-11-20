@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/geanlabs/gean/internal/core/clock"
+	"github.com/geanlabs/gean/internal/core/p2p/host"
 )
 
 // Config is what a lean node runs with.
@@ -46,6 +47,10 @@ type Config struct {
 	// Clock is the time source for the node's time-dependent decisions. Nil
 	// means the system clock.
 	Clock clock.Clock
+
+	// Network, when set, carries the node's p2p traffic instead of QUIC on
+	// GossipPort: an in-memory network for simulations. Discovery needs QUIC.
+	Network host.Network
 }
 
 type configPaths struct {

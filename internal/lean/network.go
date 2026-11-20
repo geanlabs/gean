@@ -8,6 +8,7 @@ import (
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/lifecycle"
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/p2p/host"
 	"github.com/geanlabs/gean/internal/lean/node"
 	"github.com/geanlabs/gean/internal/lean/p2p"
 	"github.com/geanlabs/gean/internal/lean/store"
@@ -22,7 +23,8 @@ func setupP2P(ctx context.Context, cfg Config, keyManager *xmss.KeyManager) (*p2
 		validatorIDs = keyManager.ValidatorIDs()
 	}
 
-	p2pHost, err := p2p.NewHost(ctx, cfg.NodeKey, cfg.GossipPort, cfg.CommitteeCount, validatorIDs, cfg.IsAggregator, cfg.AggregateSubnetIDs)
+	hostCfg := host.Config{NodeKeyPath: cfg.NodeKey, ListenPort: cfg.GossipPort, Network: cfg.Network}
+	p2pHost, err := p2p.NewHost(ctx, hostCfg, cfg.CommitteeCount, validatorIDs, cfg.IsAggregator, cfg.AggregateSubnetIDs)
 	if err != nil {
 		return nil, err
 	}
