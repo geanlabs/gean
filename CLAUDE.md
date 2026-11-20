@@ -1,2 +1,0 @@
-# Claude instructions
-@AGENTS.md
