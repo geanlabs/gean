@@ -2,22 +2,20 @@ package xmss
 
 import (
 	"sync"
-
-	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 type PubKeyCache struct {
 	mu    sync.Mutex
-	cache map[[types.PubkeySize]byte]CPubKey
+	cache map[[PubkeySize]byte]CPubKey
 }
 
 func NewPubKeyCache() *PubKeyCache {
 	return &PubKeyCache{
-		cache: make(map[[types.PubkeySize]byte]CPubKey),
+		cache: make(map[[PubkeySize]byte]CPubKey),
 	}
 }
 
-func (c *PubKeyCache) Get(pubkeyBytes [types.PubkeySize]byte) (CPubKey, error) {
+func (c *PubKeyCache) Get(pubkeyBytes [PubkeySize]byte) (CPubKey, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

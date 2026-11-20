@@ -41,8 +41,8 @@ func TestKeyManagerNilSafeAccessors(t *testing.T) {
 	}
 	km.Close()
 
-	if _, err := km.SignAttestation(1, nil); err == nil || !strings.Contains(err.Error(), "key manager is nil") {
-		t.Fatalf("SignAttestation error=%v, want nil key manager error", err)
+	if _, err := km.SignAttestationRoot(1, 0, [32]byte{}); err == nil || !strings.Contains(err.Error(), "key manager is nil") {
+		t.Fatalf("SignAttestationRoot error=%v, want nil key manager error", err)
 	}
 	if _, err := km.SignBlock(1, 0, [32]byte{}); err == nil || !strings.Contains(err.Error(), "key manager is nil") {
 		t.Fatalf("SignBlock error=%v, want nil key manager error", err)
@@ -161,19 +161,19 @@ func TestKeyManagerMatchRegistry(t *testing.T) {
 	tests := []struct {
 		name     string
 		entries  string
-		registry []*types.Validator
+		registry []RegistryKeys
 		wantErr  string
 	}{
-		{"matching keys", pair, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, ""},
-		{"swapped keys", pair, []*types.Validator{{AttestationPubkey: prop, ProposalPubkey: att}}, "attestation key"},
+		{"matching keys", pair, []RegistryKeys{{AttestationPubkey: att, ProposalPubkey: prop}}, ""},
+		{"swapped keys", pair, []RegistryKeys{{AttestationPubkey: prop, ProposalPubkey: att}}, "attestation key"},
 		{"one key in both roles", `
   - {index: 0, privkey_file: v_attester_key_sk.ssz}
   - {index: 0, privkey_file: copy_proposer_key_sk.ssz}
-`, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, "proposal key"},
+`, []RegistryKeys{{AttestationPubkey: att, ProposalPubkey: prop}}, "proposal key"},
 		{"validator outside registry", `
   - {index: 1, privkey_file: v_attester_key_sk.ssz}
   - {index: 1, privkey_file: v_proposer_key_sk.ssz}
-`, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, "not in registry"},
+`, []RegistryKeys{{AttestationPubkey: att, ProposalPubkey: prop}}, "not in registry"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -261,12 +261,16 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 		Target: &types.Checkpoint{Root: [32]byte{2}, Slot: 1},
 		Source: &types.Checkpoint{Root: [32]byte{3}, Slot: 0},
 	}
-	attSig, err := km.SignAttestation(0, attData)
+	attRoot, err := attData.HashTreeRoot()
 	if err != nil {
-		t.Fatalf("SignAttestation: %v", err)
+		t.Fatalf("attestation root: %v", err)
 	}
-	if attSig == [types.SignatureSize]byte{} {
-		t.Fatal("SignAttestation produced zero signature")
+	attSig, err := km.SignAttestationRoot(0, attData.Slot, attRoot)
+	if err != nil {
+		t.Fatalf("SignAttestationRoot: %v", err)
+	}
+	if attSig == [SignatureSize]byte{} {
+		t.Fatal("SignAttestationRoot produced zero signature")
 	}
 
 	blockRoot := [32]byte{0xaa, 0xbb}
@@ -349,15 +353,9 @@ func TestKeyManagerSignErrors(t *testing.T) {
 		map[uint64]*ValidatorKeyPair{},
 	)
 
-	attData := &types.AttestationData{
-		Slot:   1,
-		Head:   &types.Checkpoint{Root: [32]byte{1}, Slot: 1},
-		Target: &types.Checkpoint{Root: [32]byte{2}, Slot: 1},
-		Source: &types.Checkpoint{Root: [32]byte{3}, Slot: 0},
-	}
-	_, err := km.SignAttestation(99, attData)
+	_, err := km.SignAttestationRoot(99, 1, [32]byte{})
 	if err == nil {
-		t.Fatal("SignAttestation should error for unknown validator")
+		t.Fatal("SignAttestationRoot should error for unknown validator")
 	}
 
 	_, err = km.SignBlock(99, 1, [32]byte{})

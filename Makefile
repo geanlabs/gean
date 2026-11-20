@@ -45,7 +45,7 @@ test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec
 test-all: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
 
-lint: ## Run linters for go & rust (golangci-lint only reports during the restructure)
+lint: ## Run linters for go & rust (golangci-lint reports without failing)
 	@command -v golangci-lint >/dev/null || { echo "golangci-lint not found: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; exit 1; }
 	go vet ./...
 	golangci-lint run --issues-exit-code=0 ./...

@@ -29,7 +29,7 @@ func (e *Engine) produceAttestations(slot uint64) {
 		prodStart := time.Now()
 
 		sStart := time.Now()
-		sig, err := e.Keys.SignAttestation(vid, attData)
+		sig, err := attestation.Sign(e.Keys, vid, attData)
 		metrics.ObservePqSigSigningTime(time.Since(sStart).Seconds())
 		if err != nil {
 			logger.Error(logger.Validator, "sign attestation failed validator=%d: %v", vid, err)

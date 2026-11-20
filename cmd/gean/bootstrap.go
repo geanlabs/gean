@@ -47,7 +47,11 @@ func loadStartupInputs(cfg config) (*startupInputs, error) {
 		keyManager.Close()
 		return nil, err
 	}
-	if err := keyManager.MatchRegistry(validators); err != nil {
+	registry := make([]xmss.RegistryKeys, len(validators))
+	for i, v := range validators {
+		registry[i] = xmss.RegistryKeys{AttestationPubkey: v.AttestationPubkey, ProposalPubkey: v.ProposalPubkey}
+	}
+	if err := keyManager.MatchRegistry(registry); err != nil {
 		logger.Error(logger.Node, "validator keys: %v", err)
 		keyManager.Close()
 		return nil, err

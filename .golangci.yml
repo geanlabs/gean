@@ -1,8 +1,6 @@
 # golangci-lint v2 configuration.
 #
-# Run with `make lint`. During the restructure every rule here reports
-# without failing the build; later phases switch rules to blocking one by one
-# (see the comment above each rule).
+# Run with `make lint`. Findings are reported without failing the build.
 
 version: "2"
 
@@ -73,12 +71,13 @@ linters:
             - pkg: github.com/geanlabs/gean
               desc: "storage is generic and imports no other gean package"
 
-        # Target layering (plan §3). These packages don't exist yet; the rules
-        # start matching as code moves in. Blocking from Phase 8 (lean) and
-        # Phase 18 (core).
+        # Chain layering: core/ is chain-agnostic, and each chain stays
+        # independent of the others. Tests may import more: core's crypto
+        # tests check real signing round-trips with lean types.
         core-is-chain-agnostic:
           files:
             - "**/internal/core/**"
+            - "!$test"
           deny:
             - pkg: github.com/geanlabs/gean/internal/lean
               desc: "core never imports a chain"

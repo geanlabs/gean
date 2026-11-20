@@ -92,8 +92,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
-
-	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 const (
@@ -170,12 +168,12 @@ func EnsureVerifierReady() error {
 	return verifierErr
 }
 
-func VerifySignatureSSZ(pubkey [types.PubkeySize]byte, slot uint32, message [32]byte, signature [types.SignatureSize]byte) (bool, error) {
+func VerifySignatureSSZ(pubkey [PubkeySize]byte, slot uint32, message [32]byte, signature [SignatureSize]byte) (bool, error) {
 	result := C.hashsig_verify_ssz(
-		(*C.uint8_t)(unsafe.Pointer(&pubkey[0])), C.size_t(types.PubkeySize),
+		(*C.uint8_t)(unsafe.Pointer(&pubkey[0])), C.size_t(PubkeySize),
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
 		C.uint32_t(slot),
-		(*C.uint8_t)(unsafe.Pointer(&signature[0])), C.size_t(types.SignatureSize),
+		(*C.uint8_t)(unsafe.Pointer(&signature[0])), C.size_t(SignatureSize),
 	)
 
 	switch result {
@@ -707,10 +705,10 @@ type CPubKey = unsafe.Pointer
 
 type CSig = unsafe.Pointer
 
-func ParsePublicKey(pubkeyBytes [types.PubkeySize]byte) (CPubKey, error) {
+func ParsePublicKey(pubkeyBytes [PubkeySize]byte) (CPubKey, error) {
 	pk := C.hashsig_public_key_from_ssz(
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBytes[0])),
-		C.size_t(types.PubkeySize),
+		C.size_t(PubkeySize),
 	)
 	if pk == nil {
 		return nil, ErrPubkeyParseFailed
@@ -755,8 +753,8 @@ func GenerateKeyPair(seedPhrase string, activationEpoch, numActiveEpochs uint64)
 	return &ValidatorKeyPair{handle: kp, Index: 0}, nil
 }
 
-func (kp *ValidatorKeyPair) PublicKeyBytes() ([types.PubkeySize]byte, error) {
-	var result [types.PubkeySize]byte
+func (kp *ValidatorKeyPair) PublicKeyBytes() ([PubkeySize]byte, error) {
+	var result [PubkeySize]byte
 	publicKey := kp.PublicKeyPtr()
 	if publicKey == nil {
 		return result, fmt.Errorf("keypair is nil or closed")
@@ -768,7 +766,7 @@ func (kp *ValidatorKeyPair) PublicKeyBytes() ([types.PubkeySize]byte, error) {
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
 		C.size_t(len(buf)),
 	)
-	if n == 0 || int(n) != types.PubkeySize {
+	if n == 0 || int(n) != PubkeySize {
 		return result, fmt.Errorf("pubkey serialization failed: got %d bytes", n)
 	}
 	copy(result[:], buf[:n])

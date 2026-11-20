@@ -24,7 +24,6 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/geanlabs/gean/internal/lean/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -51,8 +50,8 @@ func (kp *ValidatorKeyPair) PrivateKeyPtr() *C.PrivateKey {
 	return C.hashsig_keypair_get_private_key(kp.handle)
 }
 
-func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([types.SignatureSize]byte, error) {
-	var result [types.SignatureSize]byte
+func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([SignatureSize]byte, error) {
+	var result [SignatureSize]byte
 	privateKey := kp.PrivateKeyPtr()
 	if privateKey == nil {
 		return result, fmt.Errorf("%w: keypair is nil or closed", ErrSigningFailed)
@@ -74,8 +73,8 @@ func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([types.Signatur
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])),
 		C.size_t(len(buf)),
 	)
-	if n == 0 || int(n) != types.SignatureSize {
-		return result, fmt.Errorf("signature serialization failed: wrote %d bytes, expected %d", n, types.SignatureSize)
+	if n == 0 || int(n) != SignatureSize {
+		return result, fmt.Errorf("signature serialization failed: wrote %d bytes, expected %d", n, SignatureSize)
 	}
 
 	copy(result[:], buf[:n])
@@ -129,43 +128,38 @@ func (km *KeyManager) GetProposalKey(validatorID uint64) *ValidatorKeyPair {
 	return km.proposalKeys[validatorID]
 }
 
-func (km *KeyManager) SignAttestation(validatorID uint64, data *types.AttestationData) ([types.SignatureSize]byte, error) {
+// SignAttestationRoot signs an attestation's message root at slot with the
+// validator's attestation key. The caller computes the root; this package
+// knows nothing about the chain's attestation format.
+func (km *KeyManager) SignAttestationRoot(validatorID uint64, slot uint64, msgRoot [32]byte) ([SignatureSize]byte, error) {
 	if km == nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("key manager is nil")
+		return [SignatureSize]byte{}, fmt.Errorf("key manager is nil")
 	}
 	kp := km.GetAttestationKey(validatorID)
 	if kp == nil || kp.handle == nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
-	}
-	if data == nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("attestation data is nil")
-	}
-
-	msgRoot, err := data.HashTreeRoot()
-	if err != nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("hash tree root failed: %w", err)
-	}
-
-	slot := uint32(data.Slot)
-	if uint64(slot) != data.Slot {
-		return [types.SignatureSize]byte{}, fmt.Errorf("slot %d overflows uint32", data.Slot)
-	}
-
-	return kp.Sign(slot, msgRoot)
-}
-
-func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]byte) ([types.SignatureSize]byte, error) {
-	if km == nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("key manager is nil")
-	}
-	kp := km.GetProposalKey(validatorID)
-	if kp == nil || kp.handle == nil {
-		return [types.SignatureSize]byte{}, fmt.Errorf("proposal key for validator %d not found", validatorID)
+		return [SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
 	}
 
 	s := uint32(slot)
 	if uint64(s) != slot {
-		return [types.SignatureSize]byte{}, fmt.Errorf("slot %d overflows uint32", slot)
+		return [SignatureSize]byte{}, fmt.Errorf("slot %d overflows uint32", slot)
+	}
+
+	return kp.Sign(s, msgRoot)
+}
+
+func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]byte) ([SignatureSize]byte, error) {
+	if km == nil {
+		return [SignatureSize]byte{}, fmt.Errorf("key manager is nil")
+	}
+	kp := km.GetProposalKey(validatorID)
+	if kp == nil || kp.handle == nil {
+		return [SignatureSize]byte{}, fmt.Errorf("proposal key for validator %d not found", validatorID)
+	}
+
+	s := uint32(slot)
+	if uint64(s) != slot {
+		return [SignatureSize]byte{}, fmt.Errorf("slot %d overflows uint32", slot)
 	}
 
 	return kp.Sign(s, blockRoot)
@@ -183,9 +177,17 @@ func (km *KeyManager) Close() {
 	}
 }
 
+// RegistryKeys is one validator's pubkeys as recorded in the chain's validator
+// registry.
+type RegistryKeys struct {
+	AttestationPubkey [PubkeySize]byte
+	ProposalPubkey    [PubkeySize]byte
+}
+
 // MatchRegistry checks every loaded key against its validator's registry pubkeys, so a swapped,
-// shared, or foreign key file stops the node before it signs anything.
-func (km *KeyManager) MatchRegistry(validators []*types.Validator) error {
+// shared, or foreign key file stops the node before it signs anything. validators is indexed by
+// validator ID.
+func (km *KeyManager) MatchRegistry(validators []RegistryKeys) error {
 	for _, id := range km.ValidatorIDs() {
 		if id >= uint64(len(validators)) {
 			return fmt.Errorf("validator %d not in registry of %d validators", id, len(validators))
@@ -200,7 +202,7 @@ func (km *KeyManager) MatchRegistry(validators []*types.Validator) error {
 	return nil
 }
 
-func matchPubkey(kp *ValidatorKeyPair, want [types.PubkeySize]byte, id uint64, role string) error {
+func matchPubkey(kp *ValidatorKeyPair, want [PubkeySize]byte, id uint64, role string) error {
 	got, err := kp.PublicKeyBytes()
 	if err != nil {
 		return fmt.Errorf("validator %d %s key: %w", id, role, err)
