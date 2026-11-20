@@ -1,4 +1,4 @@
-package main
+package lean
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-func setupP2P(ctx context.Context, cfg config, keyManager *xmss.KeyManager) (*p2p.Host, error) {
+func setupP2P(ctx context.Context, cfg Config, keyManager *xmss.KeyManager) (*p2p.Host, error) {
 	var validatorIDs []uint64
 	if keyManager != nil {
 		validatorIDs = keyManager.ValidatorIDs()

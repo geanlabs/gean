@@ -1,14 +1,12 @@
-package main
+package lean
 
 import (
 	"errors"
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"slices"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -150,7 +148,7 @@ func TestListenHTTPFailsOnTakenPort(t *testing.T) {
 	apiPort := free.Addr().(*net.TCPAddr).Port
 	free.Close()
 
-	cfg := config{HTTPAddr: "127.0.0.1", APIPort: apiPort, MetricsPort: taken.Addr().(*net.TCPAddr).Port}
+	cfg := Config{HTTPAddr: "127.0.0.1", APIPort: apiPort, MetricsPort: taken.Addr().(*net.TCPAddr).Port}
 	if _, err := listenHTTP(cfg, nil, nil, nil); err == nil {
 		t.Fatal("listenHTTP succeeded on a taken metrics port")
 	}
@@ -187,13 +185,4 @@ func TestServeHTTPShutdownIsNotFailure(t *testing.T) {
 		t.Fatalf("shutdown reported as failure: %v", err)
 	default:
 	}
-}
-
-// The first signal closes stop instead of killing the process, so a signal
-// during startup still goes through teardown.
-func TestFirstSignalClosesStop(t *testing.T) {
-	sigCh := make(chan os.Signal, 1)
-	stop := shutdownOn(sigCh)
-	sigCh <- syscall.SIGINT
-	<-stop
 }

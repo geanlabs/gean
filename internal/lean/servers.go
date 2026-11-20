@@ -1,4 +1,4 @@
-package main
+package lean
 
 import (
 	"context"
@@ -32,7 +32,7 @@ type httpServer struct {
 
 // listenHTTP binds the API and metrics addresses, so a taken port fails
 // startup instead of being logged after "gean started".
-func listenHTTP(cfg config, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) ([]*httpServer, error) {
+func listenHTTP(cfg Config, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) ([]*httpServer, error) {
 	servers := []*httpServer{
 		{name: "api", server: newAPIServer(s, fc, aggCtl)},
 		{name: "metrics", server: api.NewMetricsServer(), drainTimeout: metricsDrainTimeout},

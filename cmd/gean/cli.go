@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"log"
 
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/lean"
 	"github.com/geanlabs/gean/internal/lean/keygen"
 )
 
@@ -48,7 +50,14 @@ func runLeanNode(args []string, stderr io.Writer) int {
 		}
 		return 1
 	}
-	if err := run(cfg); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop := notifyShutdown()
+	go func() {
+		<-stop
+		cancel()
+	}()
+	if err := lean.Run(ctx, cfg); err != nil {
 		logger.Error(logger.Node, "fatal: %v", err)
 		return 1
 	}

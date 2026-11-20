@@ -1,4 +1,4 @@
-package main
+package lean
 
 import (
 	"fmt"
@@ -19,7 +19,7 @@ type startupInputs struct {
 	keyManager    *xmss.KeyManager
 }
 
-func loadStartupInputs(cfg config) (*startupInputs, error) {
+func loadStartupInputs(cfg Config) (*startupInputs, error) {
 	paths := cfg.paths()
 
 	genesisConfig, err := genesis.LoadGenesisConfig(paths.config)
