@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 // prepareStressInputs generates numSigs keypairs, signs one message with each,

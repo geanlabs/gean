@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/geanlabs/gean/internal/api"
-	"github.com/geanlabs/gean/internal/api/testdriver"
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/store"
+	"github.com/geanlabs/gean/internal/lean/api"
+	"github.com/geanlabs/gean/internal/lean/api/testdriver"
+	"github.com/geanlabs/gean/internal/lean/forkchoice"
+	"github.com/geanlabs/gean/internal/lean/role"
+	"github.com/geanlabs/gean/internal/lean/store"
 )
 
 func newAPIServer(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.Server {

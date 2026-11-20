@@ -24,7 +24,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/internal/lean/types"
 	"gopkg.in/yaml.v3"
 )
 

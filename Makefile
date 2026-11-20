@@ -30,17 +30,17 @@ ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 
 build: ffi ## Build gean and keygen binaries
 	@mkdir -p bin
-	@go build -ldflags "-X github.com/geanlabs/gean/internal/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
+	@go build -ldflags "-X github.com/geanlabs/gean/internal/lean/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
 	@go build -o bin/keygen ./cmd/keygen
 
 test: ## Run unit tests (excludes crypto FFI and spec tests)
-	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectests$$' | grep -v '/cmd/') -v -count=1
+	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectest/lean$$' | grep -v '/cmd/') -v -count=1
 
 test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
 	go test ./internal/core/crypto/xmss/ -v -count=1
 
 test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec fixture tests only (fast, excludes xmss FFI)
-	go test ./internal/spectests/  -count=1 -tags=spectests
+	go test ./testing/spectest/lean/  -count=1 -tags=spectests
 
 test-all: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
@@ -57,14 +57,14 @@ fmt: ## Format all Go code
 	cd internal/core/crypto/xmss/rust && cargo fmt
 
 sszgen: ## Regenerate SSZ encoding files from struct tags
-	@rm -f internal/types/*_encoding.go
-	sszgen --path internal/types --objs ChainConfig --output internal/types/config_encoding.go
-	sszgen --path internal/types --objs Checkpoint --output internal/types/checkpoint_encoding.go
-	sszgen --path internal/types --objs Validator --output internal/types/validator_encoding.go
-	sszgen --path internal/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/types/attestation_encoding.go
-	sszgen --path internal/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/types/block_encoding.go
-	sszgen --path internal/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/types/state_encoding.go
-	sszgen --path internal/types --objs BlocksByRangeRequest --output internal/types/blocks_by_range_encoding.go
+	@rm -f internal/lean/types/*_encoding.go
+	sszgen --path internal/lean/types --objs ChainConfig --output internal/lean/types/config_encoding.go
+	sszgen --path internal/lean/types --objs Checkpoint --output internal/lean/types/checkpoint_encoding.go
+	sszgen --path internal/lean/types --objs Validator --output internal/lean/types/validator_encoding.go
+	sszgen --path internal/lean/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/lean/types/attestation_encoding.go
+	sszgen --path internal/lean/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/lean/types/block_encoding.go
+	sszgen --path internal/lean/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/lean/types/state_encoding.go
+	sszgen --path internal/lean/types --objs BlocksByRangeRequest --output internal/lean/types/blocks_by_range_encoding.go
 
 clean: ## Remove build artifacts and generated files
 	rm -rf bin data

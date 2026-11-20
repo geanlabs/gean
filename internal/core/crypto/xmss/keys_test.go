@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 func TestKeyManagerValidatorIDsSorted(t *testing.T) {

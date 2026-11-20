@@ -10,9 +10,9 @@ import (
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/metrics"
-	"github.com/geanlabs/gean/internal/node"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/shadow"
+	"github.com/geanlabs/gean/internal/lean/node"
+	"github.com/geanlabs/gean/internal/lean/role"
+	"github.com/geanlabs/gean/internal/lean/shadow"
 )
 
 func main() {

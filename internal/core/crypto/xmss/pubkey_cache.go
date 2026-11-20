@@ -3,7 +3,7 @@ package xmss
 import (
 	"sync"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 type PubKeyCache struct {

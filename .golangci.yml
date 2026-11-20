@@ -50,21 +50,21 @@ linters:
         # (more specific) match wins.
         types-imports-nothing:
           files:
-            - "**/internal/types/**"
+            - "**/internal/lean/types/**"
           deny:
             - pkg: github.com/geanlabs/gean
-              desc: "types is the bottom layer and imports no other gean package"
+              desc: "lean/types is the bottom layer and imports no other gean package"
 
         rules-import-only-types:
           files:
-            - "**/internal/statetransition/**"
-            - "**/internal/forkchoice/**"
+            - "**/internal/lean/transition/**"
+            - "**/internal/lean/forkchoice/**"
           allow:
             - $gostd
-            - github.com/geanlabs/gean/internal/types
+            - github.com/geanlabs/gean/internal/lean/types
           deny:
             - pkg: github.com/geanlabs/gean
-              desc: "protocol rules depend only on internal/types"
+              desc: "protocol rules depend only on lean/types"
 
         storage-imports-nothing:
           files:

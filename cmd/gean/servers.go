@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/geanlabs/gean/internal/api"
 	"github.com/geanlabs/gean/internal/core/lifecycle"
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/forkchoice"
-	"github.com/geanlabs/gean/internal/role"
-	"github.com/geanlabs/gean/internal/store"
+	"github.com/geanlabs/gean/internal/lean/api"
+	"github.com/geanlabs/gean/internal/lean/forkchoice"
+	"github.com/geanlabs/gean/internal/lean/role"
+	"github.com/geanlabs/gean/internal/lean/store"
 )
 
 // metricsDrainTimeout bounds the metrics server's drain. Its handlers read

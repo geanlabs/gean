@@ -3,7 +3,7 @@ package xmss
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 func TestProposerSigThroughBlockSSZ(t *testing.T) {

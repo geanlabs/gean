@@ -8,11 +8,11 @@ import (
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/lifecycle"
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/node"
-	"github.com/geanlabs/gean/internal/p2p"
-	"github.com/geanlabs/gean/internal/store"
-	"github.com/geanlabs/gean/internal/syncer"
-	"github.com/geanlabs/gean/internal/types"
+	"github.com/geanlabs/gean/internal/lean/node"
+	"github.com/geanlabs/gean/internal/lean/p2p"
+	"github.com/geanlabs/gean/internal/lean/store"
+	"github.com/geanlabs/gean/internal/lean/syncer"
+	"github.com/geanlabs/gean/internal/lean/types"
 	"github.com/multiformats/go-multiaddr"
 )
 
