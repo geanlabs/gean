@@ -1,68 +1,86 @@
-.PHONY: help build ffi test-ffi test test-spec test-sim test-e2e test-all lint fmt sszgen clean tidy docker-build run-devnet run-setup run run-node1 run-node2
+.PHONY: build clean docker-build fmt help lean-devnet lean-e2e lean-ffi lean-node lean-spectest lean-sszgen lean-test-ffi lean-testnet lint test test-all
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
-GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
 
-TESTNET_DIR ?= testnet
-NUM_VALIDATORS ?= 5
-NUM_NODES ?= 3
+# Build tags for `make build`, e.g. GO_TAGS=hive_testdriver (the Docker image uses it).
+GO_TAGS ?=
+LDFLAGS := -X github.com/geanlabs/gean/internal/lean/node.gitCommit=$(GIT_COMMIT)
 
-# Pinned leanSpec revision for spec fixtures. Must be defined before the test-spec/test-all
+XMSS_RUST := internal/core/crypto/xmss/rust
+
+# Pinned leanSpec revision for spec fixtures. Must be defined before the lean-spectest/test-all
 # rules that reference it: Make expands a rule's prerequisites when it reads the rule, so a
 # definition placed after those rules would expand to empty in their prerequisites.
 LEAN_SPEC_COMMIT_HASH := eca701efeb5931010fe63925cd203c9ee55b2dbc
 
-help: ## Show help for each Makefile recipe
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z0-9_-]+:.*##/ { printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+
+##@ Build
+
+DOCKER_IMAGE ?= ghcr.io/geanlabs/gean
+DOCKER_TAG ?= local
+
+build: lean-ffi ## Build bin/gean
+	@mkdir -p bin
+	go build -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o bin/gean ./cmd/gean
+
+docker-build: ## Build the Docker image DOCKER_IMAGE:DOCKER_TAG
+	docker build \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+
+##@ Test
+
+test: lean-ffi ## Run unit tests (no FFI tests, spec fixtures or simulations)
+	go test $$(go list ./... | grep -v '/crypto/xmss$$') -v -count=1
+
+test-all: lean-ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run every test but lean-e2e: unit, FFI, spec fixtures, simulations (slow)
+	go test ./... -v -count=1 -tags=spectests,sim
+
+##@ Code
+
+lint: ## Run linters (import rules fail; other golangci-lint findings are reported)
+	@command -v golangci-lint >/dev/null || { echo "golangci-lint not found: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; exit 1; }
+	go vet ./...
+	golangci-lint run --enable-only depguard ./...
+	golangci-lint run --issues-exit-code=0 ./...
+	cd $(XMSS_RUST) && cargo fmt --check
+	cd $(XMSS_RUST) && cargo clippy -- -D warnings -A clippy::missing_safety_doc
+
+fmt: ## Format Go and Rust code
+	gofmt -w .
+	cd $(XMSS_RUST) && cargo fmt
+
+clean: ## Remove build artifacts and node data
+	rm -rf bin data
+	cd $(XMSS_RUST) && cargo clean
+
+##@ Lean
 
 # leanVM's prover does binary-field arithmetic with carryless multiplication. On x86 the
 # Haswell baseline provides PCLMULQDQ; on aarch64 PMULL is gated behind the `aes` target
 # feature, which Linux aarch64 targets do not enable by default. Without it the prover
 # falls back to scalar code.
-ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
-	@cd internal/core/crypto/xmss/rust && \
-		case "$$(uname -m)" in \
-			x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
-			aarch64|arm64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
-			*) cargo build --profile multisig-release --locked ;; \
-		esac
+XMSS_RUSTFLAGS := $(strip \
+	$(if $(filter x86_64,$(shell uname -m)),-Ctarget-cpu=haswell) \
+	$(if $(filter aarch64 arm64,$(shell uname -m)),-Ctarget-feature=+aes))
 
-build: ffi ## Build the gean binary
-	@mkdir -p bin
-	@go build -ldflags "-X github.com/geanlabs/gean/internal/lean/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
+lean-ffi: ## Build the XMSS Rust library (lean's signatures) the node links against
+	cd $(XMSS_RUST) && $(if $(XMSS_RUSTFLAGS),CARGO_ENCODED_RUSTFLAGS="$(XMSS_RUSTFLAGS)") cargo build --profile multisig-release --locked
 
-test: ## Run unit tests (excludes crypto FFI and spec tests)
-	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectest/lean$$' | grep -v '/cmd/') -v -count=1
-
-test-ffi: ffi ## Run XMSS crypto FFI tests (builds FFI first)
+lean-test-ffi: lean-ffi ## Run the XMSS FFI tests (slow)
 	go test ./internal/core/crypto/xmss/ -v -count=1
 
-test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec fixture tests only (fast, excludes xmss FFI)
-	go test ./testing/spectest/lean/  -count=1 -tags=spectests
+lean-spectest: lean-ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run the leanSpec fixture tests
+	go test ./testing/spectest/lean/ -count=1 -tags=spectests
 
-test-sim: ffi ## Run the in-process multi-node simulation tests (real XMSS: slow, about 1 GB)
-	go test ./testing/sim/ -v -count=1 -tags=sim
-
-test-e2e: ## Run the end-to-end multi-node test with fake XMSS (no Rust needed)
+lean-e2e: ## Run the end-to-end multi-node test with fake XMSS (no Rust needed)
 	go test ./testing/sim/ -v -count=1 -tags=fakecrypto
 
-test-all: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run all tests including spec fixtures, xmss FFI and simulations (slow)
-	go test ./... -v -count=1 -tags=spectests,sim
-
-lint: ## Run linters for go & rust (import rules fail; other golangci-lint findings are reported)
-	@command -v golangci-lint >/dev/null || { echo "golangci-lint not found: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; exit 1; }
-	go vet ./...
-	golangci-lint run --enable-only depguard ./...
-	golangci-lint run --issues-exit-code=0 ./...
-	cd internal/core/crypto/xmss/rust && cargo fmt --check
-	cd internal/core/crypto/xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
-
-fmt: ## Format all Go code
-	gofmt -w .
-	cd internal/core/crypto/xmss/rust && cargo fmt
-
-sszgen: ## Regenerate SSZ encoding files from struct tags
+lean-sszgen: ## Regenerate the lean SSZ encoding files from struct tags
 	@rm -f internal/lean/types/*_encoding.go
 	sszgen --path internal/lean/types --objs ChainConfig --output internal/lean/types/config_encoding.go
 	sszgen --path internal/lean/types --objs Checkpoint --output internal/lean/types/checkpoint_encoding.go
@@ -72,55 +90,48 @@ sszgen: ## Regenerate SSZ encoding files from struct tags
 	sszgen --path internal/lean/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/lean/types/state_encoding.go
 	sszgen --path internal/lean/types --objs BlocksByRangeRequest --output internal/lean/types/blocks_by_range_encoding.go
 
-clean: ## Remove build artifacts and generated files
-	rm -rf bin data
-	cd internal/core/crypto/xmss/rust && cargo clean
+TESTNET_DIR ?= testnet
+NUM_VALIDATORS ?= 5
+NUM_NODES ?= 3
+# Node to run with lean-node. Node N listens on gossipsub port 9000+N (as keygen's nodes.yaml
+# lists it), API port 5052+N and metrics port 8080+N; node 0 aggregates.
+N ?= 0
 
-tidy: ## Tidy Go module dependencies
-	go mod tidy
+lean-testnet: build ## Generate a local network's config and keys in TESTNET_DIR (keys are reused, genesis is reset)
+	bin/gean lean keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
 
-# --- Local testnet ---
-
-run-setup: build ## Generate testnet config + XMSS keys (first run only, refreshes genesis time)
-	@bin/gean lean keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
-
-run: build ## Run node0 (aggregator) — requires make run-setup first
-	@rm -rf data/node0
-	@bin/gean lean \
+lean-node: build ## Run local node N from a fresh data directory, e.g. make lean-node N=1
+	@rm -rf data/node$(N)
+	bin/gean lean \
 		--custom-network-config-dir $(TESTNET_DIR) \
-		--node-key $(TESTNET_DIR)/node0.key \
-		--node-id node0 \
-		--data-dir data/node0 \
-		--is-aggregator \
-		--gossipsub-port 9000 \
-		--api-port 5052 \
-		--metrics-port 8080
+		--node-key $(TESTNET_DIR)/node$(N).key \
+		--node-id node$(N) \
+		--data-dir data/node$(N) \
+		--gossipsub-port $$((9000 + $(N))) \
+		--api-port $$((5052 + $(N))) \
+		--metrics-port $$((8080 + $(N))) \
+		$(if $(filter 0,$(N)),--is-aggregator)
 
-run-node1: build ## Run node1 on port 9001
-	@rm -rf data/node1
-	@bin/gean lean \
-		--custom-network-config-dir $(TESTNET_DIR) \
-		--node-key $(TESTNET_DIR)/node1.key \
-		--node-id node1 \
-		--data-dir data/node1 \
-		--gossipsub-port 9001 \
-		--api-port 5053 \
-		--metrics-port 8081
+LEAN_QUICKSTART_REPO ?= https://github.com/blockblaz/lean-quickstart.git
+LEAN_QUICKSTART_BRANCH ?= main
 
-run-node2: build ## Run node2 on port 9002
-	@rm -rf data/node2
-	@bin/gean lean \
-		--custom-network-config-dir $(TESTNET_DIR) \
-		--node-key $(TESTNET_DIR)/node2.key \
-		--node-id node2 \
-		--data-dir data/node2 \
-		--gossipsub-port 9002 \
-		--api-port 5054 \
-		--metrics-port 8082
+lean-quickstart:
+	git clone $(LEAN_QUICKSTART_REPO) --branch $(LEAN_QUICKSTART_BRANCH) --depth 1 --single-branch
 
-# --- leanSpec fixtures --- (LEAN_SPEC_COMMIT_HASH is defined near the top, before test-spec)
+# lean-quickstart's gean command names a published image and predates the `lean`
+# subcommand, so point it at the image just built and run it as `gean lean`. The edit
+# keeps an existing ` lean`, so running this twice changes nothing more; a temp file
+# rather than `sed -i` works on both GNU and BSD sed.
+lean-devnet: docker-build lean-quickstart ## Run a local multi-client lean devnet on lean-quickstart with this build
+	@sed 's|ghcr.io/geanlabs/gean:[^ }]*\( lean\)\{0,1\}|$(DOCKER_IMAGE):$(DOCKER_TAG) lean|' lean-quickstart/client-cmds/gean-cmd.sh > lean-quickstart/client-cmds/gean-cmd.sh.tmp \
+		&& mv lean-quickstart/client-cmds/gean-cmd.sh.tmp lean-quickstart/client-cmds/gean-cmd.sh
+	@echo "Starting a local devnet with $(DOCKER_IMAGE):$(DOCKER_TAG); logs go to devnet.log. Ctrl+C stops every node."
+	@cd lean-quickstart \
+		&& NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > ../devnet.log 2>&1
 
-leanSpec/.git: ## Clone leanSpec
+# --- leanSpec fixtures, fetched by lean-spectest and test-all ---
+
+leanSpec/.git:
 	git clone https://github.com/leanEthereum/leanSpec.git --single-branch
 
 leanSpec/.pinned-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.git
@@ -135,24 +146,3 @@ leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.pinned-$(LEAN_S
 	done
 	cd leanSpec && uv run fill --clean --fork=lstar --scheme=prod --output=fixtures
 	touch $@
-
-# --- Docker ---
-
-DOCKER_TAG ?= local
-
-docker-build: ## Build Docker image (also tagged :shadow for the lean-shadow-fuzzer)
-	docker build \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
-		-t gean:$(VERSION) \
-		-t ghcr.io/geanlabs/gean:devnet5 .
-
-# --- Multi-client devnet ---
-
-lean-quickstart: ## Clone lean-quickstart for local devnet
-	git clone https://github.com/blockblaz/lean-quickstart.git --depth 1 --single-branch
-
-run-devnet: docker-build lean-quickstart ## Run local multi-client devnet
-	@echo "Starting local devnet with gean client (\"$(DOCKER_TAG)\" tag)."
-	@cd lean-quickstart \
-		&& NETWORK_DIR=local-devnet ./spin-node.sh --node all --generateGenesis --metrics > ../devnet.log 2>&1

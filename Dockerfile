@@ -14,17 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy Rust FFI dependencies first for better caching
+# Copy Rust FFI dependencies first for better caching, and build them with the
+# Makefile's flags for the build-stage architecture.
+COPY Makefile ./
 COPY internal/core/crypto/xmss/rust/ internal/core/crypto/xmss/rust/
-
-# Detect the build-stage architecture: legacy builders do not populate TARGETARCH.
-# Same flags as make ffi: Haswell on x86_64, +aes (PMULL) on aarch64.
-RUN cd internal/core/crypto/xmss/rust && \
-    case "$(uname -m)" in \
-      x86_64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-cpu=haswell" cargo build --profile multisig-release --locked ;; \
-      aarch64) CARGO_ENCODED_RUSTFLAGS="-Ctarget-feature=+aes" cargo build --profile multisig-release --locked ;; \
-      *) cargo build --profile multisig-release --locked ;; \
-    esac
+RUN make lean-ffi
 
 # Copy Go module files for dependency caching
 COPY go.mod go.sum ./
@@ -36,8 +30,7 @@ COPY . .
 # Build Go binaries
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
-RUN mkdir -p bin && \
-    go build -tags hive_testdriver -ldflags "-X github.com/geanlabs/gean/internal/lean/node.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean
+RUN make build GO_TAGS=hive_testdriver GIT_COMMIT=$GIT_COMMIT
 
 # Runtime stage
 FROM ubuntu:24.04 AS runtime

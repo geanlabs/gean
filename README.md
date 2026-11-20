@@ -36,15 +36,15 @@ Build gean (see [Requirements](#requirements) first), then start a three-node lo
 
 ```sh
 make build
-make run-setup   # once: genesis config + XMSS keys for 5 validators across 3 nodes, in ./testnet
-make run         # terminal 1: node0, the aggregator
-make run-node1   # terminal 2
-make run-node2   # terminal 3
+make lean-testnet     # once: genesis config + XMSS keys for 5 validators across 3 nodes, in ./testnet
+make lean-node N=0    # terminal 1: node0, the aggregator
+make lean-node N=1    # terminal 2
+make lean-node N=2    # terminal 3
 ```
 
-`make run-setup` sets genesis 30 seconds in the future, so start the nodes soon after it; run it
-again to refresh genesis. The `run` targets wipe their node's data directory (`data/nodeN`) on
-every start.
+`make lean-testnet` sets genesis 30 seconds in the future, so start the nodes soon after it; run it
+again to refresh genesis. `lean-node` wipes its node's data directory (`data/nodeN`) on every
+start.
 
 ## Check it works
 
@@ -73,18 +73,22 @@ curl -s localhost:8080/metrics | grep -E '^lean_(head_slot|latest_justified_slot
 | node0 | 9000 | 127.0.0.1:5052 | 127.0.0.1:8080 |
 | node1 | 9001 | 127.0.0.1:5053 | 127.0.0.1:8081 |
 | node2 | 9002 | 127.0.0.1:5054 | 127.0.0.1:8082 |
+| nodeN | 9000+N | 127.0.0.1:5052+N | 127.0.0.1:8080+N |
 
 Change the network's size with `NUM_VALIDATORS`, `NUM_NODES` and `TESTNET_DIR`, for example
-`make run-setup NUM_VALIDATORS=8`.
+`make lean-testnet NUM_VALIDATORS=8 NUM_NODES=4`, then run each node with `make lean-node N=...`.
 
 ### Multi-client devnet
 
 ```sh
-make run-devnet
+make lean-devnet
 ```
 
-Builds a Docker image and starts a devnet with other Lean clients through
-[lean-quickstart](https://github.com/blockblaz/lean-quickstart). Output goes to `devnet.log`.
+Builds the Docker image `ghcr.io/geanlabs/gean:local` (set `DOCKER_TAG` to change it) and starts
+a devnet with other Lean clients through
+[lean-quickstart](https://github.com/blockblaz/lean-quickstart), with its gean nodes on that image.
+Output goes to `devnet.log`. `LEAN_QUICKSTART_REPO` and `LEAN_QUICKSTART_BRANCH` choose the
+lean-quickstart checkout.
 
 ### Checkpoint sync
 
@@ -141,7 +145,7 @@ Run `bin/gean lean --help` for the full list.
 |---|---|---|
 | Go | 1.26 | gean itself |
 | Rust (via rustup) | 1.92.0, pinned in `internal/core/crypto/xmss/rust/rust-toolchain.toml` | the XMSS signature library, called from Go |
-| [uv](https://docs.astral.sh/uv/) | any recent | generating leanSpec test fixtures (`make test-spec`) |
+| [uv](https://docs.astral.sh/uv/) | any recent | generating leanSpec test fixtures (`make lean-spectest`) |
 | [golangci-lint](https://golangci-lint.run/) | v2 | `make lint`; install with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest` |
 | Docker | any recent | optional: images and multi-client devnets |
 
@@ -159,12 +163,11 @@ Run `make help` to list every target.
 
 | Command | Runs |
 |---|---|
-| `make test` | Unit tests (no XMSS FFI, no spec fixtures) |
-| `make test-ffi` | XMSS FFI tests |
-| `make test-spec` | leanSpec fixture tests; the first run clones leanSpec at a pinned commit and generates fixtures with `uv` |
-| `make test-sim` | Multi-node simulations: lean nodes in one process on an in-memory network (slow, about 1 GB) |
-| `make test-e2e` | End-to-end: three nodes finalize, one restarts and catches up; fake XMSS (`-tags fakecrypto`), no Rust needed |
-| `make test-all` | Everything above except `test-e2e` |
+| `make test` | Unit tests (no FFI tests, spec fixtures or simulations) |
+| `make lean-test-ffi` | XMSS FFI tests |
+| `make lean-spectest` | leanSpec fixture tests; the first run clones leanSpec at a pinned commit and generates fixtures with `uv` |
+| `make lean-e2e` | End-to-end: three nodes finalize, one restarts and catches up; fake XMSS (`-tags fakecrypto`), no Rust needed |
+| `make test-all` | Everything above except `lean-e2e`, plus the multi-node simulation with real XMSS (slow, about 1 GB) |
 | `make lint` | `go vet` and golangci-lint (`.golangci.yml`): package import rules fail the build, other findings are reported; plus `cargo fmt --check` and `clippy` for the Rust code |
 | `make fmt` | Format Go code |
 

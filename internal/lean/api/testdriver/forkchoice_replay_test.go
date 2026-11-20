@@ -25,7 +25,7 @@ func TestForkChoiceReplayLocalFixtures(t *testing.T) {
 	root := forkChoiceFixtureRoot(t)
 	files := collectJSON(t, root)
 	if len(files) == 0 {
-		t.Skipf("no fork-choice fixtures under %s (run make test-spec)", root)
+		t.Skipf("no fork-choice fixtures under %s (run make lean-spectest)", root)
 	}
 
 	for _, file := range files {
