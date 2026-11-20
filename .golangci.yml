@@ -20,8 +20,6 @@ linters:
     - unused
     # Integer conversions that can overflow (gosec G115).
     - gosec
-    # Banned functions, each with the replacement to use.
-    - forbidigo
     # Banned imports and package layering.
     - depguard
 
@@ -34,12 +32,6 @@ linters:
     gosec:
       includes:
         - G115
-
-    forbidigo:
-      forbid:
-        # Becomes blocking in Phase 3.
-        - pattern: ^time\.Now$
-          msg: "read time through a clock.Clock so tests can control it"
 
     depguard:
       rules:
@@ -134,15 +126,10 @@ linters:
       - legacy
       - std-error-handling
     rules:
-      # Tests may read the wall clock and convert integers freely.
+      # Tests may convert integers freely.
       - path: _test\.go
         linters:
-          - forbidigo
           - gosec
-      # The clock package is where wall-clock time is allowed.
-      - path: (^|/)internal/(core/)?clock/
-        linters:
-          - forbidigo
 
 formatters:
   enable:

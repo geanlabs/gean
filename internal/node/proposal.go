@@ -8,6 +8,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/attestationproof"
 	"github.com/geanlabs/gean/internal/blockbuilder"
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/statetransition"
@@ -245,7 +246,7 @@ func (e *Engine) acceptProposal(ctx context.Context, result *proposalResult) boo
 		if err := e.P2P.PublishBlock(publishCtx, result.signedBlock); err != nil {
 			logger.Error(logger.Network, "publish block failed: %v", err)
 		} else {
-			publishedMs := float64(time.Now().UnixMilli()) - float64(e.slotStartMs(block.Slot))
+			publishedMs := float64(clock.UnixMilli(e.Clock)) - float64(e.slotStartMs(block.Slot))
 			metrics.ObserveBlockPublishDelay(publishedMs / 1000)
 		}
 	}

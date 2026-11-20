@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/node"
@@ -31,6 +32,9 @@ func main() {
 func run(cfg config) error {
 	logger.Info(logger.Node, "gean consensus client starting")
 	stop := notifyShutdown()
+
+	// One clock for every time-dependent decision the node makes.
+	clk := clock.Real{}
 
 	inputs, err := loadStartupInputs(cfg)
 	if err != nil {
@@ -58,7 +62,7 @@ func run(cfg config) error {
 		return err
 	}
 
-	if err := recoverStoreTime(s, inputs.genesisConfig.GenesisTime); err != nil {
+	if err := recoverStoreTime(s, clk, inputs.genesisConfig.GenesisTime); err != nil {
 		return err
 	}
 
@@ -89,7 +93,7 @@ func run(cfg config) error {
 	// Handlers must be live before the prover pre-init: the listener is
 	// already accepting connections, and peers that dial during the
 	// multi-second init would fail req/resp protocol negotiation.
-	registerReqRespHandlers(p2pHost, s)
+	registerReqRespHandlers(p2pHost, s, clk)
 
 	proving := len(inputs.keyManager.ValidatorIDs()) > 0 || cfg.IsAggregator
 	xmss.SetProverArena(cfg.ProverArena)
@@ -112,6 +116,7 @@ func run(cfg config) error {
 		VerifyAggregatedSignatures: cfg.ShadowVerifyAggregatedSignaturesRate,
 	}
 	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
+	n.Clock = clk
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
 	c.waitEngine = n.Wait
 	syncDriver := startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes, &c.tasks)

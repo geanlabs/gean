@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/proving"
@@ -43,6 +44,7 @@ const AcquirePatience = 750 * time.Millisecond
 
 func RunWorker(
 	ctx context.Context,
+	clk clock.Clock,
 	dispatches <-chan Dispatch,
 	consensusStore *store.ConsensusStore,
 	cache *xmss.PubKeyCache,
@@ -84,10 +86,14 @@ func RunWorker(
 			// short. Discarding finished aggregates
 			// (and their signature deletes) regrows the next snapshot until
 			// no session can ever finish inside a slot.
+			// workerStart measures how long the session took (real time);
+			// sessionStart is the same moment on clk, the timeline the deadline
+			// is set on.
 			workerStart := time.Now()
+			sessionStart := clk.Now()
 			deadline := dispatch.Deadline
 			if deadline.IsZero() {
-				deadline = workerStart.Add(SessionBudget)
+				deadline = sessionStart.Add(SessionBudget)
 			}
 			// The deadline is the slot's promotion boundary, so waiting on the
 			// gate or behind a previous session can consume it entirely. An
@@ -96,9 +102,9 @@ func RunWorker(
 			// as its own case: running the session anyway would produce no output
 			// and raise the starvation warning, which is meant for a session that
 			// had time and still produced nothing.
-			if !time.Now().Before(deadline) {
+			if !clk.Now().Before(deadline) {
 				metrics.IncProofOperation("aggregation", "expired")
-				logger.Warn(logger.Signature, "aggregation skipped: past the promotion boundary slot=%d late_by=%v", dispatch.Slot, time.Since(deadline))
+				logger.Warn(logger.Signature, "aggregation skipped: past the promotion boundary slot=%d late_by=%v", dispatch.Slot, clk.Now().Sub(deadline))
 				if gate != nil {
 					gate.Release(false)
 				}
@@ -106,8 +112,8 @@ func RunWorker(
 			}
 			// The window is what the dispatcher actually allowed, which is less
 			// than SessionBudget whenever the gate was held for a while.
-			budget := deadline.Sub(workerStart)
-			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(gate.ProposalPending, dispatch.Snapshot, cache, deadline, dispatch.MaxGroups, shadowRates, estimator)
+			budget := deadline.Sub(sessionStart)
+			aggs, payloads, deletes, truncated, skips := aggregateFromSnapshot(clk, gate.ProposalPending, dispatch.Snapshot, cache, deadline, dispatch.MaxGroups, shadowRates, estimator)
 			workerElapsed := time.Since(workerStart)
 			if gate != nil {
 				gate.Release(false)

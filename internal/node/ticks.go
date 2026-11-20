@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -15,19 +16,21 @@ import (
 // time.Ticker: a tick missed while dispatch is busy is dropped, not queued.
 // A tick handled late can still land in an interval already run; onTick's
 // claimInterval drops it.
-func alignedTicks(ctx context.Context, genesisTime uint64) <-chan time.Time {
+//
+// Time comes from clk, so a test can drive ticks with a clock.Fake.
+func alignedTicks(ctx context.Context, clk clock.Clock, genesisTime uint64) <-chan time.Time {
 	ch := make(chan time.Time, 1)
 	go func() {
-		timer := time.NewTimer(time.Hour)
+		timer := clk.NewTimer(time.Hour)
 		defer timer.Stop()
 		var lastMs uint64
 		for {
-			targetMs := nextTickAt(genesisTime, uint64(time.Now().UnixMilli()), lastMs)
+			targetMs := nextTickAt(genesisTime, clock.UnixMilli(clk), lastMs)
 			// Timers measure a duration on the monotonic clock; the boundary is
 			// on the wall clock. Re-check after every wake so a slewed or stepped
 			// wall clock can never release a tick early.
 			for {
-				wait := time.Until(time.UnixMilli(int64(targetMs)))
+				wait := time.UnixMilli(int64(targetMs)).Sub(clk.Now())
 				if wait <= 0 {
 					break
 				}
@@ -35,12 +38,12 @@ func alignedTicks(ctx context.Context, genesisTime uint64) <-chan time.Time {
 				select {
 				case <-ctx.Done():
 					return
-				case <-timer.C:
+				case <-timer.C():
 				}
 			}
 			lastMs = targetMs
 			select {
-			case ch <- time.Now():
+			case ch <- clk.Now():
 			default:
 			}
 		}

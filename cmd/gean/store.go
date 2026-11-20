@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
@@ -86,7 +86,7 @@ func initStoreFromState(s *store.ConsensusStore, state *types.State) ([32]byte, 
 	return blockRoot, nil
 }
 
-func recoverStoreTime(s *store.ConsensusStore, genesisTimeSec uint64) error {
+func recoverStoreTime(s *store.ConsensusStore, clk clock.Clock, genesisTimeSec uint64) error {
 	if s == nil {
 		return fmt.Errorf("recover store time: store is nil")
 	}
@@ -94,7 +94,7 @@ func recoverStoreTime(s *store.ConsensusStore, genesisTimeSec uint64) error {
 		return fmt.Errorf("recover store time: genesis time %d overflows milliseconds", genesisTimeSec)
 	}
 	genesisMs := genesisTimeSec * 1000
-	nowMs := uint64(time.Now().UnixMilli())
+	nowMs := clock.UnixMilli(clk)
 	if nowMs <= genesisMs {
 		return s.PutTime(0)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/types"
@@ -39,7 +40,7 @@ func (e *Engine) dispatch(ctx context.Context, ticks <-chan time.Time) {
 			timeEvent("tick", e.onTick)
 
 		case <-e.EarlyAggregateCh:
-			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(uint64(time.Now().UnixMilli())) })
+			timeEvent("early_aggregate", func() { e.maybeEarlyAggregate(clock.UnixMilli(e.Clock)) })
 
 		case block := <-e.BlockCh:
 			timeEvent("block", func() {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/syncer"
@@ -46,7 +47,7 @@ func (e *Engine) computeSyncStatus(currentSlot uint64) syncer.SyncStatus {
 }
 
 func (e *Engine) GetSyncStatus() syncer.SyncStatus {
-	return e.computeSyncStatus(e.currentSlot(uint64(time.Now().UnixMilli())))
+	return e.computeSyncStatus(e.currentSlot(clock.UnixMilli(e.Clock)))
 }
 
 func (e *Engine) logChainStatus(currentSlot uint64) {

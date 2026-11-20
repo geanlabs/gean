@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/aggregation"
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/dutygate"
 	"github.com/geanlabs/gean/internal/forkchoice"
 	"github.com/geanlabs/gean/internal/lifecycle"
@@ -33,6 +34,11 @@ const (
 )
 
 type Engine struct {
+	// Clock is the time source for every time-dependent decision: ticks, the
+	// current slot, deadlines. New sets the system clock; tests replace it with
+	// a clock.Fake before Start.
+	Clock clock.Clock
+
 	Store          *store.ConsensusStore
 	FC             *forkchoice.ForkChoice
 	P2P            *p2p.Host
@@ -135,6 +141,7 @@ func New(
 ) *Engine {
 	p2p.SetClientGitCommit(gitCommit)
 	e := &Engine{
+		Clock:               clock.Real{},
 		Store:               s,
 		FC:                  fc,
 		P2P:                 p2pHost,
@@ -184,5 +191,5 @@ func (e *Engine) Run(ctx context.Context) {
 
 	logger.Info(logger.Node, "started")
 	e.onTick()
-	e.dispatch(ctx, alignedTicks(ctx, e.Store.Config().GenesisTime))
+	e.dispatch(ctx, alignedTicks(ctx, e.Clock, e.Store.Config().GenesisTime))
 }

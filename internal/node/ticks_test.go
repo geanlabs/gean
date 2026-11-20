@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/types"
 )
 
@@ -45,31 +46,38 @@ func TestNextTickAtFallsBackWhenGenesisOverflows(t *testing.T) {
 
 // TestAlignedTicksLandOnIntervalBoundary checks the property the free-running
 // ticker lacked: the tick arrives at the start of an interval measured from
-// genesis, whatever moment the source was started at.
+// genesis, whatever moment the source was started at. Time is a clock.Fake, so
+// the test moves through intervals without sleeping.
 func TestAlignedTicksLandOnIntervalBoundary(t *testing.T) {
-	genesis := uint64(time.Now().Unix()) - 10
+	const genesis = 1_700_000_000
+	const iv = uint64(types.MillisecondsPerInterval)
 	// Start the source partway into an interval, the position a node lands in
 	// after an arbitrary restart.
-	nowMs := uint64(time.Now().UnixMilli())
-	next, _ := types.NextIntervalBoundaryMs(genesis, nowMs)
-	if wait := time.Until(time.UnixMilli(int64(next))); wait > 0 {
-		time.Sleep(wait + 300*time.Millisecond)
-	}
+	fake := clock.NewFake(time.UnixMilli(int64(genesis*1000 + 3*iv + 300)))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ticks := alignedTicks(ctx, genesis)
+	ticks := alignedTicks(ctx, fake, genesis)
 
-	select {
-	case tick := <-ticks:
-		phaseMs := types.MillisIntoSlot(genesis, uint64(tick.UnixMilli())) % types.MillisecondsPerInterval
-		// A tick released early would read just below a full interval.
-		if phaseMs > 50 {
-			t.Fatalf("tick landed %d ms into its interval; want it at the boundary", phaseMs)
+	// Step fake time forward and give the tick goroutine a moment after each
+	// step to deliver, so fake time does not move on while a fired tick is
+	// still being sent. The step size bounds how far past a boundary a tick
+	// can land.
+	const step = 10 * time.Millisecond
+	for advanced := time.Duration(0); advanced < 3*time.Duration(iv)*time.Millisecond; advanced += step {
+		fake.Advance(step)
+		select {
+		case tick := <-ticks:
+			phaseMs := types.MillisIntoSlot(genesis, uint64(tick.UnixMilli())) % iv
+			// A tick released early would read just below a full interval.
+			if phaseMs > uint64(step/time.Millisecond) {
+				t.Fatalf("tick landed %d ms into its interval; want it at the boundary", phaseMs)
+			}
+			return
+		case <-time.After(10 * time.Millisecond):
 		}
-	case <-time.After(2 * types.MillisecondsPerInterval * time.Millisecond):
-		t.Fatal("no tick within two intervals")
 	}
+	t.Fatal("no tick within three intervals of fake time")
 }
 
 // TestClaimIntervalRunsEachIntervalOnce covers a tick handled late, after the

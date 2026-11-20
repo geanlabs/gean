@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/attestation"
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/p2p"
@@ -135,7 +136,7 @@ func (e *Engine) ValidateGossipBlock(block *types.SignedBlock) p2p.Verdict {
 	// store clock lags whenever the loop runs late, and judging by it would drop
 	// current blocks. Beyond the horizon the block may still be valid to a peer
 	// whose clock is ahead, so it is ignored, not rejected.
-	if slot > e.currentSlot(uint64(time.Now().UnixMilli()))+1 {
+	if slot > e.currentSlot(clock.UnixMilli(e.Clock))+1 {
 		return p2p.Ignore
 	}
 	if finalized := e.Store.LatestFinalized(); finalized != nil && slot <= finalized.Slot {

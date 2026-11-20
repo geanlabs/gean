@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/lifecycle"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/node"
@@ -47,7 +48,7 @@ func preinitializeXMSS(proving bool) error {
 	return xmss.EnsureVerifierReady()
 }
 
-func registerReqRespHandlers(p2pHost *p2p.Host, s *store.ConsensusStore) {
+func registerReqRespHandlers(p2pHost *p2p.Host, s *store.ConsensusStore, clk clock.Clock) {
 	p2pHost.RegisterReqRespHandlers(
 		func() *p2p.StatusMessage {
 			finalized := s.LatestFinalized()
@@ -65,7 +66,7 @@ func registerReqRespHandlers(p2pHost *p2p.Host, s *store.ConsensusStore) {
 		// head: a lagging head would advertise a lower floor and offer history the
 		// spec lets us prune.
 		func() uint64 {
-			return types.CurrentSlot(s.Config().GenesisTime, uint64(time.Now().UnixMilli()))
+			return types.CurrentSlot(s.Config().GenesisTime, clock.UnixMilli(clk))
 		},
 		func(startSlot, count uint64) ([]*types.SignedBlock, bool) {
 			return s.GetCanonicalBlocksInRange(startSlot, count)

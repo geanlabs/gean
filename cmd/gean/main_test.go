@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/logger"
 	"github.com/geanlabs/gean/internal/storage"
 	"github.com/geanlabs/gean/internal/store"
@@ -26,7 +27,7 @@ func TestRecoverStoreTime_PostGenesis(t *testing.T) {
 	nowMs := uint64(time.Now().UnixMilli())
 	genesisSec := (nowMs / 1000) - 10
 
-	if err := recoverStoreTime(s, genesisSec); err != nil {
+	if err := recoverStoreTime(s, clock.Real{}, genesisSec); err != nil {
 		t.Fatalf("recover store time: %v", err)
 	}
 
@@ -43,7 +44,7 @@ func TestRecoverStoreTime_PreGenesis(t *testing.T) {
 	s.SetTime(999)
 
 	farFuture := uint64(time.Now().Unix()) + 86400
-	if err := recoverStoreTime(s, farFuture); err != nil {
+	if err := recoverStoreTime(s, clock.Real{}, farFuture); err != nil {
 		t.Fatalf("recover store time: %v", err)
 	}
 
@@ -57,7 +58,7 @@ func TestRecoverStoreTime_OverwritesStaleValue(t *testing.T) {
 	s.SetTime(1)
 
 	genesisSec := uint64(time.Now().Unix()) - 60
-	if err := recoverStoreTime(s, genesisSec); err != nil {
+	if err := recoverStoreTime(s, clock.Real{}, genesisSec); err != nil {
 		t.Fatalf("recover store time: %v", err)
 	}
 
@@ -67,7 +68,7 @@ func TestRecoverStoreTime_OverwritesStaleValue(t *testing.T) {
 }
 
 func TestRecoverStoreTimeRejectsOverflow(t *testing.T) {
-	err := recoverStoreTime(newTestStore(), ^uint64(0))
+	err := recoverStoreTime(newTestStore(), clock.Real{}, ^uint64(0))
 	if err == nil {
 		t.Fatal("expected overflow error")
 	}

@@ -17,7 +17,7 @@ import (
 const aggregationDeadlineOffset = 4 * types.MillisecondsPerInterval
 
 func (e *Engine) onTick() {
-	e.tickAt(time.Now())
+	e.tickAt(e.Clock.Now())
 }
 
 // tickAt runs the duties of the interval containing now.

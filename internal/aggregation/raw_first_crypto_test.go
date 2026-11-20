@@ -4,6 +4,7 @@ package aggregation
 
 import (
 	"fmt"
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/store"
 	"github.com/geanlabs/gean/internal/types"
@@ -73,7 +74,7 @@ func TestRawFirstCrypto(t *testing.T) {
 			}
 			return xmss.AggregateWithChildren(rawPKs, rawSigs, children, msg, s)
 		}
-		aggs, _, deletes, _, skips := aggregateFromSnapshotWithProver(nil, snap, cache, time.Now().Add(30*time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
+		aggs, _, deletes, _, skips := aggregateFromSnapshotWithProver(clock.Real{}, nil, snap, cache, time.Now().Add(30*time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
 		if len(aggs) != 1 {
 			t.Fatalf("no aggregate: %v", skips)
 		}

@@ -13,7 +13,7 @@ func (e *Engine) startWorkers(ctx context.Context) {
 	for _, run := range []func(){
 		func() { e.runFetchBatcher(ctx) },
 		func() {
-			aggregation.RunWorker(ctx, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
+			aggregation.RunWorker(ctx, e.Clock, e.AggregationDispatchCh, e.Store, e.Store.PubKeyCache, e.P2P, e.ProvingGate, e.Shadow)
 		},
 		func() { e.runProposalWorker(ctx) },
 		func() { e.runRecoveryWorker(ctx) },

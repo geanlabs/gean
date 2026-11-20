@@ -6,6 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/store"
@@ -184,7 +185,7 @@ func TestSessionCountsProofAndDeferredValues(t *testing.T) {
 	proofsBefore := counterSum(t, "lean_aggregation_proof_value_total")
 	deferredBefore := counterSum(t, "lean_aggregation_deferred_group_value_total")
 
-	aggs, _, _, truncated, _ := aggregateFromSnapshotWithProver(nil, snap, cache,
+	aggs, _, _, truncated, _ := aggregateFromSnapshotWithProver(clock.Real{}, nil, snap, cache,
 		time.Now().Add(time.Hour), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
 
 	if !truncated || len(aggs) != MaxGroupsPerSession {
@@ -217,7 +218,7 @@ func TestSessionClassifiesAgainstTheNextBlocksView(t *testing.T) {
 	ignoredBefore := counterValue(t, "lean_aggregation_proof_value_total", metrics.ProofValueIgnored)
 	addsBefore := counterValue(t, "lean_aggregation_proof_value_total", metrics.ProofValueAddsVotes)
 
-	aggs, _, _, _, _ := aggregateFromSnapshotWithProver(nil, snap, cache,
+	aggs, _, _, _, _ := aggregateFromSnapshotWithProver(clock.Real{}, nil, snap, cache,
 		time.Now().Add(time.Hour), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator(), prove)
 
 	if len(aggs) != 1 {

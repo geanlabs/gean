@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/store"
@@ -79,7 +80,7 @@ func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
 	cache := xmss.NewPubKeyCache()
 
-	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	aggs, payloads, deletes, truncated, _ := aggregateFromSnapshot(clock.Real{}, nil, snap, cache, time.Now().Add(-time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")
@@ -92,7 +93,7 @@ func TestAggregateFromSnapshotExpiredDeadlineReportsTruncation(t *testing.T) {
 func TestAggregateFromSnapshotZeroDeadlineProcessesAll(t *testing.T) {
 	snap := aggregateTestSnapshot(5)
 
-	_, _, _, truncated, _ := aggregateFromSnapshot(nil, snap, xmss.NewPubKeyCache(), time.Time{}, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	_, _, _, truncated, _ := aggregateFromSnapshot(clock.Real{}, nil, snap, xmss.NewPubKeyCache(), time.Time{}, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
 
 	if truncated {
 		t.Fatal("zero deadline must never truncate")
@@ -158,7 +159,7 @@ func TestAggregateFromSnapshotBudgetStopCountsEveryDeferredGroup(t *testing.T) {
 	snap := aggregateTestSnapshot(5, 6, 7)
 	cache := xmss.NewPubKeyCache()
 
-	_, _, _, truncated, skips := aggregateFromSnapshot(nil, snap, cache, time.Now().Add(-time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	_, _, _, truncated, skips := aggregateFromSnapshot(clock.Real{}, nil, snap, cache, time.Now().Add(-time.Second), MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
 
 	if !truncated {
 		t.Fatal("expected truncation with expired deadline")

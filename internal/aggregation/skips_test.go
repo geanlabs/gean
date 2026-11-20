@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/clock"
 	"github.com/geanlabs/gean/internal/metrics"
 	"github.com/geanlabs/gean/internal/shadow"
 	"github.com/geanlabs/gean/internal/store"
@@ -29,7 +30,7 @@ func TestAggregateResolvesSignersWithoutTargetState(t *testing.T) {
 		},
 	}
 
-	_, _, _, _, skips := aggregateFromSnapshot(nil, snap, xmss.NewPubKeyCache(), time.Time{}, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
+	_, _, _, _, skips := aggregateFromSnapshot(clock.Real{}, nil, snap, xmss.NewPubKeyCache(), time.Time{}, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
 
 	// No group may be dropped for a reason that no longer exists; these groups
 	// carry no signatures, so they fall out as too-few-signers instead.
