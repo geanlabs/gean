@@ -128,6 +128,7 @@ Run `bin/gean --help` for the full list.
 | Go | 1.26 | gean itself |
 | Rust (via rustup) | 1.92.0, pinned in `xmss/rust/rust-toolchain.toml` | the XMSS signature library, called from Go |
 | [uv](https://docs.astral.sh/uv/) | any recent | generating leanSpec test fixtures (`make test-spec`) |
+| [golangci-lint](https://golangci-lint.run/) | v2 | `make lint`; install with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest` |
 | Docker | any recent | optional: images and multi-client devnets |
 
 ### Build
@@ -151,7 +152,7 @@ Run `make help` to list every target.
 | `make test-ffi` | XMSS FFI tests |
 | `make test-spec` | leanSpec fixture tests; the first run clones leanSpec at a pinned commit and generates fixtures with `uv` |
 | `make test-all` | Everything above |
-| `make lint` | `go vet`, plus `cargo fmt --check` and `clippy` for the Rust code |
+| `make lint` | `go vet` and golangci-lint (`.golangci.yml`, report-only for now), plus `cargo fmt --check` and `clippy` for the Rust code |
 | `make fmt` | Format Go code |
 
 ## License

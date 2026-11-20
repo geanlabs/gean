@@ -1,0 +1,156 @@
+# golangci-lint v2 configuration.
+#
+# Run with `make lint`. During the restructure every rule here reports
+# without failing the build; later phases switch rules to blocking one by one
+# (see the comment above each rule).
+
+version: "2"
+
+run:
+  go: "1.26"
+
+linters:
+  default: none
+  enable:
+    # Correctness.
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Integer conversions that can overflow (gosec G115).
+    - gosec
+    # Banned functions, each with the replacement to use.
+    - forbidigo
+    # Banned imports and package layering.
+    - depguard
+
+  settings:
+    govet:
+      # copylocks and lostcancel are on by default; nilness is not.
+      enable:
+        - nilness
+
+    gosec:
+      includes:
+        - G115
+
+    forbidigo:
+      forbid:
+        # Becomes blocking in Phase 3.
+        - pattern: ^time\.Now$
+          msg: "read time through a clock.Clock so tests can control it"
+
+    depguard:
+      rules:
+        # Randomness in consensus code must not be predictable.
+        crypto-rand:
+          files:
+            - $all
+            - "!$test"
+          deny:
+            - pkg: math/rand
+              desc: "use crypto/rand"
+            - pkg: math/rand/v2
+              desc: "use crypto/rand"
+
+        # Today's layering. Where an allow and a deny both match, the longer
+        # (more specific) match wins.
+        types-imports-nothing:
+          files:
+            - "**/internal/types/**"
+          deny:
+            - pkg: github.com/geanlabs/gean
+              desc: "types is the bottom layer and imports no other gean package"
+
+        rules-import-only-types:
+          files:
+            - "**/internal/statetransition/**"
+            - "**/internal/forkchoice/**"
+          allow:
+            - $gostd
+            - github.com/geanlabs/gean/internal/types
+          deny:
+            - pkg: github.com/geanlabs/gean
+              desc: "protocol rules depend only on internal/types"
+
+        storage-imports-nothing:
+          files:
+            - "**/internal/storage/**"
+          deny:
+            - pkg: github.com/geanlabs/gean
+              desc: "storage is generic and imports no other gean package"
+
+        # Target layering (plan §3). These packages don't exist yet; the rules
+        # start matching as code moves in. Blocking from Phase 9 (lean) and
+        # Phase 19 (core).
+        core-is-chain-agnostic:
+          files:
+            - "**/internal/core/**"
+          deny:
+            - pkg: github.com/geanlabs/gean/internal/lean
+              desc: "core never imports a chain"
+            - pkg: github.com/geanlabs/gean/internal/beacon
+              desc: "core never imports a chain"
+            - pkg: github.com/geanlabs/gean/internal/validator
+              desc: "core never imports the validator client"
+
+        lean-stays-lean:
+          files:
+            - "**/internal/lean/**"
+          deny:
+            - pkg: github.com/geanlabs/gean/internal/beacon
+              desc: "lean and beacon never import each other"
+            - pkg: github.com/geanlabs/gean/internal/validator
+              desc: "lean never imports the beacon validator client"
+
+        beacon-stays-beacon:
+          files:
+            - "**/internal/beacon/**"
+          deny:
+            - pkg: github.com/geanlabs/gean/internal/lean
+              desc: "lean and beacon never import each other"
+            - pkg: github.com/geanlabs/gean/internal/validator
+              desc: "the beacon node never imports the validator client"
+
+        validator-uses-api-only:
+          files:
+            - "**/internal/validator/**"
+          allow:
+            - $gostd
+            - github.com/geanlabs/gean/internal/core
+            - github.com/geanlabs/gean/internal/beacon/types
+          deny:
+            - pkg: github.com/geanlabs/gean/internal/lean
+              desc: "the validator client is beacon-only"
+            - pkg: github.com/geanlabs/gean/internal/beacon
+              desc: "the validator client talks to the node through the Beacon API; only beacon/types is shared"
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Tests may read the wall clock and convert integers freely.
+      - path: _test\.go
+        linters:
+          - forbidigo
+          - gosec
+      # The clock package is where wall-clock time is allowed.
+      - path: (^|/)internal/(core/)?clock/
+        linters:
+          - forbidigo
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/geanlabs/gean
+  exclusions:
+    generated: lax
