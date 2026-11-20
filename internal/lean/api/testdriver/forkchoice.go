@@ -52,19 +52,10 @@ func (sess *Session) ForkChoiceInitHandler() http.HandlerFunc {
 			return
 		}
 
-		anchorHeader := &types.BlockHeader{
-			Slot:          anchorBlock.Slot,
-			ProposerIndex: anchorBlock.ProposerIndex,
-			ParentRoot:    anchorBlock.ParentRoot,
-			StateRoot:     anchorBlock.StateRoot,
-		}
-		if anchorBlock.Body != nil {
-			bodyRoot, err := anchorBlock.Body.HashTreeRoot()
-			if err != nil {
-				writeInitFailure(w, fmt.Sprintf("anchorBlock.body.hashTreeRoot: %v", err))
-				return
-			}
-			anchorHeader.BodyRoot = bodyRoot
+		anchorHeader, err := anchorBlock.Header()
+		if err != nil {
+			writeInitFailure(w, fmt.Sprintf("anchorBlock.header: %v", err))
+			return
 		}
 
 		consensusStore := store.NewConsensusStore(storage.NewInMemoryBackend())

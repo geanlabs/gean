@@ -7,7 +7,7 @@ import (
 
 func TestLiveChainKeyEncoding(t *testing.T) {
 	root := [32]byte{0xab, 0xcd}
-	key := EncodeLiveChainKey(42, root)
+	key := encodeLiveChainKey(42, root)
 	if len(key) != liveChainKeySize {
 		t.Fatalf("key length=%d, want %d", len(key), liveChainKeySize)
 	}
@@ -37,9 +37,9 @@ func TestDecodeLiveChainKeyShortInput(t *testing.T) {
 func TestLiveChainKeyOrdering(t *testing.T) {
 	rootA := [32]byte{1}
 	rootB := [32]byte{2}
-	key1 := EncodeLiveChainKey(10, rootA)
-	key2 := EncodeLiveChainKey(20, rootB)
-	key3 := EncodeLiveChainKey(10, rootB)
+	key1 := encodeLiveChainKey(10, rootA)
+	key2 := encodeLiveChainKey(20, rootB)
+	key3 := encodeLiveChainKey(10, rootB)
 
 	if bytes.Compare(key1, key2) >= 0 {
 		t.Fatal("slot 10 should sort before slot 20")

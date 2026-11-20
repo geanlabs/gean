@@ -96,10 +96,10 @@ type ConsensusStore struct {
 	blocks blockIndex
 }
 
-// ObserveStoredBlockSlot raises the stored-block high-water mark. Safe from any
+// observeStoredBlockSlot raises the stored-block high-water mark. Safe from any
 // goroutine: block import runs on the dispatch loop, but pending-block writes
 // and the test driver do not.
-func (s *ConsensusStore) ObserveStoredBlockSlot(slot uint64) {
+func (s *ConsensusStore) observeStoredBlockSlot(slot uint64) {
 	if s == nil {
 		return
 	}

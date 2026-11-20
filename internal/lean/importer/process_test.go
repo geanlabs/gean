@@ -77,7 +77,7 @@ func TestOnBlockWithoutVerificationReturnsPersistenceError(t *testing.T) {
 	}
 }
 
-func TestPersistBlockUsesSingleBatch(t *testing.T) {
+func TestPutImportedBlockUsesSingleBatch(t *testing.T) {
 	s, parentState, parentRoot := processorStoreWithParent(t)
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
 	postState := processorPostState(t, parentState, block)
@@ -87,7 +87,7 @@ func TestPersistBlockUsesSingleBatch(t *testing.T) {
 		failAfter:       1,
 	}
 
-	err := persistBlock(s, blockRoot, &types.SignedBlock{
+	err := s.PutImportedBlock(blockRoot, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	}, postState)
@@ -105,7 +105,7 @@ func TestPersistBlockUsesSingleBatch(t *testing.T) {
 	}
 }
 
-func TestPersistBlockWritesCheckpointMetadata(t *testing.T) {
+func TestPutImportedBlockWritesCheckpointMetadata(t *testing.T) {
 	s, parentState, parentRoot := processorStoreWithParent(t)
 	block := processorEmptyBlockWithStateRoot(t, parentState, parentRoot)
 	postState := processorPostState(t, parentState, block)
@@ -115,12 +115,12 @@ func TestPersistBlockWritesCheckpointMetadata(t *testing.T) {
 
 	finalizedBefore := s.LatestFinalized()
 
-	err := persistBlock(s, blockRoot, &types.SignedBlock{
+	err := s.PutImportedBlock(blockRoot, &types.SignedBlock{
 		Block: block,
 		Proof: &types.MultiMessageAggregate{},
 	}, postState)
 	if err != nil {
-		t.Fatalf("persist block: %v", err)
+		t.Fatalf("put imported block: %v", err)
 	}
 	if got := s.LatestJustified(); got == nil || got.Slot != 1 || got.Root != blockRoot {
 		t.Fatalf("latest justified=%v, want slot 1 root 0x%x", got, blockRoot)
@@ -258,7 +258,7 @@ func processorBlockRoot(t *testing.T, block *types.Block) [32]byte {
 }
 
 // Rebuilding a pruned parent writes states below PruneStaleStates' mark, under
-// ancestors whose states are already gone. persistBlock must lower the mark, or
+// ancestors whose states are already gone. Import must lower the mark, or
 // the next sweep stops at the first missing state above the rebuilt one and the
 // rebuilt state stays until finality resumes.
 func TestPruneStaleStatesReachesStatesRebuiltBelowItsMark(t *testing.T) {

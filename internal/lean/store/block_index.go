@@ -88,9 +88,8 @@ func (s *ConsensusStore) BlockSlotAndParent(root [32]byte) (slot uint64, parent 
 	return m.slot, m.parent, found
 }
 
-// NoteStoredHeader records a header just written outside PutBlockHeader, such
-// as by the block-import batch.
-func (s *ConsensusStore) NoteStoredHeader(root [32]byte, header *types.BlockHeader) {
+// noteStoredHeader records a header just committed to the database.
+func (s *ConsensusStore) noteStoredHeader(root [32]byte, header *types.BlockHeader) {
 	if s == nil || header == nil {
 		return
 	}

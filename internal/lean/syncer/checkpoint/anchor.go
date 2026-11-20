@@ -96,9 +96,9 @@ func verifyAnchorPair(state *types.State, signedBlock *types.SignedBlock) error 
 		)
 	}
 
-	blockHeader, err := headerFromBlock(signedBlock.Block)
+	blockHeader, err := signedBlock.Block.Header()
 	if err != nil {
-		return err
+		return fmt.Errorf("checkpoint block header: %w", err)
 	}
 	expectedHeader := *state.LatestBlockHeader
 	if expectedHeader.StateRoot == types.ZeroRoot {
@@ -108,25 +108,4 @@ func verifyAnchorPair(state *types.State, signedBlock *types.SignedBlock) error 
 		return fmt.Errorf("checkpoint state/block pair mismatch: block header does not match state latest block header")
 	}
 	return nil
-}
-
-func headerFromBlock(block *types.Block) (*types.BlockHeader, error) {
-	if block == nil {
-		return nil, fmt.Errorf("checkpoint block is nil")
-	}
-	if block.Body == nil {
-		return nil, fmt.Errorf("checkpoint block body is nil")
-	}
-
-	bodyRoot, err := block.Body.HashTreeRoot()
-	if err != nil {
-		return nil, fmt.Errorf("block body hash_tree_root: %w", err)
-	}
-	return &types.BlockHeader{
-		Slot:          block.Slot,
-		ProposerIndex: block.ProposerIndex,
-		ParentRoot:    block.ParentRoot,
-		StateRoot:     block.StateRoot,
-		BodyRoot:      bodyRoot,
-	}, nil
 }

@@ -55,7 +55,7 @@ func (s *ConsensusStore) PutSafeTarget(root [32]byte) error {
 }
 
 func (s *ConsensusStore) LatestJustified() *types.Checkpoint {
-	return s.getMetadataCheckpoint(KeyLatestJustified)
+	return s.getMetadataCheckpoint(keyLatestJustified)
 }
 
 func (s *ConsensusStore) SetLatestJustified(cp *types.Checkpoint) {
@@ -65,7 +65,7 @@ func (s *ConsensusStore) SetLatestJustified(cp *types.Checkpoint) {
 }
 
 func (s *ConsensusStore) PutLatestJustified(cp *types.Checkpoint) error {
-	return s.putMetadataCheckpoint(KeyLatestJustified, cp, "set latest justified")
+	return s.putMetadataCheckpoint(keyLatestJustified, cp, "set latest justified")
 }
 
 func (s *ConsensusStore) LatestFinalized() *types.Checkpoint {

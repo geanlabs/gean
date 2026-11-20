@@ -28,3 +28,22 @@ type SignedBlock struct {
 	Block *Block                 `json:"block"`
 	Proof *MultiMessageAggregate `json:"proof"`
 }
+
+// Header returns the block's header. A block without a body gets a zero body
+// root, as a pending block's stored header does.
+func (b *Block) Header() (*BlockHeader, error) {
+	header := &BlockHeader{
+		Slot:          b.Slot,
+		ProposerIndex: b.ProposerIndex,
+		ParentRoot:    b.ParentRoot,
+		StateRoot:     b.StateRoot,
+	}
+	if b.Body != nil {
+		bodyRoot, err := b.Body.HashTreeRoot()
+		if err != nil {
+			return nil, err
+		}
+		header.BodyRoot = bodyRoot
+	}
+	return header, nil
+}

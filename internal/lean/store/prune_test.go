@@ -128,8 +128,8 @@ func newStallChain(t *testing.T) *stallChain {
 	return c
 }
 
-// importBlock imports a block whose parent state is present, as persistBlock
-// does.
+// importBlock imports a block whose parent state is present, as
+// PutImportedBlock does.
 func (c *stallChain) importBlock(slot uint64, root, parent [32]byte) {
 	c.s.InsertBlockHeader(root, &types.BlockHeader{Slot: slot, ParentRoot: parent})
 	c.s.InsertState(root, &types.State{Slot: slot})

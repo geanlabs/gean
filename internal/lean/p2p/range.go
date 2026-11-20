@@ -164,16 +164,9 @@ func (h *Host) FetchBlocksByRange(
 			}
 		}
 
-		bodyRoot, err := block.Block.Body.HashTreeRoot()
+		header, err := block.Block.Header()
 		if err != nil {
-			return nil, fmt.Errorf("body hash_tree_root: %w", err)
-		}
-		header := &types.BlockHeader{
-			Slot:          block.Block.Slot,
-			ProposerIndex: block.Block.ProposerIndex,
-			ParentRoot:    block.Block.ParentRoot,
-			StateRoot:     block.Block.StateRoot,
-			BodyRoot:      bodyRoot,
+			return nil, fmt.Errorf("block header: %w", err)
 		}
 		prevHeaderRoot, err = header.HashTreeRoot()
 		if err != nil {

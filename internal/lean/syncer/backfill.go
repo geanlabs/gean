@@ -270,19 +270,9 @@ func validFetchedBlock(block *types.SignedBlock) bool {
 }
 
 func blockHeaderRoot(block *types.Block) ([32]byte, error) {
-	if block == nil || block.Body == nil {
-		return types.ZeroRoot, fmt.Errorf("block body is nil")
-	}
-	bodyRoot, err := block.Body.HashTreeRoot()
+	header, err := block.Header()
 	if err != nil {
-		return types.ZeroRoot, fmt.Errorf("body root: %w", err)
-	}
-	header := &types.BlockHeader{
-		Slot:          block.Slot,
-		ProposerIndex: block.ProposerIndex,
-		ParentRoot:    block.ParentRoot,
-		StateRoot:     block.StateRoot,
-		BodyRoot:      bodyRoot,
+		return types.ZeroRoot, fmt.Errorf("block header: %w", err)
 	}
 	root, err := header.HashTreeRoot()
 	if err != nil {

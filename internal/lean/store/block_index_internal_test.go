@@ -284,7 +284,7 @@ func TestBlockIndexEvictionResistsUnverifiedHeaders(t *testing.T) {
 		if i%1000 == 0 {
 			slot = ^uint64(0) - uint64(i)
 		}
-		s.NoteStoredHeader([32]byte{0x7f, byte(i), byte(i >> 8), byte(i >> 16)}, &types.BlockHeader{Slot: slot})
+		s.noteStoredHeader([32]byte{0x7f, byte(i), byte(i >> 8), byte(i >> 16)}, &types.BlockHeader{Slot: slot})
 	}
 
 	s.blocks.mu.RLock()
@@ -340,7 +340,7 @@ func TestBlockIndexEvictionDuringHeadMoveKeepsRangesWhole(t *testing.T) {
 	storeIndexTestBlock(t, s, b3, b2, 70001)
 	// Fill the cache to the cap, then drop b1 so the walk misses on it.
 	for i := 0; len(s.blocks.meta) < blockIndexCap; i++ {
-		s.NoteStoredHeader([32]byte{0x7e, byte(i), byte(i >> 8), byte(i >> 16)}, &types.BlockHeader{Slot: uint64(i % 1000)})
+		s.noteStoredHeader([32]byte{0x7e, byte(i), byte(i >> 8), byte(i >> 16)}, &types.BlockHeader{Slot: uint64(i % 1000)})
 	}
 	s.blocks.mu.Lock()
 	delete(s.blocks.meta, b1)

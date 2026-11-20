@@ -52,8 +52,8 @@ func (s *ConsensusStore) PutBlockHeader(root [32]byte, header *types.BlockHeader
 	if err := s.putOne(TableBlockHeaders, root[:], data, "insert block header"); err != nil {
 		return err
 	}
-	s.NoteStoredHeader(root, header)
-	s.ObserveStoredBlockSlot(header.Slot)
+	s.noteStoredHeader(root, header)
+	s.observeStoredBlockSlot(header.Slot)
 	return nil
 }
 
@@ -113,35 +113,100 @@ func WriteBlockData(s *ConsensusStore, root [32]byte, signedBlock *types.SignedB
 		return fmt.Errorf("write block data: block body is nil")
 	}
 
-	fullData, err := signedBlock.MarshalSSZ()
-	if err != nil {
-		return fmt.Errorf("write block data: marshal signed block: %w", err)
-	}
-
-	var bodyData []byte
-	bodyData, err = signedBlock.Block.Body.MarshalSSZ()
-	if err != nil {
-		return fmt.Errorf("write block data: marshal body: %w", err)
-	}
-
 	wb, err := s.beginWrite("write block data")
 	if err != nil {
 		return err
 	}
-	if len(bodyData) > 0 {
-		if err := wb.PutBatch(TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}}); err != nil {
-			return fmt.Errorf("write block data: put body: %w", err)
-		}
-	}
-	if err := wb.PutBatch(TableSignedBlocks, []storage.KV{{Key: root[:], Value: fullData}}); err != nil {
-		return fmt.Errorf("write block data: put signed block: %w", err)
+	if err := putBlockData(wb, root, signedBlock); err != nil {
+		return fmt.Errorf("write block data: %w", err)
 	}
 	if err := wb.Commit(); err != nil {
 		return fmt.Errorf("write block data: commit: %w", err)
 	}
 
-	logger.Info(logger.Store, "wrote block data: root=0x%x body_bytes=%d signed_bytes=%d",
-		root, len(bodyData), len(fullData))
+	logger.Info(logger.Store, "wrote block data: root=0x%x", root)
+	return nil
+}
+
+func putBlockData(wb storage.WriteBatch, root [32]byte, signedBlock *types.SignedBlock) error {
+	fullData, err := signedBlock.MarshalSSZ()
+	if err != nil {
+		return fmt.Errorf("marshal signed block: %w", err)
+	}
+	bodyData, err := signedBlock.Block.Body.MarshalSSZ()
+	if err != nil {
+		return fmt.Errorf("marshal body: %w", err)
+	}
+	if len(bodyData) > 0 {
+		if err := wb.PutBatch(TableBlockBodies, []storage.KV{{Key: root[:], Value: bodyData}}); err != nil {
+			return fmt.Errorf("put body: %w", err)
+		}
+	}
+	if err := wb.PutBatch(TableSignedBlocks, []storage.KV{{Key: root[:], Value: fullData}}); err != nil {
+		return fmt.Errorf("put signed block: %w", err)
+	}
+	return nil
+}
+
+// PutImportedBlock writes an imported block's header, body, post-state and
+// live-chain entry in one batch, so a failed write leaves none of them behind.
+// The justified checkpoint joins the batch only when it advances. The finalized
+// checkpoint is deliberately not advanced here: it is re-derived from the
+// canonical head's chain during head selection, so a losing fork that finalized
+// a higher slot cannot latch finalization above the head.
+func (s *ConsensusStore) PutImportedBlock(root [32]byte, signedBlock *types.SignedBlock, postState *types.State) error {
+	block := signedBlock.Block
+	header, err := block.Header()
+	if err != nil {
+		return fmt.Errorf("put imported block: block header: %w", err)
+	}
+	headerData, err := header.MarshalSSZ()
+	if err != nil {
+		return fmt.Errorf("put imported block: marshal header: %w", err)
+	}
+	stateData, err := postState.MarshalSSZ()
+	if err != nil {
+		return fmt.Errorf("put imported block: marshal post state: %w", err)
+	}
+	type write struct {
+		table      storage.Table
+		key, value []byte
+	}
+	writes := []write{
+		{TableBlockHeaders, root[:], headerData},
+		{TableStates, root[:], stateData},
+		{TableLiveChain, encodeLiveChainKey(block.Slot, root), block.ParentRoot[:]},
+	}
+	justified, current := postState.LatestJustified, s.LatestJustified()
+	if justified != nil && (current == nil || justified.Slot > current.Slot) {
+		justifiedData, err := justified.MarshalSSZ()
+		if err != nil {
+			return fmt.Errorf("put imported block: marshal justified: %w", err)
+		}
+		writes = append(writes, write{TableMetadata, keyLatestJustified, justifiedData})
+	}
+
+	wb, err := s.beginWrite("put imported block")
+	if err != nil {
+		return err
+	}
+	for _, w := range writes {
+		if err := wb.PutBatch(w.table, []storage.KV{{Key: w.key, Value: w.value}}); err != nil {
+			return fmt.Errorf("put imported block: %w", err)
+		}
+	}
+	if err := putBlockData(wb, root, signedBlock); err != nil {
+		return fmt.Errorf("put imported block: %w", err)
+	}
+	if err := wb.Commit(); err != nil {
+		return fmt.Errorf("put imported block: commit: %w", err)
+	}
+	s.noteStoredHeader(root, header)
+	s.noteStoredState(root, postState)
+	// Keep the duty gate's stored-block high-water mark in step with the header
+	// just written, as PutBlockHeader does for pending blocks.
+	s.observeStoredBlockSlot(block.Slot)
+	s.ObserveImportedState(block.Slot)
 	return nil
 }
 
@@ -164,19 +229,9 @@ func (s *ConsensusStore) storePendingBlock(root [32]byte, signedBlock *types.Sig
 		return fmt.Errorf("store pending block: signed block is nil")
 	}
 
-	block := signedBlock.Block
-	header := &types.BlockHeader{
-		Slot:          block.Slot,
-		ProposerIndex: block.ProposerIndex,
-		ParentRoot:    block.ParentRoot,
-		StateRoot:     block.StateRoot,
-	}
-	if block.Body != nil {
-		bodyRoot, err := block.Body.HashTreeRoot()
-		if err != nil {
-			return fmt.Errorf("store pending block: body root: %w", err)
-		}
-		header.BodyRoot = bodyRoot
+	header, err := signedBlock.Block.Header()
+	if err != nil {
+		return fmt.Errorf("store pending block: block header: %w", err)
 	}
 	if err := s.PutBlockHeader(root, header); err != nil {
 		return fmt.Errorf("store pending block: %w", err)
@@ -228,7 +283,7 @@ func (s *ConsensusStore) SeedMaxStoredBlockSlot() error {
 	if err != nil {
 		return err
 	}
-	s.ObserveStoredBlockSlot(max)
+	s.observeStoredBlockSlot(max)
 	s.maxBlockSlotSeeded.Store(true)
 	return nil
 }
@@ -282,7 +337,7 @@ func (s *ConsensusStore) LiveChainRange(from, to uint64) ([]LiveChainEntry, erro
 	}
 	// Keys lead with the big-endian slot, so this starts at the first entry at
 	// or above from.
-	it, err := rv.IteratorFrom(TableLiveChain, EncodeLiveChainKey(from, [32]byte{}))
+	it, err := rv.IteratorFrom(TableLiveChain, encodeLiveChainKey(from, [32]byte{}))
 	if err != nil {
 		return nil, fmt.Errorf("iterate live chain: %w", err)
 	}
@@ -319,7 +374,7 @@ func (s *ConsensusStore) HasLiveChainEntry(slot uint64, root [32]byte) bool {
 	if err != nil {
 		return false
 	}
-	val, err := rv.Get(TableLiveChain, EncodeLiveChainKey(slot, root))
+	val, err := rv.Get(TableLiveChain, encodeLiveChainKey(slot, root))
 	return err == nil && val != nil
 }
 
@@ -330,7 +385,7 @@ func (s *ConsensusStore) InsertLiveChainEntry(slot uint64, root, parentRoot [32]
 }
 
 func (s *ConsensusStore) PutLiveChainEntry(slot uint64, root, parentRoot [32]byte) error {
-	key := EncodeLiveChainKey(slot, root)
+	key := encodeLiveChainKey(slot, root)
 	return s.putOne(TableLiveChain, key, parentRoot[:], "insert live chain entry")
 }
 

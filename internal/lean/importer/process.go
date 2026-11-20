@@ -78,7 +78,7 @@ func onBlockCore(s *store.ConsensusStore, signedBlock *types.SignedBlock, verify
 	metrics.ObserveSTFTime(time.Since(stfStart).Seconds())
 
 	postState.LatestBlockHeader.StateRoot = block.StateRoot
-	if err := persistBlock(s, blockRoot, signedBlock, postState); err != nil {
+	if err := s.PutImportedBlock(blockRoot, signedBlock, postState); err != nil {
 		return err
 	}
 	importBlockAttestations(s, signedBlock)

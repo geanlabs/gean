@@ -361,15 +361,9 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	s.SetConfig(anchorState.Config)
 
 	// Store anchor state + block header.
-	anchorHeader := &types.BlockHeader{
-		Slot:          anchorBlock.Slot,
-		ProposerIndex: anchorBlock.ProposerIndex,
-		ParentRoot:    anchorBlock.ParentRoot,
-		StateRoot:     anchorBlock.StateRoot,
-	}
-	if anchorBlock.Body != nil {
-		bodyRoot, _ := anchorBlock.Body.HashTreeRoot()
-		anchorHeader.BodyRoot = bodyRoot
+	anchorHeader, err := anchorBlock.Header()
+	if err != nil {
+		t.Fatalf("anchor header: %v", err)
 	}
 
 	// Verify the anchor pair is self-consistent: the anchor block's state_root

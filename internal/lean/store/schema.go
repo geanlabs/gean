@@ -31,7 +31,7 @@ var (
 	keyConfig          = []byte("config")
 	KeyHead            = []byte("head")
 	keySafeTarget      = []byte("safe_target")
-	KeyLatestJustified = []byte("latest_justified")
+	keyLatestJustified = []byte("latest_justified")
 	keyLatestFinalized = []byte("latest_finalized")
 )
 
@@ -39,7 +39,7 @@ var (
 // keys sort by slot, then the block root.
 const liveChainKeySize = 40
 
-func EncodeLiveChainKey(slot uint64, root [32]byte) []byte {
+func encodeLiveChainKey(slot uint64, root [32]byte) []byte {
 	key := make([]byte, liveChainKeySize)
 	binary.BigEndian.PutUint64(key[:8], slot)
 	copy(key[8:liveChainKeySize], root[:])
