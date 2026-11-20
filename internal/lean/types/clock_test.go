@@ -72,34 +72,6 @@ func TestTotalIntervals(t *testing.T) {
 	}
 }
 
-func TestIntervalsFromSlot(t *testing.T) {
-	if IntervalsFromSlot(0) != 0 {
-		t.Fatal("slot 0 should map to interval 0")
-	}
-	if IntervalsFromSlot(1) != IntervalsPerSlot {
-		t.Fatalf("slot 1 should map to %d, got %d", IntervalsPerSlot, IntervalsFromSlot(1))
-	}
-	if IntervalsFromSlot(100) != 100*IntervalsPerSlot {
-		t.Fatalf("slot 100 should map to %d", 100*IntervalsPerSlot)
-	}
-}
-
-func TestIntervalsFromUnixTime(t *testing.T) {
-	const gt = 1700000000
-	if got := IntervalsFromUnixTime(gt-5, gt); got != 0 {
-		t.Fatalf("pre-genesis should be 0, got %d", got)
-	}
-	if got := IntervalsFromUnixTime(gt, gt); got != 0 {
-		t.Fatalf("at genesis should be 0, got %d", got)
-	}
-	if got := IntervalsFromUnixTime(gt+1, gt); got != 1 {
-		t.Fatalf("+1 second should be 1 interval, got %d", got)
-	}
-	if got := IntervalsFromUnixTime(gt+SecondsPerSlot, gt); got != IntervalsPerSlot {
-		t.Fatalf("+1 slot should be %d intervals, got %d", IntervalsPerSlot, got)
-	}
-}
-
 func TestClockDerivationsHandleOverflow(t *testing.T) {
 	hugeGenesis := ^uint64(0)/1000 + 1
 	if got := CurrentSlot(hugeGenesis, ^uint64(0)); got != 0 {
@@ -110,9 +82,6 @@ func TestClockDerivationsHandleOverflow(t *testing.T) {
 	}
 	if got := TotalIntervals(hugeGenesis, ^uint64(0)); got != 0 {
 		t.Fatalf("TotalIntervals overflow genesis=%d, want 0", got)
-	}
-	if got := IntervalsFromSlot(^uint64(0)); got != ^uint64(0) {
-		t.Fatalf("IntervalsFromSlot overflow=%d, want max", got)
 	}
 }
 

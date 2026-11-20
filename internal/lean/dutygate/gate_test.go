@@ -4,7 +4,7 @@ import "testing"
 
 func TestDutyGateStartsOpen(t *testing.T) {
 	g := New(nil)
-	if g.IsClosed() {
+	if g.closed {
 		t.Fatal("new gate should start open")
 	}
 }
@@ -14,7 +14,7 @@ func TestDutyGateAllowsWhenInsideThreshold(t *testing.T) {
 	if !g.Decide("attestation", 10, 6, 10) {
 		t.Fatal("lag at threshold should be allowed")
 	}
-	if g.IsClosed() {
+	if g.closed {
 		t.Fatal("gate should remain open at threshold")
 	}
 }
@@ -24,7 +24,7 @@ func TestDutyGateClosesWhenLagCrossesThreshold(t *testing.T) {
 	if g.Decide("attestation", 10, 5, 5) {
 		t.Fatal("lag past threshold should be denied")
 	}
-	if !g.IsClosed() {
+	if !g.closed {
 		t.Fatal("gate should close after crossing threshold")
 	}
 }
@@ -32,14 +32,14 @@ func TestDutyGateClosesWhenLagCrossesThreshold(t *testing.T) {
 func TestDutyGateHysteresisStaysClosedAboveReopenThreshold(t *testing.T) {
 	g := New(nil)
 	g.Decide("attestation", 10, 5, 5)
-	if !g.IsClosed() {
+	if !g.closed {
 		t.Fatal("setup: gate should be closed")
 	}
 
 	if g.Decide("attestation", 10, 7, 7) {
 		t.Fatal("lag above reopen threshold should keep the gate closed")
 	}
-	if !g.IsClosed() {
+	if !g.closed {
 		t.Fatal("gate should still be closed")
 	}
 }
@@ -47,14 +47,14 @@ func TestDutyGateHysteresisStaysClosedAboveReopenThreshold(t *testing.T) {
 func TestDutyGateHysteresisReopensAtThreshold(t *testing.T) {
 	g := New(nil)
 	g.Decide("attestation", 10, 5, 5)
-	if !g.IsClosed() {
+	if !g.closed {
 		t.Fatal("setup: gate should be closed")
 	}
 
 	if !g.Decide("attestation", 10, 8, 8) {
 		t.Fatal("lag at reopen threshold should reopen the gate")
 	}
-	if g.IsClosed() {
+	if g.closed {
 		t.Fatal("gate should have reopened")
 	}
 }
@@ -62,14 +62,14 @@ func TestDutyGateHysteresisReopensAtThreshold(t *testing.T) {
 func TestDutyGateNetworkStallOverridesGate(t *testing.T) {
 	g := New(nil)
 	g.Decide("attestation", 10, 5, 5)
-	if !g.IsClosed() {
+	if !g.closed {
 		t.Fatal("setup: gate should be closed")
 	}
 
 	if !g.Decide("attestation", 20, 5, 5) {
 		t.Fatal("network stall must override the closed gate")
 	}
-	if g.IsClosed() {
+	if g.closed {
 		t.Fatal("network stall should reopen the gate")
 	}
 }
@@ -80,14 +80,14 @@ func TestDutyGateMaxStoredBehindHeadDoesNotTriggerNetworkStall(t *testing.T) {
 		events = append(events, event)
 	})
 	g.Decide("attestation", 10, 5, 5)
-	if !g.IsClosed() {
+	if !g.closed {
 		t.Fatal("setup: gate should be closed")
 	}
 
 	if g.Decide("attestation", 10, 5, 1) {
 		t.Fatal("max stored slot behind head should not look like a network stall")
 	}
-	if !g.IsClosed() {
+	if !g.closed {
 		t.Fatal("gate should remain closed on local lag")
 	}
 	if len(events) != 1 {
@@ -100,7 +100,7 @@ func TestDutyGateNetworkStallKeepsOpenGateOpen(t *testing.T) {
 	if !g.Decide("block", 10, 1, 1) {
 		t.Fatal("network stall should keep duties live")
 	}
-	if g.IsClosed() {
+	if g.closed {
 		t.Fatal("network stall should not close the gate")
 	}
 }
@@ -122,7 +122,7 @@ func TestDutyGateTransitionEventsOnlyOnEdges(t *testing.T) {
 		if !g.Decide("attestation", 10, 9, 9) {
 			t.Fatalf("iter %d: should remain open", i)
 		}
-		if g.IsClosed() {
+		if g.closed {
 			t.Fatalf("iter %d: should not toggle to closed", i)
 		}
 	}
@@ -139,7 +139,7 @@ func TestDutyGateTransitionEventsOnlyOnEdges(t *testing.T) {
 		if g.Decide("attestation", 10, 7, 7) {
 			t.Fatalf("iter %d: should remain closed", i)
 		}
-		if !g.IsClosed() {
+		if !g.closed {
 			t.Fatalf("iter %d: should not toggle to open", i)
 		}
 	}

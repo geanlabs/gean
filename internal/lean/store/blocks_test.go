@@ -43,34 +43,6 @@ func TestBlockHeaderStorage(t *testing.T) {
 	}
 }
 
-func TestBlockRoots(t *testing.T) {
-	s := makeTestStore()
-	rootA := [32]byte{0x01}
-	rootB := [32]byte{0x02}
-	s.InsertBlockHeader(rootA, makeHeader(1, 0, 0x00))
-	s.InsertBlockHeader(rootB, makeHeader(2, 0, 0x01))
-
-	roots, err := s.BlockRoots()
-	if err != nil {
-		t.Fatalf("block roots: %v", err)
-	}
-	if !roots[rootA] || !roots[rootB] {
-		t.Fatalf("missing block roots: %v", roots)
-	}
-}
-
-func TestBlockRootsReturnsReadError(t *testing.T) {
-	s := store.NewConsensusStore(failingReadBackend{})
-
-	roots, err := s.BlockRoots()
-	if err == nil {
-		t.Fatal("expected read error")
-	}
-	if roots != nil {
-		t.Fatalf("roots=%v, want nil", roots)
-	}
-}
-
 func TestBlockWritesIgnoreMalformedInput(t *testing.T) {
 	s := makeTestStore()
 	var root [32]byte

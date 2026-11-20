@@ -1,9 +1,6 @@
 package forkchoice
 
 func (fc *ForkChoice) GetCanonicalAnalysis(anchorRoot [32]byte) (canonical, nonCanonical [][32]byte) {
-	if fc == nil || fc.array == nil {
-		return nil, nil
-	}
 	anchorIdx, ok := fc.array.Index(anchorRoot)
 	if !ok {
 		return nil, nil
@@ -47,9 +44,6 @@ func (fc *ForkChoice) GetCanonicalAnalysis(anchorRoot [32]byte) (canonical, nonC
 }
 
 func (fc *ForkChoice) ReorgDepth(oldHead, newHead [32]byte) uint64 {
-	if fc == nil || fc.array == nil {
-		return 0
-	}
 	if oldHead == newHead {
 		return 0
 	}
@@ -84,9 +78,6 @@ func (fc *ForkChoice) ReorgDepth(oldHead, newHead [32]byte) uint64 {
 }
 
 func (fc *ForkChoice) AncestorAtDepth(startRoot [32]byte, depth int) (root [32]byte, slot uint64, ok bool) {
-	if fc == nil || fc.array == nil {
-		return [32]byte{}, 0, false
-	}
 	idx, ok := fc.array.Index(startRoot)
 	if !ok {
 		return [32]byte{}, 0, false
@@ -118,9 +109,6 @@ func (fc *ForkChoice) AncestorAtDepth(startRoot [32]byte, depth int) (root [32]b
 // highest slot first, with the node's parent slot (its own slot at the array's
 // anchor), until fn returns false.
 func (fc *ForkChoice) WalkAncestors(root [32]byte, fn func(root [32]byte, slot, parentSlot uint64) bool) {
-	if fc == nil || fc.array == nil {
-		return
-	}
 	idx, ok := fc.array.Index(root)
 	for ok && idx >= 0 {
 		node := fc.array.At(idx)

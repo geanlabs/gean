@@ -41,7 +41,8 @@ func TestBuildTransportMultiaddr(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := buildTransportMultiaddr(tc.ip4, tc.ip6, tc.udpPort, tc.quicPort, tc.udp6Port, tc.quic6Port)
+			rec := &enrRecord{ip4: tc.ip4, ip6: tc.ip6, udpPort: tc.udpPort, quicPort: tc.quicPort, udp6Port: tc.udp6Port, quic6Port: tc.quic6Port}
+			got := rec.transportMultiaddr()
 			if got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}

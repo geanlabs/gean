@@ -65,9 +65,6 @@ func RunWorker(
 				return
 			}
 			metrics.SetProvingQueueDepth("aggregation", len(dispatches))
-			if dispatch.Snapshot == nil {
-				continue
-			}
 			acquireCtx, cancelAcquire := context.WithTimeout(ctx, AcquirePatience)
 			if gate != nil && !gate.Acquire(acquireCtx, false) {
 				cancelAcquire()

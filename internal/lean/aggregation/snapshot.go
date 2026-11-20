@@ -19,9 +19,6 @@ type Snapshot struct {
 // state from SSZ on every call, and the dispatcher has already resolved it to
 // decide whether to run at all.
 func SnapshotInputs(s *store.ConsensusStore, headState *types.State, slot uint64) *Snapshot {
-	if headState == nil {
-		return nil
-	}
 	if s.AttestationSignatures.Len() == 0 && s.NewPayloads.Len() == 0 {
 		return nil
 	}

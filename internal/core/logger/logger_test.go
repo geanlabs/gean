@@ -25,7 +25,7 @@ func TestTimestampUsesUTC(t *testing.T) {
 
 func TestLogLevelsWriteFormattedLines(t *testing.T) {
 	var buf bytes.Buffer
-	restoreLogger(t, &buf, false)
+	restoreLogger(t, &buf)
 
 	Info(Chain, "height=%d", 12)
 	Warn(Network, "peer=%s", "abc")
@@ -46,37 +46,22 @@ func TestLogLevelsWriteFormattedLines(t *testing.T) {
 	}
 }
 
-func TestQuietSuppressesLogs(t *testing.T) {
-	var buf bytes.Buffer
-	restoreLogger(t, &buf, true)
-
-	Info(Chain, "hidden")
-	Warn(Chain, "hidden")
-	Error(Chain, "hidden")
-
-	if got := buf.String(); got != "" {
-		t.Fatalf("quiet output=%q, want empty", got)
-	}
-}
-
 func TestNilOutputSuppressesLogs(t *testing.T) {
-	restoreLogger(t, nil, false)
+	restoreLogger(t, nil)
 
 	Info(Chain, "hidden")
 	Warn(Chain, "hidden")
 	Error(Chain, "hidden")
 }
 
-func restoreLogger(t *testing.T, w io.Writer, quiet bool) {
+func restoreLogger(t *testing.T, w io.Writer) {
 	t.Helper()
 	mu.Lock()
-	oldOutput, oldQuiet := output, quiet
+	oldOutput := output
 	mu.Unlock()
 
 	SetOutput(w)
-	SetQuiet(quiet)
 	t.Cleanup(func() {
 		SetOutput(oldOutput)
-		SetQuiet(oldQuiet)
 	})
 }

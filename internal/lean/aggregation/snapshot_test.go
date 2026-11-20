@@ -56,8 +56,4 @@ func TestSnapshotInputsReturnsNilWithoutWork(t *testing.T) {
 	if snap := SnapshotInputs(s, &types.State{}, 0); snap != nil {
 		t.Fatalf("snapshot=%v, want nil", snap)
 	}
-	// A caller with no head state has nothing to resolve signers against.
-	if snap := SnapshotInputs(s, nil, 0); snap != nil {
-		t.Fatalf("snapshot=%v, want nil without a head state", snap)
-	}
 }

@@ -34,9 +34,10 @@ func TestSignatureSSZRoundtripThenAggregate(t *testing.T) {
 	defer FreeSignature(csig)
 
 	EnsureProverReady()
-	proofBytes, err := AggregateSignatures(
+	proofBytes, err := AggregateWithChildren(
 		[]CPubKey{cpk},
 		[]CSig{csig},
+		nil,
 		message,
 		0,
 	)

@@ -66,9 +66,10 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 
 	EnsureProverReady()
 
-	proofBytes, err := AggregateSignatures(
+	proofBytes, err := AggregateWithChildren(
 		[]CPubKey{cpk1, cpk2},
 		[]CSig{csig1, csig2},
+		nil,
 		message,
 		0,
 	)
@@ -130,7 +131,7 @@ func TestAggregateRejectsChildProofWithWrongMessage(t *testing.T) {
 	}
 	defer FreePublicKey(cChildPk)
 
-	childProof, err := AggregateSignatures([]CPubKey{cChildPk}, []CSig{cChildSig}, msgA, 0)
+	childProof, err := AggregateWithChildren([]CPubKey{cChildPk}, []CSig{cChildSig}, nil, msgA, 0)
 	if err != nil {
 		t.Fatalf("build child proof: %v", err)
 	}

@@ -161,15 +161,6 @@ func VerifySignatureSSZ(pubkey [PubkeySize]byte, slot uint32, message [32]byte, 
 	}
 }
 
-func AggregateSignatures(
-	pubkeys []CPubKey,
-	sigs []CSig,
-	message [32]byte,
-	slot uint32,
-) ([]byte, error) {
-	return AggregateWithChildren(pubkeys, sigs, nil, message, slot)
-}
-
 func AggregateWithChildren(
 	pubkeys []CPubKey,
 	sigs []CSig,

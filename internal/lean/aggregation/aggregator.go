@@ -103,22 +103,13 @@ func (a *Aggregator) RunSessions(ctx context.Context) {
 }
 
 func (a *Aggregator) slotAt(timestampMs uint64) uint64 {
-	if a == nil || a.cfg.Store == nil {
-		return 0
-	}
 	return types.CurrentSlot(a.cfg.Store.Config().GenesisTime, timestampMs)
 }
 
 func (a *Aggregator) intervalAt(timestampMs uint64) uint64 {
-	if a == nil || a.cfg.Store == nil {
-		return 0
-	}
 	return types.CurrentInterval(a.cfg.Store.Config().GenesisTime, timestampMs)
 }
 
 func (a *Aggregator) msIntoSlot(timestampMs uint64) uint64 {
-	if a == nil || a.cfg.Store == nil {
-		return 0
-	}
 	return types.MillisIntoSlot(a.cfg.Store.Config().GenesisTime, timestampMs)
 }

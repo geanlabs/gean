@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/core/pending"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -23,8 +24,9 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 	const capacity = 8
 
 	imp := &Importer{
-		store:  makeTestStore(),
-		blocks: make(chan *types.SignedBlock, capacity),
+		store:   makeTestStore(),
+		Pending: pending.NewBlockBuffer(),
+		blocks:  make(chan *types.SignedBlock, capacity),
 	}
 	for i := 0; i < capacity; i++ {
 		imp.blocks <- blockAtSlot(uint64(i))
@@ -64,8 +66,9 @@ func TestDrainPendingBlocks_ImportsOnlyTheQueueDepthOnEntry(t *testing.T) {
 
 func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
 	imp := &Importer{
-		store:  makeTestStore(),
-		blocks: make(chan *types.SignedBlock, 4),
+		store:   makeTestStore(),
+		Pending: pending.NewBlockBuffer(),
+		blocks:  make(chan *types.SignedBlock, 4),
 	}
 
 	done := make(chan struct{})
@@ -87,8 +90,9 @@ func TestDrainPendingBlocks_EmptyChannelReturns(t *testing.T) {
 // producer, everything queued on entry is imported.
 func TestDrainPendingBlocks_ConsumesEveryQueuedBlock(t *testing.T) {
 	imp := &Importer{
-		store:  makeTestStore(),
-		blocks: make(chan *types.SignedBlock, 16),
+		store:   makeTestStore(),
+		Pending: pending.NewBlockBuffer(),
+		blocks:  make(chan *types.SignedBlock, 16),
 	}
 
 	const queued = 8

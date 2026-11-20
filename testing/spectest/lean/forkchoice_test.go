@@ -5,6 +5,7 @@ package lean
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,8 +55,8 @@ type fcTest struct {
 }
 
 func TestSpecForkChoice(t *testing.T) {
-	logger.SetQuiet(true)
-	defer logger.SetQuiet(false)
+	logger.SetOutput(io.Discard)
+	defer logger.SetOutput(os.Stderr)
 
 	fixtureDir := "../../../leanSpec/fixtures/consensus/fork_choice"
 

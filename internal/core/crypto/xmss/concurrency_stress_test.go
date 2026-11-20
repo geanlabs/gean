@@ -62,7 +62,7 @@ func aggregateFresh(pkList [][PubkeySize]byte, sigList [][SignatureSize]byte, me
 		}
 		sigs = append(sigs, csig)
 	}
-	return AggregateSignatures(pks, sigs, message, 0)
+	return AggregateWithChildren(pks, sigs, nil, message, 0)
 }
 
 func maxRSSBytes() int64 {

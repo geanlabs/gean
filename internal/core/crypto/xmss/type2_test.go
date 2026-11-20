@@ -31,9 +31,10 @@ func TestType2Roundtrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		proof, err := AggregateSignatures(
+		proof, err := AggregateWithChildren(
 			[]CPubKey{pubkey},
 			[]CSig{signature},
+			nil,
 			message,
 			uint32(slot),
 		)
@@ -94,7 +95,7 @@ func TestType2MergesTwoMessagesAtOneSlot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		proof, err := AggregateSignatures([]CPubKey{pubkey}, []CSig{signature}, message, slot)
+		proof, err := AggregateWithChildren([]CPubKey{pubkey}, []CSig{signature}, nil, message, slot)
 		FreeSignature(signature)
 		if err != nil {
 			t.Fatal(err)
@@ -157,7 +158,7 @@ func TestType2MergesRawSignature(t *testing.T) {
 	for i, slot := range []uint32{1, 2} {
 		var message [32]byte
 		message[0] = byte(slot)
-		proof, err := AggregateSignatures([]CPubKey{pubkeys[i]}, []CSig{sign(i, slot, message)}, message, slot)
+		proof, err := AggregateWithChildren([]CPubKey{pubkeys[i]}, []CSig{sign(i, slot, message)}, nil, message, slot)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,14 +1,7 @@
 package types
 
 func CurrentSlot(genesisTime, currentTimeMs uint64) uint64 {
-	genesisMs, ok := unixMillis(genesisTime)
-	if !ok {
-		return 0
-	}
-	if currentTimeMs < genesisMs {
-		return 0
-	}
-	return (currentTimeMs - genesisMs) / MillisecondsPerSlot
+	return elapsedMs(genesisTime, currentTimeMs) / MillisecondsPerSlot
 }
 
 // BeyondFutureHorizon reports whether a block at slot is more than one slot past
@@ -19,14 +12,7 @@ func BeyondFutureHorizon(slot, currentSlot uint64) bool {
 
 // MillisIntoSlot returns how far the clock has advanced into the current slot.
 func MillisIntoSlot(genesisTime, currentTimeMs uint64) uint64 {
-	genesisMs, ok := unixMillis(genesisTime)
-	if !ok {
-		return 0
-	}
-	if currentTimeMs < genesisMs {
-		return 0
-	}
-	return (currentTimeMs - genesisMs) % MillisecondsPerSlot
+	return elapsedMs(genesisTime, currentTimeMs) % MillisecondsPerSlot
 }
 
 func CurrentInterval(genesisTime, currentTimeMs uint64) uint64 {
@@ -57,28 +43,17 @@ func NextIntervalBoundaryMs(genesisTime, currentTimeMs uint64) (uint64, bool) {
 }
 
 func TotalIntervals(genesisTime, currentTimeMs uint64) uint64 {
+	return elapsedMs(genesisTime, currentTimeMs) / MillisecondsPerInterval
+}
+
+// elapsedMs is how far currentTimeMs is past genesis: zero before genesis, and
+// when genesis does not fit in unix milliseconds.
+func elapsedMs(genesisTime, currentTimeMs uint64) uint64 {
 	genesisMs, ok := unixMillis(genesisTime)
-	if !ok {
+	if !ok || currentTimeMs < genesisMs {
 		return 0
 	}
-	if currentTimeMs < genesisMs {
-		return 0
-	}
-	return (currentTimeMs - genesisMs) / MillisecondsPerInterval
-}
-
-func IntervalsFromSlot(slot uint64) uint64 {
-	if slot > ^uint64(0)/IntervalsPerSlot {
-		return ^uint64(0)
-	}
-	return slot * IntervalsPerSlot
-}
-
-func IntervalsFromUnixTime(unixSeconds, genesisTime uint64) uint64 {
-	if unixSeconds < genesisTime {
-		return 0
-	}
-	return elapsedSecondsToIntervals(unixSeconds - genesisTime)
+	return currentTimeMs - genesisMs
 }
 
 func unixMillis(seconds uint64) (uint64, bool) {
@@ -86,18 +61,4 @@ func unixMillis(seconds uint64) (uint64, bool) {
 		return 0, false
 	}
 	return seconds * 1000, true
-}
-
-func elapsedSecondsToIntervals(seconds uint64) uint64 {
-	wholeSlots := seconds / SecondsPerSlot
-	remainder := seconds % SecondsPerSlot
-	if wholeSlots > ^uint64(0)/IntervalsPerSlot {
-		return ^uint64(0)
-	}
-	base := wholeSlots * IntervalsPerSlot
-	extra := remainder * 1000 / MillisecondsPerInterval
-	if base > ^uint64(0)-extra {
-		return ^uint64(0)
-	}
-	return base + extra
 }

@@ -35,20 +35,6 @@ func TestRunWorkerReturnsWhenDispatchChannelCloses(t *testing.T) {
 	waitForWorker(t, done)
 }
 
-func TestRunWorkerSkipsNilSnapshot(t *testing.T) {
-	dispatches := make(chan Dispatch, 1)
-	dispatches <- Dispatch{Slot: 1}
-	close(dispatches)
-
-	done := make(chan struct{})
-	go func() {
-		RunWorker(context.Background(), clock.Real{}, dispatches, nil, nil, nil, nil, shadow.Rates{})
-		close(done)
-	}()
-
-	waitForWorker(t, done)
-}
-
 func TestPublishAggregatesContinuesAfterPublishError(t *testing.T) {
 	publisher := &recordingPublisher{err: errors.New("publish failed")}
 	aggs := []*types.SignedAggregatedAttestation{{}, {}}

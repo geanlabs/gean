@@ -58,9 +58,10 @@ func TestMultipleAggregationsSequential(t *testing.T) {
 		}
 		defer FreePublicKey(cpk2)
 
-		proof, err := AggregateSignatures(
+		proof, err := AggregateWithChildren(
 			[]CPubKey{cpk1, cpk2},
 			[]CSig{csig1, csig2},
+			nil,
 			message,
 			slot,
 		)

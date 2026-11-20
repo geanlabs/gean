@@ -106,9 +106,6 @@ func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID
 // returned would have no parent state here and could only churn the pending
 // buffer. Closing a gap this wide requires checkpoint sync.
 func (sd *SyncDriver) beyondHistoryHorizon(peerStatus *p2p.StatusMessage) bool {
-	if sd == nil || sd.store == nil || peerStatus == nil {
-		return false
-	}
 	ourHead := sd.store.HeadSlot()
 	return peerStatus.HeadSlot > ourHead &&
 		peerStatus.HeadSlot-ourHead > types.MinSlotsForBlockRequests
@@ -140,9 +137,6 @@ func (sd *SyncDriver) clearBeyondHistoryHorizon() {
 }
 
 func (sd *SyncDriver) shouldBackfill(peerStatus *p2p.StatusMessage) bool {
-	if sd == nil || sd.store == nil || peerStatus == nil {
-		return false
-	}
 	ourHead := sd.store.HeadSlot()
 	if peerStatus.HeadSlot > ourHead && peerStatus.HeadSlot-ourHead > blocksByRangeSyncThreshold {
 		return true
@@ -156,9 +150,6 @@ func (sd *SyncDriver) shouldBackfill(peerStatus *p2p.StatusMessage) bool {
 // answers "no blocks" for a root only our branch produced), so this triggers a
 // range backfill from our finalized point to let fork choice reconcile.
 func (sd *SyncDriver) marooned(peerStatus *p2p.StatusMessage) bool {
-	if sd == nil || sd.store == nil || peerStatus == nil {
-		return false
-	}
 	finalized := sd.store.LatestFinalized()
 	if finalized == nil {
 		return false
@@ -175,10 +166,6 @@ func requestCount(startSlot, headSlot uint64) uint64 {
 }
 
 func (sd *SyncDriver) fallbackHeadByRoot(ctx context.Context, peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage, rangeErr error) {
-	if peerStatus == nil {
-		return
-	}
-
 	logger.Warn(logger.Sync, "sync: blocks_by_range failed on every peer status_peer=%s err=%v; falling back to head-by-root",
 		peerID, rangeErr)
 
@@ -195,10 +182,6 @@ func (sd *SyncDriver) fallbackHeadByRoot(ctx context.Context, peerID libp2ppeer.
 }
 
 func (sd *SyncDriver) feedBlocks(ctx context.Context, peerID libp2ppeer.ID, blocks []*types.SignedBlock, startSlot uint64) (uint64, bool) {
-	if sd == nil || sd.node == nil {
-		return 0, false
-	}
-
 	logger.Info(logger.Sync, "sync: received %d blocks from peer %s, feeding to engine", len(blocks), peerID)
 
 	lastSlot, ok := validateRangeBlocks(peerID, blocks, startSlot)

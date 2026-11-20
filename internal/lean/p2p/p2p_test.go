@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+
 	"github.com/geanlabs/gean/internal/core/p2p/host"
 	"github.com/geanlabs/gean/internal/core/p2p/memnet"
 	"github.com/geanlabs/gean/internal/core/p2p/peers"
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 	"github.com/geanlabs/gean/internal/lean/types"
-	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func TestDecodeResponseMaxSignedBlockSize(t *testing.T) {

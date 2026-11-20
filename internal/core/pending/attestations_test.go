@@ -33,16 +33,16 @@ func TestAttestationBuffer_AddAndDrain(t *testing.T) {
 	if !added || dropped != 0 {
 		t.Fatalf("first add: added=%v dropped=%d, want true,0", added, dropped)
 	}
-	if buf.Total() != 1 || buf.Len() != 1 {
-		t.Fatalf("after add: total=%d len=%d, want 1,1", buf.Total(), buf.Len())
+	if buf.Total() != 1 || len(buf.byHead) != 1 {
+		t.Fatalf("after add: total=%d len=%d, want 1,1", buf.Total(), len(buf.byHead))
 	}
 
 	drained := buf.Drain(head)
 	if len(drained) != 1 || drained[0] != att {
 		t.Fatalf("drain: got %d entries, want 1 matching pointer", len(drained))
 	}
-	if buf.Total() != 0 || buf.Len() != 0 {
-		t.Fatalf("after drain: total=%d len=%d, want 0,0", buf.Total(), buf.Len())
+	if buf.Total() != 0 || len(buf.byHead) != 0 {
+		t.Fatalf("after drain: total=%d len=%d, want 0,0", buf.Total(), len(buf.byHead))
 	}
 }
 
@@ -104,8 +104,8 @@ func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
 	if added || dropped != 0 {
 		t.Fatalf("third add (over total cap): added=%v dropped=%d, want false,0", added, dropped)
 	}
-	if buf.Total() != 2 || buf.Len() != 2 {
-		t.Fatalf("after reject: total=%d len=%d, want 2,2", buf.Total(), buf.Len())
+	if buf.Total() != 2 || len(buf.byHead) != 2 {
+		t.Fatalf("after reject: total=%d len=%d, want 2,2", buf.Total(), len(buf.byHead))
 	}
 
 	if added, dropped := buf.Add(h1, makeAtt(99)); added || dropped != 0 {
@@ -147,8 +147,8 @@ func TestAttestationBuffer_PruneBelow(t *testing.T) {
 	for _, slot := range []uint64{3, 20} {
 		buf.Add(h2, makeAtt(slot))
 	}
-	if buf.Total() != 5 || buf.Len() != 2 {
-		t.Fatalf("setup: total=%d len=%d, want 5,2", buf.Total(), buf.Len())
+	if buf.Total() != 5 || len(buf.byHead) != 2 {
+		t.Fatalf("setup: total=%d len=%d, want 5,2", buf.Total(), len(buf.byHead))
 	}
 
 	removed := buf.PruneBelow(10)
@@ -158,16 +158,16 @@ func TestAttestationBuffer_PruneBelow(t *testing.T) {
 	if buf.Total() != 2 {
 		t.Fatalf("after prune: total=%d, want 2", buf.Total())
 	}
-	if buf.Len() != 2 {
-		t.Fatalf("after prune: len=%d, want 2 (both buckets non-empty)", buf.Len())
+	if len(buf.byHead) != 2 {
+		t.Fatalf("after prune: len=%d, want 2 (both buckets non-empty)", len(buf.byHead))
 	}
 
 	removed = buf.PruneBelow(100)
 	if removed != 2 {
 		t.Fatalf("final prune removed=%d, want 2", removed)
 	}
-	if buf.Total() != 0 || buf.Len() != 0 {
-		t.Fatalf("after final prune: total=%d len=%d, want 0,0", buf.Total(), buf.Len())
+	if buf.Total() != 0 || len(buf.byHead) != 0 {
+		t.Fatalf("after final prune: total=%d len=%d, want 0,0", buf.Total(), len(buf.byHead))
 	}
 }
 
@@ -190,27 +190,6 @@ func TestAttestationBuffer_RejectsMalformedAndInvalidCaps(t *testing.T) {
 	}
 	if added, dropped := buf.Add(head, &testAtt{}); added || dropped != 0 {
 		t.Fatalf("nil data: added=%v dropped=%d, want false,0", added, dropped)
-	}
-}
-
-func TestAttestationBuffer_NilGuards(t *testing.T) {
-	var buf *AttestationBuffer[*testAtt]
-	var head [32]byte
-
-	if added, dropped := buf.Add(head, makeAtt(1)); added || dropped != 0 {
-		t.Fatalf("nil add: added=%v dropped=%d, want false,0", added, dropped)
-	}
-	if drained := buf.Drain(head); drained != nil {
-		t.Fatalf("nil drain=%v, want nil", drained)
-	}
-	if removed := buf.PruneBelow(10); removed != 0 {
-		t.Fatalf("nil prune removed=%d, want 0", removed)
-	}
-	if total := buf.Total(); total != 0 {
-		t.Fatalf("nil total=%d, want 0", total)
-	}
-	if length := buf.Len(); length != 0 {
-		t.Fatalf("nil len=%d, want 0", length)
 	}
 }
 
@@ -290,7 +269,7 @@ func TestAttestationBuffer_Concurrent(t *testing.T) {
 	if buf.Total() != 0 {
 		t.Fatalf("after universal drain: total=%d, want 0", buf.Total())
 	}
-	if buf.Len() != 0 {
-		t.Fatalf("after universal drain: len=%d, want 0", buf.Len())
+	if len(buf.byHead) != 0 {
+		t.Fatalf("after universal drain: len=%d, want 0", len(buf.byHead))
 	}
 }

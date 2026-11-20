@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"io"
 	"os"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	logger.SetQuiet(true)
+	logger.SetOutput(io.Discard)
 	os.Exit(m.Run())
 }
 

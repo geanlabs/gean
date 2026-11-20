@@ -49,19 +49,6 @@ func TestSyncDriver_BeyondHistoryHorizon(t *testing.T) {
 	}
 }
 
-func TestSyncDriver_BeyondHistoryHorizon_NilInputs(t *testing.T) {
-	n, st := makeTestSyncHarness()
-	sd := NewSyncDriver(context.Background(), n, st, &mockSyncP2P{})
-
-	if sd.beyondHistoryHorizon(nil) {
-		t.Error("nil peer status must not report beyond-horizon")
-	}
-	var nilDriver *SyncDriver
-	if nilDriver.beyondHistoryHorizon(&p2p.StatusMessage{HeadSlot: 1 << 20}) {
-		t.Error("nil driver must not report beyond-horizon")
-	}
-}
-
 // A gap past the window can only be answered with RESOURCE_UNAVAILABLE, so the
 // driver must stop asking rather than reissue an unanswerable request every poll.
 func TestSyncDriver_CheckAndBackfill_SkipsRequestBeyondHorizon(t *testing.T) {

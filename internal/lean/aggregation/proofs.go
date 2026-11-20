@@ -52,7 +52,7 @@ func selectChildProofs(
 	childCost time.Duration,
 	rawCount int,
 ) (selectedIDs []uint64) {
-	if entry == nil || state == nil || cache == nil || len(entry.Proofs) == 0 {
+	if entry == nil || len(entry.Proofs) == 0 {
 		return
 	}
 

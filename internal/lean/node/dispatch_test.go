@@ -2,7 +2,7 @@ package node
 
 import (
 	"bytes"
-	"os"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -16,11 +16,10 @@ import (
 func TestTimeEventLogsOnlySlowEvents(t *testing.T) {
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-	logger.SetQuiet(false)
 	saved := slowDispatchEvent
 	slowDispatchEvent = 20 * time.Millisecond
 	t.Cleanup(func() {
-		logger.SetOutput(os.Stderr)
+		logger.SetOutput(io.Discard)
 		slowDispatchEvent = saved
 	})
 

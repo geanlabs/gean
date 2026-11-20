@@ -23,10 +23,6 @@ func (s SyncStatus) String() string {
 }
 
 func (sd *SyncDriver) makeStatusMessage() *p2p.StatusMessage {
-	if sd == nil || sd.store == nil {
-		return nil
-	}
-
 	finalized := sd.store.LatestFinalized()
 	return &p2p.StatusMessage{
 		FinalizedRoot: finalized.Root,

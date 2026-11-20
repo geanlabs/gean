@@ -32,10 +32,6 @@ func (sd *SyncDriver) refreshSyncFromPeers(ctx context.Context) {
 }
 
 func (sd *SyncDriver) pollPeer(ctx context.Context, peerID libp2ppeer.ID, ourStatus *p2p.StatusMessage) {
-	if ourStatus == nil {
-		return
-	}
-
 	peerStatus, err := sd.p2p.SendStatusRequest(ctx, peerID, ourStatus)
 	if err != nil {
 		logger.Warn(logger.Sync, "sync: status request to peer %s failed: %v", peerID, err)

@@ -51,7 +51,7 @@ func TestFakeSignAndVerify(t *testing.T) {
 // The fake skips the cryptography, not the input checks.
 func TestFakeRejectsMalformedInput(t *testing.T) {
 	msg := [32]byte{1}
-	if _, err := AggregateSignatures(nil, nil, msg, 1); err != ErrEmptyInput {
+	if _, err := AggregateWithChildren(nil, nil, nil, msg, 1); err != ErrEmptyInput {
 		t.Fatalf("empty aggregate err=%v, want ErrEmptyInput", err)
 	}
 	if err := VerifyAggregatedSignature(nil, nil, msg, 1); err != ErrEmptyInput {
@@ -68,7 +68,7 @@ func TestFakeRejectsMalformedInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proof, err := AggregateSignatures([]CPubKey{pk}, []CSig{parsed}, msg, 1)
+	proof, err := AggregateWithChildren([]CPubKey{pk}, []CSig{parsed}, nil, msg, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

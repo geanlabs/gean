@@ -40,9 +40,6 @@ func TestReadMethodsHandleNilBackend(t *testing.T) {
 	if s.HasState(root) {
 		t.Fatal("state should not exist")
 	}
-	if got := s.StatesCount(); got != 0 {
-		t.Fatalf("states count=%d, want 0", got)
-	}
 	if got := s.MaxStoredBlockSlot(); got != 0 {
 		t.Fatalf("max stored slot=%d, want 0", got)
 	}
@@ -51,9 +48,6 @@ func TestReadMethodsHandleNilBackend(t *testing.T) {
 	}
 	if got, _ := s.GetCanonicalBlocksInRange(0, 1); got != nil {
 		t.Fatalf("canonical blocks=%v, want nil", got)
-	}
-	if roots, err := s.BlockRoots(); err == nil || roots != nil {
-		t.Fatalf("BlockRoots roots=%v err=%v, want nil roots and error", roots, err)
 	}
 }
 
@@ -72,8 +66,5 @@ func TestNilStoreReadMethodsHandleNilReceiver(t *testing.T) {
 	}
 	if got := s.GetState(root); got != nil {
 		t.Fatal("state should be nil")
-	}
-	if roots, err := s.BlockRoots(); err == nil || roots != nil {
-		t.Fatalf("BlockRoots roots=%v err=%v, want nil roots and error", roots, err)
 	}
 }

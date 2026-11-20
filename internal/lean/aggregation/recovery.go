@@ -54,7 +54,7 @@ type recoveryCandidate struct {
 
 func (a *Aggregator) DispatchRecovery(block *types.SignedBlock) {
 	if block == nil || block.Block == nil || block.Block.Body == nil ||
-		len(block.Block.Body.Attestations) == 0 || a.recovery == nil {
+		len(block.Block.Body.Attestations) == 0 {
 		return
 	}
 	select {

@@ -38,12 +38,6 @@ func New(onTransition func(Event)) *Gate {
 	return &Gate{onTransition: onTransition}
 }
 
-func (g *Gate) IsClosed() bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.closed
-}
-
 func (g *Gate) Decide(duty string, wallSlot, headSlot, maxStoredSlot uint64) bool {
 	g.mu.Lock()
 	next := decide(g.closed, duty, wallSlot, headSlot, maxStoredSlot)

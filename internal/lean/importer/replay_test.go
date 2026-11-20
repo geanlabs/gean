@@ -32,9 +32,6 @@ func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 		t.Fatalf("after replay: total=%d, want 1 (only the otherHead entry should remain)",
 			imp.pendingAttestations.Total())
 	}
-	if imp.pendingAttestations.Len() != 1 {
-		t.Fatalf("after replay: len=%d, want 1 bucket left", imp.pendingAttestations.Len())
-	}
 }
 
 func TestReplayPendingAttestations_NoBucketIsNoOp(t *testing.T) {

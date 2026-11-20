@@ -34,16 +34,10 @@ func (fc *ForkChoice) publishNodes() {
 }
 
 func (fc *ForkChoice) OnBlock(slot uint64, root, parentRoot [32]byte) {
-	if fc == nil || fc.array == nil {
-		return
-	}
 	fc.array.OnBlock(slot, root, parentRoot)
 }
 
 func (fc *ForkChoice) UpdateHead(justifiedRoot [32]byte) [32]byte {
-	if fc == nil || fc.array == nil {
-		return justifiedRoot
-	}
 	deltas := ComputeDeltas(fc.array.Len(), fc.votes, true)
 	fc.array.ApplyScoreChanges(deltas, 0)
 	head := fc.array.FindHead(justifiedRoot)
@@ -55,14 +49,9 @@ func (fc *ForkChoice) UpdateHead(justifiedRoot [32]byte) [32]byte {
 // current new-payload pool. Every earlier new vote is dropped first, so a validator
 // absent from this pool contributes nothing, as in leanSpec's update_safe_target.
 func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uint64, votes map[uint64]*types.AttestationData) [32]byte {
-	if fc == nil || fc.array == nil {
-		return justifiedRoot
-	}
-	if fc.votes != nil {
-		fc.votes.ClearNew()
-		for vid, data := range votes {
-			fc.votes.SetNew(vid, fc.NodeIndex(data.Head.Root), data.Slot, data)
-		}
+	fc.votes.ClearNew()
+	for vid, data := range votes {
+		fc.votes.SetNew(vid, fc.NodeIndex(data.Head.Root), data.Slot, data)
 	}
 	if numValidators == 0 {
 		return justifiedRoot
@@ -74,26 +63,16 @@ func (fc *ForkChoice) UpdateSafeTarget(justifiedRoot [32]byte, numValidators uin
 }
 
 func (fc *ForkChoice) Prune(finalizedRoot [32]byte) {
-	if fc == nil || fc.array == nil {
-		return
-	}
 	finalizedIdx, ok := fc.array.Index(finalizedRoot)
 	if !ok || finalizedIdx == 0 {
 		return
 	}
 
-	indexMap := fc.array.Prune(finalizedRoot)
-
-	if fc.votes != nil && indexMap != nil {
-		fc.votes.RemapIndices(indexMap)
-	}
+	fc.votes.RemapIndices(fc.array.Prune(finalizedRoot))
 	fc.publishNodes()
 }
 
 func (fc *ForkChoice) NodeIndex(root [32]byte) int {
-	if fc == nil || fc.array == nil {
-		return -1
-	}
 	if idx, ok := fc.array.Index(root); ok {
 		return idx
 	}
@@ -101,29 +80,16 @@ func (fc *ForkChoice) NodeIndex(root [32]byte) int {
 }
 
 func (fc *ForkChoice) Len() int {
-	if fc == nil || fc.array == nil {
-		return 0
-	}
 	return fc.array.Len()
 }
 
 // Nodes returns a copy of the nodes as of the last head update or prune. It is safe
 // to call off the dispatch loop.
 func (fc *ForkChoice) Nodes() []ProtoNode {
-	if fc == nil {
-		return nil
-	}
-	nodes := fc.nodes.Load()
-	if nodes == nil {
-		return nil
-	}
-	return slices.Clone(*nodes)
+	return slices.Clone(*fc.nodes.Load())
 }
 
 func (fc *ForkChoice) SetKnownVote(validatorID uint64, headRoot [32]byte, slot uint64, data *types.AttestationData) bool {
-	if fc == nil || fc.votes == nil {
-		return false
-	}
 	idx := fc.NodeIndex(headRoot)
 	if idx < 0 {
 		return false
@@ -133,9 +99,6 @@ func (fc *ForkChoice) SetKnownVote(validatorID uint64, headRoot [32]byte, slot u
 }
 
 func (fc *ForkChoice) VoteTracker(validatorID uint64) (*VoteTracker, bool) {
-	if fc == nil || fc.votes == nil {
-		return nil, false
-	}
 	tracker, ok := fc.votes.Votes[validatorID]
 	if !ok {
 		return nil, false

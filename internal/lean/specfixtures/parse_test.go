@@ -57,9 +57,6 @@ func TestParseFixedHexRejectsEmptyInput(t *testing.T) {
 	if _, err := ParseHexPubkey("0x"); err == nil || !strings.Contains(err.Error(), "empty pubkey") {
 		t.Fatalf("ParseHexPubkey error=%v, want empty pubkey rejection", err)
 	}
-	if _, err := ParseHexSignature(" "); err == nil || !strings.Contains(err.Error(), "empty signature") {
-		t.Fatalf("ParseHexSignature error=%v, want empty signature rejection", err)
-	}
 }
 
 func TestParseBoolBitlistAcceptsBoolAndInt(t *testing.T) {

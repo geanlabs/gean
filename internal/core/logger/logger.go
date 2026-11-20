@@ -11,7 +11,6 @@ import (
 var (
 	mu     sync.Mutex
 	output io.Writer = os.Stderr
-	quiet  bool
 )
 
 const (
@@ -49,17 +48,11 @@ func SetOutput(w io.Writer) {
 	output = w
 }
 
-func SetQuiet(enabled bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	quiet = enabled
-}
-
 func emit(level, component, format string, args ...any) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if quiet || output == nil {
+	if output == nil {
 		return
 	}
 	fmt.Fprintf(output, "%s %s [%s] %s\n", timestamp(), level, component, fmt.Sprintf(format, args...))

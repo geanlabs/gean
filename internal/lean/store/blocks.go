@@ -57,31 +57,6 @@ func (s *ConsensusStore) PutBlockHeader(root [32]byte, header *types.BlockHeader
 	return nil
 }
 
-func (s *ConsensusStore) BlockRoots() (map[[32]byte]bool, error) {
-	rv, err := s.beginRead("load block roots")
-	if err != nil {
-		return nil, err
-	}
-
-	it, err := rv.PrefixIterator(TableBlockHeaders, nil)
-	if err != nil {
-		return nil, fmt.Errorf("iterate block headers: %w", err)
-	}
-	defer it.Close()
-
-	roots := make(map[[32]byte]bool)
-	for it.Next() {
-		key := it.Key()
-		if len(key) < len(types.ZeroRoot) {
-			continue
-		}
-		var root [32]byte
-		copy(root[:], key)
-		roots[root] = true
-	}
-	return roots, nil
-}
-
 func (s *ConsensusStore) GetSignedBlock(root [32]byte) *types.SignedBlock {
 	rv, err := s.beginRead("get signed block")
 	if err != nil {

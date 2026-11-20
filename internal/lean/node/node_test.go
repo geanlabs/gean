@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	logger.SetQuiet(true)
+	logger.SetOutput(io.Discard)
 	os.Exit(m.Run())
 }
 

@@ -49,22 +49,6 @@ func ParseHexPubkey(s string) ([types.PubkeySize]byte, error) {
 	return pk, nil
 }
 
-func ParseHexSignature(s string) ([types.SignatureSize]byte, error) {
-	var sig [types.SignatureSize]byte
-	if trimHexPrefix(s) == "" {
-		return sig, fmt.Errorf("empty signature")
-	}
-	b, err := ParseHexBytes(s)
-	if err != nil {
-		return sig, err
-	}
-	if len(b) > types.SignatureSize {
-		return sig, fmt.Errorf("signature too long: got %d bytes, want %d", len(b), types.SignatureSize)
-	}
-	copy(sig[:], b)
-	return sig, nil
-}
-
 func trimHexPrefix(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') {

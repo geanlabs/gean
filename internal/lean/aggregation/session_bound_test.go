@@ -13,11 +13,6 @@ func TestEstimatorSeedGroupDuration(t *testing.T) {
 	if got := e.nextGroupDuration(); got != want {
 		t.Fatalf("seed nextGroupDuration=%v, want %v", got, want)
 	}
-	// Nil receiver must not panic and must fall back to the seed.
-	var nilEst *unitCostEstimator
-	if got := nilEst.nextGroupDuration(); got != want {
-		t.Fatalf("nil nextGroupDuration=%v, want %v", got, want)
-	}
 }
 
 // TestEstimatorTracksGroupCost: the estimate follows observed per-group wall

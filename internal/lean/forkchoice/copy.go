@@ -1,9 +1,6 @@
 package forkchoice
 
 func copyVoteTracker(tracker *VoteTracker) *VoteTracker {
-	if tracker == nil {
-		return nil
-	}
 	return &VoteTracker{
 		AppliedIndex: tracker.AppliedIndex,
 		LatestKnown:  copyVoteTarget(tracker.LatestKnown),

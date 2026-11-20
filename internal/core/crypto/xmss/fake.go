@@ -118,10 +118,6 @@ func fakeProof(message [MessageLength]byte, slot uint32) []byte {
 	return proof
 }
 
-func AggregateSignatures(pubkeys []CPubKey, sigs []CSig, message [32]byte, slot uint32) ([]byte, error) {
-	return AggregateWithChildren(pubkeys, sigs, nil, message, slot)
-}
-
 func AggregateWithChildren(pubkeys []CPubKey, sigs []CSig, children []ChildProof, message [32]byte, slot uint32) ([]byte, error) {
 	numRaw, numChildren := len(pubkeys), len(children)
 	if numRaw == 0 && numChildren == 0 {

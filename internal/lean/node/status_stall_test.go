@@ -3,7 +3,7 @@ package node
 import (
 	"bytes"
 	"context"
-	"os"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -16,10 +16,8 @@ import (
 func TestSampleStallsReportsAStuckProverOnce(t *testing.T) {
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-	logger.SetQuiet(false)
 	t.Cleanup(func() {
-		logger.SetOutput(os.Stderr)
-		logger.SetQuiet(true)
+		logger.SetOutput(io.Discard)
 	})
 	stuckLogs := func() int { return strings.Count(buf.String(), "prover held for") }
 

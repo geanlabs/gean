@@ -212,7 +212,7 @@ func newUnitCostEstimator() *unitCostEstimator {
 // the first attempt. It cannot bound an in-flight proof's actual duration.
 func (e *unitCostEstimator) nextGroupDuration() time.Duration {
 	secs := seedPerGroupSeconds
-	if e != nil && e.perGroupSeconds > 0 {
+	if e.perGroupSeconds > 0 {
 		secs = e.perGroupSeconds
 	}
 	return time.Duration(secs * float64(time.Second))
@@ -224,7 +224,7 @@ func (e *unitCostEstimator) nextGroupDuration() time.Duration {
 // which is well conditioned because raw-only groups are the common case once
 // selection is raw-first.
 func (e *unitCostEstimator) observeGroup(duration time.Duration, childCount int) {
-	if e == nil || duration <= 0 {
+	if duration <= 0 {
 		return
 	}
 	const alpha = 0.3
@@ -257,7 +257,7 @@ func (e *unitCostEstimator) observeGroup(duration time.Duration, childCount int)
 // childDuration is the wall time one more child proof is expected to add.
 func (e *unitCostEstimator) childDuration() time.Duration {
 	secs := seedPerChildSeconds
-	if e != nil && e.perChildSeconds > 0 {
+	if e.perChildSeconds > 0 {
 		secs = e.perChildSeconds
 	}
 	return time.Duration(secs * float64(time.Second))
@@ -269,12 +269,6 @@ func aggregateFromSnapshot(clk clock.Clock, shouldYield func() bool, snap *Snaps
 
 func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
-	if snap == nil || cache == nil || snap.headState == nil {
-		return nil, nil, nil, false, skips
-	}
-	if estimator == nil {
-		estimator = newUnitCostEstimator()
-	}
 	if maxGroups <= 0 {
 		maxGroups = MaxGroupsPerSession
 	}

@@ -108,14 +108,14 @@ func TestSpecSlotClock(t *testing.T) {
 						t.Errorf("TotalIntervals(gt=%d, now=%d) = %d, want %d", gt, nowMs, got, fx.Output.TotalIntervals)
 					}
 				case "from_slot":
-					got := types.IntervalsFromSlot(slot)
+					got := slot * types.IntervalsPerSlot
 					if got != fx.Output.Interval {
-						t.Errorf("IntervalsFromSlot(%d) = %d, want %d", slot, got, fx.Output.Interval)
+						t.Errorf("slot %d * IntervalsPerSlot = %d, want %d", slot, got, fx.Output.Interval)
 					}
 				case "from_unix_time":
-					got := types.IntervalsFromUnixTime(unix, gt)
+					got := types.TotalIntervals(gt, unix*1000)
 					if got != fx.Output.Interval {
-						t.Errorf("IntervalsFromUnixTime(unix=%d, gt=%d) = %d, want %d", unix, gt, got, fx.Output.Interval)
+						t.Errorf("TotalIntervals(gt=%d, now=%ds) = %d, want %d", gt, unix, got, fx.Output.Interval)
 					}
 				default:
 					t.Skipf("unsupported slot_clock operation %q", op.Kind)

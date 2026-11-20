@@ -54,13 +54,7 @@ func (vs *VoteStore) getOrCreate(validatorID uint64) *VoteTracker {
 }
 
 func (vs *VoteStore) RemapIndices(indexMap map[int]int) {
-	if vs == nil || indexMap == nil {
-		return
-	}
 	for _, tracker := range vs.Votes {
-		if tracker == nil {
-			continue
-		}
 		if tracker.AppliedIndex >= 0 {
 			tracker.AppliedIndex = remapVoteIndex(tracker.AppliedIndex, indexMap)
 		}
@@ -97,14 +91,7 @@ func remapVoteIndex(oldIdx int, indexMap map[int]int) int {
 
 func ComputeDeltas(numNodes int, votes *VoteStore, fromKnown bool) []int64 {
 	deltas := make([]int64, numNodes)
-	if votes == nil {
-		return deltas
-	}
-
 	for _, tracker := range votes.Votes {
-		if tracker == nil {
-			continue
-		}
 		if tracker.AppliedIndex >= 0 && tracker.AppliedIndex < numNodes {
 			deltas[tracker.AppliedIndex]--
 		}

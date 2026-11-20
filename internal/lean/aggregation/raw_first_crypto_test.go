@@ -54,7 +54,7 @@ func TestRawFirstCrypto(t *testing.T) {
 		pks = append(pks, pk)
 		sigs = append(sigs, sig)
 	}
-	child, err := xmss.AggregateSignatures(pks[:2], sigs[:2], message, slot)
+	child, err := xmss.AggregateWithChildren(pks[:2], sigs[:2], nil, message, slot)
 	if err != nil {
 		t.Fatal(err)
 	}

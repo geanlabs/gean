@@ -555,41 +555,6 @@ func TestAnchorParentRootPreserved(t *testing.T) {
 }
 
 func TestForkChoicePublicAccessors(t *testing.T) {
-	var nilFC *ForkChoice
-	unknown := root(9)
-	if nilFC.Len() != 0 {
-		t.Fatal("nil forkchoice length should be 0")
-	}
-	if nilFC.Nodes() != nil {
-		t.Fatal("nil forkchoice nodes should be nil")
-	}
-	if nilFC.NodeIndex(root(1)) != -1 {
-		t.Fatal("nil forkchoice node lookup should fail")
-	}
-	if nilFC.SetKnownVote(0, root(1), 1, nil) {
-		t.Fatal("nil forkchoice should reject known vote")
-	}
-	nilFC.OnBlock(1, root(2), root(1))
-	if got := nilFC.UpdateHead(unknown); got != unknown {
-		t.Fatalf("nil forkchoice head=%x, want justified root %x", got[:4], unknown[:4])
-	}
-	if got := nilFC.UpdateSafeTarget(unknown, 1, nil); got != unknown {
-		t.Fatalf("nil forkchoice safe target=%x, want justified root %x", got[:4], unknown[:4])
-	}
-	nilFC.Prune(root(1))
-	if canonical, nonCanonical := nilFC.GetCanonicalAnalysis(root(1)); canonical != nil || nonCanonical != nil {
-		t.Fatalf("nil forkchoice analysis=%v/%v, want nil/nil", canonical, nonCanonical)
-	}
-	if depth := nilFC.ReorgDepth(root(1), root(2)); depth != 0 {
-		t.Fatalf("nil forkchoice reorg depth=%d, want 0", depth)
-	}
-	if _, _, ok := nilFC.AncestorAtDepth(root(1), 1); ok {
-		t.Fatal("nil forkchoice ancestor lookup should fail")
-	}
-	if _, ok := nilFC.VoteTracker(0); ok {
-		t.Fatal("nil forkchoice tracker lookup should fail")
-	}
-
 	anchor, child := root(1), root(2)
 	fc := New(0, anchor, [32]byte{})
 	fc.OnBlock(1, child, anchor)
@@ -633,26 +598,6 @@ func TestForkChoicePublicAccessors(t *testing.T) {
 	tracker, ok = fc.VoteTracker(1)
 	if !ok || tracker.LatestNew.Index == 99 {
 		t.Fatal("VoteTracker should return a copy of the new target")
-	}
-}
-
-func TestForkChoicePartialValueGuards(t *testing.T) {
-	anchor, child := root(1), root(2)
-	fc := &ForkChoice{array: protoarray.New(0, anchor, [32]byte{})}
-	fc.OnBlock(1, child, anchor)
-
-	if fc.Len() != 2 {
-		t.Fatalf("partial forkchoice len=%d, want 2", fc.Len())
-	}
-	if fc.SetKnownVote(0, child, 1, makeAttData(child, 1)) {
-		t.Fatal("partial forkchoice without vote store should reject known vote")
-	}
-	if head := fc.UpdateHead(anchor); head != child {
-		t.Fatalf("partial forkchoice head=%x, want child", head[:4])
-	}
-	fc.Prune(child)
-	if fc.NodeIndex(anchor) != -1 || fc.NodeIndex(child) != 0 {
-		t.Fatal("partial forkchoice should prune protoarray even without vote store")
 	}
 }
 

@@ -99,9 +99,10 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		proof, err := xmss.AggregateSignatures(
+		proof, err := xmss.AggregateWithChildren(
 			[]xmss.CPubKey{benchPubkey},
 			[]xmss.CSig{signature},
+			nil,
 			root,
 			uint32(data.Slot),
 		)

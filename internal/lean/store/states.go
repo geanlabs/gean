@@ -65,21 +65,3 @@ func (s *ConsensusStore) PutState(root [32]byte, state *types.State) error {
 	s.noteStoredState(root, state)
 	return nil
 }
-
-func (s *ConsensusStore) StatesCount() int {
-	rv, err := s.beginRead("count states")
-	if err != nil {
-		return 0
-	}
-	it, err := rv.PrefixIterator(TableStates, nil)
-	if err != nil {
-		return 0
-	}
-	defer it.Close()
-
-	count := 0
-	for it.Next() {
-		count++
-	}
-	return count
-}

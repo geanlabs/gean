@@ -29,9 +29,6 @@ func NewAttestationBuffer[T any](perRootCap, totalCap int, slotOf func(T) (uint6
 }
 
 func (b *AttestationBuffer[T]) Add(headRoot [32]byte, att T) (added bool, dropped int) {
-	if b == nil {
-		return false, 0
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -57,9 +54,6 @@ func (b *AttestationBuffer[T]) Add(headRoot [32]byte, att T) (added bool, droppe
 }
 
 func (b *AttestationBuffer[T]) Drain(headRoot [32]byte) []T {
-	if b == nil {
-		return nil
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -73,9 +67,6 @@ func (b *AttestationBuffer[T]) Drain(headRoot [32]byte) []T {
 }
 
 func (b *AttestationBuffer[T]) PruneBelow(finalizedSlot uint64) int {
-	if b == nil {
-		return 0
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -100,19 +91,7 @@ func (b *AttestationBuffer[T]) PruneBelow(finalizedSlot uint64) int {
 }
 
 func (b *AttestationBuffer[T]) Total() int {
-	if b == nil {
-		return 0
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.total
-}
-
-func (b *AttestationBuffer[T]) Len() int {
-	if b == nil {
-		return 0
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.byHead)
 }

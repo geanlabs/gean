@@ -4,6 +4,7 @@ package lean
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,8 +15,8 @@ import (
 )
 
 func TestSpecStateTransition(t *testing.T) {
-	logger.SetQuiet(true)
-	defer logger.SetQuiet(false)
+	logger.SetOutput(io.Discard)
+	defer logger.SetOutput(os.Stderr)
 
 	fixtureDir := "../../../leanSpec/fixtures/consensus/state_transition"
 

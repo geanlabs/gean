@@ -148,49 +148,6 @@ func TestBlockBuffer_DiscardSubtreeKeepsSiblings(t *testing.T) {
 	}
 }
 
-func TestBlockBuffer_ZeroValueAndNilGuards(t *testing.T) {
-	var zero BlockBuffer
-	parent := [32]byte{0x01}
-	child := [32]byte{0x02}
-
-	zero.AddChild(parent, child)
-	zero.SetParent(child, parent)
-	zero.SetDepth(child, 3)
-	if zero.Count() != 1 || zero.ParentBuckets() != 1 || zero.Entries() != 1 {
-		t.Fatalf("zero-value counts=%d/%d/%d, want 1/1/1",
-			zero.Count(), zero.ParentBuckets(), zero.Entries())
-	}
-	if depth, ok := zero.Depth(child); !ok || depth != 3 {
-		t.Fatalf("zero-value depth=%d ok=%v, want 3/true", depth, ok)
-	}
-	if got := zero.ResolveAncestor(child); got != parent {
-		t.Fatalf("zero-value ancestor=0x%x, want parent 0x%x", got, parent)
-	}
-	zero.DiscardSubtree(child)
-	if zero.Count() != 0 || zero.Entries() != 0 {
-		t.Fatalf("zero-value after discard counts=%d/%d, want 0/0", zero.Count(), zero.Entries())
-	}
-
-	var nilBuffer *BlockBuffer
-	nilBuffer.AddChild(parent, child)
-	nilBuffer.SetParent(child, parent)
-	nilBuffer.SetDepth(child, 3)
-	nilBuffer.MarkImported(child)
-	nilBuffer.MarkStored(child)
-	nilBuffer.ClearEntry(child)
-	nilBuffer.RemoveChild(parent, child)
-	nilBuffer.DiscardSubtree(child)
-	if set, ok := nilBuffer.RemoveBucket(parent); ok || set != nil {
-		t.Fatalf("nil RemoveBucket=%v/%t, want nil/false", set, ok)
-	}
-	if got := nilBuffer.Count(); got != 0 {
-		t.Fatalf("nil Count=%d, want 0", got)
-	}
-	if got := nilBuffer.ResolveAncestor(child); got != child {
-		t.Fatalf("nil ancestor=0x%x, want start 0x%x", got, child)
-	}
-}
-
 func TestBlockBuffer_HighestSlotEntry(t *testing.T) {
 	b := NewBlockBuffer()
 

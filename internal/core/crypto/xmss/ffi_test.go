@@ -153,10 +153,10 @@ func TestAggregateRejectsNilRawInputs(t *testing.T) {
 	marker := byte(1)
 	pubkey := CPubKey(unsafe.Pointer(&marker))
 
-	if _, err := AggregateSignatures([]CPubKey{nil}, []CSig{CSig(unsafe.Pointer(&marker))}, message, 0); !errors.Is(err, ErrMalformedRawInput) {
+	if _, err := AggregateWithChildren([]CPubKey{nil}, []CSig{CSig(unsafe.Pointer(&marker))}, nil, message, 0); !errors.Is(err, ErrMalformedRawInput) {
 		t.Fatalf("nil pubkey error=%v, want ErrMalformedRawInput", err)
 	}
-	if _, err := AggregateSignatures([]CPubKey{pubkey}, []CSig{nil}, message, 0); !errors.Is(err, ErrMalformedRawInput) {
+	if _, err := AggregateWithChildren([]CPubKey{pubkey}, []CSig{nil}, nil, message, 0); !errors.Is(err, ErrMalformedRawInput) {
 		t.Fatalf("nil signature error=%v, want ErrMalformedRawInput", err)
 	}
 }

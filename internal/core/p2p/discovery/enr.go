@@ -157,14 +157,3 @@ func (r *enrRecord) transportMultiaddr() string {
 	}
 	return ""
 }
-
-func buildTransportMultiaddr(ip4, ip6 net.IP, udpPort, quicPort, udp6Port, quic6Port uint16) string {
-	return (&enrRecord{
-		ip4:       ip4,
-		ip6:       ip6,
-		udpPort:   udpPort,
-		quicPort:  quicPort,
-		udp6Port:  udp6Port,
-		quic6Port: quic6Port,
-	}).transportMultiaddr()
-}
