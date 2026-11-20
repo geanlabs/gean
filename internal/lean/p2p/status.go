@@ -11,7 +11,6 @@ import (
 
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
-	"github.com/geanlabs/gean/internal/lean/metrics"
 )
 
 const statusMessageSize = 80
@@ -96,13 +95,9 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 	}
 	defer stream.Close()
 
-	reqresp.ArmWriteDeadline(stream)
-	reqBytes := reqresp.EncodePayload(ourStatus.MarshalSSZ())
-	metrics.ObserveReqRespRequestSize("status", len(reqBytes))
-	if _, err := stream.Write(reqBytes); err != nil {
+	if err := reqresp.WriteRequest(stream, "status", ourStatus.MarshalSSZ()); err != nil {
 		return nil, fmt.Errorf("write status request: %w", err)
 	}
-	stream.CloseWrite()
 
 	code, respData, err := reqresp.ReadChunk(stream, stream, "status", statusMessageSize)
 	if err != nil {

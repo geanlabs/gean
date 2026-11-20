@@ -115,7 +115,6 @@ func New(
 	committeeCount uint64,
 	shadowRates shadow.Rates,
 ) *Engine {
-	p2p.SetClientGitCommit(gitCommit)
 	e := &Engine{
 		Clock:               clk,
 		Store:               s,

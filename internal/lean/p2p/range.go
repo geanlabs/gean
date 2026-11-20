@@ -13,7 +13,6 @@ import (
 
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
-	"github.com/geanlabs/gean/internal/lean/metrics"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -113,13 +112,9 @@ func (h *Host) FetchBlocksByRange(
 	if err != nil {
 		return nil, fmt.Errorf("marshal blocks_by_range request: %w", err)
 	}
-	reqresp.ArmWriteDeadline(stream)
-	reqBytes := reqresp.EncodePayload(reqSSZ)
-	metrics.ObserveReqRespRequestSize("blocks_by_range", len(reqBytes))
-	if _, err := stream.Write(reqBytes); err != nil {
+	if err := reqresp.WriteRequest(stream, "blocks_by_range", reqSSZ); err != nil {
 		return nil, fmt.Errorf("write blocks_by_range request: %w", err)
 	}
-	stream.CloseWrite()
 
 	var prevHeaderRoot [32]byte
 	var hasPrev bool

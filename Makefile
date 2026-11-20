@@ -89,6 +89,7 @@ lean-sszgen: ## Regenerate the lean SSZ encoding files from struct tags
 	sszgen --path internal/lean/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/lean/types/block_encoding.go
 	sszgen --path internal/lean/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/lean/types/state_encoding.go
 	sszgen --path internal/lean/types --objs BlocksByRangeRequest --output internal/lean/types/blocks_by_range_encoding.go
+	sszgen --path internal/lean/types --objs BlocksByRootRequest --output internal/lean/types/blocks_by_root_encoding.go
 
 TESTNET_DIR ?= testnet
 NUM_VALIDATORS ?= 5

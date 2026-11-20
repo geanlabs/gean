@@ -49,10 +49,9 @@ var hashSkipTypes = map[string]bool{"SignedAttestation": true}
 
 // sszFactories maps the spec typeName to a zero-value gean struct.
 //
-// Networking req/resp types (Status, BlocksByRootRequest) are registered via
-// thin adapters in networking_ssz_adapters_test.go because their gean
-// implementations live in internal/p2p/ with hand-rolled SSZ that doesn't match the
-// fastssz-generated sszCodec contract.
+// Status is registered via a thin adapter in networking_ssz_adapters_test.go
+// because its gean implementation lives in internal/lean/p2p with hand-rolled
+// SSZ that doesn't match the fastssz-generated sszCodec contract.
 //
 // XMSS containers (PublicKey, Signature, HashTreeLayer, HashTreeOpening) are
 // registered via xmss_ssz_adapters_test.go. Gean stores XMSS payloads as
@@ -75,7 +74,7 @@ var sszFactories = map[string]func() sszCodec{
 	"MultiMessageAggregate":       func() sszCodec { return new(types.MultiMessageAggregate) },
 	"State":                       func() sszCodec { return new(types.State) },
 	"Status":                      func() sszCodec { return new(sszStatusAdapter) },
-	"BlocksByRootRequest":         func() sszCodec { return new(sszBlocksByRootRequestAdapter) },
+	"BlocksByRootRequest":         func() sszCodec { return new(types.BlocksByRootRequest) },
 	"PublicKey":                   func() sszCodec { return new(sszPublicKeyAdapter) },
 	"Signature":                   func() sszCodec { return new(sszSignatureAdapter) },
 	"HashTreeLayer":               func() sszCodec { return new(sszHashTreeLayerAdapter) },

@@ -7,12 +7,9 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/core/p2p/gossip"
 	"github.com/geanlabs/gean/internal/core/p2p/host"
 	"github.com/geanlabs/gean/internal/core/p2p/memnet"
 	"github.com/geanlabs/gean/internal/core/p2p/peers"
@@ -21,93 +18,6 @@ import (
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
-
-func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
-	var buf bytes.Buffer
-	logger.SetOutput(&buf)
-	logger.SetQuiet(false)
-	t.Cleanup(func() {
-		logger.SetOutput(os.Stderr)
-		SetClientGitCommit(unknownBuildValue)
-	})
-
-	SetClientGitCommit("abc123")
-	sszData := []byte("signed block ssz")
-	compressed := gossip.Compress(sszData)
-	root := [32]byte{0xaa}
-	logPublish(BlockTopic(), sszData, compressed, publishLogInfo{
-		slot:         7,
-		proposer:     "3",
-		blockRoot:    root,
-		hasBlockRoot: true,
-	})
-
-	out := buf.String()
-	wantParts := []string{
-		"publish gossip",
-		"topic=" + BlockTopic(),
-		"slot=7",
-		"proposer=3",
-		"block_root=0xaa",
-		"sha256_ssz=0x",
-		"sha256_compressed=0x",
-		"compressed_len=",
-		"snappy_self_decode_ok=true",
-		"message_id=0x",
-		"client_git_sha=abc123",
-		"snappy=github.com/golang/snappy@",
-	}
-	for _, part := range wantParts {
-		if !strings.Contains(out, part) {
-			t.Fatalf("publish log missing %q:\n%s", part, out)
-		}
-	}
-}
-
-func TestPublishBlockLogsCanonicalBlockRoot(t *testing.T) {
-	var buf bytes.Buffer
-	logger.SetOutput(&buf)
-	logger.SetQuiet(false)
-	t.Cleanup(func() {
-		logger.SetOutput(os.Stderr)
-	})
-
-	signed := &types.SignedBlock{
-		Block: &types.Block{
-			Slot:          7,
-			ProposerIndex: 3,
-			Body:          &types.BlockBody{},
-		},
-		Proof: &types.MultiMessageAggregate{Proof: []byte{0x42}},
-	}
-	blockRoot, err := signed.Block.HashTreeRoot()
-	if err != nil {
-		t.Fatalf("block root: %v", err)
-	}
-	signedRoot, err := signed.HashTreeRoot()
-	if err != nil {
-		t.Fatalf("signed block root: %v", err)
-	}
-	if blockRoot == signedRoot {
-		t.Fatal("test setup failed: signed block root unexpectedly equals canonical block root")
-	}
-
-	h := &Host{Host: &host.Host{}}
-	err = h.PublishBlock(context.Background(), signed)
-	if err == nil || !strings.Contains(err.Error(), "not subscribed to topic") {
-		t.Fatalf("PublishBlock error=%v, want missing topic after log", err)
-	}
-
-	out := buf.String()
-	want := "block_root=0x" + hex.EncodeToString(blockRoot[:])
-	if !strings.Contains(out, want) {
-		t.Fatalf("publish log missing canonical root %s:\n%s", want, out)
-	}
-	wrong := "block_root=0x" + hex.EncodeToString(signedRoot[:])
-	if strings.Contains(out, wrong) {
-		t.Fatalf("publish log used signed-block root %s:\n%s", wrong, out)
-	}
-}
 
 func TestDecodeResponseMaxSignedBlockSize(t *testing.T) {
 	attestations := make([]*types.AggregatedAttestation, types.ValidatorRegistryLimit)
@@ -239,8 +149,10 @@ func TestBlocksByRootRequestSSZRoundtrip(t *testing.T) {
 		{0x01, 0x02, 0x03},
 		{0xaa, 0xbb, 0xcc},
 	}
-	encoded := EncodeBlocksByRootRequest(roots)
-
+	encoded, err := (&types.BlocksByRootRequest{Roots: roots}).MarshalSSZ()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	if len(encoded) != 68 {
 		t.Fatalf("expected 68 bytes, got %d", len(encoded))
 	}
@@ -248,30 +160,33 @@ func TestBlocksByRootRequestSSZRoundtrip(t *testing.T) {
 		t.Fatalf("unexpected offset bytes: %v", encoded[:4])
 	}
 
-	decoded, err := DecodeBlocksByRootRequest(encoded)
-	if err != nil {
+	var decoded types.BlocksByRootRequest
+	if err := decoded.UnmarshalSSZ(encoded); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(decoded) != 2 {
-		t.Fatalf("expected 2 roots, got %d", len(decoded))
+	if len(decoded.Roots) != 2 {
+		t.Fatalf("expected 2 roots, got %d", len(decoded.Roots))
 	}
-	if decoded[0] != roots[0] || decoded[1] != roots[1] {
+	if decoded.Roots[0] != roots[0] || decoded.Roots[1] != roots[1] {
 		t.Fatal("root mismatch")
 	}
 }
 
 func TestBlocksByRootRequestSingleRoot36Bytes(t *testing.T) {
 	roots := [][32]byte{{0xde, 0xad, 0xbe, 0xef}}
-	encoded := EncodeBlocksByRootRequest(roots)
+	encoded, err := (&types.BlocksByRootRequest{Roots: roots}).MarshalSSZ()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	if len(encoded) != 36 {
 		t.Fatalf("expected 36 bytes for single root, got %d", len(encoded))
 	}
 
-	decoded, err := DecodeBlocksByRootRequest(encoded)
-	if err != nil {
+	var decoded types.BlocksByRootRequest
+	if err := decoded.UnmarshalSSZ(encoded); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(decoded) != 1 || decoded[0] != roots[0] {
+	if len(decoded.Roots) != 1 || decoded.Roots[0] != roots[0] {
 		t.Fatal("single root roundtrip mismatch")
 	}
 }

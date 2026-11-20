@@ -4,7 +4,6 @@ go 1.26.0
 
 require (
 	github.com/cockroachdb/pebble v1.1.5
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/ethereum/go-ethereum v1.17.2
 	github.com/ferranbt/fastssz v1.0.0
 	github.com/golang/snappy v1.0.0
@@ -31,6 +30,7 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dunglas/httpsfv v1.1.0 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect
 	github.com/flynn/noise v1.1.0 // indirect

@@ -4,5 +4,6 @@ package reqresp
 // metrics, at init, before any request is served.
 var (
 	OnTimeout       = func(protocol, direction string) {}
+	OnRequest       = func(protocol string, bytes int) {}
 	OnResponseChunk = func(protocol string, bytes int) {}
 )

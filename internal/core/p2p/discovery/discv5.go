@@ -7,12 +7,9 @@ import (
 	"net"
 	"time"
 
-	gethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/geanlabs/gean/internal/core/logger"
@@ -147,11 +144,7 @@ func QUICAddr(node *enode.Node) (multiaddr.Multiaddr, error) {
 	if pub == nil {
 		return nil, fmt.Errorf("record of %s has no secp256k1 key", node.ID())
 	}
-	key, err := crypto.UnmarshalSecp256k1PublicKey(gethcrypto.CompressPubkey(pub))
-	if err != nil {
-		return nil, fmt.Errorf("convert key of %s: %w", node.ID(), err)
-	}
-	id, err := peer.IDFromPublicKey(key)
+	id, err := peerIDFromPubkey(pub)
 	if err != nil {
 		return nil, fmt.Errorf("peer id of %s: %w", node.ID(), err)
 	}

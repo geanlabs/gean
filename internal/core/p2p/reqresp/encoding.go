@@ -25,17 +25,6 @@ func EncodeVarint(value uint32) []byte {
 	return buf[:n]
 }
 
-func DecodeVarint(buf []byte) (uint32, []byte, error) {
-	val, n := binary.Uvarint(buf)
-	if n <= 0 {
-		return 0, nil, fmt.Errorf("invalid varint")
-	}
-	if val > uint64(MaxPayloadSize) {
-		return 0, nil, fmt.Errorf("varint value %d exceeds max payload", val)
-	}
-	return uint32(val), buf[n:], nil
-}
-
 func EncodePayload(data []byte) []byte {
 	var buf bytes.Buffer
 	w := snappy.NewBufferedWriter(&buf)
@@ -50,23 +39,15 @@ func EncodePayload(data []byte) []byte {
 	return result
 }
 
+// DecodePayload decodes a request: a single frame that is the whole stream, so
+// nothing may follow the declared length.
 func DecodePayload(buf []byte) ([]byte, error) {
-	declaredLen, rest, err := DecodeVarint(buf)
+	decoded, sr, err := decodeFrame(bytes.NewReader(buf), MaxPayloadSize)
 	if err != nil {
-		return nil, fmt.Errorf("decode varint: %w", err)
+		return nil, err
 	}
-
-	r := snappy.NewReader(bytes.NewReader(rest))
-	decoded, err := io.ReadAll(io.LimitReader(r, int64(declaredLen)+1))
-	if err != nil {
-		return nil, fmt.Errorf("snappy framed decode: %w", err)
-	}
-
-	if len(decoded) > MaxPayloadSize {
-		return nil, fmt.Errorf("decoded payload %d exceeds max %d", len(decoded), MaxPayloadSize)
-	}
-	if uint32(len(decoded)) != declaredLen {
-		return nil, fmt.Errorf("length mismatch: declared %d, got %d", declaredLen, len(decoded))
+	if err := expectFrameEnd(sr, len(decoded)); err != nil {
+		return nil, err
 	}
 	return decoded, nil
 }
@@ -89,11 +70,13 @@ func EncodeResponse(code byte, data []byte) []byte {
 	return result
 }
 
+type byteReader interface {
+	io.Reader
+	io.ByteReader
+}
+
 func DecodeResponse(r io.Reader, maxLen uint32) (byte, []byte, error) {
-	br, ok := r.(interface {
-		io.Reader
-		io.ByteReader
-	})
+	br, ok := r.(byteReader)
 	if !ok {
 		br = bufio.NewReader(r)
 	}
@@ -103,33 +86,15 @@ func DecodeResponse(r io.Reader, maxLen uint32) (byte, []byte, error) {
 		return 0, nil, fmt.Errorf("read response code: %w", err)
 	}
 
-	declaredLen, err := decodeVarintFrom(br)
+	decoded, sr, err := decodeFrame(br, maxLen)
 	if err != nil {
-		return code, nil, fmt.Errorf("decode response length: %w", err)
+		return code, nil, err
 	}
-	if declaredLen > maxLen {
-		return code, nil, fmt.Errorf("response length %d exceeds max %d", declaredLen, maxLen)
-	}
-
-	decoded := []byte{}
-	sr := snappy.NewReader(br)
-	if declaredLen > 0 {
-		// Grow with the bytes that arrive rather than trusting the declared
-		// length up front. Reading past it would consume the next chunk.
-		decoded, err = io.ReadAll(io.LimitReader(sr, int64(declaredLen)))
-		if err != nil {
-			return code, nil, fmt.Errorf("decode response payload: %w", err)
-		}
-		if uint32(len(decoded)) != declaredLen {
-			return code, nil, fmt.Errorf("length mismatch: declared %d, got %d", declaredLen, len(decoded))
-		}
-	} else {
-		var scratch [1]byte
-		if n, err := sr.Read(scratch[:]); err != io.EOF {
-			if err != nil {
-				return code, nil, fmt.Errorf("decode empty response payload: %w", err)
-			}
-			return code, nil, fmt.Errorf("length mismatch: declared 0, got at least %d", n)
+	// Reading past a non-empty payload would consume the next chunk, but an
+	// empty one must still be an empty snappy stream.
+	if len(decoded) == 0 {
+		if err := expectFrameEnd(sr, 0); err != nil {
+			return code, nil, err
 		}
 	}
 
@@ -138,6 +103,42 @@ func DecodeResponse(r io.Reader, maxLen uint32) (byte, []byte, error) {
 	}
 
 	return code, decoded, nil
+}
+
+// decodeFrame reads a varint length prefix and the snappy-framed payload it
+// declares, of at most maxLen bytes. It returns the snappy reader for callers
+// that check what follows.
+func decodeFrame(br byteReader, maxLen uint32) ([]byte, io.Reader, error) {
+	declaredLen, err := decodeVarintFrom(br)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode payload length: %w", err)
+	}
+	if declaredLen > maxLen {
+		return nil, nil, fmt.Errorf("payload length %d exceeds max %d", declaredLen, maxLen)
+	}
+
+	sr := snappy.NewReader(br)
+	// Grow with the bytes that arrive rather than trusting the declared
+	// length up front.
+	decoded, err := io.ReadAll(io.LimitReader(sr, int64(declaredLen)))
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode payload: %w", err)
+	}
+	if uint32(len(decoded)) != declaredLen {
+		return nil, nil, fmt.Errorf("length mismatch: declared %d, got %d", declaredLen, len(decoded))
+	}
+	return decoded, sr, nil
+}
+
+func expectFrameEnd(sr io.Reader, declaredLen int) error {
+	var scratch [1]byte
+	if n, err := sr.Read(scratch[:]); err != io.EOF {
+		if err != nil {
+			return fmt.Errorf("decode payload: %w", err)
+		}
+		return fmt.Errorf("length mismatch: declared %d, got at least %d", declaredLen, declaredLen+n)
+	}
+	return nil
 }
 
 func decodeVarintFrom(r io.ByteReader) (uint32, error) {

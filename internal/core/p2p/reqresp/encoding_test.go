@@ -34,16 +34,16 @@ func (stubStream) SetWriteDeadline(time.Time) error { return nil }
 func TestVarintRoundtrip(t *testing.T) {
 	tests := []uint32{0, 1, 127, 128, 255, 256, 16383, 16384, 1<<20 - 1}
 	for _, v := range tests {
-		encoded := EncodeVarint(v)
-		decoded, rest, err := DecodeVarint(encoded)
+		r := bytes.NewReader(EncodeVarint(v))
+		decoded, err := decodeVarintFrom(r)
 		if err != nil {
 			t.Fatalf("varint %d: %v", v, err)
 		}
 		if decoded != v {
 			t.Fatalf("varint %d: got %d", v, decoded)
 		}
-		if len(rest) != 0 {
-			t.Fatalf("varint %d: %d trailing bytes", v, len(rest))
+		if r.Len() != 0 {
+			t.Fatalf("varint %d: %d trailing bytes", v, r.Len())
 		}
 	}
 }

@@ -13,5 +13,6 @@ func init() {
 	peers.OnScore = metrics.SetPeerScore
 	peers.OnRemove = metrics.DeletePeerScore
 	reqresp.OnTimeout = metrics.IncReqRespTimeout
+	reqresp.OnRequest = metrics.ObserveReqRespRequestSize
 	reqresp.OnResponseChunk = metrics.ObserveReqRespResponseChunkSize
 }

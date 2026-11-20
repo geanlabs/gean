@@ -3,12 +3,15 @@
 package discovery
 
 import (
+	"crypto/ecdsa"
 	"encoding/base64"
 	"fmt"
 	"net"
 	"strings"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	gethcrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -76,83 +79,51 @@ func parseENRRecord(enrStr string) (*enrRecord, error) {
 		return nil, fmt.Errorf("decode ENR base64: %w", err)
 	}
 
-	var items []rlp.RawValue
-	if err := rlp.DecodeBytes(data, &items); err != nil {
+	// The signature is left unchecked (no enode.New): leanSpec's fixtures
+	// expect records with invalid signatures to decode.
+	var r enr.Record
+	if err := rlp.DecodeBytes(data, &r); err != nil {
 		return nil, fmt.Errorf("decode ENR RLP: %w", err)
 	}
-	if len(items) < 4 {
-		return nil, fmt.Errorf("ENR has too few items: %d", len(items))
-	}
 
-	var rec enrRecord
-	if err := rlp.DecodeBytes(items[1], &rec.seq); err != nil {
-		return nil, fmt.Errorf("decode ENR seq: %w", err)
+	rec := enrRecord{seq: r.Seq()}
+	var ip4 enr.IPv4
+	if r.Load(&ip4) == nil {
+		rec.ip4 = net.IP(ip4)
 	}
+	var ip6 enr.IPv6
+	if r.Load(&ip6) == nil {
+		rec.ip6 = net.IP(ip6)
+	}
+	// A port entry that is missing or malformed stays zero, which
+	// transportMultiaddr reads as absent.
+	var udp enr.UDP
+	var udp6 enr.UDP6
+	var quic enr.QUIC
+	var quic6 enr.QUIC6
+	for _, e := range []enr.Entry{&udp, &udp6, &quic, &quic6} {
+		_ = r.Load(e)
+	}
+	rec.udpPort, rec.udp6Port = uint16(udp), uint16(udp6)
+	rec.quicPort, rec.quic6Port = uint16(quic), uint16(quic6)
 
-	var pubkeyBytes []byte
-	for i := 2; i+1 < len(items); i += 2 {
-		var key string
-		if err := rlp.DecodeBytes(items[i], &key); err != nil {
-			continue
-		}
-		switch key {
-		case "ip":
-			rec.ip4 = decodeIP(items[i+1], net.IPv4len)
-		case "ip6":
-			rec.ip6 = decodeIP(items[i+1], net.IPv6len)
-		case "udp":
-			rec.udpPort = decodePort(items[i+1])
-		case "udp6":
-			rec.udp6Port = decodePort(items[i+1])
-		case "quic":
-			rec.quicPort = decodePort(items[i+1])
-		case "quic6":
-			rec.quic6Port = decodePort(items[i+1])
-		case "secp256k1":
-			if err := rlp.DecodeBytes(items[i+1], &pubkeyBytes); err != nil {
-				pubkeyBytes = nil
-			}
-		}
+	var pub enode.Secp256k1
+	if err := r.Load(&pub); err != nil {
+		return nil, fmt.Errorf("ENR secp256k1 key: %w", err)
 	}
-
-	if len(pubkeyBytes) == 0 {
-		return nil, fmt.Errorf("ENR missing secp256k1 key")
-	}
-	rec.peerID, err = peerIDFromSecp256k1(pubkeyBytes)
+	rec.peerID, err = peerIDFromPubkey((*ecdsa.PublicKey)(&pub))
 	if err != nil {
 		return nil, err
 	}
 	return &rec, nil
 }
 
-func decodeIP(raw rlp.RawValue, size int) net.IP {
-	var ipBytes []byte
-	if err := rlp.DecodeBytes(raw, &ipBytes); err != nil || len(ipBytes) != size {
-		return nil
-	}
-	return net.IP(ipBytes)
-}
-
-func decodePort(raw rlp.RawValue) uint16 {
-	var port uint16
-	if err := rlp.DecodeBytes(raw, &port); err != nil {
-		return 0
-	}
-	return port
-}
-
-func peerIDFromSecp256k1(pubkeyBytes []byte) (peer.ID, error) {
-	secpKey, err := secp256k1.ParsePubKey(pubkeyBytes)
-	if err != nil {
-		return "", fmt.Errorf("parse secp256k1 key: %w", err)
-	}
-
-	libp2pKey, err := crypto.UnmarshalSecp256k1PublicKey(secpKey.SerializeCompressed())
+func peerIDFromPubkey(pub *ecdsa.PublicKey) (peer.ID, error) {
+	key, err := crypto.UnmarshalSecp256k1PublicKey(gethcrypto.CompressPubkey(pub))
 	if err != nil {
 		return "", fmt.Errorf("convert to libp2p key: %w", err)
 	}
-
-	peerID, err := peer.IDFromPublicKey(libp2pKey)
+	peerID, err := peer.IDFromPublicKey(key)
 	if err != nil {
 		return "", fmt.Errorf("derive peer ID: %w", err)
 	}

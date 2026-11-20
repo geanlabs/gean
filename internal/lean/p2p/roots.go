@@ -3,7 +3,6 @@ package p2p
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
-	"github.com/geanlabs/gean/internal/lean/metrics"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -32,12 +30,13 @@ func handleBlocksByRootRequest(stream network.Stream, blockByRootFn func(root [3
 		return
 	}
 
-	roots, err := DecodeBlocksByRootRequest(payload)
-	if err != nil {
+	req := &types.BlocksByRootRequest{}
+	if err := req.UnmarshalSSZ(payload); err != nil {
 		logger.Error(logger.Network, "blocks_by_root: %v", err)
 		reqresp.WriteResponse(stream, "blocks_by_root", reqresp.RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return
 	}
+	roots := req.Roots
 	if err := validateRootCount(len(roots)); err != nil {
 		reqresp.WriteResponse(stream, "blocks_by_root", reqresp.RespInvalidRequest, []byte("invalid root count"))
 		return
@@ -83,13 +82,13 @@ func (h *Host) FetchBlocksByRoot(ctx context.Context, peerID peer.ID, roots [][3
 	}
 	defer stream.Close()
 
-	reqresp.ArmWriteDeadline(stream)
-	reqBytes := reqresp.EncodePayload(EncodeBlocksByRootRequest(roots))
-	metrics.ObserveReqRespRequestSize("blocks_by_root", len(reqBytes))
-	if _, err := stream.Write(reqBytes); err != nil {
+	req, err := (&types.BlocksByRootRequest{Roots: roots}).MarshalSSZ()
+	if err != nil {
+		return nil, fmt.Errorf("marshal blocks_by_root request: %w", err)
+	}
+	if err := reqresp.WriteRequest(stream, "blocks_by_root", req); err != nil {
 		return nil, fmt.Errorf("write blocks request: %w", err)
 	}
-	stream.CloseWrite()
 
 	requestedRoots := requestedRootSet(roots)
 	seenRoots := make(map[[32]byte]bool, len(roots))
@@ -148,40 +147,6 @@ func validateFetchedBlockRoot(
 	}
 	seenRoots[root] = true
 	return nil
-}
-
-func EncodeBlocksByRootRequest(roots [][32]byte) []byte {
-	rootsData := make([]byte, len(roots)*32)
-	for i, root := range roots {
-		copy(rootsData[i*32:], root[:])
-	}
-
-	container := make([]byte, 4+len(rootsData))
-	binary.LittleEndian.PutUint32(container[:4], 4)
-	copy(container[4:], rootsData)
-	return container
-}
-
-func DecodeBlocksByRootRequest(payload []byte) ([][32]byte, error) {
-	if len(payload) < 4 {
-		return nil, fmt.Errorf("payload too short: %d bytes", len(payload))
-	}
-
-	offset := binary.LittleEndian.Uint32(payload[:4])
-	if offset != 4 {
-		return nil, fmt.Errorf("unexpected SSZ offset %d, expected 4", offset)
-	}
-
-	rootsData := payload[4:]
-	if len(rootsData)%32 != 0 {
-		return nil, fmt.Errorf("roots data size %d not multiple of 32", len(rootsData))
-	}
-
-	roots := make([][32]byte, len(rootsData)/32)
-	for i := range roots {
-		copy(roots[i][:], rootsData[i*32:(i+1)*32])
-	}
-	return roots, nil
 }
 
 func validateRootCount(count int) error {
