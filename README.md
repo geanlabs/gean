@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/gean-banner.svg" alt="gean: a Lean Ethereum consensus client in Go" width="100%">
+</p>
+
 # gean
 
 A Go consensus client for Lean Ethereum, with Ethereum beacon chain support on the way.
@@ -169,7 +173,7 @@ Run `make help` to list every target.
 | `make lean-e2e` | End-to-end: three nodes finalize, one restarts and catches up; fake XMSS (`-tags fakecrypto`), no Rust needed |
 | `make test-all` | Everything above except `lean-e2e`, plus the multi-node simulation with real XMSS (slow, about 1 GB) |
 | `make lint` | `go vet` and golangci-lint (`.golangci.yml`): package import rules fail the build, other findings are reported; plus `cargo fmt --check` and `clippy` for the Rust code |
-| `make fmt` | Format Go code |
+| `make fmt` | Format Go and Rust code |
 
 ## License
 
