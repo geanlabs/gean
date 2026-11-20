@@ -14,10 +14,10 @@ import (
 	"github.com/geanlabs/gean/internal/lean/store"
 )
 
-func newAPIServer(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.Server {
+func newAPIHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) http.Handler {
 	if testdriver.IsEnabled(os.Getenv(testdriver.EnvVar)) {
 		logger.Info(logger.Node, "%s=1: enabling test-driver routes", testdriver.EnvVar)
-		return api.NewAPIServerWithTestDriver(s, fc, aggCtl)
+		return api.HandlerWithTestDriver(s, fc, aggCtl)
 	}
-	return api.NewAPIServer(s, fc, aggCtl)
+	return api.Handler(s, fc, aggCtl)
 }

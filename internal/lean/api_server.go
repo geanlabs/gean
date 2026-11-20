@@ -11,6 +11,6 @@ import (
 	"github.com/geanlabs/gean/internal/lean/store"
 )
 
-func newAPIServer(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.Server {
-	return api.NewAPIServer(s, fc, aggCtl)
+func newAPIHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) http.Handler {
+	return api.Handler(s, fc, aggCtl)
 }

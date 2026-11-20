@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -24,7 +25,6 @@ func FinalizedBlockHandler(s *store.ConsensusStore) http.HandlerFunc {
 			http.Error(w, "ssz marshal failed", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Write(data)
+		httpapi.WriteSSZ(w, data)
 	}
 }

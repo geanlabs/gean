@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -28,7 +29,6 @@ func FinalizedStateHandler(s *store.ConsensusStore) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Write(data)
+		httpapi.WriteSSZ(w, data)
 	}
 }

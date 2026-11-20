@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/importer"
 	"github.com/geanlabs/gean/internal/lean/specfixtures"
@@ -64,10 +65,10 @@ func VerifySignaturesHandler() http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, verifySignaturesResponse{Succeeded: true, Error: nil})
+		httpapi.WriteJSON(w, http.StatusOK, verifySignaturesResponse{Succeeded: true, Error: nil})
 	}
 }
 
 func writeVerifyFailure(w http.ResponseWriter, msg string) {
-	writeJSON(w, http.StatusOK, verifySignaturesResponse{Succeeded: false, Error: &msg})
+	httpapi.WriteJSON(w, http.StatusOK, verifySignaturesResponse{Succeeded: false, Error: &msg})
 }

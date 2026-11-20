@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/core/lifecycle"
 	"github.com/geanlabs/gean/internal/core/logger"
 )
@@ -17,7 +18,7 @@ const shutdownProgressInterval = 5 * time.Second
 // that failed halfway.
 type components struct {
 	cancel       context.CancelFunc
-	servers      []*httpServer
+	servers      []*httpapi.Server
 	tasks        lifecycle.Group // HTTP serving and the subscription re-announce
 	closeNetwork func()
 	waitSync     func()
@@ -32,7 +33,7 @@ type components struct {
 // still in use; a second signal exits without freeing anything.
 func (c *components) teardown() {
 	for _, srv := range c.servers {
-		srv.shutdown()
+		waitLogged(srv.Name+" requests", srv.Shutdown)
 	}
 	if c.cancel != nil {
 		c.cancel()

@@ -5,6 +5,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/metrics"
 	"github.com/geanlabs/gean/internal/lean/importer"
@@ -122,7 +123,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if c.servers, err = listenHTTP(cfg, s, fc, aggCtl); err != nil {
 		return err
 	}
-	failed := serveHTTP(c.servers, &c.tasks)
+	failed := httpapi.Serve(c.servers, &c.tasks)
 	logger.Info(logger.Node, "gean started: api=%s metrics=%s aggregator=%v", cfg.apiAddress(), cfg.metricsAddress(), cfg.IsAggregator)
 
 	select {

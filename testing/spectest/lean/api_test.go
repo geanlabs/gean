@@ -211,7 +211,7 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 }
 
 // lookupAPIHandler maps a spec (method, endpoint) to the in-process
-// http.HandlerFunc. Matches the route registrations in api.NewAPIServer.
+// http.HandlerFunc. Matches the route registrations in api.Handler.
 func lookupAPIHandler(method, endpoint string, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) http.HandlerFunc {
 	switch method + " " + endpoint {
 	case "GET /lean/v0/health":

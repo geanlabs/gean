@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/specfixtures"
@@ -120,7 +121,7 @@ func stepChecksSafeTarget(step *specfixtures.ForkChoiceStep) bool {
 
 func writeInitFailure(w http.ResponseWriter, msg string) {
 	resp := driverStepResponse{Accepted: false, Error: &msg, Snapshot: driverSnapshot{}}
-	writeJSON(w, http.StatusBadRequest, resp)
+	httpapi.WriteJSON(w, http.StatusBadRequest, resp)
 }
 
 func (sess *Session) ForkChoiceStepHandler() http.HandlerFunc {
@@ -137,7 +138,7 @@ func (sess *Session) ForkChoiceStepHandler() http.HandlerFunc {
 		if sess.store == nil || sess.fc == nil {
 			msg := "fork_choice/step called before fork_choice/init"
 			resp := driverStepResponse{Accepted: false, Error: &msg, Snapshot: driverSnapshot{}}
-			writeJSON(w, http.StatusOK, resp)
+			httpapi.WriteJSON(w, http.StatusOK, resp)
 			return
 		}
 
@@ -169,6 +170,6 @@ func (sess *Session) ForkChoiceStepHandler() http.HandlerFunc {
 			msg := stepErr.Error()
 			errPtr = &msg
 		}
-		writeJSON(w, http.StatusOK, driverStepResponse{Accepted: accepted, Error: errPtr, Snapshot: snap})
+		httpapi.WriteJSON(w, http.StatusOK, driverStepResponse{Accepted: accepted, Error: errPtr, Snapshot: snap})
 	}
 }

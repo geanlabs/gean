@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/lean/store"
 )
 
@@ -15,7 +16,7 @@ type checkpointResponse struct {
 func JustifiedCheckpointHandler(s *store.ConsensusStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cp := s.LatestJustified()
-		writeJSON(w, http.StatusOK, checkpointResponse{
+		httpapi.WriteJSON(w, http.StatusOK, checkpointResponse{
 			Slot: cp.Slot,
 			Root: fmt.Sprintf("0x%x", cp.Root),
 		})

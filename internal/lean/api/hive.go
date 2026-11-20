@@ -11,10 +11,10 @@ import (
 	"github.com/geanlabs/gean/internal/lean/store"
 )
 
-// NewAPIServerWithTestDriver returns the API server with the hive test-driver
+// HandlerWithTestDriver serves the /lean/v0 API with the hive test-driver
 // routes added.
-func NewAPIServerWithTestDriver(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.Server {
-	return &http.Server{Handler: buildAPIMuxWithTestDriver(s, fc, aggCtl)}
+func HandlerWithTestDriver(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) http.Handler {
+	return buildAPIMuxWithTestDriver(s, fc, aggCtl)
 }
 
 func buildAPIMuxWithTestDriver(s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) *http.ServeMux {

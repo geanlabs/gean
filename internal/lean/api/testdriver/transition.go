@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/lean/specfixtures"
 	"github.com/geanlabs/gean/internal/lean/transition"
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -62,7 +63,7 @@ func writeStateTransitionSuccess(w http.ResponseWriter, state *types.State) {
 			HistoricalBlockHashesCount: uint64(len(state.HistoricalBlockHashes)),
 		},
 	}
-	writeJSON(w, http.StatusOK, resp)
+	httpapi.WriteJSON(w, http.StatusOK, resp)
 }
 
 func writeStateTransitionFailure(w http.ResponseWriter, msg string) {
@@ -71,5 +72,5 @@ func writeStateTransitionFailure(w http.ResponseWriter, msg string) {
 		Error:     &msg,
 		Post:      nil,
 	}
-	writeJSON(w, http.StatusOK, resp)
+	httpapi.WriteJSON(w, http.StatusOK, resp)
 }

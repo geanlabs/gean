@@ -1,6 +1,10 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/geanlabs/gean/internal/core/httpapi"
+)
 
 type healthResponse struct {
 	Status  string `json:"status"`
@@ -8,7 +12,7 @@ type healthResponse struct {
 }
 
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{
+	httpapi.WriteJSON(w, http.StatusOK, healthResponse{
 		Status:  "healthy",
 		Service: "lean-rpc-api",
 	})

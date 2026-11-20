@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/lean/role"
 )
 
@@ -22,7 +23,7 @@ type aggregatorToggleResponse struct {
 
 func AggregatorStatusHandler(ctl *role.Controller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, aggregatorStatusResponse{IsAggregator: ctl.Get()})
+		httpapi.WriteJSON(w, http.StatusOK, aggregatorStatusResponse{IsAggregator: ctl.Get()})
 	}
 }
 
@@ -41,7 +42,7 @@ func AggregatorToggleHandler(ctl *role.Controller) http.HandlerFunc {
 		}
 
 		prev := ctl.Set(*body.Enabled)
-		writeJSON(w, http.StatusOK, aggregatorToggleResponse{
+		httpapi.WriteJSON(w, http.StatusOK, aggregatorToggleResponse{
 			IsAggregator: ctl.Get(),
 			Previous:     prev,
 		})

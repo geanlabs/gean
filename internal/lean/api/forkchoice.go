@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/geanlabs/gean/internal/core/httpapi"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/store"
 )
@@ -54,7 +55,7 @@ func ForkChoiceHandler(s *store.ConsensusStore, fc *forkchoice.ForkChoice) http.
 			validatorCount = headState.NumValidators()
 		}
 
-		writeJSON(w, http.StatusOK, forkChoiceResponse{
+		httpapi.WriteJSON(w, http.StatusOK, forkChoiceResponse{
 			Nodes: nodes,
 			Head:  fmt.Sprintf("0x%x", head),
 			Justified: checkpointResponse{
