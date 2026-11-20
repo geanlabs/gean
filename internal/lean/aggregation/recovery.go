@@ -1,4 +1,4 @@
-package node
+package aggregation
 
 import (
 	"context"
@@ -9,10 +9,8 @@ import (
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/metrics"
-	"github.com/geanlabs/gean/internal/lean/aggregation"
 	"github.com/geanlabs/gean/internal/lean/attestationproof"
 	"github.com/geanlabs/gean/internal/lean/store"
-	"github.com/geanlabs/gean/internal/lean/syncer"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -34,9 +32,9 @@ const (
 // the slot its aggregate — and a missed aggregate slows justification, the very thing
 // recovery exists to help. Recovery is best-effort and the aggregate is duty work, so
 // recovery yields the window rather than racing for it.
-func (e *Engine) splitFitsBeforeAggregation(nowMs uint64) bool {
-	intoSlot := time.Duration(e.millisIntoSlot(nowMs)) * time.Millisecond
-	windowEnd := aggregationDispatchOffset + aggregation.SessionBudget
+func (a *Aggregator) splitFitsBeforeAggregation(nowMs uint64) bool {
+	intoSlot := time.Duration(a.msIntoSlot(nowMs)) * time.Millisecond
+	windowEnd := aggregationDispatchOffset + SessionBudget
 	if intoSlot >= aggregationDispatchOffset && intoSlot < windowEnd {
 		return false
 	}
@@ -54,81 +52,81 @@ type recoveryCandidate struct {
 	newCount int
 }
 
-func (e *Engine) dispatchRecovery(block *types.SignedBlock) {
+func (a *Aggregator) DispatchRecovery(block *types.SignedBlock) {
 	if block == nil || block.Block == nil || block.Block.Body == nil ||
-		len(block.Block.Body.Attestations) == 0 || e.RecoveryCh == nil {
+		len(block.Block.Body.Attestations) == 0 || a.recovery == nil {
 		return
 	}
 	select {
-	case e.RecoveryCh <- block:
-		metrics.SetProvingQueueDepth("recovery", len(e.RecoveryCh))
+	case a.recovery <- block:
+		metrics.SetProvingQueueDepth("recovery", len(a.recovery))
 	default:
 		metrics.IncProofOperation("recovery", "canceled")
 	}
 }
 
-func (e *Engine) runRecoveryWorker(ctx context.Context) {
+func (a *Aggregator) RunRecovery(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case block := <-e.RecoveryCh:
-			metrics.SetProvingQueueDepth("recovery", len(e.RecoveryCh))
-			e.recoverBlockProofs(ctx, block)
+		case block := <-a.recovery:
+			metrics.SetProvingQueueDepth("recovery", len(a.recovery))
+			a.recoverBlockProofs(ctx, block)
 		}
 	}
 }
 
-func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.SignedBlock) {
+func (a *Aggregator) recoverBlockProofs(ctx context.Context, signedBlock *types.SignedBlock) {
 	// Only a synced aggregator deconstructs blocks: it re-broadcasts the recovered
 	// proofs, while non-aggregators rely on the gossip path. Recovery is skipped while
 	// syncing, when historical blocks flood this path and the justified anchor is still
 	// moving, so recovered votes would not match a live head.
-	if e.AggCtl == nil || !e.AggCtl.Get() || e.GetSyncStatus() != syncer.SyncSynced ||
+	if !a.isAggregator() || !a.synced() ||
 		signedBlock == nil || signedBlock.Block == nil || signedBlock.Block.Body == nil ||
 		signedBlock.Proof == nil || len(signedBlock.Proof.Proof) == 0 {
 		return
 	}
-	now := clock.UnixMilli(e.Clock)
-	currentSlot := e.currentSlot(now)
-	if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext {
+	now := clock.UnixMilli(a.cfg.Clock)
+	currentSlot := a.slotAt(now)
+	if a.proposerAt(currentSlot + 1) {
 		return
 	}
 
 	block := signedBlock.Block
-	state := e.Store.GetState(block.ParentRoot)
+	state := a.cfg.Store.GetState(block.ParentRoot)
 	if state == nil {
 		return
 	}
 	// The head post-state's justified checkpoint is the source selectRecoveryCandidates
 	// filters votes against.
-	headSummary, ok := e.Store.StateSummary(e.Store.Head())
+	headSummary, ok := a.cfg.Store.StateSummary(a.cfg.Store.Head())
 	if !ok {
 		return
 	}
-	pubkeys, bindings, err := e.blockProofClaims(block, state)
+	pubkeys, bindings, err := a.blockProofClaims(block, state)
 	if err != nil {
 		return
 	}
 
-	newEntries := e.Store.NewPayloads.Entries()
-	knownEntries := e.Store.KnownPayloads.Entries()
+	newEntries := a.cfg.Store.NewPayloads.Entries()
+	knownEntries := a.cfg.Store.KnownPayloads.Entries()
 	candidates := selectRecoveryCandidates(block.Body.Attestations, &headSummary.Justified, newEntries, knownEntries)
 
 	for _, candidate := range candidates {
 		if ctx.Err() != nil {
 			return
 		}
-		now = clock.UnixMilli(e.Clock)
-		currentSlot = e.currentSlot(now)
-		if _, proposesNext := e.getOurProposer(currentSlot + 1); proposesNext {
+		now = clock.UnixMilli(a.cfg.Clock)
+		currentSlot = a.slotAt(now)
+		if a.proposerAt(currentSlot + 1) {
 			return
 		}
-		if !e.splitFitsBeforeAggregation(now) {
+		if !a.splitFitsBeforeAggregation(now) {
 			metrics.IncProofOperation("recovery", "canceled")
 			return
 		}
-		if e.ProvingGate != nil && !e.ProvingGate.Acquire(ctx, false) {
+		if a.cfg.Gate != nil && !a.cfg.Gate.Acquire(ctx, false) {
 			metrics.IncProofOperation("recovery", "canceled")
 			return
 		}
@@ -136,9 +134,9 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		// check above describes when recovery asked, not when it was handed over.
 		// Sessions routinely run past their nominal budget, so re-check before
 		// spending the gate and give it back if the window closed while waiting.
-		if !e.splitFitsBeforeAggregation(clock.UnixMilli(e.Clock)) {
-			if e.ProvingGate != nil {
-				e.ProvingGate.Release(false)
+		if !a.splitFitsBeforeAggregation(clock.UnixMilli(a.cfg.Clock)) {
+			if a.cfg.Gate != nil {
+				a.cfg.Gate.Release(false)
 			}
 			metrics.IncProofOperation("recovery", "canceled")
 			return
@@ -157,15 +155,15 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 					candidate.att.Data,
 					append([]*types.SingleMessageAggregate{recovered}, locals...),
 					state,
-					attestationproof.NewMerger(e.Store.PubKeyCache),
+					attestationproof.NewMerger(a.cfg.Store.PubKeyCache),
 				)
 				if mergeErr == nil && coversParticipants(combined, candidate.att.AggregationBits) {
 					recovered = combined
 				}
 			}
 		}
-		if e.ProvingGate != nil {
-			e.ProvingGate.Release(false)
+		if a.cfg.Gate != nil {
+			a.cfg.Gate.Release(false)
 		}
 		metrics.ObserveProvingDuration("recovery", time.Since(started).Seconds())
 		if err != nil {
@@ -173,9 +171,9 @@ func (e *Engine) recoverBlockProofs(ctx context.Context, signedBlock *types.Sign
 		} else {
 			metrics.IncProofOperation("recovery", "success")
 			metrics.ObserveProofSize("type1", len(proof))
-			e.Store.NewPayloads.Push(candidate.root, candidate.att.Data, recovered)
-			if e.P2P != nil {
-				_ = e.P2P.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
+			a.cfg.Store.NewPayloads.Push(candidate.root, candidate.att.Data, recovered)
+			if a.cfg.Publisher != nil {
+				_ = a.cfg.Publisher.PublishAggregatedAttestation(ctx, &types.SignedAggregatedAttestation{
 					Data:  candidate.att.Data,
 					Proof: recovered,
 				})
@@ -238,7 +236,7 @@ func coversParticipants(proof *types.SingleMessageAggregate, participants []byte
 // blockProofClaims returns the signer groups of a block's Type-2 proof and what each
 // signed, in the order block verification binds them: one group per attestation, then
 // the proposer over the block root.
-func (e *Engine) blockProofClaims(block *types.Block, state *types.State) ([][]xmss.CPubKey, []xmss.MessageBinding, error) {
+func (a *Aggregator) blockProofClaims(block *types.Block, state *types.State) ([][]xmss.CPubKey, []xmss.MessageBinding, error) {
 	groups := make([][]xmss.CPubKey, 0, len(block.Body.Attestations)+1)
 	bindings := make([]xmss.MessageBinding, 0, len(block.Body.Attestations)+1)
 	for _, att := range block.Body.Attestations {
@@ -247,7 +245,7 @@ func (e *Engine) blockProofClaims(block *types.Block, state *types.State) ([][]x
 			if index >= uint64(len(state.Validators)) || state.Validators[index] == nil {
 				return nil, nil, fmt.Errorf("validator %d out of range", index)
 			}
-			key, err := e.Store.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
+			key, err := a.cfg.Store.PubKeyCache.Get(state.Validators[index].AttestationPubkey)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -263,7 +261,7 @@ func (e *Engine) blockProofClaims(block *types.Block, state *types.State) ([][]x
 	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
 		return nil, nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
 	}
-	key, err := e.Store.PubKeyCache.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
+	key, err := a.cfg.Store.PubKeyCache.Get(state.Validators[block.ProposerIndex].ProposalPubkey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -293,4 +291,12 @@ func localProofs(entry *store.PayloadEntry) []*types.SingleMessageAggregate {
 		return nil
 	}
 	return entry.Proofs
+}
+
+func (a *Aggregator) synced() bool {
+	return a.cfg.Synced != nil && a.cfg.Synced()
+}
+
+func (a *Aggregator) proposerAt(slot uint64) bool {
+	return a.cfg.ProposerAt != nil && a.cfg.ProposerAt(slot)
 }

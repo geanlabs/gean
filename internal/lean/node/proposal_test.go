@@ -161,6 +161,7 @@ func proposalTestEngine(t *testing.T) *Engine {
 	s.InsertState(root, state)
 	s.InsertBlockHeader(root, state.LatestBlockHeader)
 	e := &Engine{Store: s, Keys: &xmss.KeyManager{}, ProposalCh: make(chan proposalDuty, 1), ProposalResultCh: make(chan *proposalResult, 1)}
+	e.Aggregator = e.newAggregator()
 	e.Importer = e.newImporter()
 	return e
 }

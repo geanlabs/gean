@@ -1,4 +1,4 @@
-package node
+package aggregation
 
 import (
 	"testing"
@@ -111,5 +111,15 @@ func TestSelectRecoveryCandidatesNilSafe(t *testing.T) {
 	candidates := selectRecoveryCandidates(attestations, head, noEntries(), noEntries())
 	if len(candidates) != 0 {
 		t.Fatalf("expected malformed attestations to be dropped, got %d", len(candidates))
+	}
+}
+
+func TestCoversParticipants(t *testing.T) {
+	proof := &types.SingleMessageAggregate{Participants: types.BitlistFromIndices([]uint64{1, 2, 3}), Proof: []byte{0x01}}
+	if !coversParticipants(proof, types.BitlistFromIndices([]uint64{1, 3})) {
+		t.Fatal("expected proof to cover requested participants")
+	}
+	if coversParticipants(proof, types.BitlistFromIndices([]uint64{1, 4})) {
+		t.Fatal("proof reported missing participant as covered")
 	}
 }

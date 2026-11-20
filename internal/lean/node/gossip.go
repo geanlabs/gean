@@ -84,12 +84,8 @@ func (e *Engine) onGossipAttestation(att *types.SignedAttestation) {
 	success = true
 
 	// Nudge the dispatch loop to consider aggregating early now that another vote
-	// is in. The signal is best-effort and coalescing; the loop owns the actual
-	// timing and quorum decision.
-	select {
-	case e.EarlyAggregateCh <- struct{}{}:
-	default:
-	}
+	// is in.
+	e.Aggregator.PokeEarly()
 }
 
 func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttestation) {

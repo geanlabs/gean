@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/dutygate"
@@ -48,7 +49,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
-	return New(s, fc, nil, nil, role.New(false), 1, shadow.Rates{})
+	return New(clock.Real{}, s, fc, nil, nil, role.New(false), 1, shadow.Rates{})
 }
 
 func TestEngineCreation(t *testing.T) {
@@ -58,16 +59,6 @@ func TestEngineCreation(t *testing.T) {
 	}
 	if e.FC == nil {
 		t.Fatal("fork choice should not be nil")
-	}
-}
-
-func TestCoversParticipants(t *testing.T) {
-	proof := &types.SingleMessageAggregate{Participants: types.BitlistFromIndices([]uint64{1, 2, 3}), Proof: []byte{0x01}}
-	if !coversParticipants(proof, types.BitlistFromIndices([]uint64{1, 3})) {
-		t.Fatal("expected proof to cover requested participants")
-	}
-	if coversParticipants(proof, types.BitlistFromIndices([]uint64{1, 4})) {
-		t.Fatal("proof reported missing participant as covered")
 	}
 }
 

@@ -1,4 +1,4 @@
-package node
+package aggregation
 
 import (
 	"testing"
@@ -11,8 +11,8 @@ import (
 // still be running when aggregation dispatches at interval 2, nor while the aggregation
 // session itself holds the prover.
 func TestSplitFitsBeforeAggregation(t *testing.T) {
-	e := makeTestEngine()
-	genesisMs := e.Store.Config().GenesisTime * 1000
+	agg := makeTestAggregator()
+	genesisMs := agg.cfg.Store.Config().GenesisTime * 1000
 
 	const interval = types.MillisecondsPerInterval
 
@@ -34,7 +34,7 @@ func TestSplitFitsBeforeAggregation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Probe a later slot so the check is independent of the genesis boundary.
 			nowMs := genesisMs + 10*types.MillisecondsPerSlot + tc.intoSlot
-			if got := e.splitFitsBeforeAggregation(nowMs); got != tc.want {
+			if got := agg.splitFitsBeforeAggregation(nowMs); got != tc.want {
 				t.Fatalf("splitFitsBeforeAggregation(+%dms into slot) = %t, want %t",
 					tc.intoSlot, got, tc.want)
 			}
@@ -46,16 +46,16 @@ func TestSplitFitsBeforeAggregation(t *testing.T) {
 // the current holder keeps the prover. A stale pass must not authorise a split: the
 // check is re-evaluated on acquisition, so a window that closed while waiting is caught.
 func TestSplitFitsBeforeAggregationRejectsWindowClosedWhileWaiting(t *testing.T) {
-	e := makeTestEngine()
-	genesisMs := e.Store.Config().GenesisTime * 1000
+	agg := makeTestAggregator()
+	genesisMs := agg.cfg.Store.Config().GenesisTime * 1000
 	base := genesisMs + 10*types.MillisecondsPerSlot
 
 	// Cleared at the start of the slot...
-	if !e.splitFitsBeforeAggregation(base) {
+	if !agg.splitFitsBeforeAggregation(base) {
 		t.Fatal("split at slot start should be cleared")
 	}
 	// ...but a wait spanning into the dispatch window must no longer be cleared.
-	if e.splitFitsBeforeAggregation(base + 2*types.MillisecondsPerInterval) {
+	if agg.splitFitsBeforeAggregation(base + 2*types.MillisecondsPerInterval) {
 		t.Fatal("split must not be cleared once the aggregation window has opened")
 	}
 }

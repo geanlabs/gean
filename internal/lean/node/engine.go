@@ -19,6 +19,7 @@ import (
 	"github.com/geanlabs/gean/internal/lean/role"
 	"github.com/geanlabs/gean/internal/lean/shadow"
 	"github.com/geanlabs/gean/internal/lean/store"
+	"github.com/geanlabs/gean/internal/lean/syncer"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -31,8 +32,7 @@ const (
 
 type Engine struct {
 	// Clock is the time source for every time-dependent decision: ticks, the
-	// current slot, deadlines. New sets the system clock; tests replace it with
-	// a clock.Fake before Start.
+	// current slot, deadlines. Set by New.
 	Clock clock.Clock
 
 	Store          *store.ConsensusStore
@@ -44,11 +44,7 @@ type Engine struct {
 	CommitteeCount uint64
 	// AggregateSubnetIDs are the attestation subnets this node subscribes to as
 	// an aggregator. Empty means every subnet. Set by the caller after New.
-	AggregateSubnetIDs []uint64
-	// expectedVoters caches how many validators this node can hear from in a
-	// slot. Its inputs are fixed once the registry is known, and it is read on
-	// every attestation arrival.
-	expectedVoters      uint64
+	AggregateSubnetIDs  []uint64
 	Shadow              shadow.Rates
 	PendingAttestations *pending.AttestationBuffer
 
@@ -56,20 +52,16 @@ type Engine struct {
 	// and fetches missing parents.
 	Importer *importer.Importer
 
+	// Aggregator schedules and proves aggregation sessions and recovers
+	// proofs from imported blocks.
+	Aggregator *aggregation.Aggregator
+
 	AttestationCh chan *types.SignedAttestation
 	AggregationCh chan *types.SignedAggregatedAttestation
 
-	// EarlyAggregateCh is a coalescing (capacity-1) wake-up: an attestation-verify
-	// goroutine pokes it after inserting a signature, and the dispatch loop reacts
-	// by considering an early aggregation session. It carries no data — the loop
-	// re-reads live store state — so a full channel is simply dropped.
-	EarlyAggregateCh chan struct{}
-
-	AggregationDispatchCh chan aggregation.Dispatch
-	ProposalCh            chan proposalDuty
-	ProposalResultCh      chan *proposalResult
-	RecoveryCh            chan *types.SignedBlock
-	ProvingGate           *proving.Gate
+	ProposalCh       chan proposalDuty
+	ProposalResultCh chan *proposalResult
+	ProvingGate      *proving.Gate
 
 	// Dispatch-owned reservation survives dequeue and result acceptance.
 	lastProposalDuty proposalDuty
@@ -108,21 +100,13 @@ type Engine struct {
 	// tick promoted them, keyed by the slot each vote is for. Read only on the
 	// dispatch loop, which is also the only writer.
 	coveragePreMerge map[uint64][][]byte
-
-	// aggregatedSlot is the last slot for which an aggregation session was
-	// dispatched, so the early (attestation-arrival) path and the interval-2
-	// fallback dispatch at most once per slot. Written and read only on the
-	// single dispatch loop, so no lock.
-	aggregatedSlot uint64
-
-	// numValidators caches the validator-set size, fixed at genesis in lean
-	// devnet, used as the denominator for the early-aggregation quorum. Filled
-	// lazily on the dispatch loop to avoid SSZ-decoding the head state on every
-	// attestation arrival; read/written only there, so no lock.
-	numValidators uint64
 }
 
+// New returns an engine. clk is the time source for every time-dependent
+// decision; it is fixed for the engine's life, since the importer and
+// aggregator are built with it.
 func New(
+	clk clock.Clock,
 	s *store.ConsensusStore,
 	fc *forkchoice.ForkChoice,
 	p2pHost *p2p.Host,
@@ -133,28 +117,51 @@ func New(
 ) *Engine {
 	p2p.SetClientGitCommit(gitCommit)
 	e := &Engine{
-		Clock:                 clock.Real{},
-		Store:                 s,
-		FC:                    fc,
-		P2P:                   p2pHost,
-		Keys:                  keys,
-		AggCtl:                aggCtl,
-		DutyGate:              dutygate.New(logDutyGateEvent),
-		CommitteeCount:        committeeCount,
-		Shadow:                shadowRates,
-		PendingAttestations:   pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
-		AttestationCh:         make(chan *types.SignedAttestation, 256),
-		AggregationCh:         make(chan *types.SignedAggregatedAttestation, 64),
-		EarlyAggregateCh:      make(chan struct{}, 1),
-		AggregationDispatchCh: make(chan aggregation.Dispatch, 1),
-		ProposalCh:            make(chan proposalDuty, 1),
-		ProposalResultCh:      make(chan *proposalResult, 1),
-		RecoveryCh:            make(chan *types.SignedBlock, 8),
-		ProvingGate:           proving.NewGate(),
+		Clock:               clk,
+		Store:               s,
+		FC:                  fc,
+		P2P:                 p2pHost,
+		Keys:                keys,
+		AggCtl:              aggCtl,
+		DutyGate:            dutygate.New(logDutyGateEvent),
+		CommitteeCount:      committeeCount,
+		Shadow:              shadowRates,
+		PendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		AttestationCh:       make(chan *types.SignedAttestation, 256),
+		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
+		ProposalCh:          make(chan proposalDuty, 1),
+		ProposalResultCh:    make(chan *proposalResult, 1),
+		ProvingGate:         proving.NewGate(),
 	}
+	e.Aggregator = e.newAggregator()
 	e.Importer = e.newImporter()
 	e.configureP2PHooks()
 	return e
+}
+
+// newAggregator builds the aggregator. Its functions read e's fields when
+// called, so changes made after New (such as AggregateSubnetIDs) are seen.
+func (e *Engine) newAggregator() *aggregation.Aggregator {
+	cfg := aggregation.Config{
+		Store:        e.Store,
+		Clock:        e.Clock,
+		Gate:         e.ProvingGate,
+		Shadow:       e.Shadow,
+		IsAggregator: func() bool { return e.AggCtl != nil && e.AggCtl.Get() },
+		ProposingAt:  e.proposingAt,
+		ProposerAt: func(slot uint64) bool {
+			_, ok := e.getOurProposer(slot)
+			return ok
+		},
+		Synced:  func() bool { return e.GetSyncStatus() == syncer.SyncSynced },
+		Subnets: func() (uint64, []uint64) { return e.CommitteeCount, e.AggregateSubnetIDs },
+	}
+	// A nil *p2p.Host in the interface would not compare equal to nil, so only
+	// set the publisher when there is a host.
+	if e.P2P != nil {
+		cfg.Publisher = e.P2P
+	}
+	return aggregation.New(cfg)
 }
 
 // newImporter builds the block importer for e's store and fork choice.
@@ -164,7 +171,7 @@ func (e *Engine) newImporter() *importer.Importer {
 		FC:                  e.FC,
 		PendingAttestations: e.PendingAttestations,
 		Hooks: importer.Hooks{
-			Imported:    e.dispatchRecovery,
+			Imported:    e.Aggregator.DispatchRecovery,
 			UpdateHead:  e.updateHead,
 			Attestation: e.OnGossipAttestation,
 		},

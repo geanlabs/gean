@@ -104,8 +104,7 @@ func run(cfg config) error {
 		VerifySignature:            cfg.ShadowVerifySignatureRate,
 		VerifyAggregatedSignatures: cfg.ShadowVerifyAggregatedSignaturesRate,
 	}
-	n := node.New(s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
-	n.Clock = clk
+	n := node.New(clk, s, fc, p2pHost, inputs.keyManager, aggCtl, cfg.CommitteeCount, shadowRates)
 	n.AggregateSubnetIDs = cfg.AggregateSubnetIDs
 	c.waitEngine = n.Wait
 	syncDriver := startNodeNetworking(ctx, n, s, p2pHost, inputs.bootnodes, &c.tasks)

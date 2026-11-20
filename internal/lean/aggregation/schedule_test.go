@@ -1,9 +1,12 @@
-package node
+package aggregation
 
 import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/core/clock"
+	"github.com/geanlabs/gean/internal/core/storage"
+	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -13,8 +16,8 @@ import (
 // the head start that path exists to create. Anchoring to the slot lands both
 // dispatch paths on the same instant.
 func TestAggregationDeadlineAnchorsToIntervalFour(t *testing.T) {
-	e := makeTestEngine()
-	genesisMs := e.Store.Config().GenesisTime * 1000
+	agg := makeTestAggregator()
+	genesisMs := agg.cfg.Store.Config().GenesisTime * 1000
 	slotStart := genesisMs + types.MillisecondsPerSlot*7
 
 	const interval = types.MillisecondsPerInterval
@@ -30,7 +33,7 @@ func TestAggregationDeadlineAnchorsToIntervalFour(t *testing.T) {
 		{"interval 2 fallback", 2 * interval, 2 * interval * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := e.aggregationDeadline(slotStart + tc.intoSlot)
+			got := agg.deadline(slotStart + tc.intoSlot)
 			if !got.Equal(boundary) {
 				t.Fatalf("deadline = %v, want the interval-4 boundary %v", got, boundary)
 			}
@@ -43,7 +46,7 @@ func TestAggregationDeadlineAnchorsToIntervalFour(t *testing.T) {
 	// A dispatch past the boundary would otherwise hand the worker an expired
 	// deadline, which it reads as "stop before the first group" — the produced=0
 	// shape this branch exists to remove.
-	late := e.aggregationDeadline(slotStart + 4*interval)
+	late := agg.deadline(slotStart + 4*interval)
 	if window := late.Sub(time.UnixMilli(int64(slotStart + 4*interval))); window <= 0 {
 		t.Fatalf("late dispatch window = %v, want a usable window", window)
 	}
@@ -69,12 +72,11 @@ func TestExpectedVotersPerSlotFollowsSubscribedSubnets(t *testing.T) {
 		{name: "uneven registry", validators: 10, committees: 4, subnets: []uint64{0}, want: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			e := &Engine{
-				numValidators:      tc.validators,
-				CommitteeCount:     tc.committees,
-				AggregateSubnetIDs: tc.subnets,
+			agg := &Aggregator{
+				numValidators: tc.validators,
+				cfg:           Config{Subnets: func() (uint64, []uint64) { return tc.committees, tc.subnets }},
 			}
-			if got := e.expectedVotersPerSlot(); got != tc.want {
+			if got := agg.expectedVotersPerSlot(); got != tc.want {
 				t.Fatalf("voters=%d, want %d", got, tc.want)
 			}
 		})
@@ -82,8 +84,16 @@ func TestExpectedVotersPerSlotFollowsSubscribedSubnets(t *testing.T) {
 
 	// The quorum a single-subnet aggregator must reach has to be reachable from
 	// the votes it can actually receive.
-	e := &Engine{numValidators: 12, CommitteeCount: 4, AggregateSubnetIDs: []uint64{1}}
-	if q := earlyAggregationQuorum(e.expectedVotersPerSlot()); uint64(q) > e.expectedVotersPerSlot() {
-		t.Fatalf("quorum %d exceeds the %d votes this node can receive", q, e.expectedVotersPerSlot())
+	agg := &Aggregator{numValidators: 12, cfg: Config{Subnets: func() (uint64, []uint64) { return 4, []uint64{1} }}}
+	if q := earlyAggregationQuorum(agg.expectedVotersPerSlot()); uint64(q) > agg.expectedVotersPerSlot() {
+		t.Fatalf("quorum %d exceeds the %d votes this node can receive", q, agg.expectedVotersPerSlot())
 	}
+}
+
+// makeTestAggregator returns an aggregator over a store whose genesis time is
+// 1000.
+func makeTestAggregator() *Aggregator {
+	s := store.NewConsensusStore(storage.NewInMemoryBackend())
+	s.SetConfig(&types.ChainConfig{GenesisTime: 1000})
+	return New(Config{Store: s, Clock: clock.Real{}})
 }
