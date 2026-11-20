@@ -9,12 +9,12 @@ import (
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/lifecycle"
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/pending"
 	"github.com/geanlabs/gean/internal/lean/aggregation"
 	"github.com/geanlabs/gean/internal/lean/dutygate"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/importer"
 	"github.com/geanlabs/gean/internal/lean/p2p"
-	"github.com/geanlabs/gean/internal/lean/pending"
 	"github.com/geanlabs/gean/internal/lean/proving"
 	"github.com/geanlabs/gean/internal/lean/role"
 	"github.com/geanlabs/gean/internal/lean/shadow"
@@ -46,7 +46,7 @@ type Engine struct {
 	// an aggregator. Empty means every subnet. Set by the caller after New.
 	AggregateSubnetIDs  []uint64
 	Shadow              shadow.Rates
-	PendingAttestations *pending.AttestationBuffer
+	PendingAttestations *pending.AttestationBuffer[*types.SignedAttestation]
 
 	// Importer imports received blocks, holds those whose parent is missing,
 	// and fetches missing parents.
@@ -125,7 +125,7 @@ func New(
 		DutyGate:            dutygate.New(logDutyGateEvent),
 		CommitteeCount:      committeeCount,
 		Shadow:              shadowRates,
-		PendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap),
+		PendingAttestations: pending.NewAttestationBuffer(PendingAttestationsPerRootCap, PendingAttestationsTotalCap, types.AttestationSlot),
 		AttestationCh:       make(chan *types.SignedAttestation, 256),
 		AggregationCh:       make(chan *types.SignedAggregatedAttestation, 64),
 		proposals:           newProposer(),

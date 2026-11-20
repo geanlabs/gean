@@ -1,14 +1,16 @@
 package pending
 
-import (
-	"sync"
+import "sync"
 
-	"github.com/geanlabs/gean/internal/lean/types"
-)
-
-type AttestationBuffer struct {
-	mu         sync.Mutex
-	byHead     map[[32]byte][]*types.SignedAttestation
+// AttestationBuffer holds attestations whose head block is not imported yet,
+// grouped by that head root and bounded per root and in total. T is the
+// chain's attestation type.
+type AttestationBuffer[T any] struct {
+	mu sync.Mutex
+	// slotOf returns an attestation's slot, or false for one too malformed to
+	// hold.
+	slotOf     func(T) (uint64, bool)
+	byHead     map[[32]byte][]T
 	perRootCap int
 	totalCap   int
 	total      int
@@ -16,22 +18,26 @@ type AttestationBuffer struct {
 	rejected   int
 }
 
-func NewAttestationBuffer(perRootCap, totalCap int) *AttestationBuffer {
-	return &AttestationBuffer{
-		byHead:     make(map[[32]byte][]*types.SignedAttestation),
+// NewAttestationBuffer returns a buffer holding at most perRootCap
+// attestations per head root and totalCap in all. slotOf returns an
+// attestation's slot, or false for one too malformed to hold.
+func NewAttestationBuffer[T any](perRootCap, totalCap int, slotOf func(T) (uint64, bool)) *AttestationBuffer[T] {
+	return &AttestationBuffer[T]{
+		slotOf:     slotOf,
+		byHead:     make(map[[32]byte][]T),
 		perRootCap: perRootCap,
 		totalCap:   totalCap,
 	}
 }
 
-func (b *AttestationBuffer) Add(headRoot [32]byte, att *types.SignedAttestation) (added bool, dropped int) {
+func (b *AttestationBuffer[T]) Add(headRoot [32]byte, att T) (added bool, dropped int) {
 	if b == nil {
 		return false, 0
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.perRootCap <= 0 || b.totalCap <= 0 || att == nil || att.Data == nil {
+	if _, ok := b.slotOf(att); b.perRootCap <= 0 || b.totalCap <= 0 || !ok {
 		b.rejected++
 		return false, 0
 	}
@@ -55,7 +61,7 @@ func (b *AttestationBuffer) Add(headRoot [32]byte, att *types.SignedAttestation)
 	return true, 0
 }
 
-func (b *AttestationBuffer) Drain(headRoot [32]byte) []*types.SignedAttestation {
+func (b *AttestationBuffer[T]) Drain(headRoot [32]byte) []T {
 	if b == nil {
 		return nil
 	}
@@ -71,7 +77,7 @@ func (b *AttestationBuffer) Drain(headRoot [32]byte) []*types.SignedAttestation 
 	return bucket
 }
 
-func (b *AttestationBuffer) PruneBelow(finalizedSlot uint64) int {
+func (b *AttestationBuffer[T]) PruneBelow(finalizedSlot uint64) int {
 	if b == nil {
 		return 0
 	}
@@ -82,7 +88,7 @@ func (b *AttestationBuffer) PruneBelow(finalizedSlot uint64) int {
 	for headRoot, bucket := range b.byHead {
 		kept := bucket[:0]
 		for _, att := range bucket {
-			if att == nil || att.Data == nil || att.Data.Slot <= finalizedSlot {
+			if slot, ok := b.slotOf(att); !ok || slot <= finalizedSlot {
 				removed++
 				continue
 			}
@@ -98,7 +104,7 @@ func (b *AttestationBuffer) PruneBelow(finalizedSlot uint64) int {
 	return removed
 }
 
-func (b *AttestationBuffer) Total() int {
+func (b *AttestationBuffer[T]) Total() int {
 	if b == nil {
 		return 0
 	}
@@ -107,7 +113,7 @@ func (b *AttestationBuffer) Total() int {
 	return b.total
 }
 
-func (b *AttestationBuffer) Len() int {
+func (b *AttestationBuffer[T]) Len() int {
 	if b == nil {
 		return 0
 	}
@@ -116,7 +122,7 @@ func (b *AttestationBuffer) Len() int {
 	return len(b.byHead)
 }
 
-func (b *AttestationBuffer) Stats() (evicted, rejected int) {
+func (b *AttestationBuffer[T]) Stats() (evicted, rejected int) {
 	if b == nil {
 		return 0, 0
 	}

@@ -32,3 +32,12 @@ type SignedAggregatedAttestation struct {
 	Data  *AttestationData        `json:"data"`
 	Proof *SingleMessageAggregate `json:"proof"`
 }
+
+// AttestationSlot returns att's slot, or false when att or its data is
+// missing.
+func AttestationSlot(att *SignedAttestation) (uint64, bool) {
+	if att == nil || att.Data == nil {
+		return 0, false
+	}
+	return att.Data.Slot, true
+}

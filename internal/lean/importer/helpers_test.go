@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/pending"
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
-	"github.com/geanlabs/gean/internal/lean/pending"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -45,7 +45,7 @@ func makeTestImporter() *Importer {
 	return New(Config{
 		Store:               s,
 		FC:                  forkchoice.New(0, genesisRoot, [32]byte{}),
-		PendingAttestations: pending.NewAttestationBuffer(8, 512),
+		PendingAttestations: pending.NewAttestationBuffer(8, 512, types.AttestationSlot),
 	})
 }
 

@@ -3,12 +3,13 @@ package importer
 import (
 	"testing"
 
-	"github.com/geanlabs/gean/internal/lean/pending"
+	"github.com/geanlabs/gean/internal/core/pending"
+	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 	imp := &Importer{
-		pendingAttestations: pending.NewAttestationBuffer(8, 64),
+		pendingAttestations: pending.NewAttestationBuffer(8, 64, types.AttestationSlot),
 	}
 
 	var head [32]byte
@@ -38,7 +39,7 @@ func TestReplayPendingAttestations_DrainsBucket(t *testing.T) {
 
 func TestReplayPendingAttestations_NoBucketIsNoOp(t *testing.T) {
 	imp := &Importer{
-		pendingAttestations: pending.NewAttestationBuffer(8, 64),
+		pendingAttestations: pending.NewAttestationBuffer(8, 64, types.AttestationSlot),
 	}
 
 	var head [32]byte

@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/pending"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
-	"github.com/geanlabs/gean/internal/lean/pending"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -44,7 +44,7 @@ type Config struct {
 	// PendingAttestations holds attestations whose head block is not imported
 	// yet; the importer replays them when it arrives and prunes them at
 	// finality.
-	PendingAttestations *pending.AttestationBuffer
+	PendingAttestations *pending.AttestationBuffer[*types.SignedAttestation]
 	Hooks               Hooks
 }
 
@@ -59,7 +59,7 @@ type Importer struct {
 	store               *store.ConsensusStore
 	fc                  *forkchoice.ForkChoice
 	fetcher             Fetcher
-	pendingAttestations *pending.AttestationBuffer
+	pendingAttestations *pending.AttestationBuffer[*types.SignedAttestation]
 	hooks               Hooks
 
 	// Pending holds blocks whose parent is missing.
