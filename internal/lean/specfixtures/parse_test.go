@@ -196,3 +196,14 @@ func TestFixtureSignedBlockMapsNestedProof(t *testing.T) {
 		t.Fatalf("proof = %x, want %x — nested proof.proof.data not mapped", signed.Proof.Proof, want)
 	}
 }
+
+func TestFCChecksMapsCanonicalEquivocationHeadAmong(t *testing.T) {
+	const raw = `{"canonicalEquivocationHeadAmong":["fork_a","fork_b"]}`
+	var c FCChecks
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(c.CanonicalEquivocationHeadAmong) != 2 || c.CanonicalEquivocationHeadAmong[1] != "fork_b" {
+		t.Fatalf("canonicalEquivocationHeadAmong not mapped: got %v", c.CanonicalEquivocationHeadAmong)
+	}
+}

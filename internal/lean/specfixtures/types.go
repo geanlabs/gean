@@ -137,22 +137,23 @@ type FCProofData struct {
 }
 
 type FCChecks struct {
-	Time                     *uint64              `json:"time,omitempty"`
-	HeadSlot                 *uint64              `json:"headSlot,omitempty"`
-	HeadRoot                 *string              `json:"headRoot,omitempty"`
-	HeadRootLabel            *string              `json:"headRootLabel,omitempty"`
-	LatestJustifiedSlot      *uint64              `json:"latestJustifiedSlot,omitempty"`
-	LatestJustifiedRoot      *string              `json:"latestJustifiedRoot,omitempty"`
-	LatestJustifiedRootLabel *string              `json:"latestJustifiedRootLabel,omitempty"`
-	LatestFinalizedSlot      *uint64              `json:"latestFinalizedSlot,omitempty"`
-	LatestFinalizedRoot      *string              `json:"latestFinalizedRoot,omitempty"`
-	LatestFinalizedRootLabel *string              `json:"latestFinalizedRootLabel,omitempty"`
-	SafeTarget               *string              `json:"safeTarget,omitempty"`
-	SafeTargetSlot           *uint64              `json:"safeTargetSlot,omitempty"`
-	SafeTargetRootLabel      *string              `json:"safeTargetRootLabel,omitempty"`
-	AttestationTargetSlot    *uint64              `json:"attestationTargetSlot,omitempty"`
-	AttestationChecks        []FCAttestationCheck `json:"attestationChecks,omitempty"`
-	LexicographicHeadAmong   []string             `json:"lexicographicHeadAmong,omitempty"`
+	Time                           *uint64              `json:"time,omitempty"`
+	HeadSlot                       *uint64              `json:"headSlot,omitempty"`
+	HeadRoot                       *string              `json:"headRoot,omitempty"`
+	HeadRootLabel                  *string              `json:"headRootLabel,omitempty"`
+	LatestJustifiedSlot            *uint64              `json:"latestJustifiedSlot,omitempty"`
+	LatestJustifiedRoot            *string              `json:"latestJustifiedRoot,omitempty"`
+	LatestJustifiedRootLabel       *string              `json:"latestJustifiedRootLabel,omitempty"`
+	LatestFinalizedSlot            *uint64              `json:"latestFinalizedSlot,omitempty"`
+	LatestFinalizedRoot            *string              `json:"latestFinalizedRoot,omitempty"`
+	LatestFinalizedRootLabel       *string              `json:"latestFinalizedRootLabel,omitempty"`
+	SafeTarget                     *string              `json:"safeTarget,omitempty"`
+	SafeTargetSlot                 *uint64              `json:"safeTargetSlot,omitempty"`
+	SafeTargetRootLabel            *string              `json:"safeTargetRootLabel,omitempty"`
+	AttestationTargetSlot          *uint64              `json:"attestationTargetSlot,omitempty"`
+	AttestationChecks              []FCAttestationCheck `json:"attestationChecks,omitempty"`
+	LexicographicHeadAmong         []string             `json:"lexicographicHeadAmong,omitempty"`
+	CanonicalEquivocationHeadAmong []string             `json:"canonicalEquivocationHeadAmong,omitempty"`
 }
 
 type FCAttestationCheck struct {

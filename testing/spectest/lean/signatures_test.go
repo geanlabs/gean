@@ -4,7 +4,6 @@ package lean
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,114 +11,10 @@ import (
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/importer"
+	"github.com/geanlabs/gean/internal/lean/specfixtures"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
-
-// Fixture types for signature verification tests.
-
-type sigFixture map[string]sigTest
-
-type sigTest struct {
-	Network         string   `json:"network"`
-	LeanEnv         string   `json:"leanEnv"`
-	AnchorState     sigState `json:"anchorState"`
-	SignedBlock     sigSBA   `json:"signedBlock"`
-	RejectionReason *string  `json:"rejectionReason"`
-}
-
-type sigState struct {
-	Config                   fcConfig        `json:"config"`
-	Slot                     uint64          `json:"slot"`
-	LatestBlockHeader        fcBlockHeader   `json:"latestBlockHeader"`
-	LatestJustified          fcCheckpoint    `json:"latestJustified"`
-	LatestFinalized          fcCheckpoint    `json:"latestFinalized"`
-	HistoricalBlockHashes    fcDataList      `json:"historicalBlockHashes"`
-	JustifiedSlots           fcDataList      `json:"justifiedSlots"`
-	Validators               fcValidatorList `json:"validators"`
-	JustificationsRoots      fcDataList      `json:"justificationsRoots"`
-	JustificationsValidators fcDataList      `json:"justificationsValidators"`
-}
-
-type sigSBA struct {
-	Block fcBlock  `json:"block"`
-	Proof sigProof `json:"proof"`
-}
-
-// MultiMessageAggregate serializes as {"proof": {"data": "0x..."}} — its proof
-// field is a ByteList nested one level deeper than a bare ByteList.
-type sigProof struct {
-	Proof fcProofData `json:"proof"`
-}
-
-// toState converts fixture anchor state to types.State.
-func (fs *sigState) toState() *types.State {
-	state := &types.State{
-		Config: &types.ChainConfig{
-			GenesisTime: fs.Config.GenesisTime,
-		},
-		Slot: fs.Slot,
-		LatestBlockHeader: &types.BlockHeader{
-			Slot:          fs.LatestBlockHeader.Slot,
-			ProposerIndex: fs.LatestBlockHeader.ProposerIndex,
-			ParentRoot:    parseHexRoot(fs.LatestBlockHeader.ParentRoot),
-			StateRoot:     parseHexRoot(fs.LatestBlockHeader.StateRoot),
-			BodyRoot:      parseHexRoot(fs.LatestBlockHeader.BodyRoot),
-		},
-		LatestJustified: &types.Checkpoint{
-			Root: parseHexRoot(fs.LatestJustified.Root),
-			Slot: fs.LatestJustified.Slot,
-		},
-		LatestFinalized: &types.Checkpoint{
-			Root: parseHexRoot(fs.LatestFinalized.Root),
-			Slot: fs.LatestFinalized.Slot,
-		},
-	}
-
-	for _, v := range fs.Validators.Data {
-		state.Validators = append(state.Validators, &types.Validator{
-			AttestationPubkey: parseHexPubkey(v.AttestationPubkey),
-			ProposalPubkey:    parseHexPubkey(v.ProposalPubkey),
-			Index:             v.Index,
-		})
-	}
-
-	for _, raw := range fs.HistoricalBlockHashes.Data {
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			panic(fmt.Sprintf("HistoricalBlockHashes: %v", err))
-		}
-		b := parseHexBytes(s)
-		h := make([]byte, 32)
-		copy(h, b)
-		state.HistoricalBlockHashes = append(state.HistoricalBlockHashes, h)
-	}
-
-	state.JustifiedSlots = parseBoolBitlist(fs.JustifiedSlots.Data)
-
-	for _, raw := range fs.JustificationsRoots.Data {
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			panic(fmt.Sprintf("JustificationsRoots: %v", err))
-		}
-		b := parseHexBytes(s)
-		h := make([]byte, 32)
-		copy(h, b)
-		state.JustificationsRoots = append(state.JustificationsRoots, h)
-	}
-
-	state.JustificationsValidators = parseBoolBitlist(fs.JustificationsValidators.Data)
-
-	return state
-}
-
-// toSignedBlock converts fixture signed block to types.SignedBlock.
-func (sba *sigSBA) toSignedBlock() *types.SignedBlock {
-	return &types.SignedBlock{
-		Block: sba.Block.toBlock(),
-		Proof: &types.MultiMessageAggregate{Proof: parseHexBytes(sba.Proof.Proof.Data)},
-	}
-}
 
 // Test runner.
 
@@ -160,7 +55,7 @@ func TestSpecSignatures(t *testing.T) {
 				t.Fatalf("reading %s: %v", file, err)
 			}
 
-			var fixture sigFixture
+			var fixture map[string]specfixtures.VerifySignaturesFixture
 			if err := json.Unmarshal(data, &fixture); err != nil {
 				t.Fatalf("unmarshalling %s: %v", file, err)
 			}
@@ -175,10 +70,13 @@ func TestSpecSignatures(t *testing.T) {
 	}
 }
 
-func runSignatureTest(t *testing.T, tt *sigTest) {
+func runSignatureTest(t *testing.T, tt *specfixtures.VerifySignaturesFixture) {
 	t.Helper()
 
-	anchorState := tt.AnchorState.toState()
+	anchorState, err := tt.AnchorState.ToState()
+	if err != nil {
+		t.Fatalf("anchor state: %v", err)
+	}
 
 	// A genesis header has a zero state root; fill it before computing the anchor
 	// block root, as the node does at startup (internal/lean/store.go).
@@ -199,7 +97,10 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 		t.Fatalf("put anchor: %v", err)
 	}
 
-	signedBlock := tt.SignedBlock.toSignedBlock()
+	signedBlock, err := tt.SignedBlock.ToSignedBlock()
+	if err != nil {
+		t.Fatalf("signed block: %v", err)
+	}
 
 	// Place the store clock at the block's slot, as the live node does before
 	// importing an on-time block; otherwise the future-horizon guard would reject a

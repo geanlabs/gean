@@ -5,7 +5,6 @@ package lean
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/geanlabs/gean/internal/lean/attestation"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/importer"
+	"github.com/geanlabs/gean/internal/lean/specfixtures"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -48,248 +48,11 @@ func earliestAdmissibleInterval(slot uint64) uint64 {
 }
 
 type fcTest struct {
-	Network     string   `json:"network"`
-	LeanEnv     string   `json:"leanEnv"`
-	AnchorState fcState  `json:"anchorState"`
-	AnchorBlock fcBlock  `json:"anchorBlock"`
-	Steps       []fcStep `json:"steps"`
+	AnchorState specfixtures.TestState        `json:"anchorState"`
+	AnchorBlock specfixtures.TestBlock        `json:"anchorBlock"`
+	Steps       []specfixtures.ForkChoiceStep `json:"steps"`
 }
 
-type fcState struct {
-	Config                   fcConfig        `json:"config"`
-	Slot                     uint64          `json:"slot"`
-	LatestBlockHeader        fcBlockHeader   `json:"latestBlockHeader"`
-	LatestJustified          fcCheckpoint    `json:"latestJustified"`
-	LatestFinalized          fcCheckpoint    `json:"latestFinalized"`
-	HistoricalBlockHashes    fcDataList      `json:"historicalBlockHashes"`
-	JustifiedSlots           fcDataList      `json:"justifiedSlots"`
-	Validators               fcValidatorList `json:"validators"`
-	JustificationsRoots      fcDataList      `json:"justificationsRoots"`
-	JustificationsValidators fcDataList      `json:"justificationsValidators"`
-}
-
-type fcConfig struct {
-	GenesisTime uint64 `json:"genesisTime"`
-}
-
-type fcBlockHeader struct {
-	Slot          uint64 `json:"slot"`
-	ProposerIndex uint64 `json:"proposerIndex"`
-	ParentRoot    string `json:"parentRoot"`
-	StateRoot     string `json:"stateRoot"`
-	BodyRoot      string `json:"bodyRoot"`
-}
-
-type fcCheckpoint struct {
-	Root string `json:"root"`
-	Slot uint64 `json:"slot"`
-}
-
-type fcDataList struct {
-	Data []json.RawMessage `json:"data"`
-}
-
-type fcValidator struct {
-	AttestationPubkey string `json:"attestationPublicKey"`
-	ProposalPubkey    string `json:"proposalPublicKey"`
-	Index             uint64 `json:"index"`
-}
-
-type fcValidatorList struct {
-	Data []fcValidator `json:"data"`
-}
-
-type fcBlock struct {
-	Slot           uint64      `json:"slot"`
-	ProposerIndex  uint64      `json:"proposerIndex"`
-	ParentRoot     string      `json:"parentRoot"`
-	StateRoot      string      `json:"stateRoot"`
-	Body           fcBlockBody `json:"body"`
-	BlockRootLabel string      `json:"blockRootLabel,omitempty"`
-}
-
-type fcBlockBody struct {
-	Attestations fcDataList `json:"attestations"`
-}
-
-type fcStep struct {
-	StepType    string               `json:"stepType"`
-	Valid       bool                 `json:"valid"`
-	Block       *fcBlock             `json:"block,omitempty"`
-	Attestation *fcGossipAttestation `json:"attestation,omitempty"`
-	Checks      *fcChecks            `json:"checks,omitempty"`
-	Time        *uint64              `json:"time,omitempty"`
-	Interval    *uint64              `json:"interval,omitempty"`
-	HasProposal *bool                `json:"hasProposal,omitempty"`
-	// TickToSlot reports whether the store clock advances to the block's slot
-	// before import. Absent means the default (advance); false delivers the
-	// block ahead of the store clock.
-	TickToSlot *bool `json:"tickToSlot,omitempty"`
-}
-
-// fcGossipAttestation represents an individual gossip attestation step.
-type fcGossipAttestation struct {
-	ValidatorID uint64    `json:"validatorIndex"`
-	Data        fcAttData `json:"data"`
-	Signature   string    `json:"signature"`
-	// Aggregated attestation fields (for gossipAggregatedAttestation steps).
-	Proof *fcProof `json:"proof,omitempty"`
-}
-
-type fcProof struct {
-	Participants fcDataList  `json:"participants"`
-	Proof        fcProofData `json:"proof"`
-}
-
-type fcProofData struct {
-	Data string `json:"data"`
-}
-
-type fcAttData struct {
-	Slot   uint64       `json:"slot"`
-	Head   fcCheckpoint `json:"head"`
-	Target fcCheckpoint `json:"target"`
-	Source fcCheckpoint `json:"source"`
-}
-
-type fcAggregatedAttestation struct {
-	AggregationBits fcDataList `json:"aggregationBits"`
-	Data            fcAttData  `json:"data"`
-}
-
-type fcChecks struct {
-	Time                           *uint64              `json:"time,omitempty"`
-	HeadSlot                       *uint64              `json:"headSlot,omitempty"`
-	HeadRoot                       *string              `json:"headRoot,omitempty"`
-	HeadRootLabel                  *string              `json:"headRootLabel,omitempty"`
-	LatestJustifiedSlot            *uint64              `json:"latestJustifiedSlot,omitempty"`
-	LatestJustifiedRoot            *string              `json:"latestJustifiedRoot,omitempty"`
-	LatestJustifiedRootLabel       *string              `json:"latestJustifiedRootLabel,omitempty"`
-	LatestFinalizedSlot            *uint64              `json:"latestFinalizedSlot,omitempty"`
-	LatestFinalizedRoot            *string              `json:"latestFinalizedRoot,omitempty"`
-	LatestFinalizedRootLabel       *string              `json:"latestFinalizedRootLabel,omitempty"`
-	SafeTarget                     *string              `json:"safeTarget,omitempty"`
-	SafeTargetSlot                 *uint64              `json:"safeTargetSlot,omitempty"`
-	SafeTargetRootLabel            *string              `json:"safeTargetRootLabel,omitempty"`
-	AttestationTargetSlot          *uint64              `json:"attestationTargetSlot,omitempty"`
-	AttestationChecks              []fcAttestationCheck `json:"attestationChecks,omitempty"`
-	LexicographicHeadAmong         []string             `json:"lexicographicHeadAmong,omitempty"`
-	CanonicalEquivocationHeadAmong []string             `json:"canonicalEquivocationHeadAmong,omitempty"`
-}
-
-// fcAttestationCheck mirrors the spec's per-validator attestation-state
-// expectations: each entry pins one validator's latest attestation slots
-// in a specific store location ("known", "new", etc).
-type fcAttestationCheck struct {
-	Validator       uint64  `json:"validator"`
-	AttestationSlot *uint64 `json:"attestationSlot,omitempty"`
-	HeadSlot        *uint64 `json:"headSlot,omitempty"`
-	SourceSlot      *uint64 `json:"sourceSlot,omitempty"`
-	TargetSlot      *uint64 `json:"targetSlot,omitempty"`
-	Location        string  `json:"location"`
-}
-
-// toState converts fixture anchor state to types.State.
-func (fs *fcState) toState() *types.State {
-	state := &types.State{
-		Config: &types.ChainConfig{
-			GenesisTime: fs.Config.GenesisTime,
-		},
-		Slot: fs.Slot,
-		LatestBlockHeader: &types.BlockHeader{
-			Slot:          fs.LatestBlockHeader.Slot,
-			ProposerIndex: fs.LatestBlockHeader.ProposerIndex,
-			ParentRoot:    parseHexRoot(fs.LatestBlockHeader.ParentRoot),
-			StateRoot:     parseHexRoot(fs.LatestBlockHeader.StateRoot),
-			BodyRoot:      parseHexRoot(fs.LatestBlockHeader.BodyRoot),
-		},
-		LatestJustified: &types.Checkpoint{
-			Root: parseHexRoot(fs.LatestJustified.Root),
-			Slot: fs.LatestJustified.Slot,
-		},
-		LatestFinalized: &types.Checkpoint{
-			Root: parseHexRoot(fs.LatestFinalized.Root),
-			Slot: fs.LatestFinalized.Slot,
-		},
-	}
-
-	for _, v := range fs.Validators.Data {
-		state.Validators = append(state.Validators, &types.Validator{
-			AttestationPubkey: parseHexPubkey(v.AttestationPubkey),
-			ProposalPubkey:    parseHexPubkey(v.ProposalPubkey),
-			Index:             v.Index,
-		})
-	}
-
-	for _, raw := range fs.HistoricalBlockHashes.Data {
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			panic(fmt.Sprintf("HistoricalBlockHashes: %v", err))
-		}
-		b := parseHexBytes(s)
-		h := make([]byte, 32)
-		copy(h, b)
-		state.HistoricalBlockHashes = append(state.HistoricalBlockHashes, h)
-	}
-
-	state.JustifiedSlots = parseBoolBitlist(fs.JustifiedSlots.Data)
-
-	for _, raw := range fs.JustificationsRoots.Data {
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			panic(fmt.Sprintf("JustificationsRoots: %v", err))
-		}
-		b := parseHexBytes(s)
-		h := make([]byte, 32)
-		copy(h, b)
-		state.JustificationsRoots = append(state.JustificationsRoots, h)
-	}
-
-	state.JustificationsValidators = parseBoolBitlist(fs.JustificationsValidators.Data)
-
-	return state
-}
-
-// toBlock converts a fixture block to types.Block.
-func (fb *fcBlock) toBlock() *types.Block {
-	block := &types.Block{
-		Slot:          fb.Slot,
-		ProposerIndex: fb.ProposerIndex,
-		ParentRoot:    parseHexRoot(fb.ParentRoot),
-		StateRoot:     parseHexRoot(fb.StateRoot),
-		Body: &types.BlockBody{
-			Attestations: make([]*types.AggregatedAttestation, 0),
-		},
-	}
-
-	for _, raw := range fb.Body.Attestations.Data {
-		var ta fcAggregatedAttestation
-		if err := json.Unmarshal(raw, &ta); err != nil {
-			panic(fmt.Sprintf("attestation unmarshal: %v", err))
-		}
-		att := &types.AggregatedAttestation{
-			AggregationBits: parseBoolBitlist(ta.AggregationBits.Data),
-			Data: &types.AttestationData{
-				Slot: ta.Data.Slot,
-				Head: &types.Checkpoint{
-					Root: parseHexRoot(ta.Data.Head.Root),
-					Slot: ta.Data.Head.Slot,
-				},
-				Target: &types.Checkpoint{
-					Root: parseHexRoot(ta.Data.Target.Root),
-					Slot: ta.Data.Target.Slot,
-				},
-				Source: &types.Checkpoint{
-					Root: parseHexRoot(ta.Data.Source.Root),
-					Slot: ta.Data.Source.Slot,
-				},
-			},
-		}
-		block.Body.Attestations = append(block.Body.Attestations, att)
-	}
-
-	return block
-}
 func TestSpecForkChoice(t *testing.T) {
 	logger.SetQuiet(true)
 	defer logger.SetQuiet(false)
@@ -345,8 +108,14 @@ func TestSpecForkChoice(t *testing.T) {
 func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	t.Helper()
 
-	anchorState := tt.AnchorState.toState()
-	anchorBlock := tt.AnchorBlock.toBlock()
+	anchorState, err := tt.AnchorState.ToState()
+	if err != nil {
+		t.Fatalf("anchor state: %v", err)
+	}
+	anchorBlock, err := tt.AnchorBlock.ToBlock()
+	if err != nil {
+		t.Fatalf("anchor block: %v", err)
+	}
 
 	// Compute anchor block root.
 	anchorRoot, err := anchorBlock.HashTreeRoot()
@@ -412,7 +181,10 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				t.Fatalf("step %d: block step without block data", i)
 			}
 
-			block := step.Block.toBlock()
+			block, err := step.Block.ToBlock()
+			if err != nil {
+				t.Fatalf("step %d: %v", i, err)
+			}
 
 			// Build signatures with participant bits from attestation aggregation_bits
 			// so processBlockAttestations stores correct per-validator votes.
@@ -501,11 +273,9 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				t.Fatalf("step %d: attestation step without data", i)
 			}
 			att := step.Attestation
-			attData := &types.AttestationData{
-				Slot:   att.Data.Slot,
-				Head:   &types.Checkpoint{Root: parseHexRoot(att.Data.Head.Root), Slot: att.Data.Head.Slot},
-				Target: &types.Checkpoint{Root: parseHexRoot(att.Data.Target.Root), Slot: att.Data.Target.Slot},
-				Source: &types.Checkpoint{Root: parseHexRoot(att.Data.Source.Root), Slot: att.Data.Source.Slot},
+			attData, err := att.Data.ToAttestationData()
+			if err != nil {
+				t.Fatalf("step %d: %v", i, err)
 			}
 
 			// For valid steps, advance time just enough for the attestation to clear
@@ -524,7 +294,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			// fixtures actually exercise the validator. Individual attestation
 			// signatures are always real, so verification always runs here.
 			dataRoot, _ := attData.HashTreeRoot()
-			signature := parseHexBytes(att.Signature)
+			signature := mustParse(t, specfixtures.ParseHexBytes, att.Signature)
 			var validationErr error
 			if validationErr = attestation.ValidateAttestationData(s, attData); validationErr == nil && !carriesMockedProof(signature) {
 				validationErr = attestation.VerifyGossipAttestation(s, att.ValidatorID, attData, dataRoot, signature)
@@ -577,11 +347,9 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				t.Fatalf("step %d: gossipAggregatedAttestation step without data", i)
 			}
 			att := step.Attestation
-			attData := &types.AttestationData{
-				Slot:   att.Data.Slot,
-				Head:   &types.Checkpoint{Root: parseHexRoot(att.Data.Head.Root), Slot: att.Data.Head.Slot},
-				Target: &types.Checkpoint{Root: parseHexRoot(att.Data.Target.Root), Slot: att.Data.Target.Slot},
-				Source: &types.Checkpoint{Root: parseHexRoot(att.Data.Source.Root), Slot: att.Data.Source.Slot},
+			attData, err := att.Data.ToAttestationData()
+			if err != nil {
+				t.Fatalf("step %d: %v", i, err)
 			}
 
 			// Advance only to the earliest admissible interval (see the individual
@@ -596,8 +364,10 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			var participants []byte
 			var proofData []byte
 			if att.Proof != nil {
-				participants = parseBoolBitlist(att.Proof.Participants.Data)
-				proofData = parseHexBytes(att.Proof.Proof.Data)
+				if participants, err = specfixtures.ParseBoolBitlist(att.Proof.Participants.Data); err != nil {
+					t.Fatalf("step %d: participants: %v", i, err)
+				}
+				proofData = mustParse(t, specfixtures.ParseHexBytes, att.Proof.Proof.Data)
 			}
 
 			// Symmetric with the individual-attestation case: data/bounds checks
@@ -699,7 +469,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	}
 }
 
-func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.ConsensusStore, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
+func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s *store.ConsensusStore, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
 	t.Helper()
 
 	headRoot := s.Head()
@@ -715,7 +485,7 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 	}
 
 	if checks.HeadRoot != nil {
-		wantRoot := parseHexRoot(*checks.HeadRoot)
+		wantRoot := mustParse(t, specfixtures.ParseHexRoot, *checks.HeadRoot)
 		if headRoot != wantRoot {
 			t.Fatalf("step %d check: headRoot got 0x%x, want 0x%x", stepIdx, headRoot, wantRoot)
 		}
@@ -742,7 +512,7 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 			stepIdx, lj.Slot, *checks.LatestJustifiedSlot)
 	}
 	if checks.LatestJustifiedRoot != nil {
-		want := parseHexRoot(*checks.LatestJustifiedRoot)
+		want := mustParse(t, specfixtures.ParseHexRoot, *checks.LatestJustifiedRoot)
 		if lj.Root != want {
 			t.Fatalf("step %d check: latestJustifiedRoot got 0x%x, want 0x%x",
 				stepIdx, lj.Root, want)
@@ -761,7 +531,7 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 			stepIdx, lf.Slot, *checks.LatestFinalizedSlot)
 	}
 	if checks.LatestFinalizedRoot != nil {
-		want := parseHexRoot(*checks.LatestFinalizedRoot)
+		want := mustParse(t, specfixtures.ParseHexRoot, *checks.LatestFinalizedRoot)
 		if lf.Root != want {
 			t.Fatalf("step %d check: latestFinalizedRoot got 0x%x, want 0x%x",
 				stepIdx, lf.Root, want)
@@ -782,7 +552,7 @@ func validateChecks(t *testing.T, stepIdx int, checks *fcChecks, s *store.Consen
 	}
 	st := s.SafeTarget()
 	if checks.SafeTarget != nil {
-		want := parseHexRoot(*checks.SafeTarget)
+		want := mustParse(t, specfixtures.ParseHexRoot, *checks.SafeTarget)
 		if st != want {
 			t.Fatalf("step %d check: safeTarget got 0x%x, want 0x%x", stepIdx, st, want)
 		}
@@ -898,7 +668,7 @@ func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []s
 	}
 }
 
-func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore, fc *forkchoice.ForkChoice, ac fcAttestationCheck) {
+func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore, fc *forkchoice.ForkChoice, ac specfixtures.FCAttestationCheck) {
 	t.Helper()
 	var target *forkchoice.VoteTarget
 	switch ac.Location {

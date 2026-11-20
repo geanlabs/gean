@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/lean/specfixtures"
 	"github.com/geanlabs/gean/internal/lean/transition"
 )
 
@@ -49,7 +50,7 @@ func TestSpecStateTransition(t *testing.T) {
 				t.Fatalf("reading %s: %v", file, err)
 			}
 
-			var fixture TestFixture
+			var fixture map[string]specfixtures.StateTransitionFixture
 			if err := json.Unmarshal(data, &fixture); err != nil {
 				t.Fatalf("unmarshalling %s: %v", file, err)
 			}
@@ -64,7 +65,7 @@ func TestSpecStateTransition(t *testing.T) {
 	}
 }
 
-func runStateTransitionTest(t *testing.T, tt *StateTransitionTest) {
+func runStateTransitionTest(t *testing.T, tt *specfixtures.StateTransitionFixture) {
 	t.Helper()
 
 	expectError := tt.Post == nil
@@ -78,11 +79,17 @@ func runStateTransitionTest(t *testing.T, tt *StateTransitionTest) {
 		return
 	}
 
-	state := tt.Pre.ToState()
+	state, err := tt.Pre.ToState()
+	if err != nil {
+		t.Fatalf("pre state: %v", err)
+	}
 
 	var lastErr error
 	for i, tb := range tt.Blocks {
-		block := tb.ToBlock()
+		block, err := tb.ToBlock()
+		if err != nil {
+			t.Fatalf("block %d: %v", i, err)
+		}
 		if err := transition.StateTransition(state, block); err != nil {
 			lastErr = err
 			if expectError {
@@ -99,7 +106,7 @@ func runStateTransitionTest(t *testing.T, tt *StateTransitionTest) {
 
 	// No blocks and no error expected: genesis validation test.
 	if tt.Post != nil {
-		if err := tt.Post.Validate(state); err != nil {
+		if err := validatePostState(tt.Post, state); err != nil {
 			t.Fatalf("post-state validation failed: %v", err)
 		}
 	}

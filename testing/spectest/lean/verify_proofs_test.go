@@ -9,31 +9,32 @@ import (
 	"testing"
 
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
+	"github.com/geanlabs/gean/internal/lean/specfixtures"
 )
 
 // Single-message (Type-1) proof fixtures.
 type verifyProofsSingleCase struct {
-	PublicKeys      []string    `json:"publicKeys"`
-	Message         string      `json:"message"`
-	Slot            uint32      `json:"slot"`
-	Proof           fcProofData `json:"proof"`
-	RejectionReason *string     `json:"rejectionReason"`
+	PublicKeys      []string                 `json:"publicKeys"`
+	Message         string                   `json:"message"`
+	Slot            uint32                   `json:"slot"`
+	Proof           specfixtures.FCProofData `json:"proof"`
+	RejectionReason *string                  `json:"rejectionReason"`
 }
 
 // Multi-message (Type-2) proof fixtures.
 type verifyProofsMultiCase struct {
-	PublicKeysPerMessage [][]string  `json:"publicKeysPerMessage"`
-	Messages             []string    `json:"messages"`
-	Slots                []uint32    `json:"slots"`
-	Proof                fcProofData `json:"proof"`
-	RejectionReason      *string     `json:"rejectionReason"`
+	PublicKeysPerMessage [][]string               `json:"publicKeysPerMessage"`
+	Messages             []string                 `json:"messages"`
+	Slots                []uint32                 `json:"slots"`
+	Proof                specfixtures.FCProofData `json:"proof"`
+	RejectionReason      *string                  `json:"rejectionReason"`
 }
 
 func parsePubkeyHandles(t *testing.T, hexKeys []string) []xmss.CPubKey {
 	t.Helper()
 	keys := make([]xmss.CPubKey, 0, len(hexKeys))
 	for _, h := range hexKeys {
-		pk, err := xmss.ParsePublicKey(parseHexPubkey(h))
+		pk, err := xmss.ParsePublicKey(mustParse(t, specfixtures.ParseHexPubkey, h))
 		if err != nil {
 			t.Fatalf("parse pubkey: %v", err)
 		}
@@ -90,7 +91,7 @@ func TestSpecVerifySingleMessageProofs(t *testing.T) {
 						xmss.FreePublicKey(k)
 					}
 				}()
-				err := xmss.VerifyAggregatedSignature(parseHexBytes(tc.Proof.Data), keys, parseHexRoot(tc.Message), tc.Slot)
+				err := xmss.VerifyAggregatedSignature(mustParse(t, specfixtures.ParseHexBytes, tc.Proof.Data), keys, mustParse(t, specfixtures.ParseHexRoot, tc.Message), tc.Slot)
 				assertProofOutcome(t, err, tc.RejectionReason)
 			})
 		}
@@ -122,14 +123,14 @@ func TestSpecVerifyMultiMessageProofs(t *testing.T) {
 				bindings := make([]xmss.MessageBinding, len(tc.Messages))
 				for i := range tc.Messages {
 					var msg [xmss.MessageLength]byte
-					copy(msg[:], parseHexBytes(tc.Messages[i]))
+					copy(msg[:], mustParse(t, specfixtures.ParseHexBytes, tc.Messages[i]))
 					var slot uint32
 					if i < len(tc.Slots) {
 						slot = tc.Slots[i]
 					}
 					bindings[i] = xmss.MessageBinding{Message: msg, Slot: slot}
 				}
-				err := xmss.VerifyType2Proof(parseHexBytes(tc.Proof.Data), groups, bindings)
+				err := xmss.VerifyType2Proof(mustParse(t, specfixtures.ParseHexBytes, tc.Proof.Data), groups, bindings)
 				assertProofOutcome(t, err, tc.RejectionReason)
 			})
 		}
