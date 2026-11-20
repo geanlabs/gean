@@ -37,8 +37,7 @@ COPY . .
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 RUN mkdir -p bin && \
-    go build -tags hive_testdriver -ldflags "-X github.com/geanlabs/gean/internal/lean/node.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean && \
-    go build -o bin/keygen ./cmd/keygen
+    go build -tags hive_testdriver -ldflags "-X github.com/geanlabs/gean/internal/lean/node.gitCommit=$GIT_COMMIT" -o bin/gean ./cmd/gean
 
 # Runtime stage
 FROM ubuntu:24.04 AS runtime
@@ -53,9 +52,8 @@ ARG GIT_BRANCH=unknown
 LABEL org.opencontainers.image.revision=$GIT_COMMIT
 LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 
-# Copy binaries
+# Copy the binary
 COPY --from=builder /app/bin/gean /usr/local/bin/
-COPY --from=builder /app/bin/keygen /usr/local/bin/
 
 
 # Prove on jemalloc, not glibc malloc. The prover frees its scratch after every

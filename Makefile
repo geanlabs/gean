@@ -28,10 +28,9 @@ ffi: ## Build XMSS FFI glue libraries (hashsig-glue + multisig-glue)
 			*) cargo build --profile multisig-release --locked ;; \
 		esac
 
-build: ffi ## Build gean and keygen binaries
+build: ffi ## Build the gean binary
 	@mkdir -p bin
 	@go build -ldflags "-X github.com/geanlabs/gean/internal/lean/node.gitCommit=$(GIT_COMMIT)" -o bin/gean ./cmd/gean
-	@go build -o bin/keygen ./cmd/keygen
 
 test: ## Run unit tests (excludes crypto FFI and spec tests)
 	go test $(shell go list ./... | grep -v '/xmss$$' | grep -v '/spectest/lean$$' | grep -v '/cmd/') -v -count=1
@@ -45,9 +44,10 @@ test-spec: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run spec
 test-all: ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run all tests including spec fixtures and xmss FFI (slow)
 	go test ./... -v -count=1 -tags=spectests
 
-lint: ## Run linters for go & rust (golangci-lint reports without failing)
+lint: ## Run linters for go & rust (import rules fail; other golangci-lint findings are reported)
 	@command -v golangci-lint >/dev/null || { echo "golangci-lint not found: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; exit 1; }
 	go vet ./...
+	golangci-lint run --enable-only depguard ./...
 	golangci-lint run --issues-exit-code=0 ./...
 	cd internal/core/crypto/xmss/rust && cargo fmt --check
 	cd internal/core/crypto/xmss/rust && cargo clippy -- -D warnings -A clippy::missing_safety_doc
@@ -76,11 +76,11 @@ tidy: ## Tidy Go module dependencies
 # --- Local testnet ---
 
 run-setup: build ## Generate testnet config + XMSS keys (first run only, refreshes genesis time)
-	@bin/keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
+	@bin/gean lean keygen --validators $(NUM_VALIDATORS) --nodes $(NUM_NODES) --output $(TESTNET_DIR)
 
 run: build ## Run node0 (aggregator) — requires make run-setup first
 	@rm -rf data/node0
-	@bin/gean \
+	@bin/gean lean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node0.key \
 		--node-id node0 \
@@ -92,7 +92,7 @@ run: build ## Run node0 (aggregator) — requires make run-setup first
 
 run-node1: build ## Run node1 on port 9001
 	@rm -rf data/node1
-	@bin/gean \
+	@bin/gean lean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node1.key \
 		--node-id node1 \
@@ -103,7 +103,7 @@ run-node1: build ## Run node1 on port 9001
 
 run-node2: build ## Run node2 on port 9002
 	@rm -rf data/node2
-	@bin/gean \
+	@bin/gean lean \
 		--custom-network-config-dir $(TESTNET_DIR) \
 		--node-key $(TESTNET_DIR)/node2.key \
 		--node-id node2 \

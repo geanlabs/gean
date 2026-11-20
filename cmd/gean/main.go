@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"os"
 
 	"github.com/geanlabs/gean/internal/core/clock"
@@ -16,17 +14,7 @@ import (
 )
 
 func main() {
-	cfg, err := parseConfig(os.Args[1:], os.Stderr)
-	if err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			os.Exit(0)
-		}
-		os.Exit(1)
-	}
-	if err := run(cfg); err != nil {
-		logger.Error(logger.Node, "fatal: %v", err)
-		os.Exit(1)
-	}
+	os.Exit(runCommand(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(cfg config) error {

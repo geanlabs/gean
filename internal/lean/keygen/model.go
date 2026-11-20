@@ -1,4 +1,4 @@
-package main
+package keygen
 
 type options struct {
 	Validators   int

@@ -91,10 +91,21 @@ Builds a Docker image and starts a devnet with other Lean clients through
 Start from a recent finalized state instead of genesis with `--checkpoint-sync-url`, pointed at
 another node's API.
 
+## Commands
+
+`gean` is one binary with subcommands:
+
+| Command | Does |
+|---|---|
+| `gean lean [flags]` | Run a Lean Ethereum consensus node |
+| `gean lean keygen [flags]` | Generate a local network's genesis config, validator keys and node keys |
+
+Run `gean --help` to list the commands.
+
 ## Flags
 
 ```sh
-bin/gean \
+bin/gean lean \
   --custom-network-config-dir ./testnet \
   --node-key ./testnet/node0.key \
   --node-id node0 \
@@ -103,7 +114,7 @@ bin/gean \
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--custom-network-config-dir` | (required) | Directory with the network's config and keys, as written by `keygen` |
+| `--custom-network-config-dir` | (required) | Directory with the network's config and keys, as written by `gean lean keygen` |
 | `--node-key` | (required) | Hex-encoded secp256k1 key for the node's P2P identity |
 | `--node-id` | (required) | Node name, e.g. `node0` |
 | `--data-dir` | `./data` | Database directory |
@@ -117,7 +128,7 @@ bin/gean \
 | `--attestation-committee-count` | from config | Number of attestation subnets |
 | `--prover-arena` | `false` | Faster proving, at the cost of memory that is never returned |
 
-Run `bin/gean --help` for the full list.
+Run `bin/gean lean --help` for the full list.
 
 ## For developers
 
@@ -137,10 +148,7 @@ Run `bin/gean --help` for the full list.
 make build
 ```
 
-This builds the Rust XMSS libraries first, then two binaries:
-
-- `bin/gean`: the consensus node
-- `bin/keygen`: generates a local network's genesis config and validator keys
+This builds the Rust XMSS libraries first, then the `bin/gean` binary (see [Commands](#commands)).
 
 Run `make help` to list every target.
 
@@ -152,7 +160,7 @@ Run `make help` to list every target.
 | `make test-ffi` | XMSS FFI tests |
 | `make test-spec` | leanSpec fixture tests; the first run clones leanSpec at a pinned commit and generates fixtures with `uv` |
 | `make test-all` | Everything above |
-| `make lint` | `go vet` and golangci-lint (`.golangci.yml`, report-only for now), plus `cargo fmt --check` and `clippy` for the Rust code |
+| `make lint` | `go vet` and golangci-lint (`.golangci.yml`): package import rules fail the build, other findings are reported; plus `cargo fmt --check` and `clippy` for the Rust code |
 | `make fmt` | Format Go code |
 
 ## License

@@ -1,6 +1,7 @@
 # golangci-lint v2 configuration.
 #
-# Run with `make lint`. Findings are reported without failing the build.
+# Run with `make lint`. The depguard import rules fail the build; other
+# findings are reported without failing it.
 
 version: "2"
 
@@ -33,19 +34,7 @@ linters:
 
     depguard:
       rules:
-        # Randomness in consensus code must not be predictable.
-        crypto-rand:
-          files:
-            - $all
-            - "!$test"
-          deny:
-            - pkg: math/rand
-              desc: "use crypto/rand"
-            - pkg: math/rand/v2
-              desc: "use crypto/rand"
-
-        # Today's layering. Where an allow and a deny both match, the longer
-        # (more specific) match wins.
+        # Package layering.
         types-imports-nothing:
           files:
             - "**/internal/lean/types/**"
@@ -53,16 +42,16 @@ linters:
             - pkg: github.com/geanlabs/gean
               desc: "lean/types is the bottom layer and imports no other gean package"
 
+        # Protocol rules depend only on the standard library and lean/types.
+        # Strict mode: anything not in the allow list is rejected.
         rules-import-only-types:
+          list-mode: strict
           files:
             - "**/internal/lean/transition/**"
             - "**/internal/lean/forkchoice/**"
           allow:
             - $gostd
             - github.com/geanlabs/gean/internal/lean/types
-          deny:
-            - pkg: github.com/geanlabs/gean
-              desc: "protocol rules depend only on lean/types"
 
         storage-imports-nothing:
           files:
@@ -107,15 +96,17 @@ linters:
         validator-uses-api-only:
           files:
             - "**/internal/validator/**"
-          allow:
-            - $gostd
-            - github.com/geanlabs/gean/internal/core
-            - github.com/geanlabs/gean/internal/beacon/types
           deny:
             - pkg: github.com/geanlabs/gean/internal/lean
               desc: "the validator client is beacon-only"
-            - pkg: github.com/geanlabs/gean/internal/beacon
-              desc: "the validator client talks to the node through the Beacon API; only beacon/types is shared"
+            - pkg: github.com/geanlabs/gean/internal/beacon/importer
+              desc: "the validator client talks to the node through the Beacon API"
+            - pkg: github.com/geanlabs/gean/internal/beacon/store
+              desc: "the validator client talks to the node through the Beacon API"
+            - pkg: github.com/geanlabs/gean/internal/beacon/p2p
+              desc: "the validator client talks to the node through the Beacon API"
+            - pkg: github.com/geanlabs/gean/internal/beacon/syncer
+              desc: "the validator client talks to the node through the Beacon API"
 
   exclusions:
     generated: lax

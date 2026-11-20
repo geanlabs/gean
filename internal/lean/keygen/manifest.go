@@ -1,4 +1,4 @@
-package main
+package keygen
 
 import (
 	"encoding/hex"

@@ -50,7 +50,7 @@ type configPaths struct {
 
 func parseConfig(args []string, stderr io.Writer) (config, error) {
 	var cfg config
-	fs := flag.NewFlagSet("gean", flag.ContinueOnError)
+	fs := flag.NewFlagSet("gean lean", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
 	aggregateSubnetIDs := ""

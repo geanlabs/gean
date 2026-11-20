@@ -1,4 +1,4 @@
-package main
+package keygen
 
 import (
 	"errors"
@@ -13,13 +13,10 @@ import (
 
 var errInvalidOptions = errors.New("invalid keygen options")
 
-func main() {
-	if err := run(os.Args[1:], os.Stderr); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func run(args []string, stderr io.Writer) error {
+// Run generates a local network's genesis config, validator keys and node
+// keys, as `gean lean keygen` does. args are the command's flags; flag errors
+// and usage go to stderr.
+func Run(args []string, stderr io.Writer) error {
 	opts, err := parseOptions(args, stderr)
 	if err != nil {
 		return err
@@ -63,7 +60,7 @@ func run(args []string, stderr io.Writer) error {
 
 func parseOptions(args []string, stderr io.Writer) (options, error) {
 	opts := options{}
-	fs := flag.NewFlagSet("keygen", flag.ContinueOnError)
+	fs := flag.NewFlagSet("gean lean keygen", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.IntVar(&opts.Validators, "validators", 5, "Number of validators to generate")
 	fs.IntVar(&opts.Nodes, "nodes", 3, "Number of nodes")
@@ -101,6 +98,6 @@ func logSummary(opts options, genesisTime uint64, m manifest) {
 	log.Printf("validators: %d, nodes: %d", len(m.Validators), len(m.Nodes))
 	log.Println("")
 	log.Println("run immediately:")
-	log.Printf("  bin/gean --custom-network-config-dir %s --node-key %s/node0.key --node-id node0 --is-aggregator --data-dir data/node0",
+	log.Printf("  bin/gean lean --custom-network-config-dir %s --node-key %s/node0.key --node-id node0 --is-aggregator --data-dir data/node0",
 		opts.OutputDir, opts.OutputDir)
 }
