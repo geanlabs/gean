@@ -58,14 +58,6 @@ func TestVerifyCheckpointStateValid(t *testing.T) {
 	}
 }
 
-func TestVerifyCheckpointStateSlotZero(t *testing.T) {
-	state := makeTestState(0, 1000, 3)
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: slot is 0")
-	}
-}
-
 func TestVerifyCheckpointStateMalformedShape(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -100,162 +92,75 @@ func TestVerifyCheckpointStateMalformedShape(t *testing.T) {
 	}
 }
 
-func TestVerifyCheckpointStateNoValidators(t *testing.T) {
-	state := makeTestState(100, 1000, 0)
-	err := VerifyCheckpointState(state, 1000, nil)
-	if err == nil {
-		t.Fatal("should fail: no validators")
+func TestVerifyCheckpointStateRejects(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(s *types.State, expected []*types.Validator)
+		wantErr string
+	}{
+		{"slot zero", func(s *types.State, _ []*types.Validator) {
+			s.Slot = 0
+		}, "slot cannot be 0"},
+		{"no validators", func(s *types.State, _ []*types.Validator) {
+			s.Validators = nil
+		}, "has no validators"},
+		{"genesis time mismatch", func(s *types.State, _ []*types.Validator) {
+			s.Config.GenesisTime = 9999
+		}, "genesis time mismatch"},
+		{"validator count mismatch", func(s *types.State, _ []*types.Validator) {
+			s.Validators = append(s.Validators, &types.Validator{Index: 3})
+		}, "validator count mismatch"},
+		{"non-sequential index", func(s *types.State, _ []*types.Validator) {
+			s.Validators[1].Index = 99
+		}, "non-sequential index"},
+		{"nil validator", func(s *types.State, _ []*types.Validator) {
+			s.Validators[1] = nil
+		}, "validator 1 is nil"},
+		{"attestation pubkey mismatch", func(_ *types.State, expected []*types.Validator) {
+			expected[1].AttestationPubkey = [types.PubkeySize]byte{0xfe}
+		}, "validator 1 attestation pubkey mismatch"},
+		{"proposal pubkey mismatch", func(_ *types.State, expected []*types.Validator) {
+			expected[1].ProposalPubkey = [types.PubkeySize]byte{0xfe}
+		}, "validator 1 proposal pubkey mismatch"},
+		{"finalized exceeds state", func(s *types.State, _ []*types.Validator) {
+			s.LatestFinalized.Slot = 200
+		}, "finalized slot 200 exceeds state slot"},
+		{"justified exceeds state", func(s *types.State, _ []*types.Validator) {
+			s.LatestJustified.Slot = 200
+		}, "justified slot 200 exceeds state slot"},
+		{"justified precedes finalized", func(s *types.State, _ []*types.Validator) {
+			s.LatestJustified.Slot, s.LatestFinalized.Slot = 90, 95
+		}, "justified slot 90 precedes finalized slot 95"},
+		{"justified and finalized roots differ at same slot", func(s *types.State, _ []*types.Validator) {
+			s.LatestJustified.Slot, s.LatestFinalized.Slot = 50, 50
+			s.LatestJustified.Root, s.LatestFinalized.Root = [32]byte{1}, [32]byte{2}
+		}, "have different roots"},
+		{"block header exceeds state", func(s *types.State, _ []*types.Validator) {
+			s.LatestBlockHeader.Slot = 200
+		}, "block header slot 200 exceeds state slot"},
+		{"block header root mismatch at finalized slot", func(s *types.State, _ []*types.Validator) {
+			s.LatestBlockHeader.Slot, s.LatestFinalized.Slot = 50, 50
+			s.LatestFinalized.Root = [32]byte{99}
+		}, "block header at finalized slot 50 has mismatched root"},
+		{"block header root mismatch at justified slot", func(s *types.State, _ []*types.Validator) {
+			// Above the finalized slot (95), so justified does not precede finalized.
+			s.LatestBlockHeader.Slot, s.LatestJustified.Slot = 98, 98
+			s.LatestJustified.Root = [32]byte{99}
+		}, "block header at justified slot 98 has mismatched root"},
+		{"malformed historical root", func(s *types.State, _ []*types.Validator) {
+			s.HistoricalBlockHashes = [][]byte{{0x01}}
+		}, "hash_tree_root"},
 	}
-}
-
-func TestVerifyCheckpointStateGenesisTimeMismatch(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	err := VerifyCheckpointState(state, 9999, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: genesis time mismatch")
-	}
-}
-
-func TestVerifyCheckpointStateValidatorCountMismatch(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	twoValidators := state.Validators[:2]
-	err := VerifyCheckpointState(state, 1000, twoValidators)
-	if err == nil {
-		t.Fatal("should fail: validator count mismatch")
-	}
-}
-
-func TestVerifyCheckpointStateNonSequentialIndex(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.Validators[1].Index = 99
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: non-sequential index")
-	}
-}
-
-func TestVerifyCheckpointStateNilValidator(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	expected := copyValidators(state.Validators)
-	state.Validators[1] = nil
-
-	err := VerifyCheckpointState(state, 1000, expected)
-	if err == nil {
-		t.Fatal("should fail: nil validator")
-	}
-	if !strings.Contains(err.Error(), "validator 1 is nil") {
-		t.Fatalf("error=%q, want validator context", err.Error())
-	}
-}
-
-func TestVerifyCheckpointStatePubkeyMismatch(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	expected := make([]*types.Validator, 3)
-	for i := range 3 {
-		expected[i] = &types.Validator{
-			AttestationPubkey: [types.PubkeySize]byte{byte(i + 100)},
-			ProposalPubkey:    state.Validators[i].ProposalPubkey,
-			Index:             uint64(i),
-		}
-	}
-	err := VerifyCheckpointState(state, 1000, expected)
-	if err == nil {
-		t.Fatal("should fail: pubkey mismatch")
-	}
-}
-
-func TestVerifyCheckpointStateProposalPubkeyMismatch(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	expected := copyValidators(state.Validators)
-	expected[1].ProposalPubkey = [types.PubkeySize]byte{0xfe}
-
-	err := VerifyCheckpointState(state, 1000, expected)
-	if err == nil {
-		t.Fatal("should fail: proposal pubkey mismatch")
-	}
-}
-
-func TestVerifyCheckpointStateFinalizedExceedsState(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.LatestFinalized.Slot = 200
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil || !strings.Contains(err.Error(), "finalized slot 200 exceeds state slot") {
-		t.Fatalf("err = %v, want finalized slot exceeding the state slot", err)
-	}
-}
-
-func TestVerifyCheckpointStateJustifiedExceedsState(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.LatestJustified.Slot = 200
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil || !strings.Contains(err.Error(), "justified slot 200 exceeds state slot") {
-		t.Fatalf("err = %v, want justified slot exceeding the state slot", err)
-	}
-}
-
-func TestVerifyCheckpointStateJustifiedPrecedesFinalized(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.LatestJustified.Slot = 90
-	state.LatestFinalized.Slot = 95
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: justified precedes finalized")
-	}
-}
-
-func TestVerifyCheckpointStateJustifiedFinalizedRootMismatch(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.LatestJustified.Slot = 50
-	state.LatestFinalized.Slot = 50
-	state.LatestJustified.Root = [32]byte{1}
-	state.LatestFinalized.Root = [32]byte{2}
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: root mismatch at same slot")
-	}
-}
-
-func TestVerifyCheckpointStateBlockHeaderExceedsState(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.LatestBlockHeader.Slot = 200
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: block header exceeds state")
-	}
-}
-
-func TestVerifyCheckpointStateBlockHeaderFinalizedRootMismatch(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.LatestBlockHeader.Slot = 50
-	state.LatestFinalized.Slot = 50
-	state.LatestFinalized.Root = [32]byte{99}
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: block header root mismatch at finalized slot")
-	}
-}
-
-func TestVerifyCheckpointStateBlockHeaderJustifiedRootMismatch(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.LatestBlockHeader.Slot = 90
-	state.LatestJustified.Slot = 90
-	state.LatestJustified.Root = [32]byte{99}
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: block header root mismatch at justified slot")
-	}
-}
-
-func TestVerifyCheckpointStateRejectsMalformedHistoricalRoot(t *testing.T) {
-	state := makeTestState(100, 1000, 3)
-	state.HistoricalBlockHashes = [][]byte{{0x01}}
-
-	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: malformed historical root")
-	}
-	if !strings.Contains(err.Error(), "hash_tree_root") {
-		t.Fatalf("error=%q, want hash_tree_root context", err.Error())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := makeTestState(100, 1000, 3)
+			expected := copyValidators(state.Validators)
+			tt.mutate(state, expected)
+			err := VerifyCheckpointState(state, 1000, expected)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 

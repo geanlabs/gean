@@ -7,17 +7,8 @@ import (
 )
 
 func TestAggregateSignaturesRoundtrip(t *testing.T) {
-	kp1, err := GenerateKeyPair("agg-test-validator-0", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("keygen 0: %v", err)
-	}
-	defer kp1.Close()
-
-	kp2, err := GenerateKeyPair("agg-test-validator-1", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("keygen 1: %v", err)
-	}
-	defer kp2.Close()
+	keys := sharedKeyPairs(t, 2)
+	kp1, kp2 := keys[0], keys[1]
 
 	var message [32]byte
 	message[0] = 0xab
@@ -105,16 +96,8 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 // be rejected as a Go error when re-aggregated under a different message, rather
 // than panicking across the FFI boundary.
 func TestAggregateRejectsChildProofWithWrongMessage(t *testing.T) {
-	kpChild, err := GenerateKeyPair("agg-wrongmsg-child", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("keygen child: %v", err)
-	}
-	defer kpChild.Close()
-	kpRaw, err := GenerateKeyPair("agg-wrongmsg-raw", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("keygen raw: %v", err)
-	}
-	defer kpRaw.Close()
+	keys := sharedKeyPairs(t, 2)
+	kpChild, kpRaw := keys[0], keys[1]
 
 	childPk, err := kpChild.PublicKeyBytes()
 	if err != nil {

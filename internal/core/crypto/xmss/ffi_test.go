@@ -4,16 +4,42 @@ package xmss
 
 import (
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"unsafe"
 )
 
-func TestParsePublicKeyRoundtrip(t *testing.T) {
-	kp, err := GenerateKeyPair("gean-parse-pk-seed", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("key generation failed: %v", err)
+var (
+	sharedKeysOnce sync.Once
+	sharedKeys     []*ValidatorKeyPair
+	sharedKeysErr  error
+)
+
+// sharedKeyPairs returns n of the package's shared key pairs, for tests that need
+// some valid key and don't care which: real keygen is slow. Signing doesn't change
+// a key, so tests may sign with the same key at the same slot. Callers must not
+// close or mutate them.
+func sharedKeyPairs(t *testing.T, n int) []*ValidatorKeyPair {
+	t.Helper()
+	sharedKeysOnce.Do(func() {
+		for i := range 8 {
+			kp, err := GenerateKeyPair(fmt.Sprintf("shared-test-key-%d", i), 0, 1<<10)
+			if err != nil {
+				sharedKeysErr = fmt.Errorf("keygen %d: %w", i, err)
+				return
+			}
+			sharedKeys = append(sharedKeys, kp)
+		}
+	})
+	if sharedKeysErr != nil {
+		t.Fatal(sharedKeysErr)
 	}
-	defer kp.Close()
+	return sharedKeys[:n]
+}
+
+func TestParsePublicKeyRoundtrip(t *testing.T) {
+	kp := sharedKeyPairs(t, 1)[0]
 
 	pubkey, err := kp.PublicKeyBytes()
 	if err != nil {
@@ -32,11 +58,7 @@ func TestParsePublicKeyRoundtrip(t *testing.T) {
 }
 
 func TestParseSignatureRoundtrip(t *testing.T) {
-	kp, err := GenerateKeyPair("gean-parse-sig-seed", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("key generation failed: %v", err)
-	}
-	defer kp.Close()
+	kp := sharedKeyPairs(t, 1)[0]
 
 	var message [32]byte
 	message[0] = 0x11
@@ -58,11 +80,7 @@ func TestParseSignatureRoundtrip(t *testing.T) {
 }
 
 func TestKeyGenerateSignVerifyRoundtrip(t *testing.T) {
-	kp, err := GenerateKeyPair("gean-test-seed-phrase", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("key generation failed: %v", err)
-	}
-	defer kp.Close()
+	kp := sharedKeyPairs(t, 1)[0]
 
 	pubkey, err := kp.PublicKeyBytes()
 	if err != nil {

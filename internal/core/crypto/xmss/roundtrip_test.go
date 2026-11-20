@@ -7,11 +7,7 @@ import (
 )
 
 func TestSignatureSSZRoundtripThenAggregate(t *testing.T) {
-	kp, err := GenerateKeyPair("roundtrip-test-0", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("keygen: %v", err)
-	}
-	defer kp.Close()
+	kp := sharedKeyPairs(t, 1)[0]
 
 	var message [32]byte
 	message[0] = 0xab

@@ -7,16 +7,8 @@ import (
 )
 
 func TestMultipleAggregationsSequential(t *testing.T) {
-	kp1, err := GenerateKeyPair("multi-agg-0", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("keygen 0: %v", err)
-	}
-	defer kp1.Close()
-	kp2, err := GenerateKeyPair("multi-agg-1", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("keygen 1: %v", err)
-	}
-	defer kp2.Close()
+	keys := sharedKeyPairs(t, 2)
+	kp1, kp2 := keys[0], keys[1]
 
 	pk1, err := kp1.PublicKeyBytes()
 	if err != nil {

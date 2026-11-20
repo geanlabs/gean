@@ -58,118 +58,56 @@ func TestSpecComputeBlockWeightsEmpty(t *testing.T) {
 	}
 }
 
-func TestSpecLMDGhostLinearChain(t *testing.T) {
-	rootA, rootB, rootC := root(1), root(2), root(3)
-	blocks := map[[32]byte]BlockInfo{
-		rootA: {Slot: 0, ParentRoot: [32]byte{}},
-		rootB: {Slot: 1, ParentRoot: rootA},
-		rootC: {Slot: 2, ParentRoot: rootB},
+// Each scenario runs through both the spec oracle and the proto-array, and both
+// must pick the expected head.
+func TestHeadSelection(t *testing.T) {
+	type block struct {
+		slot         uint64
+		root, parent [32]byte
 	}
-	attestations := map[uint64]*types.AttestationData{
-		0: makeAttData(rootC, 2),
-	}
-
-	head, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
-	if head != rootC {
-		t.Fatalf("expected rootC, got %x", head[:4])
-	}
-}
-
-func TestSpecLMDGhostForkHeavier(t *testing.T) {
-	rootA, rootB, rootC := root(1), root(2), root(3)
-	blocks := map[[32]byte]BlockInfo{
-		rootA: {Slot: 0, ParentRoot: [32]byte{}},
-		rootB: {Slot: 1, ParentRoot: rootA},
-		rootC: {Slot: 1, ParentRoot: rootA},
-	}
-	// 2 votes for rootB, 1 for rootC -> rootB wins
-	attestations := map[uint64]*types.AttestationData{
-		0: makeAttData(rootB, 1),
-		1: makeAttData(rootB, 1),
-		2: makeAttData(rootC, 1),
+	linear := []block{{1, root(2), root(1)}, {2, root(3), root(2)}}
+	fork := []block{{1, root(2), root(1)}, {1, root(3), root(1)}}
+	var deep []block
+	for i := byte(1); i < 10; i++ {
+		deep = append(deep, block{uint64(i), root(i + 1), root(i)})
 	}
 
-	head, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
-	if head != rootB {
-		t.Fatalf("expected rootB (heavier), got %x", head[:4])
+	tests := []struct {
+		name   string
+		blocks []block
+		votes  map[uint64][32]byte // validator -> head
+		want   [32]byte
+	}{
+		{"no attestations stays at anchor", nil, nil, root(1)},
+		{"linear chain follows vote to tip", linear, map[uint64][32]byte{0: root(3)}, root(3)},
+		{"linear chain with vote on interior block", linear, map[uint64][32]byte{0: root(3), 1: root(2)}, root(3)},
+		{"heavier fork wins", fork, map[uint64][32]byte{0: root(2), 1: root(2), 2: root(3)}, root(2)},
+		{"equal weight breaks tie to larger root", fork, map[uint64][32]byte{0: root(2), 1: root(3)}, root(3)},
+		{"deep chain follows vote to tip", deep, map[uint64][32]byte{0: root(10)}, root(10)},
 	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			anchor := root(1)
+			specBlocks := map[[32]byte]BlockInfo{anchor: {Slot: 0}}
+			fc := New(0, anchor, [32]byte{})
+			for _, b := range tt.blocks {
+				specBlocks[b.root] = BlockInfo{Slot: b.slot, ParentRoot: b.parent}
+				fc.OnBlock(b.slot, b.root, b.parent)
+			}
+			attestations := make(map[uint64]*types.AttestationData)
+			for vid, head := range tt.votes {
+				slot := specBlocks[head].Slot
+				attestations[vid] = makeAttData(head, slot)
+				fc.votes.SetKnown(vid, fc.NodeIndex(head), slot, makeAttData(head, slot))
+			}
 
-func TestSpecLMDGhostTiebreakLexicographic(t *testing.T) {
-	rootA := root(1)
-	rootB := root(2) // smaller
-	rootC := root(3) // larger -> wins tiebreak
-	blocks := map[[32]byte]BlockInfo{
-		rootA: {Slot: 0, ParentRoot: [32]byte{}},
-		rootB: {Slot: 1, ParentRoot: rootA},
-		rootC: {Slot: 1, ParentRoot: rootA},
-	}
-	// Equal weight: 1 vote each -> lexicographic tiebreak, rootC > rootB
-	attestations := map[uint64]*types.AttestationData{
-		0: makeAttData(rootB, 1),
-		1: makeAttData(rootC, 1),
-	}
-
-	head, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
-	if head != rootC {
-		t.Fatalf("expected rootC (lexicographic tiebreak), got %x", head[:4])
-	}
-}
-func TestProtoArrayLinearChain(t *testing.T) {
-	rootA, rootB, rootC := root(1), root(2), root(3)
-	fc := New(0, rootA, [32]byte{})
-	fc.OnBlock(1, rootB, rootA)
-	fc.OnBlock(2, rootC, rootB)
-
-	// Validator 0 attests to rootC
-	fc.votes.SetKnown(0, fc.NodeIndex(rootC), 2, makeAttData(rootC, 2))
-
-	head := fc.UpdateHead(rootA)
-	if head != rootC {
-		t.Fatalf("expected rootC, got %x", head[:4])
-	}
-}
-
-func TestProtoArrayForkHeavier(t *testing.T) {
-	rootA, rootB, rootC := root(1), root(2), root(3)
-	fc := New(0, rootA, [32]byte{})
-	fc.OnBlock(1, rootB, rootA)
-	fc.OnBlock(1, rootC, rootA)
-
-	// 2 votes for rootB, 1 for rootC
-	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.votes.SetKnown(2, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
-
-	head := fc.UpdateHead(rootA)
-	if head != rootB {
-		t.Fatalf("expected rootB (heavier), got %x", head[:4])
-	}
-}
-
-func TestProtoArrayTiebreakLexicographic(t *testing.T) {
-	rootA := root(1)
-	rootB := root(2)
-	rootC := root(3) // larger -> wins
-	fc := New(0, rootA, [32]byte{})
-	fc.OnBlock(1, rootB, rootA)
-	fc.OnBlock(1, rootC, rootA)
-
-	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.votes.SetKnown(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
-
-	head := fc.UpdateHead(rootA)
-	if head != rootC {
-		t.Fatalf("expected rootC (tiebreak), got %x", head[:4])
-	}
-}
-
-func TestProtoArrayNoAttestations(t *testing.T) {
-	rootA := root(1)
-	fc := New(0, rootA, [32]byte{})
-	head := fc.UpdateHead(rootA)
-	if head != rootA {
-		t.Fatalf("expected rootA with no attestations, got %x", head[:4])
+			if head, _, _ := SpecComputeLMDGhostHead(anchor, specBlocks, attestations, 0); head != tt.want {
+				t.Fatalf("spec head=%x, want %x", head[:4], tt.want[:4])
+			}
+			if head := fc.UpdateHead(anchor); head != tt.want {
+				t.Fatalf("proto-array head=%x, want %x", head[:4], tt.want[:4])
+			}
+		})
 	}
 }
 
@@ -505,107 +443,6 @@ func TestCanonicalAnalysisSeparatesFinalizedForks(t *testing.T) {
 	}
 	if !slices.Equal(nonCanonical, [][32]byte{forkBefore}) {
 		t.Fatalf("nonCanonical=%x, want forkBefore", nonCanonical)
-	}
-}
-
-func TestProtoArrayDeepChain(t *testing.T) {
-	roots := make([][32]byte, 10)
-	for i := range roots {
-		roots[i] = root(byte(i + 1))
-	}
-	fc := New(0, roots[0], [32]byte{})
-	for i := 1; i < 10; i++ {
-		fc.OnBlock(uint64(i), roots[i], roots[i-1])
-	}
-
-	// Attest to tip
-	fc.votes.SetKnown(0, fc.NodeIndex(roots[9]), 9, makeAttData(roots[9], 9))
-	head := fc.UpdateHead(roots[0])
-	if head != roots[9] {
-		t.Fatalf("expected root[9], got %x", head[:4])
-	}
-}
-func TestSpecOracleLinearChain(t *testing.T) {
-	rootA, rootB, rootC := root(1), root(2), root(3)
-
-	// Spec
-	blocks := map[[32]byte]BlockInfo{
-		rootA: {Slot: 0, ParentRoot: [32]byte{}},
-		rootB: {Slot: 1, ParentRoot: rootA},
-		rootC: {Slot: 2, ParentRoot: rootB},
-	}
-	attestations := map[uint64]*types.AttestationData{
-		0: makeAttData(rootC, 2),
-		1: makeAttData(rootB, 1),
-	}
-	specHead, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
-
-	// Proto-array
-	fc := New(0, rootA, [32]byte{})
-	fc.OnBlock(1, rootB, rootA)
-	fc.OnBlock(2, rootC, rootB)
-	fc.votes.SetKnown(0, fc.NodeIndex(rootC), 2, makeAttData(rootC, 2))
-	fc.votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	protoHead := fc.UpdateHead(rootA)
-
-	if specHead != protoHead {
-		t.Fatalf("oracle mismatch: spec=%x proto=%x", specHead[:4], protoHead[:4])
-	}
-}
-
-func TestSpecOracleFork(t *testing.T) {
-	rootA, rootB, rootC := root(1), root(2), root(3)
-
-	blocks := map[[32]byte]BlockInfo{
-		rootA: {Slot: 0, ParentRoot: [32]byte{}},
-		rootB: {Slot: 1, ParentRoot: rootA},
-		rootC: {Slot: 1, ParentRoot: rootA},
-	}
-	attestations := map[uint64]*types.AttestationData{
-		0: makeAttData(rootB, 1),
-		1: makeAttData(rootB, 1),
-		2: makeAttData(rootC, 1),
-	}
-	specHead, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
-
-	fc := New(0, rootA, [32]byte{})
-	fc.OnBlock(1, rootB, rootA)
-	fc.OnBlock(1, rootC, rootA)
-	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.votes.SetKnown(1, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.votes.SetKnown(2, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
-	protoHead := fc.UpdateHead(rootA)
-
-	if specHead != protoHead {
-		t.Fatalf("oracle mismatch: spec=%x proto=%x", specHead[:4], protoHead[:4])
-	}
-}
-
-func TestSpecOracleTiebreak(t *testing.T) {
-	rootA := root(1)
-	rootB := root(2)
-	rootC := root(3)
-
-	blocks := map[[32]byte]BlockInfo{
-		rootA: {Slot: 0, ParentRoot: [32]byte{}},
-		rootB: {Slot: 1, ParentRoot: rootA},
-		rootC: {Slot: 1, ParentRoot: rootA},
-	}
-	attestations := map[uint64]*types.AttestationData{
-		0: makeAttData(rootB, 1),
-		1: makeAttData(rootC, 1),
-	}
-	specHead, _, _ := SpecComputeLMDGhostHead(rootA, blocks, attestations, 0)
-
-	fc := New(0, rootA, [32]byte{})
-	fc.OnBlock(1, rootB, rootA)
-	fc.OnBlock(1, rootC, rootA)
-	fc.votes.SetKnown(0, fc.NodeIndex(rootB), 1, makeAttData(rootB, 1))
-	fc.votes.SetKnown(1, fc.NodeIndex(rootC), 1, makeAttData(rootC, 1))
-	protoHead := fc.UpdateHead(rootA)
-
-	if specHead != protoHead {
-		t.Fatalf("oracle mismatch: spec=%x proto=%x", specHead[:4], protoHead[:4])
 	}
 }
 

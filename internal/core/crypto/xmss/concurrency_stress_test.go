@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// prepareStressInputs generates numSigs keypairs, signs one message with each,
+// prepareStressInputs signs one message with each of numSigs shared keypairs
 // and returns the serialized public keys and signatures. Handles are parsed
 // per-call in the workers so concurrent aggregations never share a handle —
 // the realistic model for parallel group proving, where each group owns its
@@ -21,18 +21,12 @@ func prepareStressInputs(t *testing.T, numSigs int) ([][PubkeySize]byte, [][Sign
 	message[0] = 0x7a
 	pkList := make([][PubkeySize]byte, numSigs)
 	sigList := make([][SignatureSize]byte, numSigs)
-	for i := range numSigs {
-		kp, err := GenerateKeyPair(fmt.Sprintf("stress-%d", i), 0, 1<<16)
-		if err != nil {
-			t.Fatalf("keygen %d: %v", i, err)
-		}
+	for i, kp := range sharedKeyPairs(t, numSigs) {
 		sig, err := kp.Sign(0, message)
 		if err != nil {
-			kp.Close()
 			t.Fatalf("sign %d: %v", i, err)
 		}
 		pk, err := kp.PublicKeyBytes()
-		kp.Close()
 		if err != nil {
 			t.Fatalf("pubkey %d: %v", i, err)
 		}

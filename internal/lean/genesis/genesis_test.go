@@ -108,21 +108,6 @@ func TestLoadGenesisConfigMissing(t *testing.T) {
 	}
 }
 
-func TestLoadGenesisConfigInvalidPubkey(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	data := `GENESIS_TIME: 1770407233
-GENESIS_VALIDATORS:
-  - attestation_pubkey: "not-hex"
-    proposal_pubkey: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
-`
-	writeGenesisConfig(t, tmpFile, data)
-
-	_, err := LoadGenesisConfig(tmpFile)
-	if err == nil || !strings.Contains(err.Error(), "pubkey") {
-		t.Fatalf("err = %v, want an invalid pubkey error", err)
-	}
-}
-
 func TestLoadGenesisConfigValidatorCountConsistent(t *testing.T) {
 	tmpFile := t.TempDir() + "/config.yaml"
 	writeGenesisConfig(t, tmpFile, "VALIDATOR_COUNT: 3\n"+testConfigYAML)
@@ -136,16 +121,6 @@ func TestLoadGenesisConfigValidatorCountConsistent(t *testing.T) {
 	}
 	if *config.ValidatorCount != 3 {
 		t.Fatalf("ValidatorCount: expected 3, got %d", *config.ValidatorCount)
-	}
-}
-
-func TestLoadGenesisConfigValidatorCountMismatch(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	writeGenesisConfig(t, tmpFile, "VALIDATOR_COUNT: 5\n"+testConfigYAML)
-
-	_, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatal("expected error when VALIDATOR_COUNT disagrees with len(GENESIS_VALIDATORS)")
 	}
 }
 
@@ -186,15 +161,6 @@ func TestLoadGenesisConfigAcceptsMultiSubnetCommitteeCount(t *testing.T) {
 	}
 }
 
-func TestLoadGenesisConfigRejectsZeroCommitteeCount(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	writeGenesisConfig(t, tmpFile, "ATTESTATION_COMMITTEE_COUNT: 0\n"+testConfigYAML)
-
-	if _, err := LoadGenesisConfig(tmpFile); err == nil {
-		t.Fatal("expected error when ATTESTATION_COMMITTEE_COUNT is 0")
-	}
-}
-
 func TestValidatorsReturnErrorsForDirectMalformedConfig(t *testing.T) {
 	config := &GenesisConfig{
 		GenesisTime: 1,
@@ -222,109 +188,6 @@ func TestGenesisStateReturnsValidatorErrors(t *testing.T) {
 	state, err := config.GenesisState()
 	if err == nil {
 		t.Fatalf("expected genesis state error, got state=%v", state)
-	}
-}
-
-func TestLoadGenesisConfigRejectsUnknownFields(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	writeGenesisConfig(t, tmpFile, "UNKNOWN_FIELD: true\n"+testConfigYAML)
-
-	config, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatalf("expected unknown field error, got config=%v", config)
-	}
-	if !strings.Contains(err.Error(), "UNKNOWN_FIELD") {
-		t.Fatalf("error %q does not mention unknown field", err.Error())
-	}
-}
-
-func TestLoadGenesisConfigRejectsMultipleDocuments(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	writeGenesisConfig(t, tmpFile, testConfigYAML+"\n---\nGENESIS_TIME: 1\n")
-
-	config, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatalf("expected multiple document error, got config=%v", config)
-	}
-	if !strings.Contains(err.Error(), "single YAML document") {
-		t.Fatalf("error %q does not mention single document", err.Error())
-	}
-}
-
-func TestLoadGenesisConfigRejectsZeroPubkey(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	data := fmt.Sprintf(`GENESIS_TIME: 1770407233
-GENESIS_VALIDATORS:
-  - attestation_pubkey: "%s"
-    proposal_pubkey: "%s"
-`, pubkeyHex(0), pubkeyHex(1))
-	writeGenesisConfig(t, tmpFile, data)
-
-	config, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatalf("expected zero pubkey error, got config=%v", config)
-	}
-	if !strings.Contains(err.Error(), "zero pubkey") {
-		t.Fatalf("error %q does not mention zero pubkey", err.Error())
-	}
-}
-
-func TestLoadGenesisConfigRejectsDuplicatePubkeys(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	data := fmt.Sprintf(`GENESIS_TIME: 1770407233
-GENESIS_VALIDATORS:
-  - attestation_pubkey: "%s"
-    proposal_pubkey: "%s"
-  - attestation_pubkey: "%s"
-    proposal_pubkey: "%s"
-`, pubkeyHex(1), pubkeyHex(2), pubkeyHex(1), pubkeyHex(3))
-	writeGenesisConfig(t, tmpFile, data)
-
-	config, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatalf("expected duplicate pubkey error, got config=%v", config)
-	}
-	if !strings.Contains(err.Error(), "duplicate attestation pubkey") {
-		t.Fatalf("error %q does not mention duplicate attestation pubkey", err.Error())
-	}
-}
-
-func TestLoadGenesisConfigRejectsSameValidatorRolePubkey(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	key := pubkeyHex(1)
-	data := fmt.Sprintf(`GENESIS_TIME: 1770407233
-GENESIS_VALIDATORS:
-  - attestation_pubkey: "%s"
-    proposal_pubkey: "%s"
-`, key, key)
-	writeGenesisConfig(t, tmpFile, data)
-
-	config, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatalf("expected duplicate role pubkey error, got config=%v", config)
-	}
-	if !strings.Contains(err.Error(), "duplicate proposal pubkey already used as attestation pubkey") {
-		t.Fatalf("error %q does not mention cross-role duplicate", err.Error())
-	}
-}
-
-func TestLoadGenesisConfigRejectsCrossValidatorRolePubkey(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	data := fmt.Sprintf(`GENESIS_TIME: 1770407233
-GENESIS_VALIDATORS:
-  - attestation_pubkey: "%s"
-    proposal_pubkey: "%s"
-  - attestation_pubkey: "%s"
-    proposal_pubkey: "%s"
-`, pubkeyHex(1), pubkeyHex(2), pubkeyHex(3), pubkeyHex(1))
-	writeGenesisConfig(t, tmpFile, data)
-
-	config, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatalf("expected cross-validator role pubkey error, got config=%v", config)
-	}
-	if !strings.Contains(err.Error(), "duplicate proposal pubkey already used as attestation pubkey at index 0") {
-		t.Fatalf("error %q does not mention cross-validator role duplicate", err.Error())
 	}
 }
 
@@ -364,7 +227,7 @@ func TestValidatorsAcceptUppercaseHexPrefix(t *testing.T) {
 // GenesisState/Validators are pure constructors and must accept GenesisTime==0:
 // leanSpec's API/test fixtures use genesisTime=0 for deterministic states. The
 // time!=0 requirement is enforced on the config-file boundary only (see
-// TestLoadGenesisConfigRejectsZeroGenesisTime).
+// TestLoadGenesisConfigRejects).
 func TestGenesisStateAcceptsZeroGenesisTime(t *testing.T) {
 	config := &GenesisConfig{
 		GenesisValidators: []GenesisValidatorEntry{{
@@ -382,15 +245,51 @@ func TestGenesisStateAcceptsZeroGenesisTime(t *testing.T) {
 	}
 }
 
-// The slot clock needs a real anchor, so a running node's config.yaml with
-// GENESIS_TIME=0 must be rejected at load time.
-func TestLoadGenesisConfigRejectsZeroGenesisTime(t *testing.T) {
-	tmpFile := t.TempDir() + "/config.yaml"
-	zeroTimeYAML := "GENESIS_TIME: 0\n" + strings.SplitN(testConfigYAML, "\n", 2)[1]
-	writeGenesisConfig(t, tmpFile, zeroTimeYAML)
+// validatorsYAML builds a config with one validator per (attestation, proposal)
+// pubkey pair.
+func validatorsYAML(pubkeys ...string) string {
+	data := "GENESIS_TIME: 1770407233\nGENESIS_VALIDATORS:\n"
+	for i := 0; i < len(pubkeys); i += 2 {
+		data += fmt.Sprintf("  - attestation_pubkey: %q\n    proposal_pubkey: %q\n", pubkeys[i], pubkeys[i+1])
+	}
+	return data
+}
 
-	if _, err := LoadGenesisConfig(tmpFile); err == nil || !strings.Contains(err.Error(), "GENESIS_TIME") {
-		t.Fatalf("expected GENESIS_TIME rejection at load, got %v", err)
+func TestLoadGenesisConfigRejects(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{"invalid pubkey", validatorsYAML("not-hex", pubkeyHex(0xa1)), "invalid attestation pubkey"},
+		{"zero pubkey", validatorsYAML(pubkeyHex(0), pubkeyHex(1)), "zero pubkey"},
+		{"duplicate attestation pubkey",
+			validatorsYAML(pubkeyHex(1), pubkeyHex(2), pubkeyHex(1), pubkeyHex(3)),
+			"duplicate attestation pubkey"},
+		{"same pubkey for both roles of one validator",
+			validatorsYAML(pubkeyHex(1), pubkeyHex(1)),
+			"duplicate proposal pubkey already used as attestation pubkey"},
+		{"proposal pubkey reuses another validator's attestation pubkey",
+			validatorsYAML(pubkeyHex(1), pubkeyHex(2), pubkeyHex(3), pubkeyHex(1)),
+			"duplicate proposal pubkey already used as attestation pubkey at index 0"},
+		{"validator count mismatch", "VALIDATOR_COUNT: 5\n" + testConfigYAML, "VALIDATOR_COUNT=5 disagrees"},
+		{"zero committee count", "ATTESTATION_COMMITTEE_COUNT: 0\n" + testConfigYAML, "ATTESTATION_COMMITTEE_COUNT must be >= 1"},
+		{"unknown field", "UNKNOWN_FIELD: true\n" + testConfigYAML, "UNKNOWN_FIELD"},
+		{"multiple documents", testConfigYAML + "\n---\nGENESIS_TIME: 1\n", "single YAML document"},
+		// The slot clock needs a real anchor, so a running node's config.yaml
+		// with GENESIS_TIME=0 must be rejected at load time.
+		{"zero genesis time", "GENESIS_TIME: 0\n" + strings.SplitN(testConfigYAML, "\n", 2)[1], "GENESIS_TIME"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpFile := t.TempDir() + "/config.yaml"
+			writeGenesisConfig(t, tmpFile, tt.yaml)
+
+			config, err := LoadGenesisConfig(tmpFile)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want it to contain %q (config=%v)", err, tt.wantErr, config)
+			}
+		})
 	}
 }
 

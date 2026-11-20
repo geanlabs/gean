@@ -3,16 +3,11 @@
 package xmss
 
 import (
-	"fmt"
 	"testing"
 )
 
 func TestType2Roundtrip(t *testing.T) {
-	key, err := GenerateKeyPair("type-2-roundtrip", 0, 1<<10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer key.Close()
+	key := sharedKeyPairs(t, 1)[0]
 	pubkeyBytes, err := key.PublicKeyBytes()
 	if err != nil {
 		t.Fatal(err)
@@ -78,12 +73,7 @@ func TestType2MergesTwoMessagesAtOneSlot(t *testing.T) {
 	var inputs []Type1Input
 	var bindings []MessageBinding
 	var groups [][]CPubKey
-	for i, seed := range []string{"same-slot-a", "same-slot-b"} {
-		key, err := GenerateKeyPair(seed, 0, 1<<10)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer key.Close()
+	for i, key := range sharedKeyPairs(t, 2) {
 		pubkeyBytes, err := key.PublicKeyBytes()
 		if err != nil {
 			t.Fatal(err)
@@ -135,14 +125,9 @@ func TestType2MergesTwoMessagesAtOneSlot(t *testing.T) {
 // A raw signature merged beside Type-1 proofs is bound to its own message and slot,
 // exactly as a proof of it would be.
 func TestType2MergesRawSignature(t *testing.T) {
-	keys := make([]*ValidatorKeyPair, 3)
+	keys := sharedKeyPairs(t, 3)
 	pubkeys := make([]CPubKey, 3)
-	for i := range keys {
-		key, err := GenerateKeyPair(fmt.Sprintf("raw-merge-%d", i), 0, 1<<10)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer key.Close()
+	for i, key := range keys {
 		pubkeyBytes, err := key.PublicKeyBytes()
 		if err != nil {
 			t.Fatal(err)
@@ -152,7 +137,7 @@ func TestType2MergesRawSignature(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer FreePublicKey(pubkey)
-		keys[i], pubkeys[i] = key, pubkey
+		pubkeys[i] = pubkey
 	}
 	sign := func(i int, slot uint32, message [32]byte) CSig {
 		raw, err := keys[i].Sign(slot, message)

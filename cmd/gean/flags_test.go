@@ -99,26 +99,6 @@ func TestParseConfig_InvalidShadowEnv(t *testing.T) {
 	}
 }
 
-func TestParseConfig_NegativeShadowRate(t *testing.T) {
-	for _, flag := range []string{
-		"--shadow-xmss-aggregate-signatures-rate",
-		"--shadow-xmss-verify-signature-rate",
-		"--shadow-xmss-verify-aggregated-signatures-rate",
-	} {
-		t.Run(flag, func(t *testing.T) {
-			args := append(validFlagArgs(), flag, "-1")
-			var stderr bytes.Buffer
-			_, err := parseConfig(args, &stderr)
-			if err == nil {
-				t.Fatal("expected negative shadow rate to fail")
-			}
-			if !strings.Contains(stderr.String(), flag+" must not be negative") {
-				t.Fatalf("negative rate message not found:\n%s", stderr.String())
-			}
-		})
-	}
-}
-
 func TestParseConfig_MissingRequiredFlags(t *testing.T) {
 	var stderr bytes.Buffer
 	_, err := parseConfig(nil, &stderr)
@@ -127,18 +107,6 @@ func TestParseConfig_MissingRequiredFlags(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "required flags: --custom-network-config-dir, --node-key, --node-id") {
 		t.Fatalf("missing required flags message not found:\n%s", stderr.String())
-	}
-}
-
-func TestParseConfig_InvalidCommitteeCount(t *testing.T) {
-	args := append(validFlagArgs(), "--attestation-committee-count", "0")
-	var stderr bytes.Buffer
-	_, err := parseConfig(args, &stderr)
-	if err == nil {
-		t.Fatal("expected committee count validation to fail")
-	}
-	if !strings.Contains(stderr.String(), "--attestation-committee-count must be >= 1") {
-		t.Fatalf("committee count message not found:\n%s", stderr.String())
 	}
 }
 
@@ -162,30 +130,6 @@ func TestParseConfig_CommitteeCountSetTracking(t *testing.T) {
 	}
 }
 
-func TestParseConfig_AggregateSubnetsRequireAggregator(t *testing.T) {
-	args := append(validFlagArgs(), "--aggregate-subnet-ids", "1,2")
-	var stderr bytes.Buffer
-	_, err := parseConfig(args, &stderr)
-	if err == nil {
-		t.Fatal("expected aggregate subnets without aggregator to fail")
-	}
-	if !strings.Contains(stderr.String(), "--aggregate-subnet-ids requires --is-aggregator") {
-		t.Fatalf("aggregate subnet dependency message not found:\n%s", stderr.String())
-	}
-}
-
-func TestParseConfig_InvalidAggregateSubnetID(t *testing.T) {
-	args := append(validFlagArgs(), "--is-aggregator", "--aggregate-subnet-ids", "1,nope")
-	var stderr bytes.Buffer
-	_, err := parseConfig(args, &stderr)
-	if err == nil {
-		t.Fatal("expected invalid aggregate subnet ID to fail")
-	}
-	if !strings.Contains(stderr.String(), `invalid aggregate-subnet-id "nope"`) {
-		t.Fatalf("invalid subnet message not found:\n%s", stderr.String())
-	}
-}
-
 func TestParseConfig_AggregateSubnetIDs(t *testing.T) {
 	args := append(validFlagArgs(), "--is-aggregator", "--attestation-committee-count", "4", "--aggregate-subnet-ids", "1, 2,,3")
 	var stderr bytes.Buffer
@@ -198,43 +142,6 @@ func TestParseConfig_AggregateSubnetIDs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.AggregateSubnetIDs, []uint64{1, 2, 3}) {
 		t.Fatalf("unexpected aggregate subnet IDs: %v", cfg.AggregateSubnetIDs)
-	}
-}
-
-func TestParseConfig_InvalidPorts(t *testing.T) {
-	tests := []struct {
-		name string
-		flag string
-		port string
-	}{
-		{name: "gossip negative", flag: "--gossipsub-port", port: "-1"},
-		{name: "api too high", flag: "--api-port", port: "65536"},
-		{name: "metrics too high", flag: "--metrics-port", port: "65536"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			args := append(validFlagArgs(), tt.flag, tt.port)
-			var stderr bytes.Buffer
-			_, err := parseConfig(args, &stderr)
-			if err == nil {
-				t.Fatal("expected invalid port to fail")
-			}
-			if !strings.Contains(stderr.String(), tt.flag+" must be between 0 and 65535") {
-				t.Fatalf("port validation message not found:\n%s", stderr.String())
-			}
-		})
-	}
-}
-
-func TestParseConfig_AggregateSubnetIDsMustBeInRange(t *testing.T) {
-	args := append(validFlagArgs(), "--is-aggregator", "--attestation-committee-count", "2", "--aggregate-subnet-ids", "0,2")
-	var stderr bytes.Buffer
-	_, err := parseConfig(args, &stderr)
-	if err == nil {
-		t.Fatal("expected out-of-range aggregate subnet to fail")
-	}
-	if !strings.Contains(stderr.String(), "--aggregate-subnet-ids contains 2") {
-		t.Fatalf("subnet range message not found:\n%s", stderr.String())
 	}
 }
 
@@ -261,14 +168,24 @@ func TestParseConfig_DiscoveryOffByDefault(t *testing.T) {
 	}
 }
 
-func TestParseConfig_InvalidDiscovery(t *testing.T) {
+func TestParseConfig_Rejects(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"port too high", []string{"--discovery", "--discovery-port", "65536"}, "--discovery-port must be between 0 and 65535"},
-		{"port shared with gossipsub", []string{"--discovery", "--discovery-port", "9000"}, "--discovery-port must differ from --gossipsub-port"},
+		{"negative aggregate signatures shadow rate", []string{"--shadow-xmss-aggregate-signatures-rate", "-1"}, "--shadow-xmss-aggregate-signatures-rate must not be negative"},
+		{"negative verify signature shadow rate", []string{"--shadow-xmss-verify-signature-rate", "-1"}, "--shadow-xmss-verify-signature-rate must not be negative"},
+		{"negative verify aggregated signatures shadow rate", []string{"--shadow-xmss-verify-aggregated-signatures-rate", "-1"}, "--shadow-xmss-verify-aggregated-signatures-rate must not be negative"},
+		{"zero committee count", []string{"--attestation-committee-count", "0"}, "--attestation-committee-count must be >= 1"},
+		{"aggregate subnets without aggregator", []string{"--aggregate-subnet-ids", "1,2"}, "--aggregate-subnet-ids requires --is-aggregator"},
+		{"invalid aggregate subnet ID", []string{"--is-aggregator", "--aggregate-subnet-ids", "1,nope"}, `invalid aggregate-subnet-id "nope"`},
+		{"aggregate subnet ID out of range", []string{"--is-aggregator", "--attestation-committee-count", "2", "--aggregate-subnet-ids", "0,2"}, "--aggregate-subnet-ids contains 2"},
+		{"gossip port negative", []string{"--gossipsub-port", "-1"}, "--gossipsub-port must be between 0 and 65535"},
+		{"api port too high", []string{"--api-port", "65536"}, "--api-port must be between 0 and 65535"},
+		{"metrics port too high", []string{"--metrics-port", "65536"}, "--metrics-port must be between 0 and 65535"},
+		{"discovery port too high", []string{"--discovery", "--discovery-port", "65536"}, "--discovery-port must be between 0 and 65535"},
+		{"discovery port shared with gossipsub", []string{"--discovery", "--discovery-port", "9000"}, "--discovery-port must differ from --gossipsub-port"},
 		{"advertise ip without discovery", []string{"--discovery-advertise-ip", "127.0.0.1"}, "--discovery-advertise-ip requires --discovery"},
 		{"bad advertise ip", []string{"--discovery", "--discovery-advertise-ip", "not-an-ip"}, "is not an IP address"},
 	}
@@ -276,7 +193,7 @@ func TestParseConfig_InvalidDiscovery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stderr bytes.Buffer
 			if _, err := parseConfig(append(validFlagArgs(), tt.args...), &stderr); err == nil {
-				t.Fatal("expected invalid discovery flags to fail")
+				t.Fatal("expected parseConfig to fail")
 			}
 			if !strings.Contains(stderr.String(), tt.want) {
 				t.Fatalf("message %q not found:\n%s", tt.want, stderr.String())
