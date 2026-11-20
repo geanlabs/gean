@@ -6,7 +6,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
-	"github.com/geanlabs/gean/internal/core/metrics"
+	"github.com/geanlabs/gean/internal/lean/metrics"
 	"github.com/geanlabs/gean/internal/lean/shadow"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"

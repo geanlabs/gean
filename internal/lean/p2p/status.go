@@ -10,8 +10,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/core/metrics"
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
+	"github.com/geanlabs/gean/internal/lean/metrics"
 )
 
 const statusMessageSize = 80

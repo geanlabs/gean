@@ -2,7 +2,7 @@ package node
 
 import (
 	"github.com/geanlabs/gean/internal/core/logger"
-	"github.com/geanlabs/gean/internal/core/metrics"
+	"github.com/geanlabs/gean/internal/lean/metrics"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )

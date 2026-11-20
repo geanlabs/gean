@@ -7,8 +7,6 @@ import (
 	"sync"
 
 	"github.com/libp2p/go-libp2p/core/peer"
-
-	"github.com/geanlabs/gean/internal/core/metrics"
 )
 
 // Request reputation, as in leanSpec's sync peer manager: a peer starts mid-range,
@@ -48,7 +46,7 @@ func (ps *Store) AddNew(id peer.ID) bool {
 		return false
 	}
 	ps.peers[id] = &peerEntry{score: InitialScore}
-	metrics.SetPeerScore(id.String(), InitialScore)
+	OnScore(id.String(), InitialScore)
 	return true
 }
 
@@ -56,7 +54,7 @@ func (ps *Store) Remove(id peer.ID) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	delete(ps.peers, id)
-	metrics.DeletePeerScore(id.String())
+	OnRemove(id.String())
 }
 
 func (ps *Store) Count() int {
@@ -80,7 +78,7 @@ func (ps *Store) RecordRequest(id peer.ID, success bool) {
 	} else {
 		e.score = max(e.score-ScoreFailure, minScore)
 	}
-	metrics.SetPeerScore(id.String(), e.score)
+	OnScore(id.String(), e.score)
 }
 
 // UpdateStatus records the head a tracked peer reported.

@@ -1,6 +1,6 @@
 package node
 
-import "github.com/geanlabs/gean/internal/core/metrics"
+import "github.com/geanlabs/gean/internal/lean/metrics"
 
 func (e *Engine) configureP2PHooks() {
 	if e.P2P == nil {

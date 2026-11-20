@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geanlabs/gean/internal/core/metrics"
+	"github.com/geanlabs/gean/internal/lean/metrics"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 

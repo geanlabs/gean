@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
-
-	"github.com/geanlabs/gean/internal/core/metrics"
 )
 
 // Timeout is the idle deadline applied to each individual req/resp read and
@@ -49,7 +47,7 @@ func ReadChunk(s network.Stream, r io.Reader, protocol string, maxLen uint32) (b
 	ArmReadDeadline(s)
 	code, data, err := DecodeResponse(r, maxLen)
 	if err != nil && IsStreamTimeout(err) {
-		metrics.IncReqRespTimeout(protocol, "read")
+		OnTimeout(protocol, "read")
 		return code, data, fmt.Errorf("%s: response read stalled beyond %s: %w", protocol, Timeout, err)
 	}
 	return code, data, err

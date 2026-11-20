@@ -8,7 +8,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/geanlabs/gean/internal/core/lifecycle"
-	"github.com/geanlabs/gean/internal/core/metrics"
 	"github.com/geanlabs/gean/internal/core/p2p/peers"
 )
 
@@ -59,6 +58,6 @@ func (h *Host) RecordRequest(parent context.Context, id peer.ID, err error) {
 	if err != nil {
 		outcome = "failure"
 	}
-	metrics.IncPeerRequestOutcome(outcome)
+	OnRequestOutcome(outcome)
 	h.peerStore.RecordRequest(id, err == nil)
 }

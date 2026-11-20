@@ -11,9 +11,9 @@ Ethereum Beacon Chain, is planned. It runs on devnets only.
 ```
 cmd/gean/              CLI: subcommands and flags
 internal/core/         chain-agnostic: clock, crypto/xmss (Go + Rust FFI), httpapi, lifecycle,
-                       logger, metrics, p2p, pending, protoarray, storage
+                       logger, p2p, pending, protoarray, storage
 internal/lean/         Lean Ethereum: types, transition, forkchoice, store, importer, aggregation,
-                       syncer, p2p, api, node (the engine), and lean.Run (node startup)
+                       syncer, p2p, api, metrics, keys, node (the engine), and lean.Run (node startup)
 testing/spectest/      leanSpec fixture tests (build tag spectests)
 testing/sim/           multi-node tests in one process on an in-memory network
 ```
