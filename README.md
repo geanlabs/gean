@@ -1,116 +1,74 @@
+# gean Ethereum consensus client
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/geanlabs/gean)](go.mod)
+[![Chat on Telegram](https://img.shields.io/badge/chat-Telegram-26A5E4?logo=telegram)][telegram]
+
 <p align="center">
   <img src="docs/assets/gean-banner.svg" alt="gean: a Lean Ethereum consensus client in Go" width="100%">
 </p>
 
-# gean
+## Overview
 
-A Go consensus client for Lean Ethereum, with Ethereum beacon chain support on the way.
+gean is an Ethereum consensus client written in Go. Today it runs **Lean Ethereum consensus**: it
+follows the chain, imports and verifies blocks, runs fork choice, and performs validator duties
+with post-quantum XMSS signatures. Ethereum beacon chain support is on the way, in the same
+binary: `gean lean` for Lean Ethereum, `gean beacon` for the beacon chain.
 
-## What is gean?
+Lean Ethereum is at the devnet stage, and so is gean. Expect breaking changes.
 
-gean is a consensus client written in Go. Today it runs **Lean Ethereum consensus**: it follows
-the chain, imports and verifies blocks, runs fork choice, and performs validator duties with
-post-quantum XMSS signatures.
-
-It is being restructured so that **one binary runs either chain**: `gean beacon` for the
-Ethereum beacon chain and `gean lean` for Lean Ethereum.
-
-## Goals
-
-- **Two chains, one client.** Beacon and Lean share networking, storage and tooling, while each
-  chain's rules live in their own packages and never depend on each other.
-- **Modular.** Code is organised by protocol concept, so a change to one part of the protocol has
-  an obvious home and doesn't ripple through the rest.
-- **Easy to contribute to.** A newcomer should be able to find where a behaviour starts, follow it
-  to the code that decides it, and find the test for it.
-- **Fast enough for mainnet.** The beacon chain is built to keep up with Ethereum mainnet.
-
-## Status
+### Supported networks
 
 | Chain | Status |
 |---|---|
-| Lean Ethereum | Working. Runs on Lean devnets and is tested against the leanSpec fixtures. |
-| Ethereum beacon chain | Planned. The codebase is being restructured to make room for it. |
+| **Lean Ethereum** | Working. Runs on Lean devnets and is tested against the leanSpec fixtures. |
+| **Ethereum beacon chain** | Planned. |
 
-Lean Ethereum is still at the devnet stage, and so is gean. Expect breaking changes.
+## Capabilities
 
-## Quick start
+gean joins a Lean network over libp2p, keeps up with the chain through gossip and request/response
+sync, and serves its state over an HTTP API and Prometheus metrics.
 
-Build gean (see [Requirements](#requirements) first), then start a three-node local network:
+- **Post-quantum signatures:** validators sign with XMSS, a hash-based scheme, and aggregators
+  combine signatures into leanVM proofs. The cryptography comes from leanVM through a small Rust
+  library gean links against.
+
+- **Spec conformance:** the state transition, fork choice, SSZ types and API are tested against
+  the [leanSpec](https://github.com/leanEthereum/leanSpec) fixtures, pinned to one leanSpec commit.
+
+- **Modularity:** networking, storage, the proto-array, the HTTP server and the other chain-agnostic
+  parts live in `internal/core`, and each chain's rules live in their own packages. Import rules
+  checked by `make lint` keep `core` from depending on any chain, so beacon support can be added
+  beside Lean without touching it.
+
+- **Networking:** QUIC transport, gossipsub, status and block-by-root/range sync, checkpoint sync
+  from another node's API, and optional discv5 discovery.
+
+- **Tested as a network:** an end-to-end test runs three full nodes in one process on an in-memory
+  network, checks they finalize, stops one, and checks it catches up after a restart.
+
+## Getting started
+
+gean is built from source; there are no prebuilt releases. Once built (see
+[Building from source](#building-from-source)), start a three-node local network:
 
 ```sh
-make build
 make lean-testnet     # once: genesis config + XMSS keys for 5 validators across 3 nodes, in ./testnet
 make lean-node N=0    # terminal 1: node0, the aggregator
 make lean-node N=1    # terminal 2
 make lean-node N=2    # terminal 3
 ```
 
-`make lean-testnet` sets genesis 30 seconds in the future, so start the nodes soon after it; run it
-again to refresh genesis. `lean-node` wipes its node's data directory (`data/nodeN`) on every
-start.
-
-## Check it works
-
-Ask node0's API (port 5052):
+`make lean-testnet` sets genesis 30 seconds in the future, so start the nodes soon after it. Node N
+uses P2P port 9000+N, API port 5052+N and metrics port 8080+N, and `lean-node` wipes its data
+directory (`data/nodeN`) on every start. Check that node0 is healthy and finalizing:
 
 ```sh
-curl -s localhost:5052/lean/v0/health                # {"status":"healthy",...}
-curl -s localhost:5052/lean/v0/checkpoints/justified  # slot should rise every few slots
+curl -s localhost:5052/lean/v0/health
+curl -s localhost:8080/metrics | grep -E '^lean_(head_slot|latest_finalized_slot|connected_peers) '
 ```
 
-Or its Prometheus metrics (port 8080):
-
-```sh
-curl -s localhost:8080/metrics | grep -E '^lean_(head_slot|latest_justified_slot|latest_finalized_slot|connected_peers) '
-```
-
-`lean_head_slot` should advance every slot, `lean_latest_finalized_slot` should follow it, and
-`lean_connected_peers` should be 2.
-
-## Networks
-
-### Local network
-
-| Node | P2P port (UDP) | API | Metrics |
-|---|---|---|---|
-| node0 | 9000 | 127.0.0.1:5052 | 127.0.0.1:8080 |
-| node1 | 9001 | 127.0.0.1:5053 | 127.0.0.1:8081 |
-| node2 | 9002 | 127.0.0.1:5054 | 127.0.0.1:8082 |
-| nodeN | 9000+N | 127.0.0.1:5052+N | 127.0.0.1:8080+N |
-
-Change the network's size with `NUM_VALIDATORS`, `NUM_NODES` and `TESTNET_DIR`, for example
-`make lean-testnet NUM_VALIDATORS=8 NUM_NODES=4`, then run each node with `make lean-node N=...`.
-
-### Multi-client devnet
-
-```sh
-make lean-devnet
-```
-
-Builds the Docker image `ghcr.io/geanlabs/gean:local` (set `DOCKER_TAG` to change it) and starts
-a devnet with other Lean clients through
-[lean-quickstart](https://github.com/blockblaz/lean-quickstart), with its gean nodes on that image.
-Output goes to `devnet.log`. `LEAN_QUICKSTART_REPO` and `LEAN_QUICKSTART_BRANCH` choose the
-lean-quickstart checkout.
-
-### Checkpoint sync
-
-Start from a recent finalized state instead of genesis with `--checkpoint-sync-url`, pointed at
-another node's API.
-
-## Commands
-
-`gean` is one binary with subcommands:
-
-| Command | Does |
-|---|---|
-| `gean lean [flags]` | Run a Lean Ethereum consensus node |
-| `gean lean keygen [flags]` | Generate a local network's genesis config, validator keys and node keys |
-
-Run `gean --help` to list the commands.
-
-## Flags
+To run a single node by hand:
 
 ```sh
 bin/gean lean \
@@ -127,54 +85,92 @@ bin/gean lean \
 | `--node-id` | (required) | Node name, e.g. `node0` |
 | `--data-dir` | `./data` | Database directory |
 | `--gossipsub-port` | `9000` | P2P listen port (QUIC over UDP) |
-| `--discovery` | `false` | Find peers with discv5; no other lean client runs it yet |
-| `--discovery-port` | `9001` | discv5 UDP port; needs `--discovery` |
-| `--discovery-advertise-ip` | (learned) | IP to put in this node's ENR; needs `--discovery` |
 | `--http-address` | `127.0.0.1` | Bind address for the API and metrics servers |
 | `--api-port` | `5052` | API port |
 | `--metrics-port` | `5054` | Metrics port |
-| `--checkpoint-sync-url` | (none) | Start from a finalized state fetched from this URL |
+| `--checkpoint-sync-url` | (none) | Start from a finalized state fetched from another node's API |
 | `--is-aggregator` | `false` | Aggregate attestation signatures |
 | `--aggregate-subnet-ids` | (all) | Comma-separated subnets to aggregate; needs `--is-aggregator` |
 | `--attestation-committee-count` | from config | Number of attestation subnets |
+| `--discovery` | `false` | Find peers with discv5; no other Lean client runs it yet |
+| `--discovery-port` | `9001` | discv5 UDP port; needs `--discovery` |
+| `--discovery-advertise-ip` | (learned) | IP to put in this node's ENR; needs `--discovery` |
 | `--prover-arena` | `false` | Faster proving, at the cost of memory that is never returned |
 
-Run `bin/gean lean --help` for the full list.
+Run `gean --help` for the commands and `gean lean --help` for every flag.
 
-## For developers
+### Multi-client devnet
 
-### Requirements
+To run gean against other Lean clients through
+[lean-quickstart](https://github.com/blockblaz/lean-quickstart):
+
+```sh
+make lean-devnet
+```
+
+This builds the Docker image `ghcr.io/geanlabs/gean:local` (set `DOCKER_TAG` to change it) and
+writes the devnet's output to `devnet.log`.
+
+## Building from source
+
+### Docker image
+
+The quickest way to build gean, with no Go or Rust toolchain installed:
+
+```sh
+docker build https://github.com/geanlabs/gean.git -t gean
+```
+
+### Standalone binary
+
+**Prerequisites**
 
 | Tool | Version | Used for |
 |---|---|---|
 | Go | 1.26 | gean itself |
-| Rust (via rustup) | 1.92.0, pinned in `internal/core/crypto/xmss/rust/rust-toolchain.toml` | the XMSS signature library, called from Go |
-| [uv](https://docs.astral.sh/uv/) | any recent | generating leanSpec test fixtures (`make lean-spectest`) |
-| [golangci-lint](https://golangci-lint.run/) | v2 | `make lint`; install with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest` |
+| Rust (via rustup) | 1.92.0, pinned in `internal/core/crypto/xmss/rust/rust-toolchain.toml` | the XMSS signature library |
+| [golangci-lint](https://golangci-lint.run/) | v2 | `make lint` |
+| [uv](https://docs.astral.sh/uv/) | any recent | optional: leanSpec fixtures for `make lean-spectest` |
 | Docker | any recent | optional: images and multi-client devnets |
 
-### Build
+**Clone and build**
 
 ```sh
+git clone https://github.com/geanlabs/gean.git
+cd gean
 make build
 ```
 
-This builds the Rust XMSS libraries first, then the `bin/gean` binary (see [Commands](#commands)).
+This builds the Rust XMSS library, then `bin/gean`. Run `make help` to list every target.
 
-Run `make help` to list every target.
-
-### Test
+**Test**
 
 | Command | Runs |
 |---|---|
-| `make test` | Unit tests (no FFI tests, spec fixtures or simulations) |
-| `make lean-test-ffi` | XMSS FFI tests |
-| `make lean-spectest` | leanSpec fixture tests; the first run clones leanSpec at a pinned commit and generates fixtures with `uv` |
-| `make lean-e2e` | End-to-end: three nodes finalize, one restarts and catches up; fake XMSS (`-tags fakecrypto`), no Rust needed |
-| `make test-all` | Everything above except `lean-e2e`, plus the multi-node simulation with real XMSS (slow, about 1 GB) |
-| `make lint` | `go vet` and golangci-lint (`.golangci.yml`): package import rules fail the build, other findings are reported; plus `cargo fmt --check` and `clippy` for the Rust code |
-| `make fmt` | Format Go and Rust code |
+| `make test` | Unit tests |
+| `make lean-spectest` | leanSpec fixture tests; the first run clones leanSpec at its pinned commit and generates the fixtures with `uv` |
+| `make lean-e2e` | The end-to-end multi-node test, on fake XMSS (no Rust needed) |
+| `make lean-test-ffi` | The XMSS library's tests |
+| `make test-all` | All of the above but `lean-e2e`, plus a multi-node simulation with real XMSS (slow, about 1 GB) |
+| `make lint` | `go vet`, golangci-lint (import rules fail the build) and the Rust `fmt`/`clippy` checks |
+
+## Getting help
+
+- [Telegram][telegram] for questions and discussion
+- [GitHub Issues](https://github.com/geanlabs/gean/issues) to report a bug or request a feature
+
+## Contributing
+
+Before starting a feature or a larger fix, open an issue or ask on [Telegram][telegram], so the
+work isn't wasted or duplicated.
+
+## Security
+
+If you believe you have found a security vulnerability, report it privately as described in our
+[security policy](SECURITY.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE). To report a vulnerability, see [SECURITY.md](SECURITY.md).
+gean is open-source software licensed under the [MIT License](LICENSE).
+
+[telegram]: https://t.me/geanclient
