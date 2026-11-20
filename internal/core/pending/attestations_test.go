@@ -3,18 +3,27 @@ package pending
 import (
 	"sync"
 	"testing"
-
-	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-func makeAtt(slot uint64) *types.SignedAttestation {
-	return &types.SignedAttestation{
-		Data: &types.AttestationData{Slot: slot},
+// testAtt stands in for a chain's attestation. A nil slot is an attestation
+// whose slot can't be read.
+type testAtt struct {
+	slot *uint64
+}
+
+func makeAtt(slot uint64) *testAtt {
+	return &testAtt{slot: &slot}
+}
+
+func attSlot(att *testAtt) (uint64, bool) {
+	if att == nil || att.slot == nil {
+		return 0, false
 	}
+	return *att.slot, true
 }
 
 func TestAttestationBuffer_AddAndDrain(t *testing.T) {
-	buf := NewAttestationBuffer(8, 64, types.AttestationSlot)
+	buf := NewAttestationBuffer(8, 64, attSlot)
 
 	var head [32]byte
 	head[0] = 0x01
@@ -38,7 +47,7 @@ func TestAttestationBuffer_AddAndDrain(t *testing.T) {
 }
 
 func TestAttestationBuffer_DrainMissing(t *testing.T) {
-	buf := NewAttestationBuffer(8, 64, types.AttestationSlot)
+	buf := NewAttestationBuffer(8, 64, attSlot)
 	var head [32]byte
 	if got := buf.Drain(head); got != nil {
 		t.Fatalf("drain on empty key: got %v, want nil", got)
@@ -46,7 +55,7 @@ func TestAttestationBuffer_DrainMissing(t *testing.T) {
 }
 
 func TestAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
-	buf := NewAttestationBuffer(2, 64, types.AttestationSlot)
+	buf := NewAttestationBuffer(2, 64, attSlot)
 
 	var head [32]byte
 	head[0] = 0x01
@@ -79,7 +88,7 @@ func TestAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
 }
 
 func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
-	buf := NewAttestationBuffer(8, 2, types.AttestationSlot)
+	buf := NewAttestationBuffer(8, 2, attSlot)
 
 	var h1, h2, h3 [32]byte
 	h1[0], h2[0], h3[0] = 0x01, 0x02, 0x03
@@ -105,7 +114,7 @@ func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
 }
 
 func TestAttestationBuffer_FIFOEvictsEvenAtTotalCap(t *testing.T) {
-	buf := NewAttestationBuffer(2, 2, types.AttestationSlot)
+	buf := NewAttestationBuffer(2, 2, attSlot)
 
 	var head [32]byte
 	head[0] = 0x01
@@ -127,7 +136,7 @@ func TestAttestationBuffer_FIFOEvictsEvenAtTotalCap(t *testing.T) {
 }
 
 func TestAttestationBuffer_PruneBelow(t *testing.T) {
-	buf := NewAttestationBuffer(8, 64, types.AttestationSlot)
+	buf := NewAttestationBuffer(8, 64, attSlot)
 
 	var h1, h2 [32]byte
 	h1[0], h2[0] = 0x01, 0x02
@@ -165,27 +174,27 @@ func TestAttestationBuffer_PruneBelow(t *testing.T) {
 func TestAttestationBuffer_RejectsMalformedAndInvalidCaps(t *testing.T) {
 	var head [32]byte
 
-	buf := NewAttestationBuffer(0, 64, types.AttestationSlot)
+	buf := NewAttestationBuffer(0, 64, attSlot)
 	if added, dropped := buf.Add(head, makeAtt(1)); added || dropped != 0 {
 		t.Fatalf("invalid per-root cap: added=%v dropped=%d, want false,0", added, dropped)
 	}
 
-	buf = NewAttestationBuffer(8, 0, types.AttestationSlot)
+	buf = NewAttestationBuffer(8, 0, attSlot)
 	if added, dropped := buf.Add(head, makeAtt(1)); added || dropped != 0 {
 		t.Fatalf("invalid total cap: added=%v dropped=%d, want false,0", added, dropped)
 	}
 
-	buf = NewAttestationBuffer(8, 64, types.AttestationSlot)
+	buf = NewAttestationBuffer(8, 64, attSlot)
 	if added, dropped := buf.Add(head, nil); added || dropped != 0 {
 		t.Fatalf("nil attestation: added=%v dropped=%d, want false,0", added, dropped)
 	}
-	if added, dropped := buf.Add(head, &types.SignedAttestation{}); added || dropped != 0 {
+	if added, dropped := buf.Add(head, &testAtt{}); added || dropped != 0 {
 		t.Fatalf("nil data: added=%v dropped=%d, want false,0", added, dropped)
 	}
 }
 
 func TestAttestationBuffer_NilGuards(t *testing.T) {
-	var buf *AttestationBuffer[*types.SignedAttestation]
+	var buf *AttestationBuffer[*testAtt]
 	var head [32]byte
 
 	if added, dropped := buf.Add(head, makeAtt(1)); added || dropped != 0 {
@@ -206,10 +215,10 @@ func TestAttestationBuffer_NilGuards(t *testing.T) {
 }
 
 func TestAttestationBuffer_PruneBelowDropsMalformedEntries(t *testing.T) {
-	buf := NewAttestationBuffer(8, 64, types.AttestationSlot)
+	buf := NewAttestationBuffer(8, 64, attSlot)
 	var head [32]byte
 
-	buf.byHead[head] = []*types.SignedAttestation{
+	buf.byHead[head] = []*testAtt{
 		nil,
 		{},
 		makeAtt(5),
@@ -221,13 +230,13 @@ func TestAttestationBuffer_PruneBelowDropsMalformedEntries(t *testing.T) {
 		t.Fatalf("removed=%d, want 3", removed)
 	}
 	drained := buf.Drain(head)
-	if len(drained) != 1 || drained[0].Data.Slot != 20 {
+	if len(drained) != 1 || *drained[0].slot != 20 {
 		t.Fatalf("drained=%v, want only slot 20", drained)
 	}
 }
 
 func TestAttestationBuffer_Concurrent(t *testing.T) {
-	buf := NewAttestationBuffer(16, 1024, types.AttestationSlot)
+	buf := NewAttestationBuffer(16, 1024, attSlot)
 
 	const writers = 8
 	const drainers = 4

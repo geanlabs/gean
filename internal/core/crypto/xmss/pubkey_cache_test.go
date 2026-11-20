@@ -4,15 +4,13 @@ package xmss
 
 import (
 	"testing"
-
-	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 func TestPubKeyCacheGetAndReuse(t *testing.T) {
 	cache := NewPubKeyCache()
 	defer cache.Close()
 
-	var pubkey [types.PubkeySize]byte
+	var pubkey [PubkeySize]byte
 	pubkey[0] = 0x01
 	pubkey[1] = 0xFF
 
@@ -41,7 +39,7 @@ func TestPubKeyCacheMultipleKeys(t *testing.T) {
 	cache := NewPubKeyCache()
 	defer cache.Close()
 
-	var pk1, pk2 [types.PubkeySize]byte
+	var pk1, pk2 [PubkeySize]byte
 	pk1[0] = 0x01
 	pk2[0] = 0x02
 
@@ -65,7 +63,7 @@ func TestPubKeyCacheMultipleKeys(t *testing.T) {
 func TestPubKeyCacheClose(t *testing.T) {
 	cache := NewPubKeyCache()
 
-	var pubkey [types.PubkeySize]byte
+	var pubkey [PubkeySize]byte
 	pubkey[0] = 0xAA
 
 	_, err := cache.Get(pubkey)

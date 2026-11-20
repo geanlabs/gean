@@ -1,15 +1,16 @@
 //go:build !fakecrypto
 
-package xmss
+package importer
 
 import (
 	"testing"
 
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 func TestProposerSigThroughBlockSSZ(t *testing.T) {
-	kp, err := GenerateKeyPair("block-roundtrip-0", 0, 1<<10)
+	kp, err := xmss.GenerateKeyPair("block-roundtrip-0", 0, 1<<10)
 	if err != nil {
 		t.Fatalf("keygen: %v", err)
 	}
@@ -35,20 +36,20 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 		t.Fatalf("sign: %v", err)
 	}
 
-	csig, err := ParseSignature(sig[:])
+	csig, err := xmss.ParseSignature(sig[:])
 	if err != nil {
 		t.Fatalf("parse sig: %v", err)
 	}
-	defer FreeSignature(csig)
+	defer xmss.FreeSignature(csig)
 
-	cpk, err := ParsePublicKey(pkBytes)
+	cpk, err := xmss.ParsePublicKey(pkBytes)
 	if err != nil {
 		t.Fatalf("parse pk: %v", err)
 	}
-	defer FreePublicKey(cpk)
+	defer xmss.FreePublicKey(cpk)
 
 	// A block without attestations: its proof is the proposer's raw signature alone.
-	merged, err := MergeType1Proofs(nil, []RawSignature{{Pubkey: cpk, Signature: csig, Message: blockRoot, Slot: 1}})
+	merged, err := xmss.MergeType1Proofs(nil, []xmss.RawSignature{{Pubkey: cpk, Signature: csig, Message: blockRoot, Slot: 1}})
 	if err != nil {
 		t.Fatalf("merge FAILED: %v", err)
 	}
@@ -65,10 +66,10 @@ func TestProposerSigThroughBlockSSZ(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if err := VerifyType2Proof(
+	if err := xmss.VerifyType2Proof(
 		decoded.Proof.Proof,
-		[][]CPubKey{{cpk}},
-		[]MessageBinding{{Message: blockRoot, Slot: 1}},
+		[][]xmss.CPubKey{{cpk}},
+		[]xmss.MessageBinding{{Message: blockRoot, Slot: 1}},
 	); err != nil {
 		t.Fatalf("verify FAILED: %v", err)
 	}

@@ -62,14 +62,11 @@ linters:
             - pkg: github.com/geanlabs/gean
               desc: "storage is generic and imports no other gean package"
 
-        # Chain layering: core/ is chain-agnostic, and each chain stays
-        # independent of the others. Tests may import more: core's crypto
-        # tests check real signing round-trips with lean types, and the pending
-        # buffer's tests hold lean attestations.
+        # Chain layering: core/ is chain-agnostic, tests included, and each
+        # chain stays independent of the others.
         core-is-chain-agnostic:
           files:
             - "**/internal/core/**"
-            - "!$test"
           deny:
             - pkg: github.com/geanlabs/gean/internal/lean
               desc: "core never imports a chain"

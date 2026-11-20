@@ -8,8 +8,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 // prepareStressInputs generates numSigs keypairs, signs one message with each,
@@ -17,12 +15,12 @@ import (
 // per-call in the workers so concurrent aggregations never share a handle —
 // the realistic model for parallel group proving, where each group owns its
 // signatures.
-func prepareStressInputs(t *testing.T, numSigs int) ([][types.PubkeySize]byte, [][types.SignatureSize]byte, [32]byte) {
+func prepareStressInputs(t *testing.T, numSigs int) ([][PubkeySize]byte, [][SignatureSize]byte, [32]byte) {
 	t.Helper()
 	var message [32]byte
 	message[0] = 0x7a
-	pkList := make([][types.PubkeySize]byte, numSigs)
-	sigList := make([][types.SignatureSize]byte, numSigs)
+	pkList := make([][PubkeySize]byte, numSigs)
+	sigList := make([][SignatureSize]byte, numSigs)
 	for i := range numSigs {
 		kp, err := GenerateKeyPair(fmt.Sprintf("stress-%d", i), 0, 1<<16)
 		if err != nil {
@@ -46,7 +44,7 @@ func prepareStressInputs(t *testing.T, numSigs int) ([][types.PubkeySize]byte, [
 
 // aggregateFresh parses its own handles, aggregates, frees them, and returns the
 // proof. Distinct handles per call isolate prover reentrancy from handle sharing.
-func aggregateFresh(pkList [][types.PubkeySize]byte, sigList [][types.SignatureSize]byte, message [32]byte) ([]byte, error) {
+func aggregateFresh(pkList [][PubkeySize]byte, sigList [][SignatureSize]byte, message [32]byte) ([]byte, error) {
 	n := len(pkList)
 	pks := make([]CPubKey, 0, n)
 	sigs := make([]CSig, 0, n)
