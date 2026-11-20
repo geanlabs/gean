@@ -33,16 +33,16 @@ func (e *Engine) updateHead() {
 			return
 		}
 		if !types.IsZeroRoot(oldHead) {
-			newHeader := e.Store.GetBlockHeader(newHead)
-			if newHeader == nil {
+			newSlot, newParent, ok := e.Store.BlockSlotAndParent(newHead)
+			if !ok {
 				return
 			}
 			justified := e.Store.LatestJustified()
 			finalized := e.Store.LatestFinalized()
 
-			isReorg := newHeader.ParentRoot != oldHead
+			isReorg := newParent != oldHead
 
-			metrics.SetHeadSlot(newHeader.Slot)
+			metrics.SetHeadSlot(newSlot)
 			metrics.SetLatestJustifiedSlot(justified.Slot)
 			metrics.SetLatestFinalizedSlot(finalized.Slot)
 			metrics.SetJustifiedSlot(justified.Slot)
@@ -57,12 +57,12 @@ func (e *Engine) updateHead() {
 				depth := e.FC.ReorgDepth(oldHead, newHead)
 				metrics.ObserveForkChoiceReorgDepth(float64(depth))
 				logger.Warn(logger.Forkchoice, "REORG depth=%d slot=%d head_root=0x%x parent_root=0x%x (was 0x%x) justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
-					depth, newHeader.Slot, newHead, newHeader.ParentRoot, oldHead,
+					depth, newSlot, newHead, newParent, oldHead,
 					justified.Slot, justified.Root,
 					finalized.Slot, finalized.Root)
 			} else {
 				logger.Info(logger.Forkchoice, "head slot=%d head_root=0x%x parent_root=0x%x justified_slot=%d justified_root=0x%x finalized_slot=%d finalized_root=0x%x",
-					newHeader.Slot, newHead, newHeader.ParentRoot,
+					newSlot, newHead, newParent,
 					justified.Slot, justified.Root,
 					finalized.Slot, finalized.Root)
 			}
@@ -148,8 +148,7 @@ func (e *Engine) updateSafeTarget() {
 	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators, e.Store.ExtractLatestNewAttestations())
 	e.Store.SetSafeTarget(safeTarget)
 
-	safeHeader := e.Store.GetBlockHeader(safeTarget)
-	if safeHeader != nil {
-		metrics.SetSafeTargetSlot(safeHeader.Slot)
+	if safeSlot, _, ok := e.Store.BlockSlotAndParent(safeTarget); ok {
+		metrics.SetSafeTargetSlot(safeSlot)
 	}
 }

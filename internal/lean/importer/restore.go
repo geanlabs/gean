@@ -24,23 +24,23 @@ func ForkChoiceFromStore(s *store.ConsensusStore) (*forkchoice.ForkChoice, error
 		return nil, fmt.Errorf("fork choice anchor: store is nil")
 	}
 	anchorRoot := s.Head()
-	if justified := s.LatestJustified(); justified != nil && s.GetBlockHeader(justified.Root) != nil {
+	if justified := s.LatestJustified(); justified != nil && s.HasBlockHeader(justified.Root) {
 		anchorRoot = justified.Root
 	}
-	anchorHeader := s.GetBlockHeader(anchorRoot)
-	if anchorHeader == nil {
+	anchorSlot, anchorParent, ok := s.BlockSlotAndParent(anchorRoot)
+	if !ok {
 		return nil, fmt.Errorf("fork choice anchor: missing header for root 0x%x", anchorRoot)
 	}
-	fc := forkchoice.New(anchorHeader.Slot, anchorRoot, anchorHeader.ParentRoot)
+	fc := forkchoice.New(anchorSlot, anchorRoot, anchorParent)
 
-	imported, err := s.LiveChainRange(anchorHeader.Slot+1, 0)
+	imported, err := s.LiveChainRange(anchorSlot+1, 0)
 	if err != nil {
 		return nil, fmt.Errorf("fork choice anchor: %w", err)
 	}
 	for _, e := range imported {
 		// A block pruned whole as a dead fork keeps its live-chain entry; its
 		// missing header marks it gone.
-		if s.GetBlockHeader(e.Root) == nil {
+		if !s.HasBlockHeader(e.Root) {
 			continue
 		}
 		fc.OnBlock(e.Slot, e.Root, e.ParentRoot)

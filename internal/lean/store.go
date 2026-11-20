@@ -26,7 +26,12 @@ func openStore(dataDir string) (*storage.PebbleBackend, *store.ConsensusStore, e
 	if err != nil {
 		return nil, nil, err
 	}
-	return backend, store.NewConsensusStore(backend), nil
+	s, err := store.OpenConsensusStore(backend)
+	if err != nil {
+		backend.Close()
+		return nil, nil, err
+	}
+	return backend, s, nil
 }
 
 func initStoreFromState(s *store.ConsensusStore, state *types.State) ([32]byte, error) {

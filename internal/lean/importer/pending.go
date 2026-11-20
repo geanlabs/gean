@@ -14,9 +14,9 @@ func (i *Importer) bufferMissingParentBlock(
 	block := signedBlock.Block
 	// A pending block is written to disk before its signature can be checked, so
 	// first turn away what import would reject anyway: a block past the future
-	// horizon (importer's currentSlot+1), or one whose proposer is not the
-	// slot's. The registry is fixed at genesis, so the head's validator count holds.
-	if currentSlot := i.store.Time() / types.IntervalsPerSlot; block.Slot > currentSlot+1 {
+	// horizon, or one whose proposer is not the slot's. The registry is fixed at
+	// genesis, so the head's validator count holds.
+	if currentSlot := i.store.Time() / types.IntervalsPerSlot; types.BeyondFutureHorizon(block.Slot, currentSlot) {
 		logger.Warn(logger.Chain, "rejecting pending block beyond future horizon slot=%d current_slot=%d block_root=0x%x",
 			block.Slot, currentSlot, blockRoot)
 		return
@@ -100,34 +100,34 @@ func (i *Importer) discardPending(root [32]byte) {
 func (i *Importer) queueStoredAncestor(missingRoot [32]byte, queue *[]*types.SignedBlock) ([32]byte, bool) {
 	finalizedSlot := i.store.LatestFinalized().Slot
 	for steps := 0; ; steps++ {
-		header := i.store.GetBlockHeader(missingRoot)
-		if header == nil {
+		slot, parent, ok := i.store.BlockSlotAndParent(missingRoot)
+		if !ok {
 			return missingRoot, false
 		}
-		if i.store.HasState(header.ParentRoot) {
+		if i.store.HasState(parent) {
 			if storedBlock := i.store.GetSignedBlock(missingRoot); storedBlock != nil {
 				*queue = append(*queue, storedBlock)
 			}
 			return missingRoot, true
 		}
-		if header.Slot <= finalizedSlot {
+		if slot <= finalizedSlot {
 			logger.Warn(logger.Chain, "pending chain reaches stateless block at or below finality slot=%d block_root=0x%x finalized_slot=%d, discarding",
-				header.Slot, missingRoot, finalizedSlot)
+				slot, missingRoot, finalizedSlot)
 			i.discardPending(missingRoot)
 			return missingRoot, true
 		}
 		if steps >= MaxBlockFetchDepth {
 			logger.Warn(logger.Chain, "stored ancestor walk exceeded %d blocks slot=%d block_root=0x%x, discarding",
-				MaxBlockFetchDepth, header.Slot, missingRoot)
+				MaxBlockFetchDepth, slot, missingRoot)
 			i.discardPending(missingRoot)
 			return missingRoot, true
 		}
 		// Every linked entry carries its slot, so eviction and the finalization
 		// sweep can see it.
-		i.Pending.SetSlot(missingRoot, header.Slot)
-		i.Pending.AddChild(header.ParentRoot, missingRoot)
-		i.Pending.SetParent(missingRoot, header.ParentRoot)
-		missingRoot = header.ParentRoot
+		i.Pending.SetSlot(missingRoot, slot)
+		i.Pending.AddChild(parent, missingRoot)
+		i.Pending.SetParent(missingRoot, parent)
+		missingRoot = parent
 	}
 }
 

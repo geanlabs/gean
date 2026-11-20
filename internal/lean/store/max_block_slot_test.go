@@ -56,12 +56,15 @@ func TestMaxStoredBlockSlotSeedsFromDiskAfterRestart(t *testing.T) {
 	first.InsertBlockHeader([32]byte{2}, &types.BlockHeader{Slot: 109})
 
 	// Same database, new process.
-	restarted := store.NewConsensusStore(backend)
+	restarted, err := store.OpenConsensusStore(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := restarted.MaxStoredBlockSlot(); got != 109 {
 		t.Fatalf("after restart = %d, want 109 (the persisted pending block)", got)
 	}
 
-	// Seeding happens once; inserts after it still raise the mark.
+	// Inserts after the seed still raise the mark.
 	restarted.InsertBlockHeader([32]byte{3}, &types.BlockHeader{Slot: 111})
 	if got := restarted.MaxStoredBlockSlot(); got != 111 {
 		t.Fatalf("after post-seed insert = %d, want 111", got)
@@ -69,7 +72,7 @@ func TestMaxStoredBlockSlotSeedsFromDiskAfterRestart(t *testing.T) {
 }
 
 // failOncePartialBackend truncates the first block-header scan part-way through
-// and then behaves normally, so the same store can be seeded twice.
+// and then behaves normally.
 //
 // The partial scan is the dangerous shape: it returns a plausible, lower slot
 // rather than an obvious zero, so a caller that mistakes "iteration stopped" for
@@ -125,54 +128,22 @@ func (it *partialIterator) Err() error {
 	return it.Iterator.Err()
 }
 
-// A seeding scan that fails must not latch, and the *same* store must recover on
-// a later attempt.
+// A seeding scan that stops part-way must fail the open rather than seed the
+// partial answer.
 //
-// Caching a partial answer is worse than retrying: an understated watermark
-// inflates the duty gate's computed network lag, which can trip the
-// network-stall carve-out and let the node resume duties on a stale head - the
-// opposite of what the gate is for.
-func TestMaxStoredBlockSlotRetriesAfterAFailedSeed(t *testing.T) {
+// An understated watermark inflates the duty gate's computed network lag, which
+// can trip the network-stall carve-out and let the node resume duties on a stale
+// head - the opposite of what the gate is for.
+func TestOpenConsensusStoreFailsOnATruncatedScan(t *testing.T) {
 	inner := storage.NewInMemoryBackend()
 
 	// Root order drives iteration order, so the truncated scan sees slot 5 and
-	// stops before slot 109. A latched failure would leave the mark at neither
-	// the truth nor an obvious zero.
+	// stops before slot 109.
 	seed := store.NewConsensusStore(inner)
 	seed.InsertBlockHeader([32]byte{0x01}, &types.BlockHeader{Slot: 5})
 	seed.InsertBlockHeader([32]byte{0x02}, &types.BlockHeader{Slot: 109})
 
-	backend := &failOncePartialBackend{Backend: inner, entriesBeforeFailure: 1}
-	s := store.NewConsensusStore(backend)
-
-	if err := s.SeedMaxStoredBlockSlot(); err == nil {
+	if _, err := store.OpenConsensusStore(&failOncePartialBackend{Backend: inner, entriesBeforeFailure: 1}); err == nil {
 		t.Fatal("truncated scan reported success")
-	}
-	if got := s.MaxStoredBlockSlot(); got != 109 {
-		// MaxStoredBlockSlot retries internally, so by now the second attempt
-		// has run and must have found the real maximum. A latched failure would
-		// return 0 or the partial 5.
-		t.Fatalf("after retry = %d, want 109", got)
-	}
-}
-
-// The same thing without going through MaxStoredBlockSlot, so the retry is
-// attributable to SeedMaxStoredBlockSlot itself rather than to a caller.
-func TestSeedMaxStoredBlockSlotIsRetryableOnTheSameStore(t *testing.T) {
-	inner := storage.NewInMemoryBackend()
-	seed := store.NewConsensusStore(inner)
-	seed.InsertBlockHeader([32]byte{0x01}, &types.BlockHeader{Slot: 5})
-	seed.InsertBlockHeader([32]byte{0x02}, &types.BlockHeader{Slot: 109})
-
-	s := store.NewConsensusStore(&failOncePartialBackend{Backend: inner, entriesBeforeFailure: 1})
-
-	if err := s.SeedMaxStoredBlockSlot(); err == nil {
-		t.Fatal("first seed reported success on a truncated scan")
-	}
-	if err := s.SeedMaxStoredBlockSlot(); err != nil {
-		t.Fatalf("second seed on the same store failed: %v", err)
-	}
-	if got := s.MaxStoredBlockSlot(); got != 109 {
-		t.Fatalf("after successful reseed = %d, want 109", got)
 	}
 }

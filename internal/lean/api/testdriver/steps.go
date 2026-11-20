@@ -283,10 +283,7 @@ func (sess *Session) refreshSafeTarget() {
 
 func (sess *Session) loadSnapshot() driverSnapshot {
 	headRoot := sess.store.Head()
-	headSlot := uint64(0)
-	if hdr := sess.store.GetBlockHeader(headRoot); hdr != nil {
-		headSlot = hdr.Slot
-	}
+	headSlot, _, _ := sess.store.BlockSlotAndParent(headRoot)
 	justified := sess.store.LatestJustified()
 	finalized := sess.store.LatestFinalized()
 	safeTarget := sess.store.SafeTarget()

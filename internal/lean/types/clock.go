@@ -11,6 +11,12 @@ func CurrentSlot(genesisTime, currentTimeMs uint64) uint64 {
 	return (currentTimeMs - genesisMs) / MillisecondsPerSlot
 }
 
+// BeyondFutureHorizon reports whether a block at slot is more than one slot past
+// currentSlot. The full-slot margin still admits an intended early block.
+func BeyondFutureHorizon(slot, currentSlot uint64) bool {
+	return slot > currentSlot+1
+}
+
 // MillisIntoSlot returns how far the clock has advanced into the current slot.
 func MillisIntoSlot(genesisTime, currentTimeMs uint64) uint64 {
 	genesisMs, ok := unixMillis(genesisTime)

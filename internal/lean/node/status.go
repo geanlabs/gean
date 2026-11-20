@@ -116,17 +116,7 @@ func (e *Engine) runGossipMeshGauge(ctx context.Context) {
 	if e.P2P == nil {
 		return
 	}
-	ticker := time.NewTicker(gossipMeshSampleInterval)
-	defer ticker.Stop()
-	e.sampleGossipMesh()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			e.sampleGossipMesh()
-		}
-	}
+	sampleEvery(ctx, gossipMeshSampleInterval, e.sampleGossipMesh)
 }
 
 // runStallGauges publishes the stall detectors, from off the dispatch loop. The
@@ -181,15 +171,20 @@ func (e *Engine) runStorageSizeGauge(ctx context.Context) {
 	if e.Store == nil || e.Store.Backend == nil {
 		return
 	}
-	ticker := time.NewTicker(storageSizeSampleInterval)
+	sampleEvery(ctx, storageSizeSampleInterval, func() { e.recordTableBytes(ctx) })
+}
+
+// sampleEvery runs sample now and then every interval until ctx is done.
+func sampleEvery(ctx context.Context, interval time.Duration, sample func()) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	e.recordTableBytes(ctx)
+	sample()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			e.recordTableBytes(ctx)
+			sample()
 		}
 	}
 }

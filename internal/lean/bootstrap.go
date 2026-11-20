@@ -81,15 +81,15 @@ func bootstrapStore(s *store.ConsensusStore, genesisConfig *genesis.GenesisConfi
 	}
 
 	existingHead := s.Head()
-	existingHeader := s.GetBlockHeader(existingHead)
+	existingSlot, _, hasHeader := s.BlockSlotAndParent(existingHead)
 	existingState := s.GetState(existingHead)
 
-	if existingHeader != nil && existingState != nil && existingHeader.Slot > 0 {
+	if hasHeader && existingState != nil && existingSlot > 0 {
 		if s.GetSignedBlock(existingHead) == nil {
 			return fmt.Errorf("incompatible pre-devnet-5 data directory: signed head block missing; reset the data directory")
 		}
 		logger.Info(logger.Node, "restoring from database: slot=%d head=%x justified=%d finalized=%d",
-			existingHeader.Slot, existingHead,
+			existingSlot, existingHead,
 			s.LatestJustified().Slot, s.LatestFinalized().Slot)
 		return nil
 	}

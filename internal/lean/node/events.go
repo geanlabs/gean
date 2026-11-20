@@ -24,7 +24,7 @@ func (e *Engine) noteGossipSlot(block *types.SignedBlock) {
 		return
 	}
 	slot := block.Block.Slot
-	if slot > e.currentSlot(clock.UnixMilli(e.Clock))+1 {
+	if types.BeyondFutureHorizon(slot, e.currentSlot(clock.UnixMilli(e.Clock))) {
 		return
 	}
 	for {

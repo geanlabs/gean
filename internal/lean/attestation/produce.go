@@ -13,13 +13,13 @@ func ProduceAttestationData(s *store.ConsensusStore, slot uint64) *types.Attesta
 		return nil
 	}
 
-	headHeader := s.GetBlockHeader(headRoot)
-	if headHeader == nil {
+	headSlot, _, ok := s.BlockSlotAndParent(headRoot)
+	if !ok {
 		return nil
 	}
 	headCheckpoint := &types.Checkpoint{
 		Root: headRoot,
-		Slot: headHeader.Slot,
+		Slot: headSlot,
 	}
 
 	target := GetAttestationTarget(s)

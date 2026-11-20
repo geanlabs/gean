@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -60,15 +61,6 @@ type ConsensusStore struct {
 	// reporting the network as alive, which keeps the gate closed rather than
 	// opening it onto a dead fork.
 	maxBlockSlot atomic.Uint64
-	// maxBlockSlotSeeded latches only once a seeding scan has completed without
-	// error. A sync.Once would latch on failure too, and a scan that returns 0
-	// because the read view could not be opened — or that stopped part-way
-	// through the table — would permanently understate the mark. That is not
-	// merely a bad gauge: an understated mark inflates the duty gate's computed
-	// network lag, which can trip the network-stall carve-out and let the node
-	// resume duties on a stale head.
-	maxBlockSlotSeeded atomic.Bool
-	maxBlockSlotSeedMu sync.Mutex
 
 	// statesPrunedBelow is the slot below which PruneStaleStates has already
 	// deleted the head's stale ancestor states, and statesKeptJustifiedSlot the
@@ -124,4 +116,19 @@ func NewConsensusStore(backend storage.Backend) *ConsensusStore {
 		validatorKeys:         make(map[[32]byte]*ValidatorKeys, validatorKeysCacheSize),
 		stateSummaries:        make(map[[32]byte]StateSummary),
 	}
+}
+
+// OpenConsensusStore wraps a backend that may already hold blocks, as after a
+// restart, and seeds the stored-block high-water mark from it. Without the seed
+// the mark would read 0, and an understated mark inflates the duty gate's
+// network lag, which can trip the network-stall carve-out and let the node
+// resume duties on a stale head.
+func OpenConsensusStore(backend storage.Backend) (*ConsensusStore, error) {
+	s := NewConsensusStore(backend)
+	max, err := s.scanMaxStoredBlockSlot()
+	if err != nil {
+		return nil, fmt.Errorf("seed max stored block slot: %w", err)
+	}
+	s.observeStoredBlockSlot(max)
+	return s, nil
 }

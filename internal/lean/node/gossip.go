@@ -129,7 +129,7 @@ func (e *Engine) ValidateGossipBlock(block *types.SignedBlock) p2p.Verdict {
 	// store clock lags whenever the loop runs late, and judging by it would drop
 	// current blocks. Beyond the horizon the block may still be valid to a peer
 	// whose clock is ahead, so it is ignored, not rejected.
-	if slot > e.currentSlot(clock.UnixMilli(e.Clock))+1 {
+	if types.BeyondFutureHorizon(slot, e.currentSlot(clock.UnixMilli(e.Clock))) {
 		return p2p.Ignore
 	}
 	if finalized := e.Store.LatestFinalized(); finalized != nil && slot <= finalized.Slot {

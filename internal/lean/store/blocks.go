@@ -234,55 +234,20 @@ func (s *ConsensusStore) storePendingBlock(root [32]byte, signedBlock *types.Sig
 }
 
 func (s *ConsensusStore) HeadSlot() uint64 {
-	h := s.GetBlockHeader(s.Head())
-	if h == nil {
-		return 0
-	}
-	return h.Slot
+	slot, _, _ := s.BlockSlotAndParent(s.Head())
+	return slot
 }
 
 // MaxStoredBlockSlot returns the highest slot of any stored block header, a
 // high-water mark kept on insert so the duty gate can read it on the tick loop
-// without scanning. After a restart the table is scanned once to seed it, so a
-// node with an existing database does not report slot 0 and read the network
-// as stalled; once seeded, the seeding call here does nothing.
+// without scanning. OpenConsensusStore seeds it from an existing database.
 func (s *ConsensusStore) MaxStoredBlockSlot() uint64 {
-	if err := s.SeedMaxStoredBlockSlot(); err != nil {
-		logger.Error(logger.Store, "seed max stored block slot: %v", err)
-	}
 	return s.maxBlockSlot.Load()
 }
 
-// SeedMaxStoredBlockSlot recovers the high-water mark from disk. It is a no-op
-// once a scan has completed successfully.
-//
-// Call it during startup, before the dispatch loop runs: that removes the one
-// remaining full-table scan from the duty path, and it means a failure is
-// reported somewhere a person will see it rather than swallowed on a tick.
-// A failed attempt does not latch, so a later call retries.
-func (s *ConsensusStore) SeedMaxStoredBlockSlot() error {
-	if s == nil || s.maxBlockSlotSeeded.Load() {
-		return nil
-	}
-	s.maxBlockSlotSeedMu.Lock()
-	defer s.maxBlockSlotSeedMu.Unlock()
-	if s.maxBlockSlotSeeded.Load() {
-		return nil
-	}
-
-	max, err := s.scanMaxStoredBlockSlot()
-	if err != nil {
-		return err
-	}
-	s.observeStoredBlockSlot(max)
-	s.maxBlockSlotSeeded.Store(true)
-	return nil
-}
-
-// scanMaxStoredBlockSlot is the O(n) fallback, used only to seed the high-water
-// mark. It reports an error rather than a partial answer: a truncated scan looks
-// exactly like an empty table, and caching that as the mark is worse than
-// retrying.
+// scanMaxStoredBlockSlot is the O(n) scan that seeds the high-water mark. It
+// reports an error rather than a partial answer: a truncated scan looks exactly
+// like an empty table, and starting from that mark is worse than not starting.
 func (s *ConsensusStore) scanMaxStoredBlockSlot() (uint64, error) {
 	rv, err := s.beginRead("max stored block slot")
 	if err != nil {

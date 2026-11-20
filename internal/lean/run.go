@@ -61,14 +61,6 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	// Recover the stored-block high-water mark before any duty runs. Doing it
-	// here rather than lazily keeps the full-table scan off the dispatch loop
-	// entirely, and surfaces a read failure at startup instead of leaving the
-	// duty gate to act on an understated mark.
-	if err := s.SeedMaxStoredBlockSlot(); err != nil {
-		return fmt.Errorf("seed max stored block slot: %w", err)
-	}
-
 	runCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 

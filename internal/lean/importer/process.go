@@ -47,10 +47,9 @@ func onBlockCore(s *store.ConsensusStore, signedBlock *types.SignedBlock, verify
 
 	// A block more than one slot beyond the store clock is outside the acceptance
 	// horizon: reject it before the transition and signature check so a far-future
-	// block cannot force an unbounded empty-slot walk. The full-slot margin still
-	// admits an intended early block. Time() is in intervals.
+	// block cannot force an unbounded empty-slot walk. Time() is in intervals.
 	currentSlot := s.Time() / types.IntervalsPerSlot
-	if block.Slot > currentSlot+1 {
+	if types.BeyondFutureHorizon(block.Slot, currentSlot) {
 		return &store.StoreError{
 			Kind:    store.ErrBlockTooFarInFuture,
 			Message: fmt.Sprintf("block slot %d beyond future horizon (current slot %d)", block.Slot, currentSlot),

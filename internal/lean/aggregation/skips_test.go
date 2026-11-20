@@ -15,8 +15,7 @@ import (
 
 // A target whose own state was never stored still aggregates.
 // The validator registry is written once at genesis and never by the state
-// transition, so the head state resolves the same signers — this is the case
-// that silently produced nothing for 355 consecutive slots on devnet-5.
+// transition, so the head state resolves the same signers.
 func TestAggregateResolvesSignersWithoutTargetState(t *testing.T) {
 	target := &types.Checkpoint{Slot: 42, Root: rootByte(9)}
 	snap := &Snapshot{
