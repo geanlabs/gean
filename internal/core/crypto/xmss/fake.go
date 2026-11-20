@@ -19,7 +19,6 @@ import (
 type ValidatorKeyPair struct {
 	secret []byte
 	public [PubkeySize]byte
-	closed bool
 	Index  uint64
 }
 
@@ -35,8 +34,10 @@ func GenerateKeyPair(seedPhrase string, activationEpoch, numActiveEpochs uint64)
 	return KeyPairFromSecret([]byte("fake xmss secret key: "+seedPhrase), 0)
 }
 
+// loaded reports whether kp holds a key, as the native handle does in the real
+// build: a zero-value or closed key pair cannot sign.
 func (kp *ValidatorKeyPair) loaded() bool {
-	return kp != nil && !kp.closed
+	return kp != nil && kp.secret != nil
 }
 
 func (kp *ValidatorKeyPair) PublicKey() CPubKey {
@@ -78,7 +79,7 @@ func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([SignatureSize]
 
 func (kp *ValidatorKeyPair) Close() {
 	if kp != nil {
-		kp.closed = true
+		kp.secret = nil
 	}
 }
 

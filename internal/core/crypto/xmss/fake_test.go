@@ -48,6 +48,18 @@ func TestFakeSignAndVerify(t *testing.T) {
 	}
 }
 
+// A zero-value key pair holds no key, as in the real build, where its native
+// handle is nil, so it must not sign.
+func TestFakeZeroKeyPairCannotSign(t *testing.T) {
+	var kp ValidatorKeyPair
+	if _, err := kp.Sign(1, [32]byte{1}); err == nil {
+		t.Fatal("a zero-value key pair signed")
+	}
+	if _, err := kp.PublicKeyBytes(); err == nil {
+		t.Fatal("a zero-value key pair has a public key")
+	}
+}
+
 // The fake skips the cryptography, not the input checks.
 func TestFakeRejectsMalformedInput(t *testing.T) {
 	msg := [32]byte{1}
