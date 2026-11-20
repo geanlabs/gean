@@ -82,15 +82,10 @@ var sszFactories = map[string]func() sszCodec{
 	"HashTreeOpening":             func() sszCodec { return new(sszHashTreeOpeningAdapter) },
 }
 
-// sszDecodeFailureFactories provides decode-only entry points for fixtures
-// that carry expectException + rawBytes and assert the decoder rejects
-// malformed input. Empty for now: the rejection fixtures
-// currently target spec-internal parameterized type wrappers (DecodeBitlist8,
-// DecodeBitvector16) plus basic types (Bytes4, Uint32) that gean never
-// exposes as standalone decoders. The harness skips with a clear reason
-// when typeName isn't registered, so future fixtures targeting types gean
-// does decode (e.g. via UnmarshalSSZ on a registered struct) auto-work
-// once added here.
+// sszDecodeFailureFactories maps a fixture type name to a decoder for fixtures
+// that assert malformed input is rejected. It is empty: no rejection fixture
+// targets a type gean decodes standalone, and the harness skips unregistered
+// types.
 var sszDecodeFailureFactories = map[string]func([]byte) error{}
 
 // TestSpecSSZ walks the ssz container fixture directories and, for each

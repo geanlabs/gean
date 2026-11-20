@@ -67,7 +67,7 @@ func TestSpecStateTransition(t *testing.T) {
 func runStateTransitionTest(t *testing.T, tt *StateTransitionTest) {
 	t.Helper()
 
-	expectError := tt.ExpectException != "" || tt.Post == nil
+	expectError := tt.Post == nil
 
 	// Empty blocks list with an expected rejection means the spec filler raised
 	// the assertion internally (e.g., process_slots target == state.slot rejected

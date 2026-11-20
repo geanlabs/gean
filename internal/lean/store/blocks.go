@@ -26,8 +26,6 @@ func (s *ConsensusStore) GetBlockHeader(root [32]byte) *types.BlockHeader {
 }
 
 // HasBlockHeader reports whether a block header is stored, without decoding it.
-// The proposal path asks this a handful of times per block; it used to answer
-// the same question by materialising every root in the table into a map.
 func (s *ConsensusStore) HasBlockHeader(root [32]byte) bool {
 	rv, err := s.beginRead("has block header")
 	if err != nil {
@@ -197,17 +195,11 @@ func (s *ConsensusStore) HeadSlot() uint64 {
 	return h.Slot
 }
 
-// MaxStoredBlockSlot returns the highest slot of any stored block header.
-//
-// This is read on the tick loop by the duty gate, up to three times a slot. It
-// used to iterate TableBlockHeaders and decode every value, which is O(chain
-// length) and — because the header's first SSZ field is the slot — forced the
-// sstable value blocks to be read rather than just the keys. On a 22,600-block
-// chain that was one of several full-table scans starving the dispatch loop.
-//
-// The answer is now a high-water mark maintained on insert. The table is scanned
-// once, lazily, to seed it after a restart: a process that starts with an
-// existing database must not report slot 0 and read the whole network as stalled.
+// MaxStoredBlockSlot returns the highest slot of any stored block header, a
+// high-water mark kept on insert so the duty gate can read it on the tick loop
+// without scanning. After a restart the table is scanned once to seed it, so a
+// node with an existing database does not report slot 0 and read the network
+// as stalled; once seeded, the seeding call here does nothing.
 func (s *ConsensusStore) MaxStoredBlockSlot() uint64 {
 	if err := s.SeedMaxStoredBlockSlot(); err != nil {
 		logger.Error(logger.Store, "seed max stored block slot: %v", err)

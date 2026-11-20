@@ -70,9 +70,8 @@ func TestNilOutputSuppressesLogs(t *testing.T) {
 func restoreLogger(t *testing.T, w io.Writer, quiet bool) {
 	t.Helper()
 	mu.Lock()
-	oldOutput := output
+	oldOutput, oldQuiet := output, quiet
 	mu.Unlock()
-	oldQuiet := IsQuiet()
 
 	SetOutput(w)
 	SetQuiet(quiet)

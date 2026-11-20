@@ -45,37 +45,6 @@ func TestSyncDriver_OnPeerConnectedBackfillHasNoDeadline(t *testing.T) {
 	}
 }
 
-func TestSyncDriverNilDependenciesReturnDefaults(t *testing.T) {
-	sd := NewSyncDriver(context.Background(), nil, nil, nil)
-	peerID := libp2ppeer.ID("p1")
-
-	if sd.makeStatusMessage() != nil {
-		t.Fatal("nil store should not build a status message")
-	}
-	if sd.shouldBackfill(&p2p.StatusMessage{HeadSlot: 10}) {
-		t.Fatal("nil store should not backfill")
-	}
-
-	sd.Run()
-	sd.OnPeerConnected(peerID)
-	sd.refreshSyncFromPeers(context.Background())
-	sd.pollPeer(context.Background(), peerID, nil)
-	sd.checkAndBackfill(context.Background(), peerID, &p2p.StatusMessage{HeadSlot: 10})
-
-	var nilDriver *SyncDriver
-	nilDriver.Run()
-	nilDriver.OnPeerConnected(peerID)
-	nilDriver.refreshSyncFromPeers(context.Background())
-	nilDriver.pollPeer(context.Background(), peerID, nil)
-	nilDriver.checkAndBackfill(context.Background(), peerID, &p2p.StatusMessage{HeadSlot: 10})
-	if nilDriver.makeStatusMessage() != nil {
-		t.Fatal("nil driver should not build a status message")
-	}
-	if nilDriver.shouldBackfill(&p2p.StatusMessage{HeadSlot: 10}) {
-		t.Fatal("nil driver should not backfill")
-	}
-}
-
 // A marooned node's head keeps pace, so nothing local says it needs to sync. The
 // periodic poll is what fetches the peer status that reveals it.
 func TestRunPollsMaroonedNodeWithCurrentHead(t *testing.T) {

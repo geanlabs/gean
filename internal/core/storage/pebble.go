@@ -30,15 +30,10 @@ func (p *PebbleBackend) BeginWrite() (WriteBatch, error) {
 
 // EstimateTableBytes reports approximate on-disk (SST) bytes for a table.
 //
-// This asks Pebble's version metadata for the size of the table's key range
-// rather than reading the table. The previous implementation iterated every
-// entry and summed len(key)+len(value), which on the states and signed-block
-// tables meant gigabytes of decompressed reads per call — and it was called for
-// all six tables on every block import, on the dispatch goroutine.
-//
-// The number this returns is not the same number: it is compressed SST bytes
-// for the range, not logical live bytes, and it excludes anything still in the
-// memtable. For a size gauge that is the more useful figure anyway.
+// It asks Pebble's version metadata for the size of the table's key range
+// rather than reading the table, so it costs nothing per entry. The figure is
+// compressed SST bytes for the range, not logical live bytes, and it excludes
+// anything still in the memtable.
 func (p *PebbleBackend) EstimateTableBytes(table Table) uint64 {
 	lower := tableKey(table, nil)
 	upper := prefixUpperBound(lower)

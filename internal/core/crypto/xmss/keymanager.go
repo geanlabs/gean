@@ -70,23 +70,6 @@ func (km *KeyManager) SignAttestationRoot(validatorID uint64, slot uint64, msgRo
 	return kp.Sign(s, msgRoot)
 }
 
-func (km *KeyManager) SignBlock(validatorID uint64, slot uint64, blockRoot [32]byte) ([SignatureSize]byte, error) {
-	if km == nil {
-		return [SignatureSize]byte{}, fmt.Errorf("key manager is nil")
-	}
-	kp := km.GetProposalKey(validatorID)
-	if !kp.loaded() {
-		return [SignatureSize]byte{}, fmt.Errorf("proposal key for validator %d not found", validatorID)
-	}
-
-	s := uint32(slot)
-	if uint64(s) != slot {
-		return [SignatureSize]byte{}, fmt.Errorf("slot %d overflows uint32", slot)
-	}
-
-	return kp.Sign(s, blockRoot)
-}
-
 func (km *KeyManager) Close() {
 	if km == nil {
 		return

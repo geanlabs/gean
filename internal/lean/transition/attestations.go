@@ -110,7 +110,7 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 		voteCount := countTrue(votes)
 		if 3*voteCount >= 2*validatorCount {
 			if target.Slot > state.LatestJustified.Slot {
-				state.LatestJustified = copyCheckpoint(target)
+				state.LatestJustified = target.Copy()
 			}
 			setSlotJustified(state, state.LatestFinalized.Slot, target.Slot)
 

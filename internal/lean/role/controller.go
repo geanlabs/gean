@@ -9,11 +9,7 @@ type Controller struct {
 	onChange func(bool)
 }
 
-func New(initial bool) *Controller {
-	return NewWithHook(initial, nil)
-}
-
-func NewWithHook(initial bool, onChange func(bool)) *Controller {
+func New(initial bool, onChange func(bool)) *Controller {
 	c := &Controller{onChange: onChange}
 	c.flag.Store(initial)
 	c.notify(initial)

@@ -113,13 +113,13 @@ func TestLoadGenesisConfigInvalidPubkey(t *testing.T) {
 	data := `GENESIS_TIME: 1770407233
 GENESIS_VALIDATORS:
   - attestation_pubkey: "not-hex"
-	    proposal_pubkey: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    proposal_pubkey: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
 `
 	writeGenesisConfig(t, tmpFile, data)
 
 	_, err := LoadGenesisConfig(tmpFile)
-	if err == nil {
-		t.Fatal("expected invalid pubkey error")
+	if err == nil || !strings.Contains(err.Error(), "pubkey") {
+		t.Fatalf("err = %v, want an invalid pubkey error", err)
 	}
 }
 

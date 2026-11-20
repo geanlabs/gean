@@ -15,7 +15,7 @@ import (
 // Close must not return while a req/resp handler is still running: the
 // handler reads the store, which the caller closes next.
 func TestCloseWaitsForHeldReqRespHandler(t *testing.T) {
-	server, client := newTestHost(t), newTestHost(t)
+	server, client := newTestHost(t, nil), newTestHost(t, nil)
 
 	entered, release := make(chan struct{}), make(chan struct{})
 	server.RegisterReqRespHandlers(
@@ -66,7 +66,7 @@ func (h *heldValidator) ValidateGossipBlock(*types.SignedBlock) Verdict {
 // Close must not return while pubsub is running a gossip validator, which
 // reads the store, and ignores messages once it has begun.
 func TestCloseWaitsForHeldGossipValidator(t *testing.T) {
-	h := newTestHost(t)
+	h := newTestHost(t, nil)
 	handler := &heldValidator{entered: make(chan struct{}), release: make(chan struct{})}
 	h.StartGossipListeners(handler)
 

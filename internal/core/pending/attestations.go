@@ -14,8 +14,6 @@ type AttestationBuffer[T any] struct {
 	perRootCap int
 	totalCap   int
 	total      int
-	evicted    int
-	rejected   int
 }
 
 // NewAttestationBuffer returns a buffer holding at most perRootCap
@@ -38,7 +36,6 @@ func (b *AttestationBuffer[T]) Add(headRoot [32]byte, att T) (added bool, droppe
 	defer b.mu.Unlock()
 
 	if _, ok := b.slotOf(att); b.perRootCap <= 0 || b.totalCap <= 0 || !ok {
-		b.rejected++
 		return false, 0
 	}
 
@@ -47,12 +44,10 @@ func (b *AttestationBuffer[T]) Add(headRoot [32]byte, att T) (added bool, droppe
 	if len(bucket) >= b.perRootCap {
 		bucket = append(bucket[1:], att)
 		b.byHead[headRoot] = bucket
-		b.evicted++
 		return true, 1
 	}
 
 	if b.total >= b.totalCap {
-		b.rejected++
 		return false, 0
 	}
 
@@ -120,13 +115,4 @@ func (b *AttestationBuffer[T]) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.byHead)
-}
-
-func (b *AttestationBuffer[T]) Stats() (evicted, rejected int) {
-	if b == nil {
-		return 0, 0
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.evicted, b.rejected
 }

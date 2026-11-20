@@ -179,8 +179,8 @@ func TestVerifyCheckpointStateFinalizedExceedsState(t *testing.T) {
 	state := makeTestState(100, 1000, 3)
 	state.LatestFinalized.Slot = 200
 	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: finalized exceeds state")
+	if err == nil || !strings.Contains(err.Error(), "finalized slot 200 exceeds state slot") {
+		t.Fatalf("err = %v, want finalized slot exceeding the state slot", err)
 	}
 }
 
@@ -188,8 +188,8 @@ func TestVerifyCheckpointStateJustifiedExceedsState(t *testing.T) {
 	state := makeTestState(100, 1000, 3)
 	state.LatestJustified.Slot = 200
 	err := VerifyCheckpointState(state, 1000, state.Validators)
-	if err == nil {
-		t.Fatal("should fail: justified exceeds state")
+	if err == nil || !strings.Contains(err.Error(), "justified slot 200 exceeds state slot") {
+		t.Fatalf("err = %v, want justified slot exceeding the state slot", err)
 	}
 }
 
@@ -346,6 +346,7 @@ func TestFetchSSZSendsOctetStreamAccept(t *testing.T) {
 // A source that is briefly unready — connection errors or non-200s while it warms
 // up — must be retried rather than exiting the node on the first failure.
 func TestFetchSSZRetriesUntilReady(t *testing.T) {
+	defer shortCheckpointBudget(t)()
 	wantBody := []byte{0x0a, 0x0b}
 	var attempts int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -372,14 +373,15 @@ func TestFetchSSZRetriesUntilReady(t *testing.T) {
 // A source that never comes ready must fail within the shared budget, not hang or
 // retry forever.
 func TestFetchSSZGivesUpAfterBudget(t *testing.T) {
+	defer shortCheckpointBudget(t)()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
 
 	start := time.Now()
-	// A short budget keeps the test fast while still exercising at least one retry.
-	if _, err := fetchSSZ(srv.URL, time.Now().Add(1500*time.Millisecond)); err == nil {
+	// A short budget keeps the test fast while still exercising several retries.
+	if _, err := fetchSSZ(srv.URL, time.Now().Add(300*time.Millisecond)); err == nil {
 		t.Fatal("expected an error when the source never becomes ready")
 	}
 	if elapsed := time.Since(start); elapsed > checkpointFetchBudget {
@@ -584,7 +586,8 @@ func TestFetchCheckpointAnchor_BlockNotFound(t *testing.T) {
 // exercise the retry path (a source that never becomes ready) finish quickly.
 func shortCheckpointBudget(t *testing.T) func() {
 	t.Helper()
-	restore := checkpointFetchBudget
+	restoreBudget, restoreBackoff := checkpointFetchBudget, checkpointInitialBackoff
 	checkpointFetchBudget = 1500 * time.Millisecond
-	return func() { checkpointFetchBudget = restore }
+	checkpointInitialBackoff = 50 * time.Millisecond
+	return func() { checkpointFetchBudget, checkpointInitialBackoff = restoreBudget, restoreBackoff }
 }

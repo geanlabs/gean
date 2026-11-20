@@ -14,18 +14,6 @@ func root(b byte) [32]byte {
 	return r
 }
 
-func rootsEqual(a, b [][32]byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func makeAttData(headRoot [32]byte, slot uint64) *types.AttestationData {
 	return &types.AttestationData{
 		Slot:   slot,
@@ -222,10 +210,10 @@ func TestCanonicalAnalysisIncludesReparentedOrphanDescendant(t *testing.T) {
 	fc.OnBlock(1, fork, anchor)
 
 	canonical, nonCanonical := fc.GetCanonicalAnalysis(parent)
-	if !rootsEqual(canonical, [][32]byte{parent, anchor}) {
+	if !slices.Equal(canonical, [][32]byte{parent, anchor}) {
 		t.Fatalf("canonical=%x, want parent,anchor", canonical)
 	}
-	if !rootsEqual(nonCanonical, [][32]byte{fork}) {
+	if !slices.Equal(nonCanonical, [][32]byte{fork}) {
 		t.Fatalf("nonCanonical=%x, want fork only", nonCanonical)
 	}
 }
@@ -512,10 +500,10 @@ func TestCanonicalAnalysisSeparatesFinalizedForks(t *testing.T) {
 	fc.OnBlock(3, forkAfter, b)
 
 	canonical, nonCanonical := fc.GetCanonicalAnalysis(b)
-	if !rootsEqual(canonical, [][32]byte{b, a, anchor}) {
+	if !slices.Equal(canonical, [][32]byte{b, a, anchor}) {
 		t.Fatalf("canonical=%x, want b,a,anchor", canonical)
 	}
-	if !rootsEqual(nonCanonical, [][32]byte{forkBefore}) {
+	if !slices.Equal(nonCanonical, [][32]byte{forkBefore}) {
 		t.Fatalf("nonCanonical=%x, want forkBefore", nonCanonical)
 	}
 }

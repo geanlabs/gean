@@ -222,15 +222,7 @@ func selectRecoveryCandidates(
 }
 
 func coversParticipants(proof *types.SingleMessageAggregate, participants []byte) bool {
-	if proof == nil {
-		return false
-	}
-	for _, index := range types.BitlistIndices(participants) {
-		if !types.BitlistGet(proof.Participants, index) {
-			return false
-		}
-	}
-	return true
+	return proof != nil && types.BitlistIsSubset(proof.Participants, participants)
 }
 
 // blockProofClaims returns the signer groups of a block's Type-2 proof and what each

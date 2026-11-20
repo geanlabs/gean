@@ -18,25 +18,6 @@ const (
 	MaxBlocksPerRequest = 10
 )
 
-type SignedBlockResult struct {
-	Root  [32]byte
-	Block []*types.SignedBlock
-	Err   error
-}
-
-func (h *Host) FetchBlocksByRootWithRetry(ctx context.Context, roots [][32]byte) ([]*SignedBlockResult, error) {
-	results := make([]*SignedBlockResult, 0, len(roots))
-	for _, root := range roots {
-		block, err := h.fetchSingleBlockWithRetry(ctx, root)
-		results = append(results, &SignedBlockResult{
-			Root:  root,
-			Block: block,
-			Err:   err,
-		})
-	}
-	return results, nil
-}
-
 func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]byte) ([]*types.SignedBlock, [][32]byte, error) {
 	if len(roots) == 0 {
 		return nil, nil, nil
@@ -112,35 +93,6 @@ func (h *Host) FetchBlocksByRangeWithRetry(
 	}
 
 	return nil, "", fmt.Errorf("blocks_by_range fetch failed after %d retries (start_slot=%d, count=%d)", MaxFetchRetries, startSlot, count)
-}
-
-func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]*types.SignedBlock, error) {
-	excluded := make(map[peer.ID]bool)
-	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
-
-	for attempt := range MaxFetchRetries {
-		peerID := h.PeerStore().SelectPeer(excluded, 0)
-		if peerID == "" {
-			return nil, fmt.Errorf("no peers available for block fetch")
-		}
-
-		blocks, err := h.FetchBlocksByRoot(ctx, peerID, [][32]byte{root})
-		if err == nil && len(blocks) > 0 {
-			return blocks, nil
-		}
-
-		excluded[peerID] = true
-		h.logFetchFailure("block fetch", attempt, peerID, err, "block_root", fmt.Sprintf("0x%x", root))
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(backoff):
-			backoff *= BackoffMultiplier
-		}
-	}
-
-	return nil, fmt.Errorf("block fetch failed after %d retries for %x", MaxFetchRetries, root)
 }
 
 func computeMissingRoots(requested [][32]byte, delivered []*types.SignedBlock) [][32]byte {

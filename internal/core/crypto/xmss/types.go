@@ -21,7 +21,6 @@ var (
 	ErrSerializationFailed = errors.New("proof serialization failed")
 	ErrProofTooBig         = errors.New("aggregated proof exceeds 512 KiB")
 	ErrVerificationFailed  = errors.New("aggregated signature verification failed")
-	ErrDeserializeFailed   = errors.New("proof deserialization failed")
 	ErrSigningFailed       = errors.New("signing failed")
 	ErrInvalidSignature    = errors.New("signature verification returned invalid")
 	ErrSignatureError      = errors.New("signature verification error (malformed data)")

@@ -113,8 +113,8 @@ func TestToStateRequiresCompleteValidatorKeys(t *testing.T) {
 
 	state = minimalTestState()
 	state.Validators.Data = []TestValidator{{}}
-	if _, err := state.ToState(); err == nil || !strings.Contains(err.Error(), "pubkey: missing") {
-		t.Fatalf("ToState error=%v, want missing legacy pubkey", err)
+	if _, err := state.ToState(); err == nil || !strings.Contains(err.Error(), "attestationPubkey: missing") {
+		t.Fatalf("ToState error=%v, want missing attestation pubkey", err)
 	}
 }
 
@@ -142,22 +142,6 @@ func TestConvertersRejectNilFixtures(t *testing.T) {
 	var signedBlock *FixtureSignedBlock
 	if _, err := signedBlock.ToSignedBlock(); err == nil || !strings.Contains(err.Error(), "signed block fixture is nil") {
 		t.Fatalf("ToSignedBlock error=%v, want nil fixture rejection", err)
-	}
-}
-
-func TestToStateAcceptsLegacyValidatorKey(t *testing.T) {
-	state := minimalTestState()
-	state.Validators.Data = []TestValidator{{Pubkey: hexOfLen(types.PubkeySize), Index: 7}}
-
-	got, err := state.ToState()
-	if err != nil {
-		t.Fatalf("ToState: %v", err)
-	}
-	if len(got.Validators) != 1 || got.Validators[0].Index != 7 {
-		t.Fatalf("validators=%v, want one validator with index 7", got.Validators)
-	}
-	if got.Validators[0].AttestationPubkey != got.Validators[0].ProposalPubkey {
-		t.Fatal("legacy pubkey should seed both attestation and proposal keys")
 	}
 }
 
@@ -210,27 +194,5 @@ func TestFixtureSignedBlockMapsNestedProof(t *testing.T) {
 	}
 	if want := []byte{0x01, 0x02}; !bytes.Equal(signed.Proof.Proof, want) {
 		t.Fatalf("proof = %x, want %x — nested proof.proof.data not mapped", signed.Proof.Proof, want)
-	}
-}
-
-func TestStateTransitionFixtureRejectionMarkerSpellings(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{"rejectionReason", `{"rejectionReason":"EMPTY_VALIDATOR_REGISTRY"}`, "EMPTY_VALIDATOR_REGISTRY"},
-		{"expectException", `{"expectException":"SOME_ERROR"}`, "SOME_ERROR"},
-		{"expectExceptionWins", `{"expectException":"A","rejectionReason":"B"}`, "A"},
-		{"absent", `{}`, ""},
-	}
-	for _, tc := range cases {
-		var f StateTransitionFixture
-		if err := json.Unmarshal([]byte(tc.raw), &f); err != nil {
-			t.Fatalf("%s: unmarshal: %v", tc.name, err)
-		}
-		if got := f.ExpectedException(); got != tc.want {
-			t.Fatalf("%s: ExpectedException() = %q, want %q", tc.name, got, tc.want)
-		}
 	}
 }

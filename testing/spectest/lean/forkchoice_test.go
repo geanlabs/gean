@@ -92,7 +92,6 @@ type fcDataList struct {
 type fcValidator struct {
 	AttestationPubkey string `json:"attestationPublicKey"`
 	ProposalPubkey    string `json:"proposalPublicKey"`
-	Pubkey            string `json:"pubkey"` // legacy fallback
 	Index             uint64 `json:"index"`
 }
 
@@ -215,18 +214,9 @@ func (fs *fcState) toState() *types.State {
 	}
 
 	for _, v := range fs.Validators.Data {
-		var attPk, propPk [types.PubkeySize]byte
-		if v.AttestationPubkey != "" {
-			attPk = parseHexPubkey(v.AttestationPubkey)
-			propPk = parseHexPubkey(v.ProposalPubkey)
-		} else {
-			pk := parseHexPubkey(v.Pubkey)
-			attPk = pk
-			propPk = pk
-		}
 		state.Validators = append(state.Validators, &types.Validator{
-			AttestationPubkey: attPk,
-			ProposalPubkey:    propPk,
+			AttestationPubkey: parseHexPubkey(v.AttestationPubkey),
+			ProposalPubkey:    parseHexPubkey(v.ProposalPubkey),
 			Index:             v.Index,
 		})
 	}
@@ -355,7 +345,6 @@ func TestSpecForkChoice(t *testing.T) {
 func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	t.Helper()
 
-	// 1. Convert anchor state and block.
 	anchorState := tt.AnchorState.toState()
 	anchorBlock := tt.AnchorBlock.toBlock()
 
@@ -365,7 +354,6 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 		t.Fatalf("computing anchor block root: %v", err)
 	}
 
-	// 2. Initialize store with in-memory backend.
 	backend := storage.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 
@@ -427,13 +415,11 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	}
 	s.StorePendingBlock(anchorRoot, anchorSigned)
 
-	// 3. Initialize fork choice with anchor.
 	fc := forkchoice.New(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot)
 
 	// Label -> root map for resolving blockRootLabel references.
 	labelRoots := make(map[string][32]byte)
 
-	// 4. Process steps.
 	for i, step := range tt.Steps {
 		switch step.StepType {
 		case "block":

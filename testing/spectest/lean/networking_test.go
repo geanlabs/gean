@@ -5,7 +5,6 @@ package lean
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"github.com/geanlabs/gean/internal/core/p2p/discovery"
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 	"github.com/geanlabs/gean/internal/lean/p2p"
+	"github.com/geanlabs/gean/internal/lean/specfixtures"
 )
 
 // Spec fixture directory root.
@@ -122,7 +122,7 @@ func testVarint(t *testing.T, fx netFixture) string {
 	}
 	wantHex, _ := fx.Output["encoded"].(string)
 	wantLen, _ := fx.Output["byteLength"].(float64)
-	want, err := decodeHex(wantHex)
+	want, err := specfixtures.ParseHexBytes(wantHex)
 	if err != nil {
 		t.Errorf("decode expected hex: %v", err)
 		return "fail"
@@ -190,22 +190,22 @@ func testGossipMessageID(t *testing.T, fx netFixture) string {
 	domainHex, _ := fx.Input["domain"].(string)
 	wantHex, _ := fx.Output["messageId"].(string)
 
-	topic, err := decodeHex(topicHex)
+	topic, err := specfixtures.ParseHexBytes(topicHex)
 	if err != nil {
 		t.Errorf("topic hex: %v", err)
 		return "fail"
 	}
-	data, err := decodeHex(dataHex)
+	data, err := specfixtures.ParseHexBytes(dataHex)
 	if err != nil {
 		t.Errorf("data hex: %v", err)
 		return "fail"
 	}
-	domain, err := decodeHex(domainHex)
+	domain, err := specfixtures.ParseHexBytes(domainHex)
 	if err != nil {
 		t.Errorf("domain hex: %v", err)
 		return "fail"
 	}
-	want, err := decodeHex(wantHex)
+	want, err := specfixtures.ParseHexBytes(wantHex)
 	if err != nil {
 		t.Errorf("want hex: %v", err)
 		return "fail"
@@ -263,7 +263,7 @@ var discv5TypeByte = map[string]byte{
 func testDiscv5Message(t *testing.T, fx netFixture) string {
 	msgType, _ := fx.Input["type"].(string)
 	wantHex, _ := fx.Output["encoded"].(string)
-	want, err := decodeHex(wantHex)
+	want, err := specfixtures.ParseHexBytes(wantHex)
 	if err != nil {
 		t.Errorf("decode expected hex: %v", err)
 		return "fail"
@@ -277,7 +277,7 @@ func testDiscv5Message(t *testing.T, fx netFixture) string {
 
 	var fields []interface{}
 	reqIDHex, _ := fx.Input["requestId"].(string)
-	reqID, _ := decodeHex(reqIDHex)
+	reqID, _ := specfixtures.ParseHexBytes(reqIDHex)
 	// Strip leading zeros per discv5 minimal encoding.
 	for len(reqID) > 1 && reqID[0] == 0 {
 		reqID = reqID[1:]
@@ -291,7 +291,7 @@ func testDiscv5Message(t *testing.T, fx netFixture) string {
 	case "pong":
 		enrSeq := uint64(fx.Input["enrSeq"].(float64))
 		ipHex, _ := fx.Input["recipientIp"].(string)
-		ip, _ := decodeHex(ipHex)
+		ip, _ := specfixtures.ParseHexBytes(ipHex)
 		port := uint16(fx.Input["recipientPort"].(float64))
 		fields = append(fields, enrSeq, ip, port)
 	case "findnode":
@@ -318,10 +318,6 @@ func testDiscv5Message(t *testing.T, fx netFixture) string {
 		return "fail"
 	}
 	return "pass"
-}
-func decodeHex(s string) ([]byte, error) {
-	s = strings.TrimPrefix(s, "0x")
-	return hex.DecodeString(s)
 }
 
 // shortName shortens a pytest test ID to a readable subtest name.

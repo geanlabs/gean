@@ -46,9 +46,6 @@ func TestKeyManagerNilSafeAccessors(t *testing.T) {
 	if _, err := km.SignAttestationRoot(1, 0, [32]byte{}); err == nil || !strings.Contains(err.Error(), "key manager is nil") {
 		t.Fatalf("SignAttestationRoot error=%v, want nil key manager error", err)
 	}
-	if _, err := km.SignBlock(1, 0, [32]byte{}); err == nil || !strings.Contains(err.Error(), "key manager is nil") {
-		t.Fatalf("SignBlock error=%v, want nil key manager error", err)
-	}
 }
 
 // writeKeyFiles generates one key pair per name and writes its secret key under that name in dir.
@@ -276,14 +273,10 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 	}
 
 	blockRoot := [32]byte{0xaa, 0xbb}
-	blockSig, err := km.SignBlock(0, 1, blockRoot)
+	blockSig, err := km.GetProposalKey(0).Sign(1, blockRoot)
 	if err != nil {
-		t.Fatalf("SignBlock: %v", err)
+		t.Fatalf("sign block: %v", err)
 	}
-	if blockSig == [types.SignatureSize]byte{} {
-		t.Fatal("SignBlock produced zero signature")
-	}
-
 	if attSig == blockSig {
 		t.Fatal("attestation and block signatures should be different")
 	}
@@ -358,10 +351,5 @@ func TestKeyManagerSignErrors(t *testing.T) {
 	_, err := km.SignAttestationRoot(99, 1, [32]byte{})
 	if err == nil {
 		t.Fatal("SignAttestationRoot should error for unknown validator")
-	}
-
-	_, err = km.SignBlock(99, 1, [32]byte{})
-	if err == nil {
-		t.Fatal("SignBlock should error for unknown validator")
 	}
 }

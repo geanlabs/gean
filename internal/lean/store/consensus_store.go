@@ -48,18 +48,16 @@ type ConsensusStore struct {
 
 	// maxBlockSlot is the highest slot of any block header this store has
 	// written: a high-water mark, not a live maximum over the table. It answers
-	// MaxStoredBlockSlot, which the duty gate reads up to three times a slot and
-	// which used to scan and SSZ-decode every header in TableBlockHeaders.
+	// MaxStoredBlockSlot, which the duty gate reads up to three times a slot.
 	//
-	// It deliberately covers the same set the scan did — imported blocks and
-	// blocks stored while pending — because the duty gate's network-stall
-	// carve-out depends on it. Narrowing it to imported blocks only would let a
-	// node that restarted holding a pending block at a near-current slot read
-	// its own import lag as a network stall and resume duties on a stale head.
+	// It covers imported blocks and blocks stored while pending, because the
+	// duty gate's network-stall carve-out depends on it. Counting imported
+	// blocks only would let a node that restarted holding a pending block at a
+	// near-current slot read its own import lag as a network stall and resume
+	// duties on a stale head.
 	//
-	// The one behavioural difference from the scan: pruning the highest-slot
-	// header no longer lowers the answer. That errs toward reporting the network
-	// as alive, which is the direction that keeps the gate closed rather than
+	// Pruning the highest-slot header does not lower it. That errs toward
+	// reporting the network as alive, which keeps the gate closed rather than
 	// opening it onto a dead fork.
 	maxBlockSlot atomic.Uint64
 	// maxBlockSlotSeeded latches only once a seeding scan has completed without

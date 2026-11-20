@@ -59,8 +59,6 @@ const (
 	CoverageSectionBlock             = "block"
 	CoverageSectionCombined          = "combined"
 	CoverageSectionAggregateStartNew = "aggregate_start_new"
-	CoverageSectionProposalPayloads  = "proposal_payloads"
-	CoverageSectionProposalGossip    = "proposal_gossip"
 	CoverageSectionProposalCombined  = "proposal_combined"
 
 	// CoverageSubnetCombined is the all-subnet validator total for a section.

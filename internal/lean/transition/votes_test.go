@@ -131,9 +131,6 @@ func TestVoteInvalidReason(t *testing.T) {
 				if !errors.As(err, &oorErr) {
 					t.Fatalf("VoteInvalidReason err = %v, want JustifiedSlotOutOfRangeError", err)
 				}
-				if IsValidVote(s, tc.source, tc.target) {
-					t.Fatal("IsValidVote must be false on out-of-range rejection")
-				}
 				return
 			}
 			if err != nil {
@@ -142,18 +139,12 @@ func TestVoteInvalidReason(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("VoteInvalidReason = %q, want %q", got, tc.want)
 			}
-			if valid := IsValidVote(s, tc.source, tc.target); valid != (got == "") {
-				t.Fatalf("IsValidVote=%v but reason=%q; they must agree", valid, got)
-			}
 		})
 	}
 
 	t.Run("nil_state", func(t *testing.T) {
 		if got, err := VoteInvalidReason(nil, cp(0, roots[0]), cp(1, roots[1])); err != nil || got != VoteReasonNilInput {
 			t.Fatalf("VoteInvalidReason(nil state) = %q (err %v), want %q", got, err, VoteReasonNilInput)
-		}
-		if IsValidVote(nil, cp(0, roots[0]), cp(1, roots[1])) {
-			t.Fatalf("IsValidVote(nil state) = true, want false")
 		}
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/geanlabs/gean/internal/core/metrics"
+	"github.com/geanlabs/gean/internal/lean/attestationproof"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -19,8 +20,8 @@ type planner struct {
 	slot          uint64
 	proposerIndex uint64
 	parentRoot    [32]byte
-	knownRoots    KnownRoots
-	proofMerger   proofMerger
+	knownRoots    func([32]byte) bool
+	proofMerger   attestationproof.MergeProvider
 	payloads      []AttestationPayload
 	processed     map[[32]byte]bool
 	attestations  []*types.AggregatedAttestation
@@ -114,7 +115,7 @@ func (p *planner) tryPayload(payload AttestationPayload) bool {
 	}
 
 	p.processed[payload.DataRoot] = true
-	att, sig, ok, selectErr := selectPayloadAttestation(payload, p.state, p.proofMerger)
+	att, sig, ok, selectErr := attestationproof.Select(payload.Data, payload.Proofs, p.state, p.proofMerger)
 	if selectErr != nil {
 		p.recordPayloadError(payload.DataRoot, selectErr)
 	}

@@ -76,9 +76,6 @@ func TestAttestationBuffer_PerRootFIFOEviction(t *testing.T) {
 		t.Fatalf("FIFO order broken: got [%p %p], want [%p %p]", drained[0], drained[1], b, c)
 	}
 
-	if evicted, rejected := buf.Stats(); evicted != 1 || rejected != 0 {
-		t.Fatalf("stats: evicted=%d rejected=%d, want 1,0", evicted, rejected)
-	}
 }
 
 func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
@@ -100,9 +97,6 @@ func TestAttestationBuffer_TotalCapRejection(t *testing.T) {
 	}
 	if buf.Total() != 2 || buf.Len() != 2 {
 		t.Fatalf("after reject: total=%d len=%d, want 2,2", buf.Total(), buf.Len())
-	}
-	if _, rejected := buf.Stats(); rejected != 1 {
-		t.Fatalf("rejected count: got %d, want 1", rejected)
 	}
 
 	if added, dropped := buf.Add(h1, makeAtt(99)); added || dropped != 0 {
@@ -188,9 +182,6 @@ func TestAttestationBuffer_RejectsMalformedAndInvalidCaps(t *testing.T) {
 	if added, dropped := buf.Add(head, &types.SignedAttestation{}); added || dropped != 0 {
 		t.Fatalf("nil data: added=%v dropped=%d, want false,0", added, dropped)
 	}
-	if evicted, rejected := buf.Stats(); evicted != 0 || rejected != 2 {
-		t.Fatalf("stats: evicted=%d rejected=%d, want 0,2", evicted, rejected)
-	}
 }
 
 func TestAttestationBuffer_NilGuards(t *testing.T) {
@@ -211,9 +202,6 @@ func TestAttestationBuffer_NilGuards(t *testing.T) {
 	}
 	if length := buf.Len(); length != 0 {
 		t.Fatalf("nil len=%d, want 0", length)
-	}
-	if evicted, rejected := buf.Stats(); evicted != 0 || rejected != 0 {
-		t.Fatalf("nil stats=%d/%d, want 0/0", evicted, rejected)
 	}
 }
 

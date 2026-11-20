@@ -76,13 +76,9 @@ func validatePayload(payload AttestationPayload) error {
 	return nil
 }
 
-func payloadBuildIssue(state *types.State, knownRoots KnownRoots, payload AttestationPayload) error {
+func payloadBuildIssue(state *types.State, knownRoots func([32]byte) bool, payload AttestationPayload) error {
 	data := payload.Data
-	// A nil KnownRoots knows nothing, matching the nil-map behaviour this
-	// replaced. validateInput already rejects nil whenever there are payloads to
-	// build, so this is the belt to that braces — but an interface, unlike a map,
-	// panics rather than returning false when nil, so it has to be explicit.
-	if knownRoots == nil || !knownRoots.Contains(data.Head.Root) {
+	if !knownRoots(data.Head.Root) {
 		return errPayloadHeadUnknown(data.Head.Root)
 	}
 	// Only source votes from the chain's current justified checkpoint: older sources

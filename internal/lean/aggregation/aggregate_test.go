@@ -100,10 +100,8 @@ func TestAggregateFromSnapshotZeroDeadlineProcessesAll(t *testing.T) {
 	}
 }
 
-// The cost of a proof is the proof, not what it covers: two-signature groups
-// measured 2.0-5.2s on a 16-core host. Dividing that by the signature count is
-// what previously concluded a signature costs seconds and pinned every later
-// group at the two-signature floor.
+// The estimator charges a fixed cost per proof, not per signature: two-signature
+// groups measured 2.0-5.2s on a 16-core host.
 func TestUnitCostEstimatorLearnsFixedCostPerProof(t *testing.T) {
 	e := newUnitCostEstimator()
 

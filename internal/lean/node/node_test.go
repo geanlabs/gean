@@ -49,7 +49,7 @@ func makeTestEngine() *Engine {
 
 	fc := forkchoice.New(0, genesisRoot, [32]byte{})
 
-	return New(clock.Real{}, s, fc, nil, nil, role.New(false), 1, shadow.Rates{})
+	return New(clock.Real{}, s, fc, nil, nil, role.New(false, nil), 1, shadow.Rates{})
 }
 
 func TestEngineCreation(t *testing.T) {
@@ -427,12 +427,12 @@ func TestNoteGossipSlotIgnoresFarFuture(t *testing.T) {
 func TestDutyGateClosedForMaroonedNodeViaGossipSeenSlot(t *testing.T) {
 	const wallSlot, forkHead, forkStored, gossipSeen = 64185, 63663, 63663, 64185
 
-	stale := dutygate.New()
+	stale := dutygate.New(nil)
 	if !stale.Decide("block", wallSlot, forkHead, forkStored) {
 		t.Fatal("precondition: stored-slot wiring wrongly reopens via network-stall carve-out")
 	}
 
-	fixed := dutygate.New()
+	fixed := dutygate.New(nil)
 	if fixed.Decide("block", wallSlot, forkHead, gossipSeen) {
 		t.Fatal("marooned node should be gated off its dead fork with gossip-seen slot")
 	}

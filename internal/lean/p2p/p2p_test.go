@@ -14,6 +14,7 @@ import (
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/p2p/gossip"
 	"github.com/geanlabs/gean/internal/core/p2p/host"
+	"github.com/geanlabs/gean/internal/core/p2p/memnet"
 	"github.com/geanlabs/gean/internal/core/p2p/peers"
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -309,28 +310,6 @@ func signedBlockForP2PTest(t *testing.T, slot uint64) (*types.SignedBlock, [32]b
 	}, root
 }
 
-func scoreTestHost(t *testing.T) *Host {
-	t.Helper()
-	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := priv.Raw()
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "node.key")
-	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	h, err := NewHost(context.Background(), host.Config{NodeKeyPath: path}, 1, nil, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(h.Close)
-	return h
-}
-
 // End to end over libp2p: a refused range request costs the serving peer score,
 // a served one earns it, and both sides of a status exchange record the head the
 // other reported.
@@ -346,27 +325,16 @@ func TestHostScoresRequestsAndRecordsStatus(t *testing.T) {
 			},
 		)
 	}
-	client := scoreTestHost(t)
+	client := newTestHost(t, nil)
 	serve(client, true)
-	refusing, serving := scoreTestHost(t), scoreTestHost(t)
+	refusing, serving := newTestHost(t, nil), newTestHost(t, nil)
 	serve(refusing, false)
 	serve(serving, true)
 
+	connectTestHosts(t, client, refusing, serving)
+	waitFor(t, "the refusing peer to register the client", func() bool { return refusing.ConnectedPeers() >= 1 })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, server := range []*Host{refusing, serving} {
-		info := peer.AddrInfo{ID: server.PeerID(), Addrs: server.Addrs()}
-		if err := client.LibP2PHost().Connect(ctx, info); err != nil {
-			t.Fatal(err)
-		}
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for client.ConnectedPeers() < 2 || refusing.ConnectedPeers() < 1 {
-		if time.Now().After(deadline) {
-			t.Fatal("peers never registered as connected")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 
 	if _, err := client.FetchBlocksByRange(ctx, refusing.PeerID(), 1, 1); err == nil {
 		t.Fatal("refusing peer served the range")
@@ -402,8 +370,9 @@ func headRecorded(ps *peers.Store, id peer.ID, head uint64) bool {
 	return ok && got == head
 }
 
-// newTestHost starts a host on a random localhost port with a fresh key.
-func newTestHost(t *testing.T) *Host {
+// newTestHost starts a host with a fresh key, on QUIC or, when n is not nil, on
+// the in-memory network n.
+func newTestHost(t *testing.T, n *memnet.Network) *Host {
 	t.Helper()
 	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
 	if err != nil {
@@ -417,7 +386,11 @@ func newTestHost(t *testing.T) *Host {
 	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := NewHost(context.Background(), host.Config{NodeKeyPath: path}, 1, nil, false, nil)
+	cfg := host.Config{NodeKeyPath: path}
+	if n != nil {
+		cfg.Network = n
+	}
+	h, err := NewHost(context.Background(), cfg, 1, nil, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +430,7 @@ func TestFetchBlocksByRangeWithRetryGrowsCallersExcludedSet(t *testing.T) {
 			func(uint64, uint64) ([]*types.SignedBlock, bool) { return nil, false },
 		)
 	}
-	client, a, b := newTestHost(t), newTestHost(t), newTestHost(t)
+	client, a, b := newTestHost(t, nil), newTestHost(t, nil), newTestHost(t, nil)
 	refuse(a)
 	refuse(b)
 	connectTestHosts(t, client, a, b)

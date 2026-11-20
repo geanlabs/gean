@@ -10,7 +10,7 @@ import (
 // Two lean hosts given no bootnode address find each other through discv5:
 // the second starts from the first's ENR and dials the QUIC address in it.
 func TestHostsFindEachOtherThroughDiscv5(t *testing.T) {
-	a, b := newTestHost(t), newTestHost(t)
+	a, b := newTestHost(t, nil), newTestHost(t, nil)
 	loopback := net.IPv4(127, 0, 0, 1)
 	if err := a.StartDiscovery(0, loopback, nil); err != nil {
 		t.Fatal(err)

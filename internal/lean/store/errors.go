@@ -14,9 +14,7 @@ const (
 	ErrInvalidValidatorIndex
 	ErrPubkeyDecodingFailed
 	ErrSignatureDecodingFailed
-	ErrSignatureVerificationFailed
 	ErrProposerSignatureDecodingFailed
-	ErrProposerSignatureVerificationFailed
 	ErrStateTransitionFailed
 	ErrUnknownSourceBlock
 	ErrUnknownTargetBlock
@@ -30,12 +28,8 @@ const (
 	ErrAttestationSignatureMismatch
 	ErrParticipantsMismatch
 	ErrAggregateVerificationFailed
-	ErrSignatureAggregationFailed
-	ErrMissingTargetState
-	ErrNotProposer
 	ErrDuplicateAttestationData
 	ErrTooManyAttestationData
-	ErrJustifiedDivergenceNotClosed
 	ErrSourceNotAncestorOfTarget
 	ErrTargetNotAncestorOfHead
 	ErrAttestationSlotBeforeHead

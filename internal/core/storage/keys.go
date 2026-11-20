@@ -11,11 +11,7 @@ var (
 	KeyLatestFinalized = []byte("latest_finalized")
 )
 
-const (
-	LiveChainKeySize = 40
-	BlocksToKeep     = 21_600
-	StatesToKeep     = 3_000
-)
+const LiveChainKeySize = 40
 
 func EncodeLiveChainKey(slot uint64, root [32]byte) []byte {
 	key := make([]byte, LiveChainKeySize)

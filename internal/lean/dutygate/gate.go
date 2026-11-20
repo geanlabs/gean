@@ -32,12 +32,10 @@ type Gate struct {
 	onTransition func(Event)
 }
 
-func New(onTransition ...func(Event)) *Gate {
-	g := &Gate{}
-	if len(onTransition) > 0 {
-		g.onTransition = onTransition[0]
-	}
-	return g
+// New returns an open gate. onTransition, if not nil, is told each time the
+// gate opens or closes.
+func New(onTransition func(Event)) *Gate {
+	return &Gate{onTransition: onTransition}
 }
 
 func (g *Gate) IsClosed() bool {
@@ -80,13 +78,6 @@ func slotLag(wallSlot, seenSlot uint64) uint64 {
 		return 0
 	}
 	return wallSlot - seenSlot
-}
-
-func maxSlot(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func reopenLagThreshold() uint64 {

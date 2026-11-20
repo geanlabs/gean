@@ -199,14 +199,9 @@ func (e *Engine) sampleGossipMesh() {
 	e.topicMeshSizes.Store(&sizes)
 }
 
-// recordTableBytes refreshes the per-table storage-size gauge.
-//
-// This used to run on the import path, once per block. Both halves of that were
-// wrong: the backend estimate was a full scan of every table (see
-// storage.PebbleBackend.EstimateTableBytes), and the import path is the dispatch
-// goroutine, so the cost landed directly on the slot clock. A storage-size gauge
-// is coarse by nature and does not need per-block resolution; it is sampled on
-// its own goroutine now, like the gossip-mesh gauge.
+// recordTableBytes refreshes the per-table storage-size gauge. It is sampled on
+// its own goroutine, like the gossip-mesh gauge: a size gauge needs no
+// per-block resolution, and its cost must stay off the dispatch goroutine.
 func (e *Engine) recordTableBytes(ctx context.Context) {
 	if e.Store == nil || e.Store.Backend == nil {
 		return

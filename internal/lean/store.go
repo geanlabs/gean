@@ -93,12 +93,8 @@ func recoverStoreTime(s *store.ConsensusStore, clk clock.Clock, genesisTimeSec u
 	if genesisTimeSec > ^uint64(0)/1000 {
 		return fmt.Errorf("recover store time: genesis time %d overflows milliseconds", genesisTimeSec)
 	}
-	genesisMs := genesisTimeSec * 1000
 	nowMs := clock.UnixMilli(clk)
-	if nowMs <= genesisMs {
-		return s.PutTime(0)
-	}
-	intervals := (nowMs - genesisMs) / types.MillisecondsPerInterval
+	intervals := types.TotalIntervals(genesisTimeSec, nowMs)
 	if err := s.PutTime(intervals); err != nil {
 		return fmt.Errorf("recover store time: %w", err)
 	}

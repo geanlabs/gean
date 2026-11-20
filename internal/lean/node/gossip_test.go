@@ -55,7 +55,7 @@ func TestOnGossipAttestationBuffersOnlyPlausibleUnknownHead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := makeTestEngine()
-			e.AggCtl = role.New(true)
+			e.AggCtl = role.New(true, nil)
 			e.Store.SetTime(types.IntervalsPerSlot) // slot 1
 			e.onGossipAttestation(&types.SignedAttestation{
 				ValidatorID: 0,

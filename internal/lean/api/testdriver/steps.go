@@ -44,11 +44,7 @@ func (sess *Session) applyTick(step *specfixtures.ForkChoiceStep) error {
 	var target uint64
 	switch {
 	case step.Time != nil:
-		genesisMs := cfg.GenesisTime * 1000
-		timestampMs := *step.Time * 1000
-		if timestampMs >= genesisMs {
-			target = (timestampMs - genesisMs) / types.MillisecondsPerInterval
-		}
+		target = types.IntervalsFromUnixTime(*step.Time, cfg.GenesisTime)
 	case step.Interval != nil:
 		target = *step.Interval
 	default:

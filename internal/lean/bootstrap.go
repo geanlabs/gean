@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/multiformats/go-multiaddr"
+
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/p2p/discovery"
@@ -11,7 +13,6 @@ import (
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/syncer/checkpoint"
 	"github.com/geanlabs/gean/internal/lean/types"
-	"github.com/multiformats/go-multiaddr"
 )
 
 type startupInputs struct {
@@ -28,45 +29,39 @@ func loadStartupInputs(cfg Config) (*startupInputs, error) {
 
 	genesisConfig, err := genesis.LoadGenesisConfig(paths.config)
 	if err != nil {
-		logger.Error(logger.Node, "load genesis config: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("load genesis config: %w", err)
 	}
 	logger.Info(logger.Node, "genesis: time=%d validators=%d", genesisConfig.GenesisTime, len(genesisConfig.GenesisValidators))
 
 	bootnodes, err := discovery.LoadBootnodes(paths.bootnodes)
 	if err != nil {
-		logger.Error(logger.Node, "load bootnodes: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("load bootnodes: %w", err)
 	}
 	logger.Info(logger.Node, "bootnodes: %d loaded", len(bootnodes))
 
 	var discoveryBootnodes []*enode.Node
 	if cfg.Discovery {
 		if discoveryBootnodes, err = discovery.LoadENRs(paths.bootnodes); err != nil {
-			logger.Error(logger.Node, "load discv5 bootnodes: %v", err)
-			return nil, err
+			return nil, fmt.Errorf("load discv5 bootnodes: %w", err)
 		}
 	}
 
 	keyManager, err := xmss.LoadValidatorKeys(paths.validators, paths.keysDir, cfg.NodeID)
 	if err != nil {
-		logger.Error(logger.Node, "load validator keys: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("load validator keys: %w", err)
 	}
 	validators, err := genesisConfig.Validators()
 	if err != nil {
-		logger.Error(logger.Node, "genesis validators: %v", err)
 		keyManager.Close()
-		return nil, err
+		return nil, fmt.Errorf("genesis validators: %w", err)
 	}
 	registry := make([]xmss.RegistryKeys, len(validators))
 	for i, v := range validators {
 		registry[i] = xmss.RegistryKeys{AttestationPubkey: v.AttestationPubkey, ProposalPubkey: v.ProposalPubkey}
 	}
 	if err := keyManager.MatchRegistry(registry); err != nil {
-		logger.Error(logger.Node, "validator keys: %v", err)
 		keyManager.Close()
-		return nil, err
+		return nil, fmt.Errorf("validator keys: %w", err)
 	}
 	logger.Info(logger.Node, "validators: %d keys loaded for %s", len(keyManager.ValidatorIDs()), cfg.NodeID)
 
@@ -117,7 +112,6 @@ func bootstrapFromCheckpoint(s *store.ConsensusStore, genesisConfig *genesis.Gen
 	}
 	state, signedBlock, err := checkpoint.FetchCheckpointAnchor(checkpointURL, genesisConfig.GenesisTime, validators)
 	if err != nil {
-		logger.Error(logger.Sync, "checkpoint sync failed: %v", err)
 		return fmt.Errorf("checkpoint sync failed: %w", err)
 	}
 

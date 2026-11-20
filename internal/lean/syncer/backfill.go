@@ -12,11 +12,6 @@ import (
 )
 
 func (sd *SyncDriver) checkAndBackfill(ctx context.Context, peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage) {
-	if !sd.ready() {
-		return
-	}
-	ctx = sd.contextOrDefault(ctx)
-
 	if !sd.shouldBackfill(peerStatus) {
 		return
 	}
@@ -180,7 +175,7 @@ func requestCount(startSlot, headSlot uint64) uint64 {
 }
 
 func (sd *SyncDriver) fallbackHeadByRoot(ctx context.Context, peerID libp2ppeer.ID, peerStatus *p2p.StatusMessage, rangeErr error) {
-	if !sd.ready() || peerStatus == nil {
+	if peerStatus == nil {
 		return
 	}
 

@@ -50,7 +50,7 @@ func (m *AttestationSignatureMap) Insert(dataRoot [32]byte, data *types.Attestat
 	}
 	entry, ok := m.data[dataRoot]
 	if !ok {
-		entry = &AttestationDataEntry{Data: copyAttestationData(data)}
+		entry = &AttestationDataEntry{Data: data.Copy()}
 		m.data[dataRoot] = entry
 		m.order = append(m.order, dataRoot)
 	}
@@ -145,8 +145,8 @@ func (m *AttestationSignatureMap) Delete(keys []AttestationDeleteKey) {
 
 // PruneBelow drops signatures whose target checkpoint is finalized. The target
 // is the right key: it is what decides whether a vote can still advance
-// finality, and it is what the payload buffers prune on, so the two pools now
-// clear the same data roots instead of each keeping what the other dropped.
+// finality, and it is what the payload buffers prune on, so both pools clear
+// the same data roots.
 func (m *AttestationSignatureMap) PruneBelow(finalizedSlot uint64) int {
 	return m.pruneWhere(func(entry *AttestationDataEntry) bool {
 		return entryTargetSlot(entry) <= finalizedSlot
@@ -249,7 +249,7 @@ func (m *AttestationSignatureMap) Snapshot() map[[32]byte]*AttestationDataEntry 
 		}
 		signatures := make([]AttestationSignatureEntry, len(v.Signatures))
 		copy(signatures, v.Signatures)
-		snap[k] = &AttestationDataEntry{Data: copyAttestationData(v.Data), Signatures: signatures}
+		snap[k] = &AttestationDataEntry{Data: v.Data.Copy(), Signatures: signatures}
 	}
 	return snap
 }

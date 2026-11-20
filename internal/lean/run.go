@@ -2,6 +2,7 @@ package lean
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
@@ -43,8 +44,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	backend, s, err := openStore(cfg.DataDir)
 	if err != nil {
-		logger.Error(logger.Node, "open pebble: %v", err)
-		return err
+		return fmt.Errorf("open pebble: %w", err)
 	}
 	c.closeStore = backend.Close
 
@@ -66,8 +66,7 @@ func Run(ctx context.Context, cfg Config) error {
 	// entirely, and surfaces a read failure at startup instead of leaving the
 	// duty gate to act on an understated mark.
 	if err := s.SeedMaxStoredBlockSlot(); err != nil {
-		logger.Error(logger.Node, "seed max stored block slot: %v", err)
-		return err
+		return fmt.Errorf("seed max stored block slot: %w", err)
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -75,8 +74,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	p2pHost, err := setupP2P(runCtx, cfg, inputs.keyManager)
 	if err != nil {
-		logger.Error(logger.Network, "create p2p host: %v", err)
-		return err
+		return fmt.Errorf("create p2p host: %w", err)
 	}
 	c.closeNetwork = p2pHost.Close
 
@@ -99,7 +97,7 @@ func Run(ctx context.Context, cfg Config) error {
 	default:
 	}
 
-	aggCtl := role.NewWithHook(cfg.IsAggregator, metrics.SetIsAggregator)
+	aggCtl := role.New(cfg.IsAggregator, metrics.SetIsAggregator)
 	shadowRates := shadow.Rates{
 		AggregateSignatures:        cfg.ShadowAggregateSignaturesRate,
 		VerifySignature:            cfg.ShadowVerifySignatureRate,
@@ -115,8 +113,7 @@ func Run(ctx context.Context, cfg Config) error {
 	// exchange the sync driver hooks onto new connections.
 	if cfg.Discovery {
 		if err := p2pHost.StartDiscovery(cfg.DiscoveryPort, cfg.DiscoveryAdvertiseIP, inputs.discoveryBootnodes); err != nil {
-			logger.Error(logger.Network, "start discv5: %v", err)
-			return err
+			return fmt.Errorf("start discv5: %w", err)
 		}
 	}
 

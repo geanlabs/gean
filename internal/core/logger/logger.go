@@ -55,12 +55,6 @@ func SetQuiet(enabled bool) {
 	quiet = enabled
 }
 
-func IsQuiet() bool {
-	mu.Lock()
-	defer mu.Unlock()
-	return quiet
-}
-
 func emit(level, component, format string, args ...any) {
 	mu.Lock()
 	defer mu.Unlock()

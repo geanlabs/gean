@@ -23,7 +23,7 @@ func tryFinalize(
 		}
 	}
 
-	state.LatestFinalized = copyCheckpoint(source)
+	state.LatestFinalized = source.Copy()
 	shiftJustifiedSlots(state, state.LatestFinalized.Slot-finalizedSlot)
 
 	for root := range *justifications {

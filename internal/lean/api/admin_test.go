@@ -14,7 +14,7 @@ import (
 // value with the spec-exact JSON key "is_aggregator".
 func TestAggregatorStatusHandler(t *testing.T) {
 	for _, init := range []bool{false, true} {
-		ctl := role.New(init)
+		ctl := role.New(init, nil)
 		rec := httptest.NewRecorder()
 		AggregatorStatusHandler(ctl)(rec, httptest.NewRequest("GET", "/lean/v0/admin/aggregator", nil))
 
@@ -48,7 +48,7 @@ func TestAggregatorToggleHandler(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctl := role.New(tc.initial)
+			ctl := role.New(tc.initial, nil)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest("POST", "/lean/v0/admin/aggregator", strings.NewReader(tc.body))
 			AggregatorToggleHandler(ctl)(rec, req)
@@ -89,7 +89,7 @@ func TestAggregatorToggleHandler_BadRequest(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctl := role.New(true)
+			ctl := role.New(true, nil)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest("POST", "/lean/v0/admin/aggregator", strings.NewReader(tc.body))
 			AggregatorToggleHandler(ctl)(rec, req)

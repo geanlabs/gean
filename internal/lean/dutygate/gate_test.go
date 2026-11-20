@@ -3,14 +3,14 @@ package dutygate
 import "testing"
 
 func TestDutyGateStartsOpen(t *testing.T) {
-	g := New()
+	g := New(nil)
 	if g.IsClosed() {
 		t.Fatal("new gate should start open")
 	}
 }
 
 func TestDutyGateAllowsWhenInsideThreshold(t *testing.T) {
-	g := New()
+	g := New(nil)
 	if !g.Decide("attestation", 10, 6, 10) {
 		t.Fatal("lag at threshold should be allowed")
 	}
@@ -20,7 +20,7 @@ func TestDutyGateAllowsWhenInsideThreshold(t *testing.T) {
 }
 
 func TestDutyGateClosesWhenLagCrossesThreshold(t *testing.T) {
-	g := New()
+	g := New(nil)
 	if g.Decide("attestation", 10, 5, 5) {
 		t.Fatal("lag past threshold should be denied")
 	}
@@ -30,7 +30,7 @@ func TestDutyGateClosesWhenLagCrossesThreshold(t *testing.T) {
 }
 
 func TestDutyGateHysteresisStaysClosedAboveReopenThreshold(t *testing.T) {
-	g := New()
+	g := New(nil)
 	g.Decide("attestation", 10, 5, 5)
 	if !g.IsClosed() {
 		t.Fatal("setup: gate should be closed")
@@ -45,7 +45,7 @@ func TestDutyGateHysteresisStaysClosedAboveReopenThreshold(t *testing.T) {
 }
 
 func TestDutyGateHysteresisReopensAtThreshold(t *testing.T) {
-	g := New()
+	g := New(nil)
 	g.Decide("attestation", 10, 5, 5)
 	if !g.IsClosed() {
 		t.Fatal("setup: gate should be closed")
@@ -60,7 +60,7 @@ func TestDutyGateHysteresisReopensAtThreshold(t *testing.T) {
 }
 
 func TestDutyGateNetworkStallOverridesGate(t *testing.T) {
-	g := New()
+	g := New(nil)
 	g.Decide("attestation", 10, 5, 5)
 	if !g.IsClosed() {
 		t.Fatal("setup: gate should be closed")
@@ -96,7 +96,7 @@ func TestDutyGateMaxStoredBehindHeadDoesNotTriggerNetworkStall(t *testing.T) {
 }
 
 func TestDutyGateNetworkStallKeepsOpenGateOpen(t *testing.T) {
-	g := New()
+	g := New(nil)
 	if !g.Decide("block", 10, 1, 1) {
 		t.Fatal("network stall should keep duties live")
 	}
@@ -106,7 +106,7 @@ func TestDutyGateNetworkStallKeepsOpenGateOpen(t *testing.T) {
 }
 
 func TestDutyGateHeadAheadOfWallSaturatesAtZero(t *testing.T) {
-	g := New()
+	g := New(nil)
 	if !g.Decide("attestation", 10, 100, 100) {
 		t.Fatal("head ahead of wall should allow duties")
 	}

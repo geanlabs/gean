@@ -24,13 +24,10 @@ func addFinalizationBlock(e *Engine, genesis, root, parent [32]byte, slot uint64
 }
 
 // Finalization pruning is the only thing that shrinks TableStates and
-// TableBlockHeaders, and it reads its delete list from fork choice. For a long
-// time it deleted nothing at all: updateFinalizedFromHead pruned the ProtoArray
-// before calling PruneOnFinalization, so GetCanonicalAnalysis ran against an
-// array that no longer held the ancestors or the losing branches and returned
-// two empty lists. Nothing failed, nothing logged, and the two tables grew for
-// the life of the chain — which is what made the per-slot full-table scans on
-// the dispatch loop expensive enough to stall the slot clock.
+// TableBlockHeaders, and it reads its delete list from fork choice. Fork choice
+// must be analysed before its ProtoArray is pruned: a pruned array no longer
+// holds the ancestors or the losing branches, so the delete lists come back
+// empty and the tables grow for the life of the chain without any error.
 //
 // The shape here is: genesis -> a(1) -> b(2) -> c(3), with a losing fork x(2)
 // off a. Finalizing b must drop x entirely and drop a's state, while keeping

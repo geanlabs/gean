@@ -13,10 +13,12 @@ import (
 const (
 	// checkpointRequestTimeout bounds a single HTTP attempt.
 	checkpointRequestTimeout = 30 * time.Second
-	checkpointInitialBackoff = 1 * time.Second
 	checkpointMaxBackoff     = 8 * time.Second
 	checkpointMaxSSZBytes    = 64 << 20
 )
+
+// checkpointInitialBackoff is the first wait between fetch attempts; tests shorten it.
+var checkpointInitialBackoff = 1 * time.Second
 
 // checkpointFetchBudget bounds the whole anchor fetch across retries, shared by the
 // state and block requests. A checkpoint source can be briefly unready when this node
@@ -42,7 +44,7 @@ func fetchSSZ(url string, deadline time.Time) ([]byte, error) {
 			break
 		}
 
-		body, err := fetchSSZOnce(url, minDuration(checkpointRequestTimeout, remaining))
+		body, err := fetchSSZOnce(url, min(checkpointRequestTimeout, remaining))
 		if err == nil {
 			return body, nil
 		}
@@ -86,13 +88,6 @@ func fetchSSZOnce(url string, timeout time.Duration) ([]byte, error) {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	return body, nil
-}
-
-func minDuration(a, b time.Duration) time.Duration {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func readLimitedSSZ(r io.Reader, maxBytes int64) ([]byte, error) {

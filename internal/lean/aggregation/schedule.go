@@ -30,8 +30,8 @@ func (a *Aggregator) StartSession(nowMs, currentSlot uint64, isAggregator bool) 
 	// Aggregation is deliberately NOT behind the sync-lag duty gate, unlike block
 	// production and attestation.
 	//
-	// gean used to gate it, reasoning that aggregates built on a stale view get
-	// dropped anyway. That holds with several aggregators. It inverts with one:
+	// Gating it on the grounds that aggregates built on a stale view get dropped
+	// anyway holds with several aggregators, but inverts with one:
 	// the sole aggregator withholds the aggregates the network is waiting on at
 	// exactly the moment it is furthest behind, so nothing justifies, nothing
 	// finalizes, finalization pruning never runs, and the lag that closed the

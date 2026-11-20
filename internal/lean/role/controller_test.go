@@ -6,16 +6,16 @@ import (
 )
 
 func TestController_InitialValue(t *testing.T) {
-	if !New(true).Get() {
+	if !New(true, nil).Get() {
 		t.Fatal("seeded=true but Get returned false")
 	}
-	if New(false).Get() {
+	if New(false, nil).Get() {
 		t.Fatal("seeded=false but Get returned true")
 	}
 }
 
 func TestController_SetReturnsPrevious(t *testing.T) {
-	c := New(false)
+	c := New(false, nil)
 	if prev := c.Set(true); prev {
 		t.Fatalf("first flip: prev=%v, want false", prev)
 	}
@@ -31,7 +31,7 @@ func TestController_SetReturnsPrevious(t *testing.T) {
 }
 
 func TestController_Idempotent(t *testing.T) {
-	c := New(true)
+	c := New(true, nil)
 	if prev := c.Set(true); !prev {
 		t.Fatalf("idempotent enable: prev=%v, want true", prev)
 	}
@@ -39,7 +39,7 @@ func TestController_Idempotent(t *testing.T) {
 		t.Fatal("idempotent enable drifted value")
 	}
 
-	c2 := New(false)
+	c2 := New(false, nil)
 	if prev := c2.Set(false); prev {
 		t.Fatalf("idempotent disable: prev=%v, want false", prev)
 	}
@@ -61,7 +61,7 @@ func TestController_NilReceiver(t *testing.T) {
 
 func TestController_ChangeHook(t *testing.T) {
 	var values []bool
-	c := NewWithHook(false, func(v bool) {
+	c := New(false, func(v bool) {
 		values = append(values, v)
 	})
 
@@ -81,7 +81,7 @@ func TestController_ChangeHook(t *testing.T) {
 }
 
 func TestController_Concurrent(t *testing.T) {
-	c := New(false)
+	c := New(false, nil)
 	var wg sync.WaitGroup
 	for i := range 64 {
 		wg.Add(1)

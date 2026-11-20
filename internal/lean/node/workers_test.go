@@ -33,7 +33,7 @@ func TestRunAttestationWorkerStopsOnContextCancel(t *testing.T) {
 // workers: each verify holds an OS thread in cgo.
 func TestAttestationWorkerBoundsConcurrentVerifies(t *testing.T) {
 	e := makeTestEngine()
-	e.AggCtl = role.New(true)
+	e.AggCtl = role.New(true, nil)
 	e.Shadow = shadow.Rates{VerifySignature: 20} // 50ms per verify
 	genesis := e.Store.Head()
 	checkpoint := &types.Checkpoint{Root: genesis}
@@ -68,7 +68,7 @@ func TestAttestationWorkerBoundsConcurrentVerifies(t *testing.T) {
 // must not let runAttestationWorker return while a verify is still running.
 func TestRunAttestationWorkerWaitsForInFlightVerify(t *testing.T) {
 	e := makeTestEngine()
-	e.AggCtl = role.New(true)
+	e.AggCtl = role.New(true, nil)
 	e.Shadow = shadow.Rates{VerifySignature: 5} // 200ms per verify
 	checkpoint := &types.Checkpoint{Root: e.Store.Head()}
 

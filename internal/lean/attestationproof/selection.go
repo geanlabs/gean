@@ -1,6 +1,7 @@
 package attestationproof
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -22,7 +23,7 @@ func Select(
 	}
 
 	if len(selected) == 1 {
-		return attestationForProof(data, selected[0]), copyProof(selected[0]), true, nil
+		return attestationForProof(data, selected[0]), selected[0].Copy(), true, nil
 	}
 
 	if merger == nil {
@@ -36,7 +37,7 @@ func Select(
 	if !validProof(merged) {
 		return fallbackSelection(data, selected[0], ErrMergeUnavailable)
 	}
-	return attestationForProof(data, merged), copyProof(merged), true, nil
+	return attestationForProof(data, merged), merged.Copy(), true, nil
 }
 
 func fallbackSelection(
@@ -44,7 +45,7 @@ func fallbackSelection(
 	proof *types.SingleMessageAggregate,
 	err error,
 ) (*types.AggregatedAttestation, *types.SingleMessageAggregate, bool, error) {
-	return attestationForProof(data, proof), copyProof(proof), true, err
+	return attestationForProof(data, proof), proof.Copy(), true, err
 }
 
 // maxMergedProofs bounds how many proofs one proposal merges. Merge builds a
@@ -107,8 +108,8 @@ func usableProofs(proofs []*types.SingleMessageAggregate) []*types.SingleMessage
 
 func attestationForProof(data *types.AttestationData, proof *types.SingleMessageAggregate) *types.AggregatedAttestation {
 	return &types.AggregatedAttestation{
-		AggregationBits: copyBytes(proof.Participants),
-		Data:            copyAttestationData(data),
+		AggregationBits: bytes.Clone(proof.Participants),
+		Data:            data.Copy(),
 	}
 }
 

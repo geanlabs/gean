@@ -15,8 +15,6 @@ func newTestStoreForBlocks() *store.ConsensusStore {
 	return store.NewConsensusStore(storage.NewInMemoryBackend())
 }
 
-// emptyChainConfig is needed because the SignedBlock SSZ schema reaches through
-// internal/types/block.go down to fields that need to round-trip.
 func makeSignedBlockForTest(slot, proposer uint64) *types.SignedBlock {
 	return &types.SignedBlock{
 		Block: &types.Block{

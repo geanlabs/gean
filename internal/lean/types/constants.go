@@ -46,8 +46,3 @@ const (
 	MaxRequestBlocks         = 1 << 10
 	MinSlotsForBlockRequests = 3600
 )
-
-// gean's own settings, not part of leanSpec.
-const (
-	SyncToleranceSlots = 2
-)

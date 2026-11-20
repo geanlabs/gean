@@ -373,7 +373,7 @@ func (e *Engine) produceBlockWithSignatures(slot, validatorIndex uint64) (*types
 		Slot:            slot,
 		ProposerIndex:   validatorIndex,
 		ParentRoot:      headRoot,
-		KnownBlockRoots: blockbuilder.KnownRootsFunc(e.Store.HasBlockHeader),
+		KnownBlockRoots: e.Store.HasBlockHeader,
 		Payloads:        payloadsFromEntries(e.Store.KnownPayloads.Entries()),
 		ProofMerger:     attestationproof.NewMerger(e.Store.PubKeyCache),
 	})

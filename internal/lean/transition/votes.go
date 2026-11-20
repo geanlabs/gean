@@ -59,11 +59,6 @@ func VoteInvalidReason(state *types.State, source, target *types.Checkpoint) (st
 	return "", nil
 }
 
-func IsValidVote(state *types.State, source, target *types.Checkpoint) bool {
-	reason, err := VoteInvalidReason(state, source, target)
-	return err == nil && reason == ""
-}
-
 // HeadMatchesChain reports whether the attestation head sits on the canonical
 // chain at its slot. Mirrors the head clause of leanSpec attestation_data_matches_chain;
 // applied both in process_attestations and in block production.

@@ -28,28 +28,6 @@ type aggregationGroup struct {
 	settled bool
 }
 
-// orderedGroups lists the snapshot's aggregation work current-slot first, then
-// frontier-first by ascending target slot.
-//
-// This slot's votes are the only ones with a deadline: they must be aggregated
-// and gossiped in time to reach the next block, while a backlog entry loses
-// nothing by waiting a slot. Ordering purely by target slot puts the oldest
-// backlog ahead of them, so a session capped at two groups can spend both on
-// stale work and let the current slot's own votes go unaggregated.
-//
-// Within each tier the frontier rule stands. Finalization advances only when
-// the checkpoint
-// immediately after the current source is justified (leanSpec
-// process_attestations finalizes a source when no justifiable slot sits between
-// it and its justified target). So when a backlog does not all fit the session
-// budget, spending it on the lowest unjustified targets keeps finalization
-// moving; ordering newest-first would advance the head while the finalization
-// frontier starves — the shape of the observed stall (head advancing, finality
-// lagging). Only the group order changes; every aggregate produced is spec-valid.
-//
-// Settled targets follow all open ones, whatever their slot, so they cannot push
-// a target that can still advance finality out of a capped session. They are
-// worth only their head votes, so among them a newer target goes first.
 // groupSkips counts the groups a session dropped, by reason. Without it a
 // session that drops every group is reported as produced=0, which reads exactly
 // like having nothing to aggregate — the ambiguity that hid an aggregator
@@ -100,6 +78,28 @@ func (g groupSkips) summary() string {
 	return b.String()
 }
 
+// orderedGroups lists the snapshot's aggregation work current-slot first, then
+// frontier-first by ascending target slot.
+//
+// This slot's votes are the only ones with a deadline: they must be aggregated
+// and gossiped in time to reach the next block, while a backlog entry loses
+// nothing by waiting a slot. Ordering purely by target slot puts the oldest
+// backlog ahead of them, so a session capped at two groups can spend both on
+// stale work and let the current slot's own votes go unaggregated.
+//
+// Within each tier the frontier rule stands. Finalization advances only when
+// the checkpoint immediately after the current source is justified (leanSpec
+// process_attestations finalizes a source when no justifiable slot sits between
+// it and its justified target). So when a backlog does not all fit the session
+// budget, spending it on the lowest unjustified targets keeps finalization
+// moving; ordering newest-first would advance the head while the finalization
+// frontier starves — the shape of the observed stall (head advancing, finality
+// lagging). Only the group order changes; every aggregate produced is
+// spec-valid.
+//
+// Settled targets follow all open ones, whatever their slot, so they cannot push
+// a target that can still advance finality out of a capped session. They are
+// worth only their head votes, so among them a newer target goes first.
 func orderedGroups(snap *Snapshot, skips groupSkips) []aggregationGroup {
 	dataRoots := make(map[[32]byte]bool)
 	for dr := range snap.attSigs {
@@ -195,12 +195,6 @@ const MaxGroupsWhenProposing = 1
 // took 2.0-5.2s and produced ~146 KB of proof, and carrying more signatures
 // barely moved either figure. Cost is modelled as perGroupSeconds plus
 // children x perChildSeconds, with raw signatures free at the margin.
-//
-// The previous model divided a group's duration by its signature count and read
-// the result as a per-signature price. That charged the whole fixed cost to
-// whichever signatures happened to be in the group, concluded a signature costs
-// seconds, and sized every later group at the two-signature floor — a
-// self-confirming estimate that paid full price for half the coverage.
 type unitCostEstimator struct {
 	perChildSeconds float64
 	perGroupSeconds float64

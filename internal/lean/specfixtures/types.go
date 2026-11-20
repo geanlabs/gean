@@ -3,21 +3,12 @@ package specfixtures
 import "encoding/json"
 
 type StateTransitionFixture struct {
-	Network                string         `json:"network"`
-	LeanEnv                string         `json:"leanEnv"`
-	Pre                    TestState      `json:"pre"`
-	Blocks                 []TestBlock    `json:"blocks"`
-	Post                   *TestPostState `json:"post"`
-	ExpectException        string         `json:"expectException"`
-	ExpectExceptionMessage string         `json:"expectExceptionMessage"`
-	RejectionReason        string         `json:"rejectionReason"`
-}
-
-func (f *StateTransitionFixture) ExpectedException() string {
-	if f.ExpectException != "" {
-		return f.ExpectException
-	}
-	return f.RejectionReason
+	Network         string         `json:"network"`
+	LeanEnv         string         `json:"leanEnv"`
+	Pre             TestState      `json:"pre"`
+	Blocks          []TestBlock    `json:"blocks"`
+	Post            *TestPostState `json:"post"`
+	RejectionReason string         `json:"rejectionReason"`
 }
 
 type TestState struct {
@@ -70,7 +61,6 @@ type TestDataList struct {
 type TestValidator struct {
 	AttestationPubkey string `json:"attestationPublicKey"`
 	ProposalPubkey    string `json:"proposalPublicKey"`
-	Pubkey            string `json:"pubkey"`
 	Index             uint64 `json:"index"`
 }
 

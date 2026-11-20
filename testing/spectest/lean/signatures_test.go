@@ -77,18 +77,9 @@ func (fs *sigState) toState() *types.State {
 	}
 
 	for _, v := range fs.Validators.Data {
-		var attPk, propPk [types.PubkeySize]byte
-		if v.AttestationPubkey != "" {
-			attPk = parseHexPubkey(v.AttestationPubkey)
-			propPk = parseHexPubkey(v.ProposalPubkey)
-		} else {
-			pk := parseHexPubkey(v.Pubkey)
-			attPk = pk
-			propPk = pk
-		}
 		state.Validators = append(state.Validators, &types.Validator{
-			AttestationPubkey: attPk,
-			ProposalPubkey:    propPk,
+			AttestationPubkey: parseHexPubkey(v.AttestationPubkey),
+			ProposalPubkey:    parseHexPubkey(v.ProposalPubkey),
 			Index:             v.Index,
 		})
 	}
@@ -187,11 +178,10 @@ func TestSpecSignatures(t *testing.T) {
 func runSignatureTest(t *testing.T, tt *sigTest) {
 	t.Helper()
 
-	// 1. Convert anchor state.
 	anchorState := tt.AnchorState.toState()
 
-	// 2. Fill state root in header if zero (genesis case), then compute anchor block root.
-	// Matches initStoreFromState in main.go.
+	// A genesis header has a zero state root; fill it before computing the anchor
+	// block root, as the node does at startup (internal/lean/store.go).
 	stateRoot, _ := anchorState.HashTreeRoot()
 	header := anchorState.LatestBlockHeader
 	if header.StateRoot == types.ZeroRoot {
@@ -202,7 +192,6 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 		t.Fatalf("computing anchor block root: %v", err)
 	}
 
-	// 3. Initialize store with in-memory backend.
 	backend := storage.NewInMemoryBackend()
 	s := store.NewConsensusStore(backend)
 
@@ -223,10 +212,8 @@ func runSignatureTest(t *testing.T, tt *sigTest) {
 		s.SetTime(signedBlock.Block.Slot * types.IntervalsPerSlot)
 	}
 
-	// 5. Call OnBlock WITH signature verification.
 	err = importer.OnBlock(s, signedBlock)
 
-	// 6. Check result against expectation.
 	expectFailure := tt.RejectionReason != nil
 
 	if expectFailure {

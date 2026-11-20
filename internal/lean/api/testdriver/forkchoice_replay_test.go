@@ -3,6 +3,7 @@
 package testdriver
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -197,7 +198,7 @@ func blockRootSlot(b *specfixtures.TestBlock) (string, uint64, bool) {
 	if err != nil {
 		return "", 0, false
 	}
-	return norm(hex(root[:])), block.Slot, true
+	return norm(hex.EncodeToString(root[:])), block.Slot, true
 }
 
 func anchorRootSlot(t *testing.T, anchorRaw json.RawMessage) (string, uint64) {
@@ -213,16 +214,6 @@ func anchorRootSlot(t *testing.T, anchorRaw json.RawMessage) (string, uint64) {
 }
 
 func norm(s string) string { return strings.ToLower(strings.TrimPrefix(s, "0x")) }
-
-func hex(b []byte) string {
-	const h = "0123456789abcdef"
-	out := make([]byte, len(b)*2)
-	for i, c := range b {
-		out[i*2] = h[c>>4]
-		out[i*2+1] = h[c&0xf]
-	}
-	return string(out)
-}
 
 func hasField(raw json.RawMessage, key string) bool {
 	var m map[string]json.RawMessage

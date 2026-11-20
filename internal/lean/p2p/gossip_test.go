@@ -2,20 +2,14 @@ package p2p
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/core/p2p/gossip"
-	"github.com/geanlabs/gean/internal/core/p2p/host"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -115,28 +109,6 @@ func TestDecodeAndValidate(t *testing.T) {
 	}
 }
 
-func newGossipTestHost(t *testing.T) *Host {
-	t.Helper()
-	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := priv.Raw()
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "node.key")
-	if err := os.WriteFile(path, []byte(hex.EncodeToString(raw)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	h, err := NewHost(context.Background(), host.Config{NodeKeyPath: path}, 1, nil, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(h.Close)
-	return h
-}
-
 func connectGossipHosts(t *testing.T, a, b *Host) {
 	t.Helper()
 	if err := a.LibP2PHost().Connect(context.Background(), peer.AddrInfo{ID: b.PeerID(), Addrs: b.Addrs()}); err != nil {
@@ -156,7 +128,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 }
 
 func TestValidateGossipIgnoresUntilListenersStart(t *testing.T) {
-	h := newGossipTestHost(t)
+	h := newTestHost(t, nil)
 	msg := &pubsub.Message{}
 	if got := h.validateGossip(context.Background(), peer.ID("remote"), msg); got != pubsub.ValidationIgnore {
 		t.Fatalf("verdict before listeners start=%v, want ignore", got)
@@ -167,7 +139,7 @@ func TestValidateGossipIgnoresUntilListenersStart(t *testing.T) {
 // connected through it. The far host's size hook runs before its own validator,
 // so it records every block-topic payload that arrives, valid or not.
 func TestInvalidGossipIsNotRelayed(t *testing.T) {
-	origin, relay, far := newGossipTestHost(t), newGossipTestHost(t), newGossipTestHost(t)
+	origin, relay, far := newTestHost(t, nil), newTestHost(t, nil), newTestHost(t, nil)
 	var mu sync.Mutex
 	var arrived []int
 	far.GossipHooks.BlockSize = func(n int) {

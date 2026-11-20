@@ -10,7 +10,7 @@ import (
 )
 
 func (sd *SyncDriver) OnPeerConnected(peerID libp2ppeer.ID) {
-	if !sd.ready() || !sd.tasks.Enter() {
+	if !sd.tasks.Enter() {
 		return
 	}
 	defer sd.tasks.Leave()
@@ -20,11 +20,6 @@ func (sd *SyncDriver) OnPeerConnected(peerID libp2ppeer.ID) {
 }
 
 func (sd *SyncDriver) refreshSyncFromPeers(ctx context.Context) {
-	if !sd.ready() {
-		return
-	}
-	ctx = sd.contextOrDefault(ctx)
-
 	peers := sd.p2p.Peers()
 	if len(peers) == 0 {
 		return
@@ -37,10 +32,9 @@ func (sd *SyncDriver) refreshSyncFromPeers(ctx context.Context) {
 }
 
 func (sd *SyncDriver) pollPeer(ctx context.Context, peerID libp2ppeer.ID, ourStatus *p2p.StatusMessage) {
-	if !sd.ready() || ourStatus == nil {
+	if ourStatus == nil {
 		return
 	}
-	ctx = sd.contextOrDefault(ctx)
 
 	peerStatus, err := sd.p2p.SendStatusRequest(ctx, peerID, ourStatus)
 	if err != nil {

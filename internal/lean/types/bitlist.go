@@ -118,3 +118,13 @@ func bitlistByteLen(length uint64) (int, bool) {
 	}
 	return int(n), true
 }
+
+// BitlistIsSubset reports whether every bit set in sub is also set in super.
+func BitlistIsSubset(super, sub []byte) bool {
+	for _, index := range BitlistIndices(sub) {
+		if !BitlistGet(super, index) {
+			return false
+		}
+	}
+	return true
+}

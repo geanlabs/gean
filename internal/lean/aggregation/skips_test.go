@@ -13,7 +13,7 @@ import (
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-// A target whose own state was never stored must no longer cost its group.
+// A target whose own state was never stored still aggregates.
 // The validator registry is written once at genesis and never by the state
 // transition, so the head state resolves the same signers — this is the case
 // that silently produced nothing for 355 consecutive slots on devnet-5.
@@ -32,8 +32,8 @@ func TestAggregateResolvesSignersWithoutTargetState(t *testing.T) {
 
 	_, _, _, _, skips := aggregateFromSnapshot(clock.Real{}, nil, snap, xmss.NewPubKeyCache(), time.Time{}, MaxGroupsPerSession, shadow.Rates{}, newUnitCostEstimator())
 
-	// No group may be dropped for a reason that no longer exists; these groups
-	// carry no signatures, so they fall out as too-few-signers instead.
+	// These groups carry no signatures, so they reach signer selection and fall
+	// out as too-few-signers.
 	if got := skips[metrics.AggGroupSkipTooFewSigners]; got != 2 {
 		t.Errorf("too_few_signers=%d, want 2 (groups reached signer selection)", got)
 	}

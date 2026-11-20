@@ -1,7 +1,5 @@
 package types
 
-import "encoding/hex"
-
 var ZeroRoot [RootSize]byte
 
 func IsZeroRoot(root [RootSize]byte) bool {
@@ -20,8 +18,4 @@ func IsProposer(slot, validatorIndex, numValidators uint64) bool {
 		return false
 	}
 	return ProposerIndex(slot, numValidators) == validatorIndex
-}
-
-func ShortRoot(root [RootSize]byte) string {
-	return "0x" + hex.EncodeToString(root[:4])
 }

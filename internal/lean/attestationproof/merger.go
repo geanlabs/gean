@@ -1,6 +1,7 @@
 package attestationproof
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -88,7 +89,7 @@ func (m *Merger) Merge(
 		}
 		children = append(children, xmss.ChildProof{
 			Pubkeys: pubkeys,
-			Proof:   copyBytes(proof.Proof),
+			Proof:   bytes.Clone(proof.Proof),
 		})
 	}
 

@@ -3,6 +3,7 @@
 package lean
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -13,13 +14,11 @@ import (
 type TestFixture map[string]StateTransitionTest
 
 type StateTransitionTest struct {
-	Network                string         `json:"network"`
-	LeanEnv                string         `json:"leanEnv"`
-	Pre                    TestState      `json:"pre"`
-	Blocks                 []TestBlock    `json:"blocks"`
-	Post                   *TestPostState `json:"post"`
-	ExpectException        string         `json:"expectException"`
-	ExpectExceptionMessage string         `json:"expectExceptionMessage"`
+	Network string         `json:"network"`
+	LeanEnv string         `json:"leanEnv"`
+	Pre     TestState      `json:"pre"`
+	Blocks  []TestBlock    `json:"blocks"`
+	Post    *TestPostState `json:"post"`
 }
 
 type TestState struct {
@@ -132,14 +131,6 @@ func parseHexPubkey(s string) [types.PubkeySize]byte {
 		panic(fmt.Sprintf("parseHexPubkey: %v", err))
 	}
 	return pk
-}
-
-func parseHexSignature(s string) [types.SignatureSize]byte {
-	sig, err := specfixtures.ParseHexSignature(s)
-	if err != nil {
-		panic(fmt.Sprintf("parseHexSignature: %v", err))
-	}
-	return sig
 }
 
 func (ts *TestState) ToState() *types.State {
@@ -361,7 +352,7 @@ func (tp *TestPostState) Validate(state *types.State) error {
 			}
 			want := parseHexBytes(s)
 			got := state.HistoricalBlockHashes[i]
-			if !bytesEqual(got, want) {
+			if !bytes.Equal(got, want) {
 				return fmt.Errorf("historicalBlockHashes[%d]: got 0x%x, want 0x%x", i, got, want)
 			}
 		}
@@ -369,7 +360,7 @@ func (tp *TestPostState) Validate(state *types.State) error {
 
 	if tp.JustifiedSlots != nil {
 		wantBitlist := parseBoolBitlist(tp.JustifiedSlots.Data)
-		if !bytesEqual(state.JustifiedSlots, wantBitlist) {
+		if !bytes.Equal(state.JustifiedSlots, wantBitlist) {
 			return fmt.Errorf("justifiedSlots mismatch: got %x, want %x",
 				state.JustifiedSlots, wantBitlist)
 		}
@@ -388,7 +379,7 @@ func (tp *TestPostState) Validate(state *types.State) error {
 			}
 			want := parseHexBytes(s)
 			got := state.JustificationsRoots[i]
-			if !bytesEqual(got, want) {
+			if !bytes.Equal(got, want) {
 				return fmt.Errorf("justificationsRoots[%d]: got 0x%x, want 0x%x", i, got, want)
 			}
 		}
@@ -396,23 +387,11 @@ func (tp *TestPostState) Validate(state *types.State) error {
 
 	if tp.JustificationsValidators != nil {
 		wantBitlist := parseBoolBitlist(tp.JustificationsValidators.Data)
-		if !bytesEqual(state.JustificationsValidators, wantBitlist) {
+		if !bytes.Equal(state.JustificationsValidators, wantBitlist) {
 			return fmt.Errorf("justificationsValidators mismatch: got %x, want %x",
 				state.JustificationsValidators, wantBitlist)
 		}
 	}
 
 	return nil
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

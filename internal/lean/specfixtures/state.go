@@ -47,30 +47,19 @@ func (ts *TestState) ToState() (*types.State, error) {
 	}
 
 	for i, v := range ts.Validators.Data {
-		var attPk, propPk [types.PubkeySize]byte
-		if v.AttestationPubkey != "" || v.ProposalPubkey != "" {
-			if v.AttestationPubkey == "" {
-				return nil, fmt.Errorf("validators[%d].attestationPubkey: missing", i)
-			}
-			if v.ProposalPubkey == "" {
-				return nil, fmt.Errorf("validators[%d].proposalPubkey: missing", i)
-			}
-			if attPk, err = ParseHexPubkey(v.AttestationPubkey); err != nil {
-				return nil, fmt.Errorf("validators[%d].attestationPubkey: %w", i, err)
-			}
-			if propPk, err = ParseHexPubkey(v.ProposalPubkey); err != nil {
-				return nil, fmt.Errorf("validators[%d].proposalPubkey: %w", i, err)
-			}
-		} else {
-			if v.Pubkey == "" {
-				return nil, fmt.Errorf("validators[%d].pubkey: missing", i)
-			}
-			pk, perr := ParseHexPubkey(v.Pubkey)
-			if perr != nil {
-				return nil, fmt.Errorf("validators[%d].pubkey: %w", i, perr)
-			}
-			attPk = pk
-			propPk = pk
+		if v.AttestationPubkey == "" {
+			return nil, fmt.Errorf("validators[%d].attestationPubkey: missing", i)
+		}
+		if v.ProposalPubkey == "" {
+			return nil, fmt.Errorf("validators[%d].proposalPubkey: missing", i)
+		}
+		attPk, err := ParseHexPubkey(v.AttestationPubkey)
+		if err != nil {
+			return nil, fmt.Errorf("validators[%d].attestationPubkey: %w", i, err)
+		}
+		propPk, err := ParseHexPubkey(v.ProposalPubkey)
+		if err != nil {
+			return nil, fmt.Errorf("validators[%d].proposalPubkey: %w", i, err)
 		}
 		state.Validators = append(state.Validators, &types.Validator{AttestationPubkey: attPk, ProposalPubkey: propPk, Index: v.Index})
 	}

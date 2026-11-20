@@ -33,9 +33,6 @@ type SyncDriver struct {
 }
 
 func NewSyncDriver(ctx context.Context, node LocalNode, store *store.ConsensusStore, p2pHost SyncDriverP2P) *SyncDriver {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	return &SyncDriver{
 		ctx:      ctx,
 		node:     node,
@@ -57,10 +54,6 @@ func (sd *SyncDriver) Wait() {
 }
 
 func (sd *SyncDriver) Run() {
-	if !sd.ready() {
-		return
-	}
-
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 

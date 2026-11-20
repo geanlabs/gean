@@ -178,7 +178,7 @@ func TestBuildBlockReportsMismatchedPayloadRoot(t *testing.T) {
 		Slot:            1,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		KnownBlockRoots: rootSet{parentRoot: true}.has,
 		Payloads: []AttestationPayload{{
 			DataRoot: [32]byte{0xee},
 			Data:     data,
@@ -218,7 +218,7 @@ func TestBuildBlockReportsSkippedPayloadIssues(t *testing.T) {
 		Slot:            3,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		KnownBlockRoots: rootSet{parentRoot: true}.has,
 		Payloads: []AttestationPayload{
 			{DataRoot: dataRoot, Data: data, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: staleRoot, Data: &staleSourceVote, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
@@ -255,7 +255,7 @@ func TestBuildBlockRecordsProofMergeFallback(t *testing.T) {
 		Slot:            3,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		KnownBlockRoots: rootSet{parentRoot: true}.has,
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
@@ -290,7 +290,7 @@ func TestPlanAttestationsUsesPostHeaderState(t *testing.T) {
 		Slot:            3,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		KnownBlockRoots: rootSet{parentRoot: true}.has,
 		Payloads: []AttestationPayload{{
 			DataRoot: dataRoot,
 			Data:     data,
@@ -358,7 +358,7 @@ func TestPlanAttestationsCarriesTrialState(t *testing.T) {
 		Slot:            3,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{root1: true, parentRoot: true},
+		KnownBlockRoots: rootSet{root1: true, parentRoot: true}.has,
 		Payloads: []AttestationPayload{
 			{DataRoot: firstRoot, Data: first, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: secondRoot, Data: second, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
@@ -426,7 +426,7 @@ func TestPlanAttestationsContinuesWhenJustifiedSlotsChange(t *testing.T) {
 		Slot:            7,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{roots[2]: true, parentRoot: true},
+		KnownBlockRoots: rootSet{roots[2]: true, parentRoot: true}.has,
 		Payloads: []AttestationPayload{
 			{DataRoot: firstRoot, Data: first, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: secondRoot, Data: second, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
@@ -502,7 +502,7 @@ func TestPlanAttestationsDoesNotReportSkippedPayloadsWhenFull(t *testing.T) {
 		Slot:            2,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{parentRoot: true},
+		KnownBlockRoots: rootSet{parentRoot: true}.has,
 		Payloads:        payloads,
 	})
 	if err != nil {
@@ -535,7 +535,7 @@ func TestPlanAttestationsKeepsEveryDataAtOneSlot(t *testing.T) {
 		Slot:            3,
 		ProposerIndex:   0,
 		ParentRoot:      parentRoot,
-		KnownBlockRoots: RootSet{root1: true, parentRoot: true},
+		KnownBlockRoots: rootSet{root1: true, parentRoot: true}.has,
 		Payloads: []AttestationPayload{
 			{DataRoot: dataRoot, Data: data, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},
 			{DataRoot: hashAttestationData(t, &rival), Data: &rival, Proofs: []*types.SingleMessageAggregate{mockProof([]uint64{0})}},

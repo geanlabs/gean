@@ -13,11 +13,7 @@ type InMemoryBackend struct {
 }
 
 func NewInMemoryBackend() *InMemoryBackend {
-	tables := make(map[Table]map[string][]byte)
-	for _, t := range AllTables {
-		tables[t] = make(map[string][]byte)
-	}
-	return &InMemoryBackend{tables: tables}
+	return &InMemoryBackend{tables: make(map[Table]map[string][]byte)}
 }
 
 func (b *InMemoryBackend) BeginRead() (ReadView, error) {

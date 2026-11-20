@@ -146,7 +146,7 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 	if fx.InitialIsAggregator != nil {
 		initialAgg = *fx.InitialIsAggregator
 	}
-	aggCtl := role.New(initialAgg)
+	aggCtl := role.New(initialAgg, nil)
 
 	method := fx.Method
 	if method == "" {

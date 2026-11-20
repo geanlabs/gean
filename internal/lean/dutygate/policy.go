@@ -8,7 +8,7 @@ type decision struct {
 
 func decide(closed bool, duty string, wallSlot, headSlot, maxStoredSlot uint64) decision {
 	lag := slotLag(wallSlot, headSlot)
-	maxSeenSlot := maxSlot(headSlot, maxStoredSlot)
+	maxSeenSlot := max(headSlot, maxStoredSlot)
 	networkLag := slotLag(wallSlot, maxSeenSlot)
 	if networkLag > NetworkStallThreshold {
 		return networkStallDecision(closed, duty, wallSlot, headSlot, maxSeenSlot, lag, networkLag)

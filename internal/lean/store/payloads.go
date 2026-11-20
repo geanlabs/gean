@@ -36,7 +36,7 @@ func (pb *PayloadBuffer) PushData(dataRoot [32]byte, attData *types.AttestationD
 	if _, ok := pb.data[dataRoot]; ok {
 		return
 	}
-	pb.data[dataRoot] = &PayloadEntry{Data: copyAttestationData(attData)}
+	pb.data[dataRoot] = &PayloadEntry{Data: attData.Copy()}
 	pb.order = append(pb.order, dataRoot)
 }
 
@@ -48,8 +48,8 @@ func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData,
 		return
 	}
 
-	storedData := copyAttestationData(attData)
-	storedProof := copyProof(proof)
+	storedData := attData.Copy()
+	storedProof := proof.Copy()
 
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
@@ -58,13 +58,13 @@ func (pb *PayloadBuffer) Push(dataRoot [32]byte, attData *types.AttestationData,
 	}
 	if entry, ok := pb.data[dataRoot]; ok {
 		for _, existing := range entry.Proofs {
-			if validPayloadProof(existing) && bitlistContains(existing.Participants, proof.Participants) {
+			if validPayloadProof(existing) && types.BitlistIsSubset(existing.Participants, proof.Participants) {
 				return
 			}
 		}
 		kept := entry.Proofs[:0]
 		for _, existing := range entry.Proofs {
-			if bitlistContains(proof.Participants, existing.Participants) {
+			if types.BitlistIsSubset(proof.Participants, existing.Participants) {
 				pb.totalProofs--
 				continue
 			}
@@ -119,8 +119,8 @@ func (pb *PayloadBuffer) Drain() []PayloadKV {
 			if validPayloadProof(proof) {
 				result = append(result, PayloadKV{
 					DataRoot: dataRoot,
-					Data:     copyAttestationData(entry.Data),
-					Proof:    copyProof(proof),
+					Data:     entry.Data.Copy(),
+					Proof:    proof.Copy(),
 				})
 			}
 		}
@@ -185,7 +185,7 @@ func (pb *PayloadBuffer) ExtractLatestAttestations(finalizedSlot uint64) map[uin
 					!outranksVote(entry.Data.Slot, dataRoot, existing.Slot, chosenRoot[vid]) {
 					continue
 				}
-				result[vid] = copyAttestationData(entry.Data)
+				result[vid] = entry.Data.Copy()
 				chosenRoot[vid] = dataRoot
 			}
 		}
@@ -263,13 +263,13 @@ func (pb *PayloadBuffer) Entries() map[[32]byte]*PayloadEntry {
 		proofs := make([]*types.SingleMessageAggregate, 0, len(entry.Proofs))
 		for _, proof := range entry.Proofs {
 			if validPayloadProof(proof) {
-				proofs = append(proofs, copyProof(proof))
+				proofs = append(proofs, proof.Copy())
 			}
 		}
 		if len(proofs) == 0 {
 			continue
 		}
-		out[dataRoot] = &PayloadEntry{Data: copyAttestationData(entry.Data), Proofs: proofs}
+		out[dataRoot] = &PayloadEntry{Data: entry.Data.Copy(), Proofs: proofs}
 	}
 	return out
 }
@@ -309,13 +309,4 @@ func validPayloadProof(proof *types.SingleMessageAggregate) bool {
 	return proof != nil &&
 		len(proof.Proof) > 0 &&
 		types.BitlistCount(proof.Participants) > 0
-}
-
-func bitlistContains(superset, subset []byte) bool {
-	for _, index := range types.BitlistIndices(subset) {
-		if !types.BitlistGet(superset, index) {
-			return false
-		}
-	}
-	return true
 }

@@ -13,12 +13,7 @@ func OnTick(
 	if s == nil {
 		return
 	}
-	genesisTimeMs := s.Config().GenesisTime * 1000
-	var timeDeltaMs uint64
-	if timestampMs > genesisTimeMs {
-		timeDeltaMs = timestampMs - genesisTimeMs
-	}
-	time := timeDeltaMs / types.MillisecondsPerInterval
+	time := types.TotalIntervals(s.Config().GenesisTime, timestampMs)
 
 	storeTime := s.Time()
 	if time > storeTime && time-storeTime > types.IntervalsPerSlot {

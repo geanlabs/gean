@@ -55,8 +55,8 @@ func alignedTicks(ctx context.Context, clk clock.Clock, genesisTime uint64) <-ch
 // the first interval boundary after nowMs, and never one at or before lastMs,
 // the boundary delivered previously (zero before the first). Holding to lastMs
 // keeps delivery monotonic when the wall clock steps backwards. If genesis is
-// unrepresentable it falls back to a plain interval from now, the old
-// free-running behaviour, rather than stopping the clock.
+// unrepresentable it falls back to a plain interval from now rather than
+// stopping the clock.
 func nextTickAt(genesisTime, nowMs, lastMs uint64) uint64 {
 	target, ok := types.NextIntervalBoundaryMs(genesisTime, nowMs)
 	if !ok {

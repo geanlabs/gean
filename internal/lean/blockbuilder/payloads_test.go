@@ -188,12 +188,12 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 		Data:     data,
 		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 	}
-	knownRoots := RootSet{parentRoot: true}
+	knownRoots := rootSet{parentRoot: true}.has
 	if err := payloadBuildIssue(workingState, knownRoots, payload); err != nil {
 		t.Fatalf("expected payload to be buildable, got %v", err)
 	}
 
-	if err := payloadBuildIssue(workingState, nil, payload); !errors.Is(err, ErrPayloadHeadUnknown) {
+	if err := payloadBuildIssue(workingState, rootSet{}.has, payload); !errors.Is(err, ErrPayloadHeadUnknown) {
 		t.Fatalf("payload build issue=%v, want ErrPayloadHeadUnknown", err)
 	} else if !IsExpectedSkip(err) {
 		t.Fatalf("head unknown skip was not marked expected: %v", err)
@@ -204,7 +204,7 @@ func TestPayloadBuildIssueUsesTransitionVoteRules(t *testing.T) {
 	offHead := *data
 	forkHead := [32]byte{0xfe}
 	offHead.Head = &types.Checkpoint{Slot: data.Head.Slot, Root: forkHead}
-	if err := payloadBuildIssue(workingState, RootSet{parentRoot: true, forkHead: true},
+	if err := payloadBuildIssue(workingState, rootSet{parentRoot: true, forkHead: true}.has,
 		AttestationPayload{DataRoot: dataRoot, Data: &offHead, Proofs: payload.Proofs}); !errors.Is(err, ErrPayloadHeadOffChain) {
 		t.Fatalf("payload build issue=%v, want ErrPayloadHeadOffChain", err)
 	} else if !IsExpectedSkip(err) {
@@ -279,7 +279,7 @@ func TestPayloadBuildIssueSkipsStaleSource(t *testing.T) {
 		Data:     &staleSource,
 		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
 	}
-	err = payloadBuildIssue(workingState, RootSet{parentRoot: true}, payload)
+	err = payloadBuildIssue(workingState, rootSet{parentRoot: true}.has, payload)
 	if !errors.Is(err, ErrPayloadSourceNotCurrentJustified) {
 		t.Fatalf("payload build issue=%v, want ErrPayloadSourceNotCurrentJustified", err)
 	}
@@ -301,7 +301,7 @@ func TestPayloadBuildIssueAllowsGenesisSelfVote(t *testing.T) {
 		Target: &types.Checkpoint{Root: root},
 	}
 	dataRoot := hashAttestationData(t, data)
-	err := payloadBuildIssue(state, RootSet{root: true}, AttestationPayload{
+	err := payloadBuildIssue(state, rootSet{root: true}.has, AttestationPayload{
 		DataRoot: dataRoot,
 		Data:     data,
 		Proofs:   []*types.SingleMessageAggregate{mockProof([]uint64{0})},
@@ -310,3 +310,8 @@ func TestPayloadBuildIssueAllowsGenesisSelfVote(t *testing.T) {
 		t.Fatalf("genesis self-vote rejected: %v", err)
 	}
 }
+
+// rootSet is a fixed set of known block roots for tests.
+type rootSet map[[32]byte]bool
+
+func (r rootSet) has(root [32]byte) bool { return r[root] }

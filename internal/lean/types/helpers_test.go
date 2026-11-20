@@ -44,14 +44,6 @@ func TestIsZeroRoot(t *testing.T) {
 	}
 }
 
-func TestShortRoot(t *testing.T) {
-	root := [RootSize]byte{0xab, 0xcd, 0xef, 0x01}
-	s := ShortRoot(root)
-	if s != "0xabcdef01" {
-		t.Fatalf("expected 0xabcdef01, got %s", s)
-	}
-}
-
 func TestStateNumValidatorsNilSafe(t *testing.T) {
 	var state *State
 	if state.NumValidators() != 0 {
