@@ -6,15 +6,23 @@
 
 ## Overview
 
-gean is an Ethereum consensus client written in Go. Today it runs **Lean Ethereum consensus**,
-with post-quantum XMSS signatures; Ethereum beacon chain support is on the way, in the same binary.
+gean is an Ethereum consensus client written in Go: one binary, with a subcommand per chain.
+
+| Chain | Command | Status |
+|---|---|---|
+| Lean Ethereum | `gean lean` | Running on pq-devnet-5 |
+| Ethereum Beacon Chain | `gean beacon` | Planned |
+
+On Lean Ethereum, gean implements:
+
+- **Networking:** libp2p over QUIC, gossipsub, status and block sync, checkpoint sync, optional discv5
+- **Consensus:** state transition and 3SF-mini fork choice, tested against the
+  [leanSpec](https://github.com/leanEthereum/leanSpec) fixtures
+- **Validator duties:** attestations, block building, and post-quantum XMSS signatures aggregated
+  into leanVM proofs
+- **Operations:** Prometheus metrics and the `/lean/v0` API
 
 Lean Ethereum is at the devnet stage, and so is gean. Expect breaking changes.
-
-- **Post-quantum:** validators sign with XMSS, and aggregators combine signatures into leanVM proofs.
-- **Spec-tested:** consensus logic is tested against the [leanSpec](https://github.com/leanEthereum/leanSpec) fixtures.
-- **One client, two chains:** shared code in `internal/core` never depends on a chain, so the beacon
-  chain can be added beside Lean.
 
 ## Building
 
