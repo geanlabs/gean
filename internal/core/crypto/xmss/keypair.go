@@ -84,14 +84,9 @@ func (kp *ValidatorKeyPair) Close() {
 	}
 }
 
-// loaded reports whether kp holds a key that has not been closed.
-func (kp *ValidatorKeyPair) loaded() bool {
-	return kp != nil && kp.handle != nil
-}
-
-// keyPairFromSecret builds the key pair for a validator's serialized secret
+// KeyPairFromSecret builds the key pair for a validator's serialized secret
 // key.
-func keyPairFromSecret(skBytes []byte, index uint64) (*ValidatorKeyPair, error) {
+func KeyPairFromSecret(skBytes []byte, index uint64) (*ValidatorKeyPair, error) {
 	handle := C.hashsig_keypair_from_secret_key((*C.uint8_t)(unsafe.Pointer(&skBytes[0])), C.size_t(len(skBytes)))
 	if handle == nil {
 		return nil, fmt.Errorf("%w: validator %d", ErrKeypairParseFailed, index)

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geanlabs/gean/internal/lean/keys"
+
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
@@ -161,7 +163,7 @@ func proposalTestEngine(t *testing.T) *Engine {
 	s.SetHead(root)
 	s.InsertState(root, state)
 	s.InsertBlockHeader(root, state.LatestBlockHeader)
-	e := &Engine{Clock: clock.Real{}, Store: s, Keys: &xmss.KeyManager{}, proposals: newProposer()}
+	e := &Engine{Clock: clock.Real{}, Store: s, Keys: &keys.Manager{}, proposals: newProposer()}
 	e.Aggregator = e.newAggregator()
 	e.Importer = e.newImporter()
 	return e
@@ -313,7 +315,7 @@ func TestProposalGateWaitEndsAtSlotDeadline(t *testing.T) {
 func TestProposalSigningErrorRetainsDuty(t *testing.T) {
 	e := proposalTestEngine(t)
 	// A closed key reaches Sign and fails without native signing or real keys.
-	e.Keys = xmss.NewKeyManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
+	e.Keys = keys.NewManager(nil, map[uint64]*xmss.ValidatorKeyPair{0: {}})
 	e.maybePropose(1, 0)
 	duty := <-e.proposals.duties
 	result := e.buildProposal(duty)
@@ -388,7 +390,7 @@ func earlyProposalEngine(t *testing.T) *Engine {
 	t.Helper()
 	e := proposalTestEngine(t)
 	// Validator IDs come from the attestation keys.
-	e.Keys = xmss.NewKeyManager(map[uint64]*xmss.ValidatorKeyPair{0: {}}, nil)
+	e.Keys = keys.NewManager(map[uint64]*xmss.ValidatorKeyPair{0: {}}, nil)
 	// Fork choice keeps the head on slot 0's block through the ticks.
 	head := e.Store.Head()
 	e.Store.SetLatestJustified(&types.Checkpoint{Root: head})

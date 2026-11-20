@@ -3,8 +3,6 @@
 package xmss
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -19,11 +17,7 @@ func TestFakeKeyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "sk")
-	if err := os.WriteFile(path, secret, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := loadKeypair("", path, 0)
+	loaded, err := KeyPairFromSecret(secret, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

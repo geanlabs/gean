@@ -23,7 +23,7 @@ type ValidatorKeyPair struct {
 	Index  uint64
 }
 
-func keyPairFromSecret(skBytes []byte, index uint64) (*ValidatorKeyPair, error) {
+func KeyPairFromSecret(skBytes []byte, index uint64) (*ValidatorKeyPair, error) {
 	return &ValidatorKeyPair{
 		secret: append([]byte(nil), skBytes...),
 		public: sha256.Sum256(skBytes),
@@ -32,7 +32,7 @@ func keyPairFromSecret(skBytes []byte, index uint64) (*ValidatorKeyPair, error) 
 }
 
 func GenerateKeyPair(seedPhrase string, activationEpoch, numActiveEpochs uint64) (*ValidatorKeyPair, error) {
-	return keyPairFromSecret([]byte("fake xmss secret key: "+seedPhrase), 0)
+	return KeyPairFromSecret([]byte("fake xmss secret key: "+seedPhrase), 0)
 }
 
 func (kp *ValidatorKeyPair) loaded() bool {

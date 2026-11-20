@@ -4,6 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/geanlabs/gean/internal/lean/keys"
+
+	"github.com/multiformats/go-multiaddr"
+
 	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/lifecycle"
@@ -14,10 +18,9 @@ import (
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/syncer"
 	"github.com/geanlabs/gean/internal/lean/types"
-	"github.com/multiformats/go-multiaddr"
 )
 
-func setupP2P(ctx context.Context, cfg Config, keyManager *xmss.KeyManager) (*p2p.Host, error) {
+func setupP2P(ctx context.Context, cfg Config, keyManager *keys.Manager) (*p2p.Host, error) {
 	var validatorIDs []uint64
 	if keyManager != nil {
 		validatorIDs = keyManager.ValidatorIDs()

@@ -1,4 +1,4 @@
-package xmss
+package keys
 
 import (
 	"fmt"
@@ -8,21 +8,26 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
+	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-type KeyManager struct {
-	attestationKeys map[uint64]*ValidatorKeyPair
-	proposalKeys    map[uint64]*ValidatorKeyPair
+// Manager holds a node's validator keys: an attestation key and a proposal key
+// per validator.
+type Manager struct {
+	attestationKeys map[uint64]*xmss.ValidatorKeyPair
+	proposalKeys    map[uint64]*xmss.ValidatorKeyPair
 }
 
-func NewKeyManager(attestationKeys, proposalKeys map[uint64]*ValidatorKeyPair) *KeyManager {
-	return &KeyManager{
+func NewManager(attestationKeys, proposalKeys map[uint64]*xmss.ValidatorKeyPair) *Manager {
+	return &Manager{
 		attestationKeys: attestationKeys,
 		proposalKeys:    proposalKeys,
 	}
 }
 
-func (km *KeyManager) ValidatorIDs() []uint64 {
+func (km *Manager) ValidatorIDs() []uint64 {
 	if km == nil {
 		return nil
 	}
@@ -36,14 +41,14 @@ func (km *KeyManager) ValidatorIDs() []uint64 {
 	return ids
 }
 
-func (km *KeyManager) GetAttestationKey(validatorID uint64) *ValidatorKeyPair {
+func (km *Manager) GetAttestationKey(validatorID uint64) *xmss.ValidatorKeyPair {
 	if km == nil {
 		return nil
 	}
 	return km.attestationKeys[validatorID]
 }
 
-func (km *KeyManager) GetProposalKey(validatorID uint64) *ValidatorKeyPair {
+func (km *Manager) GetProposalKey(validatorID uint64) *xmss.ValidatorKeyPair {
 	if km == nil {
 		return nil
 	}
@@ -53,24 +58,24 @@ func (km *KeyManager) GetProposalKey(validatorID uint64) *ValidatorKeyPair {
 // SignAttestationRoot signs an attestation's message root at slot with the
 // validator's attestation key. The caller computes the root; this package
 // knows nothing about the chain's attestation format.
-func (km *KeyManager) SignAttestationRoot(validatorID uint64, slot uint64, msgRoot [32]byte) ([SignatureSize]byte, error) {
+func (km *Manager) SignAttestationRoot(validatorID uint64, slot uint64, msgRoot [32]byte) ([xmss.SignatureSize]byte, error) {
 	if km == nil {
-		return [SignatureSize]byte{}, fmt.Errorf("key manager is nil")
+		return [xmss.SignatureSize]byte{}, fmt.Errorf("key manager is nil")
 	}
 	kp := km.GetAttestationKey(validatorID)
-	if !kp.loaded() {
-		return [SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
+	if kp == nil {
+		return [xmss.SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
 	}
 
 	s := uint32(slot)
 	if uint64(s) != slot {
-		return [SignatureSize]byte{}, fmt.Errorf("slot %d overflows uint32", slot)
+		return [xmss.SignatureSize]byte{}, fmt.Errorf("slot %d overflows uint32", slot)
 	}
 
 	return kp.Sign(s, msgRoot)
 }
 
-func (km *KeyManager) Close() {
+func (km *Manager) Close() {
 	if km == nil {
 		return
 	}
@@ -82,17 +87,10 @@ func (km *KeyManager) Close() {
 	}
 }
 
-// RegistryKeys is one validator's pubkeys as recorded in the chain's validator
-// registry.
-type RegistryKeys struct {
-	AttestationPubkey [PubkeySize]byte
-	ProposalPubkey    [PubkeySize]byte
-}
-
 // MatchRegistry checks every loaded key against its validator's registry pubkeys, so a swapped,
 // shared, or foreign key file stops the node before it signs anything. validators is indexed by
 // validator ID.
-func (km *KeyManager) MatchRegistry(validators []RegistryKeys) error {
+func (km *Manager) MatchRegistry(validators []*types.Validator) error {
 	for _, id := range km.ValidatorIDs() {
 		if id >= uint64(len(validators)) {
 			return fmt.Errorf("validator %d not in registry of %d validators", id, len(validators))
@@ -107,7 +105,7 @@ func (km *KeyManager) MatchRegistry(validators []RegistryKeys) error {
 	return nil
 }
 
-func matchPubkey(kp *ValidatorKeyPair, want [PubkeySize]byte, id uint64, role string) error {
+func matchPubkey(kp *xmss.ValidatorKeyPair, want [types.PubkeySize]byte, id uint64, role string) error {
 	got, err := kp.PublicKeyBytes()
 	if err != nil {
 		return fmt.Errorf("validator %d %s key: %w", id, role, err)
@@ -125,10 +123,10 @@ type annotatedValidator struct {
 	ProposalSkFile    string `yaml:"proposal_sk_file"`
 }
 
-// LoadValidatorKeys loads a node's attestation and proposal keys. Entries use either gean keygen's
+// Load loads a node's attestation and proposal keys. Entries use either gean keygen's
 // attestation_sk_file/proposal_sk_file pair or lean-quickstart's one privkey_file per role, with
 // the role named in the file name. Every validator must end up with exactly one key per role.
-func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, error) {
+func Load(annotatedPath, keysDir, nodeID string) (*Manager, error) {
 	data, err := os.ReadFile(annotatedPath)
 	if err != nil {
 		return nil, fmt.Errorf("read annotated validators: %w", err)
@@ -196,8 +194,8 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 		}
 	}
 
-	attestationKeys := make(map[uint64]*ValidatorKeyPair, len(attestationFiles))
-	proposalKeys := make(map[uint64]*ValidatorKeyPair, len(proposalFiles))
+	attestationKeys := make(map[uint64]*xmss.ValidatorKeyPair, len(attestationFiles))
+	proposalKeys := make(map[uint64]*xmss.ValidatorKeyPair, len(proposalFiles))
 	for index, file := range attestationFiles {
 		kp, err := loadKeypair(keysDir, file, index)
 		if err != nil {
@@ -213,10 +211,10 @@ func LoadValidatorKeys(annotatedPath, keysDir, nodeID string) (*KeyManager, erro
 		proposalKeys[index] = kp
 	}
 
-	return NewKeyManager(attestationKeys, proposalKeys), nil
+	return NewManager(attestationKeys, proposalKeys), nil
 }
 
-func loadKeypair(keysDir, skFile string, index uint64) (*ValidatorKeyPair, error) {
+func loadKeypair(keysDir, skFile string, index uint64) (*xmss.ValidatorKeyPair, error) {
 	skPath := skFile
 	if !filepath.IsAbs(skPath) {
 		skPath = filepath.Join(keysDir, skFile)
@@ -230,5 +228,5 @@ func loadKeypair(keysDir, skFile string, index uint64) (*ValidatorKeyPair, error
 		return nil, fmt.Errorf("secret key is empty")
 	}
 
-	return keyPairFromSecret(skBytes, index)
+	return xmss.KeyPairFromSecret(skBytes, index)
 }

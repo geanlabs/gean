@@ -3,10 +3,11 @@ package lean
 import (
 	"fmt"
 
+	"github.com/geanlabs/gean/internal/lean/keys"
+
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/multiformats/go-multiaddr"
 
-	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/p2p/discovery"
 	"github.com/geanlabs/gean/internal/lean/genesis"
@@ -21,7 +22,7 @@ type startupInputs struct {
 	// discoveryBootnodes are the bootnode ENRs discv5 starts from, loaded
 	// only when discovery runs.
 	discoveryBootnodes []*enode.Node
-	keyManager         *xmss.KeyManager
+	keyManager         *keys.Manager
 }
 
 func loadStartupInputs(cfg Config) (*startupInputs, error) {
@@ -46,7 +47,7 @@ func loadStartupInputs(cfg Config) (*startupInputs, error) {
 		}
 	}
 
-	keyManager, err := xmss.LoadValidatorKeys(paths.validators, paths.keysDir, cfg.NodeID)
+	keyManager, err := keys.Load(paths.validators, paths.keysDir, cfg.NodeID)
 	if err != nil {
 		return nil, fmt.Errorf("load validator keys: %w", err)
 	}
@@ -55,11 +56,7 @@ func loadStartupInputs(cfg Config) (*startupInputs, error) {
 		keyManager.Close()
 		return nil, fmt.Errorf("genesis validators: %w", err)
 	}
-	registry := make([]xmss.RegistryKeys, len(validators))
-	for i, v := range validators {
-		registry[i] = xmss.RegistryKeys{AttestationPubkey: v.AttestationPubkey, ProposalPubkey: v.ProposalPubkey}
-	}
-	if err := keyManager.MatchRegistry(registry); err != nil {
+	if err := keyManager.MatchRegistry(validators); err != nil {
 		keyManager.Close()
 		return nil, fmt.Errorf("validator keys: %w", err)
 	}

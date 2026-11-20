@@ -1,6 +1,6 @@
 //go:build !fakecrypto
 
-package xmss
+package keys
 
 import (
 	"os"
@@ -8,11 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-func TestKeyManagerValidatorIDsSorted(t *testing.T) {
-	km := NewKeyManager(map[uint64]*ValidatorKeyPair{
+func TestManagerValidatorIDsSorted(t *testing.T) {
+	km := NewManager(map[uint64]*xmss.ValidatorKeyPair{
 		7: nil,
 		1: nil,
 		3: nil,
@@ -30,8 +31,8 @@ func TestKeyManagerValidatorIDsSorted(t *testing.T) {
 	}
 }
 
-func TestKeyManagerNilSafeAccessors(t *testing.T) {
-	var km *KeyManager
+func TestManagerNilSafeAccessors(t *testing.T) {
+	var km *Manager
 	if ids := km.ValidatorIDs(); ids != nil {
 		t.Fatalf("ValidatorIDs=%v, want nil", ids)
 	}
@@ -53,7 +54,7 @@ func writeKeyFiles(t *testing.T, dir string, names ...string) map[string][types.
 	t.Helper()
 	pubkeys := make(map[string][types.PubkeySize]byte, len(names))
 	for _, name := range names {
-		kp, err := GenerateKeyPair("keys-test-"+name, 0, 1<<10)
+		kp, err := xmss.GenerateKeyPair("keys-test-"+name, 0, 1<<10)
 		if err != nil {
 			t.Fatalf("generate %s: %v", name, err)
 		}
@@ -72,16 +73,16 @@ func writeKeyFiles(t *testing.T, dir string, names ...string) map[string][types.
 	return pubkeys
 }
 
-func loadAnnotated(t *testing.T, dir, entries string) (*KeyManager, error) {
+func loadAnnotated(t *testing.T, dir, entries string) (*Manager, error) {
 	t.Helper()
 	path := filepath.Join(dir, "validators.yaml")
 	if err := os.WriteFile(path, []byte("node-a:\n"+entries), 0o600); err != nil {
 		t.Fatalf("write annotated validators: %v", err)
 	}
-	return LoadValidatorKeys(path, dir, "node-a")
+	return Load(path, dir, "node-a")
 }
 
-func TestLoadValidatorKeys(t *testing.T) {
+func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	writeKeyFiles(t, dir, "v_attester_key_sk.ssz", "v_proposer_key_sk.ssz", "v_sk.ssz", "v_attester_proposer_sk.ssz")
 
@@ -139,7 +140,7 @@ func TestLoadValidatorKeys(t *testing.T) {
 	}
 }
 
-func TestKeyManagerMatchRegistry(t *testing.T) {
+func TestManagerMatchRegistry(t *testing.T) {
 	dir := t.TempDir()
 	pubkeys := writeKeyFiles(t, dir, "v_attester_key_sk.ssz", "v_proposer_key_sk.ssz")
 	att, prop := pubkeys["v_attester_key_sk.ssz"], pubkeys["v_proposer_key_sk.ssz"]
@@ -160,19 +161,19 @@ func TestKeyManagerMatchRegistry(t *testing.T) {
 	tests := []struct {
 		name     string
 		entries  string
-		registry []RegistryKeys
+		registry []*types.Validator
 		wantErr  string
 	}{
-		{"matching keys", pair, []RegistryKeys{{AttestationPubkey: att, ProposalPubkey: prop}}, ""},
-		{"swapped keys", pair, []RegistryKeys{{AttestationPubkey: prop, ProposalPubkey: att}}, "attestation key"},
+		{"matching keys", pair, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, ""},
+		{"swapped keys", pair, []*types.Validator{{AttestationPubkey: prop, ProposalPubkey: att}}, "attestation key"},
 		{"one key in both roles", `
   - {index: 0, privkey_file: v_attester_key_sk.ssz}
   - {index: 0, privkey_file: copy_proposer_key_sk.ssz}
-`, []RegistryKeys{{AttestationPubkey: att, ProposalPubkey: prop}}, "proposal key"},
+`, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, "proposal key"},
 		{"validator outside registry", `
   - {index: 1, privkey_file: v_attester_key_sk.ssz}
   - {index: 1, privkey_file: v_proposer_key_sk.ssz}
-`, []RegistryKeys{{AttestationPubkey: att, ProposalPubkey: prop}}, "not in registry"},
+`, []*types.Validator{{AttestationPubkey: att, ProposalPubkey: prop}}, "not in registry"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -207,14 +208,14 @@ func TestLoadKeypairRejectsEmptySecretKey(t *testing.T) {
 	}
 }
 
-func TestKeyManagerDualKeyRouting(t *testing.T) {
-	attKp, err := GenerateKeyPair("test-attestation-key-0", 0, 1<<10)
+func TestManagerDualKeyRouting(t *testing.T) {
+	attKp, err := xmss.GenerateKeyPair("test-attestation-key-0", 0, 1<<10)
 	if err != nil {
 		t.Fatalf("generate attestation keypair: %v", err)
 	}
 	defer attKp.Close()
 
-	propKp, err := GenerateKeyPair("test-proposal-key-0", 0, 1<<10)
+	propKp, err := xmss.GenerateKeyPair("test-proposal-key-0", 0, 1<<10)
 	if err != nil {
 		t.Fatalf("generate proposal keypair: %v", err)
 	}
@@ -232,9 +233,9 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 		t.Fatal("attestation and proposal keys should be different")
 	}
 
-	attestationKeys := map[uint64]*ValidatorKeyPair{0: attKp}
-	proposalKeys := map[uint64]*ValidatorKeyPair{0: propKp}
-	km := NewKeyManager(attestationKeys, proposalKeys)
+	attestationKeys := map[uint64]*xmss.ValidatorKeyPair{0: attKp}
+	proposalKeys := map[uint64]*xmss.ValidatorKeyPair{0: propKp}
+	km := NewManager(attestationKeys, proposalKeys)
 
 	if km.GetAttestationKey(0) != attKp {
 		t.Fatal("GetAttestationKey returned wrong key")
@@ -268,7 +269,7 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignAttestationRoot: %v", err)
 	}
-	if attSig == [SignatureSize]byte{} {
+	if attSig == [xmss.SignatureSize]byte{} {
 		t.Fatal("SignAttestationRoot produced zero signature")
 	}
 
@@ -285,7 +286,7 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attestation data root: %v", err)
 	}
-	valid, err := VerifySignatureSSZ(attPk, 1, dataRoot, attSig)
+	valid, err := xmss.VerifySignatureSSZ(attPk, 1, dataRoot, attSig)
 	if err != nil {
 		t.Fatalf("verify attestation sig: %v", err)
 	}
@@ -293,7 +294,7 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 		t.Fatal("attestation signature should verify with attestation key")
 	}
 
-	valid, err = VerifySignatureSSZ(propPk, 1, blockRoot, blockSig)
+	valid, err = xmss.VerifySignatureSSZ(propPk, 1, blockRoot, blockSig)
 	if err != nil {
 		t.Fatalf("verify block sig: %v", err)
 	}
@@ -301,7 +302,7 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 		t.Fatal("block signature should verify with proposal key")
 	}
 
-	valid, err = VerifySignatureSSZ(propPk, 1, dataRoot, attSig)
+	valid, err = xmss.VerifySignatureSSZ(propPk, 1, dataRoot, attSig)
 	if err != nil {
 		t.Fatalf("cross verify attestation sig: %v", err)
 	}
@@ -309,7 +310,7 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 		t.Fatal("attestation signature should NOT verify with proposal key")
 	}
 
-	valid, err = VerifySignatureSSZ(attPk, 1, blockRoot, blockSig)
+	valid, err = xmss.VerifySignatureSSZ(attPk, 1, blockRoot, blockSig)
 	if err != nil {
 		t.Fatalf("cross verify block sig: %v", err)
 	}
@@ -318,34 +319,10 @@ func TestKeyManagerDualKeyRouting(t *testing.T) {
 	}
 }
 
-func TestValidatorKeyPairRejectsClosedKey(t *testing.T) {
-	kp, err := GenerateKeyPair("test-closed-keypair", 0, 1<<10)
-	if err != nil {
-		t.Fatalf("generate keypair: %v", err)
-	}
-	kp.Close()
-
-	if kp.PublicKeyPtr() != nil {
-		t.Fatal("closed keypair should not expose public key pointer")
-	}
-	if kp.PrivateKeyPtr() != nil {
-		t.Fatal("closed keypair should not expose private key pointer")
-	}
-	if _, err := kp.Sign(0, [32]byte{}); err == nil || !strings.Contains(err.Error(), "keypair is nil or closed") {
-		t.Fatalf("Sign error=%v, want closed keypair error", err)
-	}
-	if _, err := kp.PublicKeyBytes(); err == nil || !strings.Contains(err.Error(), "keypair is nil or closed") {
-		t.Fatalf("PublicKeyBytes error=%v, want closed keypair error", err)
-	}
-	if _, err := kp.PrivateKeyBytes(); err == nil || !strings.Contains(err.Error(), "keypair is nil or closed") {
-		t.Fatalf("PrivateKeyBytes error=%v, want closed keypair error", err)
-	}
-}
-
-func TestKeyManagerSignErrors(t *testing.T) {
-	km := NewKeyManager(
-		map[uint64]*ValidatorKeyPair{},
-		map[uint64]*ValidatorKeyPair{},
+func TestManagerSignErrors(t *testing.T) {
+	km := NewManager(
+		map[uint64]*xmss.ValidatorKeyPair{},
+		map[uint64]*xmss.ValidatorKeyPair{},
 	)
 
 	_, err := km.SignAttestationRoot(99, 1, [32]byte{})

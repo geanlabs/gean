@@ -5,8 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/geanlabs/gean/internal/lean/keys"
+
 	"github.com/geanlabs/gean/internal/core/clock"
-	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/lifecycle"
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/pending"
@@ -38,7 +39,7 @@ type Engine struct {
 	Store          *store.ConsensusStore
 	FC             *forkchoice.ForkChoice
 	P2P            *p2p.Host
-	Keys           *xmss.KeyManager
+	Keys           *keys.Manager
 	AggCtl         *role.Controller
 	DutyGate       *dutygate.Gate
 	CommitteeCount uint64
@@ -109,7 +110,7 @@ func New(
 	s *store.ConsensusStore,
 	fc *forkchoice.ForkChoice,
 	p2pHost *p2p.Host,
-	keys *xmss.KeyManager,
+	keyManager *keys.Manager,
 	aggCtl *role.Controller,
 	committeeCount uint64,
 	shadowRates shadow.Rates,
@@ -120,7 +121,7 @@ func New(
 		Store:               s,
 		FC:                  fc,
 		P2P:                 p2pHost,
-		Keys:                keys,
+		Keys:                keyManager,
 		AggCtl:              aggCtl,
 		DutyGate:            dutygate.New(logDutyGateEvent),
 		CommitteeCount:      committeeCount,
