@@ -7,11 +7,8 @@
 ## Overview
 
 gean is an Ethereum consensus client written in Go: one binary, with a subcommand per chain.
-
-| Chain | Command | Status |
-|---|---|---|
-| [Lean Ethereum](#lean-ethereum--gean-lean) | `gean lean` | Running on pq-devnet-5 |
-| [Ethereum Beacon Chain](#ethereum-beacon-chain--gean-beacon) | `gean beacon` | Planned |
+[`gean lean`](#lean-ethereum--gean-lean) runs Lean Ethereum, on pq-devnet-5;
+[`gean beacon`](#ethereum-beacon-chain--gean-beacon), for the Ethereum Beacon Chain, is planned.
 
 ## Building
 
