@@ -14,6 +14,7 @@ import (
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/geanlabs/gean/internal/core/p2p/gossip"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -55,7 +56,7 @@ func encodedGossip(t *testing.T, msg interface{ MarshalSSZ() ([]byte, error) }) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return SnappyRawEncode(data)
+	return gossip.Compress(data)
 }
 
 func gossipBlock(slot uint64) *types.SignedBlock {
@@ -76,7 +77,7 @@ func gossipAttestation(validatorID uint64) *types.SignedAttestation {
 func TestDecodeAndValidate(t *testing.T) {
 	h := &Host{committeeCount: 4}
 	var blockSizes []int
-	h.Hooks.GossipBlockSize = func(n int) { blockSizes = append(blockSizes, n) }
+	h.GossipHooks.BlockSize = func(n int) { blockSizes = append(blockSizes, n) }
 
 	block := encodedGossip(t, gossipBlock(7))
 	tests := []struct {
@@ -89,7 +90,7 @@ func TestDecodeAndValidate(t *testing.T) {
 	}{
 		{"block passes the node's verdict", BlockTopic(), block, Ignore, Ignore, false},
 		{"bad snappy", BlockTopic(), []byte{0xff, 0xff, 0xff}, Accept, Reject, true},
-		{"bad ssz", BlockTopic(), SnappyRawEncode([]byte{1, 2, 3}), Accept, Reject, true},
+		{"bad ssz", BlockTopic(), gossip.Compress([]byte{1, 2, 3}), Accept, Reject, true},
 		{"vote on its subnet", AttestationSubnetTopic(1), encodedGossip(t, gossipAttestation(5)), Accept, Accept, false},
 		{"vote on another subnet", AttestationSubnetTopic(2), encodedGossip(t, gossipAttestation(5)), Accept, Reject, true},
 		{"near-miss attestation topic", "/leanconsensus/12345678/not_attestation_0/ssz_snappy", block, Accept, Reject, true},
@@ -108,7 +109,7 @@ func TestDecodeAndValidate(t *testing.T) {
 			}
 		})
 	}
-	if raw, _ := SnappyRawDecode(block); len(blockSizes) == 0 || blockSizes[0] != len(raw) {
+	if raw, _ := gossip.Decompress(block); len(blockSizes) == 0 || blockSizes[0] != len(raw) {
 		t.Fatalf("block size hook saw %v, want %d first", blockSizes, len(raw))
 	}
 }
@@ -137,7 +138,7 @@ func newGossipTestHost(t *testing.T) *Host {
 
 func connectGossipHosts(t *testing.T, a, b *Host) {
 	t.Helper()
-	if err := a.host.Connect(context.Background(), peer.AddrInfo{ID: b.PeerID(), Addrs: b.Addrs()}); err != nil {
+	if err := a.LibP2PHost().Connect(context.Background(), peer.AddrInfo{ID: b.PeerID(), Addrs: b.Addrs()}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -168,7 +169,7 @@ func TestInvalidGossipIsNotRelayed(t *testing.T) {
 	origin, relay, far := newGossipTestHost(t), newGossipTestHost(t), newGossipTestHost(t)
 	var mu sync.Mutex
 	var arrived []int
-	far.Hooks.GossipBlockSize = func(n int) {
+	far.GossipHooks.BlockSize = func(n int) {
 		mu.Lock()
 		defer mu.Unlock()
 		arrived = append(arrived, n)
@@ -184,7 +185,7 @@ func TestInvalidGossipIsNotRelayed(t *testing.T) {
 	topic := BlockTopic()
 	ctx := context.Background()
 	waitFor(t, "a probe block to cross both hops", func() bool {
-		if err := origin.topics[topic].Publish(ctx, encodedGossip(t, gossipBlock(uint64(time.Now().UnixNano())))); err != nil {
+		if err := origin.Publish(ctx, topic, encodedGossip(t, gossipBlock(uint64(time.Now().UnixNano())))); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -192,10 +193,10 @@ func TestInvalidGossipIsNotRelayed(t *testing.T) {
 	})
 
 	invalid := []byte{1, 2, 3}
-	if err := origin.topics[topic].Publish(ctx, SnappyRawEncode(invalid)); err != nil {
+	if err := origin.Publish(ctx, topic, gossip.Compress(invalid)); err != nil {
 		t.Fatal(err)
 	}
-	if err := origin.topics[topic].Publish(ctx, encodedGossip(t, gossipBlock(9))); err != nil {
+	if err := origin.Publish(ctx, topic, encodedGossip(t, gossipBlock(9))); err != nil {
 		t.Fatal(err)
 	}
 

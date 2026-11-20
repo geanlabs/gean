@@ -1,4 +1,4 @@
-package p2p
+package reqresp
 
 import (
 	"errors"
@@ -35,12 +35,12 @@ func TestReadReqRespChunkArmsIdleDeadline(t *testing.T) {
 	s := &deadlineStream{readErr: os.ErrDeadlineExceeded}
 	before := time.Now()
 
-	if _, _, err := readReqRespChunk(s, s, "test", MaxPayloadSize); err == nil {
+	if _, _, err := ReadChunk(s, s, "test", MaxPayloadSize); err == nil {
 		t.Fatal("expected an error from a stalled read")
 	}
 
-	if s.readDeadline.Before(before.Add(ReqRespTimeout - time.Second)) {
-		t.Fatalf("read deadline not armed to ~now+%s: got %v", ReqRespTimeout, s.readDeadline)
+	if s.readDeadline.Before(before.Add(Timeout - time.Second)) {
+		t.Fatalf("read deadline not armed to ~now+%s: got %v", Timeout, s.readDeadline)
 	}
 }
 
@@ -49,7 +49,7 @@ func TestReadReqRespChunkArmsIdleDeadline(t *testing.T) {
 func TestReadReqRespChunkWrapsTimeout(t *testing.T) {
 	s := &deadlineStream{readErr: os.ErrDeadlineExceeded}
 
-	_, _, err := readReqRespChunk(s, s, "blocks_by_root", MaxPayloadSize)
+	_, _, err := ReadChunk(s, s, "blocks_by_root", MaxPayloadSize)
 	if !errors.Is(err, os.ErrDeadlineExceeded) {
 		t.Fatalf("timeout not preserved through wrapping: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestReadReqRespChunkWrapsTimeout(t *testing.T) {
 func TestReadReqRespChunkPassesThroughNonTimeout(t *testing.T) {
 	s := &deadlineStream{readErr: io.ErrUnexpectedEOF}
 
-	_, _, err := readReqRespChunk(s, s, "test", MaxPayloadSize)
+	_, _, err := ReadChunk(s, s, "test", MaxPayloadSize)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -91,8 +91,8 @@ func TestIsStreamTimeout(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isStreamTimeout(tc.err); got != tc.want {
-				t.Fatalf("isStreamTimeout(%v) = %v, want %v", tc.err, got, tc.want)
+			if got := IsStreamTimeout(tc.err); got != tc.want {
+				t.Fatalf("IsStreamTimeout(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}

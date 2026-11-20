@@ -2,13 +2,13 @@ package p2p
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/p2p/gossip"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -43,41 +43,26 @@ func (h *Host) StartGossipListeners(handler MessageHandler) {
 		return
 	}
 	h.gossipHandler.Store(&handler)
-	for topic, sub := range h.subs {
-		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, sub, handler) })
-	}
+	h.StartListeners(func(topic string, msg *pubsub.Message) { deliverGossip(topic, msg, handler) })
 }
 
-func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscription, handler MessageHandler) {
-	for {
-		msg, err := sub.Next(ctx)
+// deliverGossip hands a validated message, decoded by validateGossip, to the
+// node.
+func deliverGossip(topic string, msg *pubsub.Message, handler MessageHandler) {
+	switch value := msg.ValidatorData.(type) {
+	case *types.SignedBlock:
+		blockRoot, err := value.Block.HashTreeRoot()
 		if err != nil {
-			if ctx.Err() != nil || errors.Is(err, pubsub.ErrSubscriptionCancelled) {
-				return
-			}
-			logger.Error(logger.Gossip, "recv error on %s: %v", topic, err)
+			logger.Error(logger.Gossip, "block root on %s: %v", topic, err)
 			return
 		}
-
-		if msg.ReceivedFrom == h.host.ID() {
-			continue
-		}
-
-		switch value := msg.ValidatorData.(type) {
-		case *types.SignedBlock:
-			blockRoot, err := value.Block.HashTreeRoot()
-			if err != nil {
-				logger.Error(logger.Gossip, "block root on %s: %v", topic, err)
-				continue
-			}
-			logger.Info(logger.Gossip, "received block slot=%d proposer=%d block_root=0x%x parent_root=0x%x",
-				value.Block.Slot, value.Block.ProposerIndex, blockRoot, value.Block.ParentRoot)
-			handler.OnBlock(value)
-		case *types.SignedAttestation:
-			handler.OnGossipAttestation(value)
-		case *types.SignedAggregatedAttestation:
-			handler.OnGossipAggregatedAttestation(value)
-		}
+		logger.Info(logger.Gossip, "received block slot=%d proposer=%d block_root=0x%x parent_root=0x%x",
+			value.Block.Slot, value.Block.ProposerIndex, blockRoot, value.Block.ParentRoot)
+		handler.OnBlock(value)
+	case *types.SignedAttestation:
+		handler.OnGossipAttestation(value)
+	case *types.SignedAggregatedAttestation:
+		handler.OnGossipAggregatedAttestation(value)
 	}
 }
 
@@ -86,15 +71,15 @@ func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscr
 // is decoded once. Until the node has started its listeners nothing can be
 // judged, so nothing is relayed.
 func (h *Host) validateGossip(_ context.Context, from peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
-	if from == h.host.ID() {
+	if from == h.PeerID() {
 		return pubsub.ValidationAccept
 	}
 	// The handler reads the store, so Close waits for a running validation and
 	// ignores the messages that arrive once it has begun.
-	if !h.tasks.Enter() {
+	if !h.Tasks().Enter() {
 		return pubsub.ValidationIgnore
 	}
-	defer h.tasks.Leave()
+	defer h.Tasks().Leave()
 	handlerPtr := h.gossipHandler.Load()
 	if handlerPtr == nil {
 		return pubsub.ValidationIgnore
@@ -121,14 +106,14 @@ func (h *Host) validateGossip(_ context.Context, from peer.ID, msg *pubsub.Messa
 // decodeAndValidate returns an error for a message no node could decode, and
 // otherwise the decoded value with the node's verdict on it.
 func (h *Host) decodeAndValidate(topic string, raw []byte, handler MessageHandler) (any, Verdict, error) {
-	data, err := SnappyRawDecode(raw)
+	data, err := gossip.Decompress(raw)
 	if err != nil {
 		return nil, Reject, fmt.Errorf("snappy decode: %w", err)
 	}
 
 	if topic == BlockTopic() {
-		if h.Hooks.GossipBlockSize != nil {
-			h.Hooks.GossipBlockSize(len(data))
+		if h.GossipHooks.BlockSize != nil {
+			h.GossipHooks.BlockSize(len(data))
 		}
 		block := &types.SignedBlock{}
 		if err := block.UnmarshalSSZ(data); err != nil {
@@ -138,8 +123,8 @@ func (h *Host) decodeAndValidate(topic string, raw []byte, handler MessageHandle
 	}
 
 	if subnet, ok := attestationSubnet(topic); ok {
-		if h.Hooks.GossipAttestationSize != nil {
-			h.Hooks.GossipAttestationSize(len(data))
+		if h.GossipHooks.AttestationSize != nil {
+			h.GossipHooks.AttestationSize(len(data))
 		}
 		att := &types.SignedAttestation{}
 		if err := att.UnmarshalSSZ(data); err != nil {
@@ -152,8 +137,8 @@ func (h *Host) decodeAndValidate(topic string, raw []byte, handler MessageHandle
 	}
 
 	if topic == AggregationTopic() {
-		if h.Hooks.GossipAggregationSize != nil {
-			h.Hooks.GossipAggregationSize(len(data))
+		if h.GossipHooks.AggregationSize != nil {
+			h.GossipHooks.AggregationSize(len(data))
 		}
 		agg := &types.SignedAggregatedAttestation{}
 		if err := agg.UnmarshalSSZ(data); err != nil {

@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/p2p/gossip"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -90,20 +91,16 @@ func (h *Host) PublishAggregatedAttestation(ctx context.Context, agg *types.Sign
 }
 
 func (h *Host) publishToTopic(ctx context.Context, topic string, sszData []byte, info publishLogInfo) error {
-	compressed := SnappyRawEncode(sszData)
+	compressed := gossip.Compress(sszData)
 	logPublish(topic, sszData, compressed, info)
-	t, ok := h.topics[topic]
-	if !ok {
-		return fmt.Errorf("not subscribed to topic: %s", topic)
-	}
-	return t.Publish(ctx, compressed)
+	return h.Publish(ctx, topic, compressed)
 }
 
 func logPublish(topic string, sszData, compressed []byte, info publishLogInfo) {
 	sszHash := sha256.Sum256(sszData)
 	compressedHash := sha256.Sum256(compressed)
-	_, decodeErr := SnappyRawDecode(compressed)
-	messageID := ComputeMessageID(topic, compressed)
+	_, decodeErr := gossip.Decompress(compressed)
+	messageID := gossip.MessageID(topic, compressed)
 	logger.Info(logger.Gossip,
 		"publish gossip topic=%s slot=%d proposer=%s block_root=%s sha256_ssz=0x%x sha256_compressed=0x%x compressed_len=%d snappy_self_decode_ok=%t message_id=0x%x client_git_sha=%s snappy=%s",
 		topic,

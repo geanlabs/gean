@@ -1,4 +1,4 @@
-package p2p
+package host
 
 import (
 	"github.com/libp2p/go-libp2p/core/network"
@@ -45,4 +45,11 @@ func (h *Host) installPeerNotifier() {
 			}
 		},
 	})
+}
+
+func directionLabel(d network.Direction) string {
+	if d == network.DirOutbound {
+		return "outbound"
+	}
+	return "inbound"
 }

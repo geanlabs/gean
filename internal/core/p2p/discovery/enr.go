@@ -1,4 +1,6 @@
-package p2p
+// Package discovery finds peers to dial: it decodes ENRs and reads bootnode
+// lists.
+package discovery
 
 import (
 	"encoding/base64"

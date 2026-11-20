@@ -1,4 +1,4 @@
-package p2p
+package host
 
 import (
 	libp2phost "github.com/libp2p/go-libp2p/core/host"

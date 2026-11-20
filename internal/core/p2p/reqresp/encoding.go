@@ -1,4 +1,7 @@
-package p2p
+// Package reqresp is the req/resp wire format shared by consensus networks:
+// varint-prefixed, snappy-framed payloads, response chunks led by a result
+// code, and the idle deadlines that bound a stream.
+package reqresp
 
 import (
 	"bufio"
@@ -14,26 +17,7 @@ const (
 	MaxPayloadSize           = 10 * 1024 * 1024
 	MaxCompressedPayloadSize = 32 + MaxPayloadSize + MaxPayloadSize/6 + 1024
 	MaxErrorMessageSize      = 256
-
-	// MaxSignedBlockSize is the SSZ size of a SignedBlock with every list and
-	// bitlist at its limit. A block response chunk declaring more cannot decode.
-	MaxSignedBlockSize = 3_182_692
 )
-
-func SnappyRawEncode(data []byte) []byte {
-	return snappy.Encode(nil, data)
-}
-
-func SnappyRawDecode(data []byte) ([]byte, error) {
-	decodedLen, err := snappy.DecodedLen(data)
-	if err != nil {
-		return nil, fmt.Errorf("snappy decoded len: %w", err)
-	}
-	if decodedLen > MaxPayloadSize {
-		return nil, fmt.Errorf("snappy decoded len %d exceeds max %d", decodedLen, MaxPayloadSize)
-	}
-	return snappy.Decode(nil, data)
-}
 
 func EncodeVarint(value uint32) []byte {
 	buf := make([]byte, binary.MaxVarintLen32)
@@ -52,7 +36,7 @@ func DecodeVarint(buf []byte) (uint32, []byte, error) {
 	return uint32(val), buf[n:], nil
 }
 
-func EncodeReqRespPayload(data []byte) []byte {
+func EncodePayload(data []byte) []byte {
 	var buf bytes.Buffer
 	w := snappy.NewBufferedWriter(&buf)
 	w.Write(data)
@@ -66,7 +50,7 @@ func EncodeReqRespPayload(data []byte) []byte {
 	return result
 }
 
-func DecodeReqRespPayload(buf []byte) ([]byte, error) {
+func DecodePayload(buf []byte) ([]byte, error) {
 	declaredLen, rest, err := DecodeVarint(buf)
 	if err != nil {
 		return nil, fmt.Errorf("decode varint: %w", err)
@@ -98,7 +82,7 @@ func EncodeResponse(code byte, data []byte) []byte {
 	if code != RespSuccess && len(data) > MaxErrorMessageSize {
 		data = data[:MaxErrorMessageSize]
 	}
-	payload := EncodeReqRespPayload(data)
+	payload := EncodePayload(data)
 	result := make([]byte, 1+len(payload))
 	result[0] = code
 	copy(result[1:], payload)

@@ -6,9 +6,9 @@ func (e *Engine) configureP2PHooks() {
 	if e.P2P == nil {
 		return
 	}
-	e.P2P.Hooks.GossipBlockSize = metrics.ObserveGossipBlockSize
-	e.P2P.Hooks.GossipAttestationSize = metrics.ObserveGossipAttestationSize
-	e.P2P.Hooks.GossipAggregationSize = metrics.ObserveGossipAggregationSize
+	e.P2P.GossipHooks.BlockSize = metrics.ObserveGossipBlockSize
+	e.P2P.GossipHooks.AttestationSize = metrics.ObserveGossipAttestationSize
+	e.P2P.GossipHooks.AggregationSize = metrics.ObserveGossipAggregationSize
 	e.P2P.Hooks.PeerConnected = func(direction string) {
 		metrics.IncPeerConnection(direction, "success")
 	}

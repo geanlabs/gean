@@ -1,4 +1,4 @@
-package p2p
+package gossip
 
 import (
 	"crypto/sha256"
@@ -10,10 +10,14 @@ var (
 	domainInvalidSnappy = [4]byte{0x00, 0x00, 0x00, 0x00}
 )
 
-func ComputeMessageID(topic string, rawData []byte) []byte {
+// MessageID is the gossipsub message id: the first 20 bytes of
+// sha256(domain || uint64_le(len(topic)) || topic || data), where data is the
+// decompressed payload under the valid-snappy domain, or the raw payload under
+// the invalid-snappy domain when it does not decompress.
+func MessageID(topic string, rawData []byte) []byte {
 	h := sha256.New()
 
-	decompressed, err := SnappyRawDecode(rawData)
+	decompressed, err := Decompress(rawData)
 
 	var domain [4]byte
 	var data []byte

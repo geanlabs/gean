@@ -15,6 +15,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/geanlabs/gean/internal/core/p2p/discovery"
+	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 	"github.com/geanlabs/gean/internal/lean/p2p"
 )
 
@@ -132,7 +134,7 @@ func testVarint(t *testing.T, fx netFixture) string {
 		return "skip"
 	}
 
-	got := p2p.EncodeVarint(uint32(val))
+	got := reqresp.EncodeVarint(uint32(val))
 	if fmt.Sprintf("%x", got) != fmt.Sprintf("%x", want) {
 		t.Errorf("value=%.0f: got %x, want %x", val, got, want)
 		return "fail"
@@ -229,7 +231,7 @@ func testENR(t *testing.T, fx netFixture) string {
 	wantMultiaddr, _ := fx.Output["multiaddr"].(string)
 	wantValid, _ := fx.Output["isValid"].(bool)
 
-	fields, err := p2p.DecodeENR(enrStr)
+	fields, err := discovery.DecodeENR(enrStr)
 	if err != nil {
 		if !wantValid {
 			return "pass" // spec expected invalid, gean rejected -> OK

@@ -1,11 +1,11 @@
-package p2p
+// Package peers tracks connected peers and scores them by how their block
+// requests went, to pick whom to ask next.
+package peers
 
 import (
-	"context"
 	"math/rand"
 	"sync"
 
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/core/metrics"
@@ -15,12 +15,12 @@ import (
 // gains for every completed block request and loses twice as much for every
 // failed one. The score only weights which peer is asked; it never disconnects.
 const (
-	initialPeerScore    = 100
-	minPeerScore        = 0
-	maxPeerScore        = 200
-	peerScoreSuccess    = 10
-	peerScoreFailure    = 20
-	minPeerSelectWeight = 1 // a peer at the floor can still be picked
+	InitialScore    = 100
+	minScore        = 0
+	maxScore        = 200
+	ScoreSuccess    = 10
+	ScoreFailure    = 20
+	minSelectWeight = 1 // a peer at the floor can still be picked
 )
 
 type peerEntry struct {
@@ -31,35 +31,35 @@ type peerEntry struct {
 	hasStatus bool
 }
 
-type PeerStore struct {
+type Store struct {
 	mu    sync.RWMutex
 	peers map[peer.ID]*peerEntry
 }
 
-func NewPeerStore() *PeerStore {
-	return &PeerStore{peers: make(map[peer.ID]*peerEntry)}
+func NewStore() *Store {
+	return &Store{peers: make(map[peer.ID]*peerEntry)}
 }
 
 // AddNew tracks a peer at the initial score and reports whether it was new.
-func (ps *PeerStore) AddNew(id peer.ID) bool {
+func (ps *Store) AddNew(id peer.ID) bool {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if _, ok := ps.peers[id]; ok {
 		return false
 	}
-	ps.peers[id] = &peerEntry{score: initialPeerScore}
-	metrics.SetPeerScore(id.String(), initialPeerScore)
+	ps.peers[id] = &peerEntry{score: InitialScore}
+	metrics.SetPeerScore(id.String(), InitialScore)
 	return true
 }
 
-func (ps *PeerStore) Remove(id peer.ID) {
+func (ps *Store) Remove(id peer.ID) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	delete(ps.peers, id)
 	metrics.DeletePeerScore(id.String())
 }
 
-func (ps *PeerStore) Count() int {
+func (ps *Store) Count() int {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	return len(ps.peers)
@@ -68,7 +68,7 @@ func (ps *PeerStore) Count() int {
 // RecordRequest adjusts a tracked peer's score for one block request. The score
 // gauge changes under the same lock as the peer set, so a peer removed
 // concurrently cannot leave its series behind.
-func (ps *PeerStore) RecordRequest(id peer.ID, success bool) {
+func (ps *Store) RecordRequest(id peer.ID, success bool) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	e, ok := ps.peers[id]
@@ -76,15 +76,15 @@ func (ps *PeerStore) RecordRequest(id peer.ID, success bool) {
 		return
 	}
 	if success {
-		e.score = min(e.score+peerScoreSuccess, maxPeerScore)
+		e.score = min(e.score+ScoreSuccess, maxScore)
 	} else {
-		e.score = max(e.score-peerScoreFailure, minPeerScore)
+		e.score = max(e.score-ScoreFailure, minScore)
 	}
 	metrics.SetPeerScore(id.String(), e.score)
 }
 
 // UpdateStatus records the head a tracked peer reported.
-func (ps *PeerStore) UpdateStatus(id peer.ID, headSlot uint64) {
+func (ps *Store) UpdateStatus(id peer.ID, headSlot uint64) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if e, ok := ps.peers[id]; ok {
@@ -95,7 +95,7 @@ func (ps *PeerStore) UpdateStatus(id peer.ID, headSlot uint64) {
 // SelectPeer picks a peer outside exclude at random, weighted by score. With
 // minSlot above zero it prefers peers whose reported head reaches minSlot and
 // falls back to any peer when none does, since a status can be stale.
-func (ps *PeerStore) SelectPeer(exclude map[peer.ID]bool, minSlot uint64) peer.ID {
+func (ps *Store) SelectPeer(exclude map[peer.ID]bool, minSlot uint64) peer.ID {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
@@ -105,7 +105,7 @@ func (ps *PeerStore) SelectPeer(exclude map[peer.ID]bool, minSlot uint64) peer.I
 		if exclude[id] {
 			continue
 		}
-		w := max(e.score, minPeerSelectWeight)
+		w := max(e.score, minSelectWeight)
 		all, allWeights = append(all, id), append(allWeights, w)
 		if minSlot > 0 && e.hasStatus && e.headSlot >= minSlot {
 			covering, coveringWeights = append(covering, id), append(coveringWeights, w)
@@ -136,7 +136,7 @@ func pickWeighted(ids []peer.ID, weights []int, r int) peer.ID {
 	return ids[len(ids)-1]
 }
 
-func (ps *PeerStore) AllPeers() []peer.ID {
+func (ps *Store) AllPeers() []peer.ID {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	ids := make([]peer.ID, 0, len(ps.peers))
@@ -146,24 +146,25 @@ func (ps *PeerStore) AllPeers() []peer.ID {
 	return ids
 }
 
-// recordRequest scores one outbound block request against its peer: an error is
-// a failure, any response a success. A request cut short by our own
-// cancellation says nothing about the peer.
-func (h *Host) recordRequest(parent context.Context, id peer.ID, err error) {
-	if err != nil && parent.Err() != nil {
-		return
+// Score returns a tracked peer's score.
+func (ps *Store) Score(id peer.ID) (int, bool) {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	e, ok := ps.peers[id]
+	if !ok {
+		return 0, false
 	}
-	outcome := "success"
-	if err != nil {
-		outcome = "failure"
-	}
-	metrics.IncPeerRequestOutcome(outcome)
-	h.peerStore.RecordRequest(id, err == nil)
+	return e.score, true
 }
 
-func directionLabel(d network.Direction) string {
-	if d == network.DirOutbound {
-		return "outbound"
+// HeadSlot returns the head slot a tracked peer last reported, and whether it
+// has reported one.
+func (ps *Store) HeadSlot(id peer.ID) (uint64, bool) {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	e, ok := ps.peers[id]
+	if !ok || !e.hasStatus {
+		return 0, false
 	}
-	return "inbound"
+	return e.headSlot, true
 }

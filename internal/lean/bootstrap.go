@@ -5,8 +5,8 @@ import (
 
 	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/p2p/discovery"
 	"github.com/geanlabs/gean/internal/lean/genesis"
-	"github.com/geanlabs/gean/internal/lean/p2p"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/syncer/checkpoint"
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -29,7 +29,7 @@ func loadStartupInputs(cfg Config) (*startupInputs, error) {
 	}
 	logger.Info(logger.Node, "genesis: time=%d validators=%d", genesisConfig.GenesisTime, len(genesisConfig.GenesisValidators))
 
-	bootnodes, err := p2p.LoadBootnodes(paths.bootnodes)
+	bootnodes, err := discovery.LoadBootnodes(paths.bootnodes)
 	if err != nil {
 		logger.Error(logger.Node, "load bootnodes: %v", err)
 		return nil, err

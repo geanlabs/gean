@@ -8,10 +8,10 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/metrics"
+	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 )
 
 const statusMessageSize = 80
@@ -46,28 +46,28 @@ func (s *StatusMessage) UnmarshalSSZ(buf []byte) error {
 // handleStatusRequest answers a peer's status request and returns the status the
 // peer sent, or nil if it could not be answered.
 func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) *StatusMessage {
-	armReadDeadline(stream)
-	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(MaxCompressedPayloadSize)))
+	reqresp.ArmReadDeadline(stream)
+	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(reqresp.MaxCompressedPayloadSize)))
 	if err != nil {
 		logger.Warn(logger.Network, "status: read request failed: %v", err)
 		return nil
 	}
 	if len(reqBuf) == 0 {
-		writeResponse(stream, "status", RespInvalidRequest, []byte("empty status request"))
+		reqresp.WriteResponse(stream, "status", reqresp.RespInvalidRequest, []byte("empty status request"))
 		return nil
 	}
 
-	payload, err := DecodeReqRespPayload(reqBuf)
+	payload, err := reqresp.DecodePayload(reqBuf)
 	if err != nil {
 		logger.Warn(logger.Network, "status: decode request failed: %v", err)
-		writeResponse(stream, "status", RespInvalidRequest, []byte("decode failed"))
+		reqresp.WriteResponse(stream, "status", reqresp.RespInvalidRequest, []byte("decode failed"))
 		return nil
 	}
 
 	peerStatus := &StatusMessage{}
 	if err := peerStatus.UnmarshalSSZ(payload); err != nil {
 		logger.Warn(logger.Network, "status: ssz unmarshal failed: %v", err)
-		writeResponse(stream, "status", RespInvalidRequest, []byte("ssz unmarshal failed"))
+		reqresp.WriteResponse(stream, "status", reqresp.RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return nil
 	}
 
@@ -75,10 +75,10 @@ func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) 
 
 	status := statusFn()
 	if status == nil {
-		writeResponse(stream, "status", RespServerError, []byte("status unavailable"))
+		reqresp.WriteResponse(stream, "status", reqresp.RespServerError, []byte("status unavailable"))
 		return nil
 	}
-	writeResponse(stream, "status", RespSuccess, status.MarshalSSZ())
+	reqresp.WriteResponse(stream, "status", reqresp.RespSuccess, status.MarshalSSZ())
 	return peerStatus
 }
 
@@ -87,28 +87,28 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 		return nil, fmt.Errorf("status request: nil local status")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, ReqRespTimeout)
+	ctx, cancel := context.WithTimeout(ctx, reqresp.Timeout)
 	defer cancel()
 
-	stream, err := h.host.NewStream(ctx, peerID, protocol.ID(StatusProtocol))
+	stream, err := h.NewStream(ctx, peerID, StatusProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("open status stream: %w", err)
 	}
 	defer stream.Close()
 
-	armWriteDeadline(stream)
-	reqBytes := EncodeReqRespPayload(ourStatus.MarshalSSZ())
+	reqresp.ArmWriteDeadline(stream)
+	reqBytes := reqresp.EncodePayload(ourStatus.MarshalSSZ())
 	metrics.ObserveReqRespRequestSize("status", len(reqBytes))
 	if _, err := stream.Write(reqBytes); err != nil {
 		return nil, fmt.Errorf("write status request: %w", err)
 	}
 	stream.CloseWrite()
 
-	code, respData, err := readReqRespChunk(stream, stream, "status", statusMessageSize)
+	code, respData, err := reqresp.ReadChunk(stream, stream, "status", statusMessageSize)
 	if err != nil {
 		return nil, fmt.Errorf("read status response: %w", err)
 	}
-	if code != RespSuccess {
+	if code != reqresp.RespSuccess {
 		return nil, fmt.Errorf("status response error: code=%d", code)
 	}
 
@@ -116,6 +116,6 @@ func (h *Host) SendStatusRequest(ctx context.Context, peerID peer.ID, ourStatus 
 	if err := peerStatus.UnmarshalSSZ(respData); err != nil {
 		return nil, fmt.Errorf("unmarshal status: %w", err)
 	}
-	h.peerStore.UpdateStatus(peerID, peerStatus.HeadSlot)
+	h.PeerStore().UpdateStatus(peerID, peerStatus.HeadSlot)
 	return peerStatus, nil
 }

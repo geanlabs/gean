@@ -4,42 +4,22 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
-	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/geanlabs/gean/internal/core/logger"
+	"github.com/geanlabs/gean/internal/core/p2p/gossip"
+	"github.com/geanlabs/gean/internal/core/p2p/host"
+	"github.com/geanlabs/gean/internal/core/p2p/peers"
+	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 	"github.com/geanlabs/gean/internal/lean/types"
-	"github.com/golang/snappy"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
-
-// stubStream is a minimal network.Stream for exercising writeResponse: it wires
-// Write and SetWriteDeadline (the only methods writeResponse touches) and leaves the
-// rest to the embedded nil interface, which panics if unexpectedly called.
-type stubStream struct {
-	network.Stream
-	w        io.Writer
-	writeErr error
-}
-
-func (s stubStream) Write(p []byte) (int, error) {
-	if s.writeErr != nil {
-		return 0, s.writeErr
-	}
-	return s.w.Write(p)
-}
-
-func (stubStream) SetWriteDeadline(time.Time) error { return nil }
 
 func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
 	var buf bytes.Buffer
@@ -52,7 +32,7 @@ func TestLogPublishIncludesDevnetDiagnostics(t *testing.T) {
 
 	SetClientGitCommit("abc123")
 	sszData := []byte("signed block ssz")
-	compressed := SnappyRawEncode(sszData)
+	compressed := gossip.Compress(sszData)
 	root := [32]byte{0xaa}
 	logPublish(BlockTopic(), sszData, compressed, publishLogInfo{
 		slot:         7,
@@ -111,7 +91,7 @@ func TestPublishBlockLogsCanonicalBlockRoot(t *testing.T) {
 		t.Fatal("test setup failed: signed block root unexpectedly equals canonical block root")
 	}
 
-	h := &Host{}
+	h := &Host{Host: &host.Host{}}
 	err = h.PublishBlock(context.Background(), signed)
 	if err == nil || !strings.Contains(err.Error(), "not subscribed to topic") {
 		t.Fatalf("PublishBlock error=%v, want missing topic after log", err)
@@ -125,127 +105,6 @@ func TestPublishBlockLogsCanonicalBlockRoot(t *testing.T) {
 	wrong := "block_root=0x" + hex.EncodeToString(signedRoot[:])
 	if strings.Contains(out, wrong) {
 		t.Fatalf("publish log used signed-block root %s:\n%s", wrong, out)
-	}
-}
-
-func TestSnappyRawRoundtrip(t *testing.T) {
-	data := []byte("hello lean consensus world")
-	compressed := SnappyRawEncode(data)
-	decompressed, err := SnappyRawDecode(compressed)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !bytes.Equal(data, decompressed) {
-		t.Fatal("roundtrip mismatch")
-	}
-}
-
-func TestVarintRoundtrip(t *testing.T) {
-	tests := []uint32{0, 1, 127, 128, 255, 256, 16383, 16384, 1<<20 - 1}
-	for _, v := range tests {
-		encoded := EncodeVarint(v)
-		decoded, rest, err := DecodeVarint(encoded)
-		if err != nil {
-			t.Fatalf("varint %d: %v", v, err)
-		}
-		if decoded != v {
-			t.Fatalf("varint %d: got %d", v, decoded)
-		}
-		if len(rest) != 0 {
-			t.Fatalf("varint %d: %d trailing bytes", v, len(rest))
-		}
-	}
-}
-
-func TestReqRespPayloadRoundtrip(t *testing.T) {
-	data := []byte("state transition function data")
-	encoded := EncodeReqRespPayload(data)
-	decoded, err := DecodeReqRespPayload(encoded)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !bytes.Equal(data, decoded) {
-		t.Fatal("payload roundtrip mismatch")
-	}
-}
-
-func TestResponseEncoding(t *testing.T) {
-	data := []byte("response payload")
-	encoded := EncodeResponse(RespSuccess, data)
-	if encoded[0] != RespSuccess {
-		t.Fatalf("expected code 0x00, got 0x%02x", encoded[0])
-	}
-
-	reader := bytes.NewReader(encoded)
-	code, decoded, err := DecodeResponse(reader, MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if code != RespSuccess {
-		t.Fatalf("code: expected 0, got %d", code)
-	}
-	if !bytes.Equal(data, decoded) {
-		t.Fatal("response roundtrip mismatch")
-	}
-}
-
-func TestWriteResponseReportsWriteFailure(t *testing.T) {
-	if writeResponse(stubStream{writeErr: os.ErrClosed}, "test", RespSuccess, []byte("payload")) {
-		t.Fatal("expected writeResponse to report failure")
-	}
-}
-
-func TestWriteResponseWritesEncodedResponse(t *testing.T) {
-	var buf bytes.Buffer
-	if !writeResponse(stubStream{w: &buf}, "test", RespSuccess, []byte("payload")) {
-		t.Fatal("expected writeResponse success")
-	}
-	code, payload, err := DecodeResponse(&buf, MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if code != RespSuccess || !bytes.Equal(payload, []byte("payload")) {
-		t.Fatalf("code=%d payload=%q, want success/payload", code, payload)
-	}
-}
-
-func TestErrorMessageTruncatedOnEncode(t *testing.T) {
-	oversized := bytes.Repeat([]byte("A"), MaxErrorMessageSize+100)
-	encoded := EncodeResponse(RespInvalidRequest, oversized)
-	code, decoded, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if code != RespInvalidRequest {
-		t.Fatalf("code: expected %d, got %d", RespInvalidRequest, code)
-	}
-	if len(decoded) != MaxErrorMessageSize {
-		t.Fatalf("decoded length: expected %d, got %d", MaxErrorMessageSize, len(decoded))
-	}
-}
-
-func TestErrorMessageAtBoundaryRoundtrips(t *testing.T) {
-	data := bytes.Repeat([]byte("B"), MaxErrorMessageSize)
-	encoded := EncodeResponse(RespServerError, data)
-	code, decoded, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if code != RespServerError {
-		t.Fatalf("code: expected %d, got %d", RespServerError, code)
-	}
-	if !bytes.Equal(data, decoded) {
-		t.Fatal("boundary-size error message roundtrip mismatch")
-	}
-}
-
-func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
-	oversized := bytes.Repeat([]byte("C"), MaxErrorMessageSize+1)
-	encoded := EncodeResponse(RespSuccess, oversized)
-	encoded[0] = RespServerError
-	_, _, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
-	if err == nil {
-		t.Fatal("expected error for oversize error-body decode, got nil")
 	}
 }
 
@@ -271,108 +130,17 @@ func TestDecodeResponseMaxSignedBlockSize(t *testing.T) {
 		t.Fatalf("max block is %d bytes, MaxSignedBlockSize is %d", len(encoded), MaxSignedBlockSize)
 	}
 
-	if _, _, err := DecodeResponse(bytes.NewReader(EncodeResponse(RespSuccess, encoded)), MaxSignedBlockSize); err != nil {
+	if _, _, err := reqresp.DecodeResponse(bytes.NewReader(reqresp.EncodeResponse(reqresp.RespSuccess, encoded)), MaxSignedBlockSize); err != nil {
 		t.Fatalf("decode max block: %v", err)
 	}
-	oversized := EncodeResponse(RespSuccess, append(encoded, 0))
-	if _, _, err := DecodeResponse(bytes.NewReader(oversized), MaxSignedBlockSize); err == nil {
+	oversized := reqresp.EncodeResponse(reqresp.RespSuccess, append(encoded, 0))
+	if _, _, err := reqresp.DecodeResponse(bytes.NewReader(oversized), MaxSignedBlockSize); err == nil {
 		t.Fatal("expected error for a chunk one byte over MaxSignedBlockSize")
 	}
 }
 
-func TestReqRespPayloadRejectsBlockFormatSnappy(t *testing.T) {
-	raw := []byte("hello world")
-	blockFormat := snappy.Encode(nil, raw)
-	chunk := append(EncodeVarint(uint32(len(raw))), blockFormat...)
-	_, err := DecodeReqRespPayload(chunk)
-	if err == nil {
-		t.Fatal("expected error decoding block-format snappy as framed, got nil")
-	}
-}
-
-func TestReqRespPayloadRejectsDeclaredLengthMismatch(t *testing.T) {
-	encoded := EncodeReqRespPayload([]byte("x"))
-	encoded[0] = 0
-	_, err := DecodeReqRespPayload(encoded)
-	if err == nil {
-		t.Fatal("expected length mismatch error")
-	}
-}
-
-func TestReqRespPayloadRejectsDecodedBodyPastDeclaredLength(t *testing.T) {
-	var framed bytes.Buffer
-	w := snappy.NewBufferedWriter(&framed)
-	if _, err := w.Write(bytes.Repeat([]byte("x"), 1024)); err != nil {
-		t.Fatalf("write snappy payload: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("close snappy writer: %v", err)
-	}
-
-	encoded := append(EncodeVarint(1), framed.Bytes()...)
-	_, err := DecodeReqRespPayload(encoded)
-	if err == nil {
-		t.Fatal("expected length mismatch for decoded body past declared length")
-	}
-	if !strings.Contains(err.Error(), "length mismatch: declared 1") {
-		t.Fatalf("error=%v, want declared length mismatch", err)
-	}
-}
-
-func TestSuccessUntouchedByErrorMessageCap(t *testing.T) {
-	large := bytes.Repeat([]byte("D"), MaxErrorMessageSize+1024)
-	encoded := EncodeResponse(RespSuccess, large)
-	code, decoded, err := DecodeResponse(bytes.NewReader(encoded), MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if code != RespSuccess {
-		t.Fatalf("code: expected %d, got %d", RespSuccess, code)
-	}
-	if !bytes.Equal(large, decoded) {
-		t.Fatal("success payload should not be truncated")
-	}
-}
-
-func TestDecodeResponseDoesNotAllocateDeclaredLength(t *testing.T) {
-	header := append([]byte{RespSuccess}, EncodeVarint(MaxPayloadSize)...)
-
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	_, _, err := DecodeResponse(bytes.NewReader(header), MaxPayloadSize)
-	runtime.ReadMemStats(&after)
-
-	if err == nil {
-		t.Fatal("expected error for a response with no payload")
-	}
-	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > MaxPayloadSize/2 {
-		t.Fatalf("allocated %d bytes for a %d-byte response", allocated, len(header))
-	}
-}
-
-func TestDecodeResponseConcatenatedChunks(t *testing.T) {
-	encoded := append(EncodeResponse(RespSuccess, []byte("one")), EncodeResponse(RespSuccess, []byte("two"))...)
-	reader := bytes.NewReader(encoded)
-
-	code, data, err := DecodeResponse(reader, MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode first: %v", err)
-	}
-	if code != RespSuccess || string(data) != "one" {
-		t.Fatalf("first response: code=%d data=%q", code, data)
-	}
-
-	code, data, err = DecodeResponse(reader, MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode second: %v", err)
-	}
-	if code != RespSuccess || string(data) != "two" {
-		t.Fatalf("second response: code=%d data=%q", code, data)
-	}
-}
-
 func TestPublishRejectsNilMessages(t *testing.T) {
-	h := &Host{}
+	h := &Host{Host: &host.Host{}}
 	ctx := context.Background()
 
 	if err := h.PublishBlock(ctx, nil); err == nil {
@@ -436,69 +204,6 @@ func TestSubnetID(t *testing.T) {
 	if SubnetID(7, 0) != 0 {
 		t.Fatal("subnet with zero committees should return 0")
 	}
-}
-
-func TestComputeMessageIDDeterministic(t *testing.T) {
-	topic := BlockTopic()
-	data := SnappyRawEncode([]byte("block data"))
-
-	id1 := ComputeMessageID(topic, data)
-	id2 := ComputeMessageID(topic, data)
-
-	if !bytes.Equal(id1, id2) {
-		t.Fatal("message IDs should be deterministic")
-	}
-	if len(id1) != 20 {
-		t.Fatalf("message ID should be 20 bytes, got %d", len(id1))
-	}
-}
-
-func TestComputeMessageIDDifferentTopics(t *testing.T) {
-	data := SnappyRawEncode([]byte("same data"))
-	id1 := ComputeMessageID(BlockTopic(), data)
-	id2 := ComputeMessageID(AggregationTopic(), data)
-
-	if bytes.Equal(id1, id2) {
-		t.Fatal("different topics should produce different IDs")
-	}
-}
-
-func TestComputeMessageIDInvalidSnappy(t *testing.T) {
-	id := ComputeMessageID(BlockTopic(), []byte{0xff, 0xfe, 0xfd})
-	if len(id) != 20 {
-		t.Fatalf("should still produce 20-byte ID, got %d", len(id))
-	}
-}
-
-func TestComputeMessageIDMatchesWireFormula(t *testing.T) {
-	topic := BlockTopic()
-	payload := []byte("block data")
-	raw := SnappyRawEncode(payload)
-
-	got := ComputeMessageID(topic, raw)
-	want := messageIDDigest(domainValidSnappy, topic, payload)
-	if !bytes.Equal(got, want) {
-		t.Fatalf("valid snappy message ID=%x, want %x", got, want)
-	}
-
-	invalidRaw := []byte{0xff, 0xfe, 0xfd}
-	got = ComputeMessageID(topic, invalidRaw)
-	want = messageIDDigest(domainInvalidSnappy, topic, invalidRaw)
-	if !bytes.Equal(got, want) {
-		t.Fatalf("invalid snappy message ID=%x, want %x", got, want)
-	}
-}
-
-func messageIDDigest(domain [4]byte, topic string, data []byte) []byte {
-	h := sha256.New()
-	var topicLen [8]byte
-	topicBytes := []byte(topic)
-	binary.LittleEndian.PutUint64(topicLen[:], uint64(len(topicBytes)))
-	h.Write(domain[:])
-	h.Write(topicLen[:])
-	h.Write(topicBytes)
-	h.Write(data)
-	return h.Sum(nil)[:20]
 }
 
 func TestStatusMessageSSZRoundtrip(t *testing.T) {
@@ -604,106 +309,6 @@ func signedBlockForP2PTest(t *testing.T, slot uint64) (*types.SignedBlock, [32]b
 	}, root
 }
 
-func TestPeerStoreAddRemove(t *testing.T) {
-	ps := NewPeerStore()
-	if ps.Count() != 0 {
-		t.Fatal("should start empty")
-	}
-
-	ps.AddNew("peer1")
-	ps.AddNew("peer2")
-	if ps.Count() != 2 {
-		t.Fatalf("expected 2, got %d", ps.Count())
-	}
-
-	ps.Remove("peer1")
-	if ps.Count() != 1 {
-		t.Fatalf("expected 1, got %d", ps.Count())
-	}
-}
-
-func peerScore(ps *PeerStore, id peer.ID) int {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
-	return ps.peers[id].score
-}
-
-// leanSpec's request reputation: +10 per completed request, -20 per failure,
-// clamped to [0, 200] from a start of 100.
-func TestPeerStoreRecordRequestScores(t *testing.T) {
-	tests := []struct {
-		name      string
-		successes int
-		failures  int
-		want      int
-	}{
-		{"new peer", 0, 0, 100},
-		{"one success", 1, 0, 110},
-		{"one failure", 0, 1, 80},
-		{"capped at 200", 20, 0, 200},
-		{"floored at 0", 0, 10, 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ps := NewPeerStore()
-			ps.AddNew("p")
-			for range tt.successes {
-				ps.RecordRequest("p", true)
-			}
-			for range tt.failures {
-				ps.RecordRequest("p", false)
-			}
-			if got := peerScore(ps, "p"); got != tt.want {
-				t.Fatalf("score = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPickWeightedFollowsCumulativeWeights(t *testing.T) {
-	ids := []peer.ID{"good", "floor"}
-	weights := []int{200, 1}
-	for _, tt := range []struct {
-		r    int
-		want peer.ID
-	}{{0, "good"}, {199, "good"}, {200, "floor"}} {
-		if got := pickWeighted(ids, weights, tt.r); got != tt.want {
-			t.Fatalf("pickWeighted(r=%d) = %s, want %s", tt.r, got, tt.want)
-		}
-	}
-}
-
-func TestPeerStoreSelectPeer(t *testing.T) {
-	ps := NewPeerStore()
-	for _, id := range []peer.ID{"ahead", "behind", "unknown"} {
-		ps.AddNew(id)
-	}
-	ps.UpdateStatus("ahead", 50)
-	ps.UpdateStatus("behind", 10)
-	ps.UpdateStatus("untracked", 99)
-
-	tests := []struct {
-		name    string
-		exclude map[peer.ID]bool
-		minSlot uint64
-		want    map[peer.ID]bool
-	}{
-		{"only the peer covering minSlot", nil, 40, map[peer.ID]bool{"ahead": true}},
-		{"any peer when none covers it", nil, 60, map[peer.ID]bool{"ahead": true, "behind": true, "unknown": true}},
-		{"any other peer when the covering one is excluded", map[peer.ID]bool{"ahead": true}, 40, map[peer.ID]bool{"behind": true, "unknown": true}},
-		{"none left", map[peer.ID]bool{"ahead": true, "behind": true, "unknown": true}, 0, map[peer.ID]bool{"": true}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			for range 50 {
-				if got := ps.SelectPeer(tt.exclude, tt.minSlot); !tt.want[got] {
-					t.Fatalf("SelectPeer = %q, want one of %v", got, tt.want)
-				}
-			}
-		})
-	}
-}
-
 func scoreTestHost(t *testing.T) *Host {
 	t.Helper()
 	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
@@ -766,76 +371,35 @@ func TestHostScoresRequestsAndRecordsStatus(t *testing.T) {
 	if _, err := client.FetchBlocksByRange(ctx, refusing.PeerID(), 1, 1); err == nil {
 		t.Fatal("refusing peer served the range")
 	}
-	if got := peerScore(client.peerStore, refusing.PeerID()); got != initialPeerScore-peerScoreFailure {
-		t.Fatalf("refusing peer score = %d, want %d", got, initialPeerScore-peerScoreFailure)
+	if got := peerScore(client.PeerStore(), refusing.PeerID()); got != peers.InitialScore-peers.ScoreFailure {
+		t.Fatalf("refusing peer score = %d, want %d", got, peers.InitialScore-peers.ScoreFailure)
 	}
 	if _, err := client.FetchBlocksByRange(ctx, serving.PeerID(), 1, 1); err != nil {
 		t.Fatalf("serving peer: %v", err)
 	}
-	if got := peerScore(client.peerStore, serving.PeerID()); got != initialPeerScore+peerScoreSuccess {
-		t.Fatalf("serving peer score = %d, want %d", got, initialPeerScore+peerScoreSuccess)
+	if got := peerScore(client.PeerStore(), serving.PeerID()); got != peers.InitialScore+peers.ScoreSuccess {
+		t.Fatalf("serving peer score = %d, want %d", got, peers.InitialScore+peers.ScoreSuccess)
 	}
 
 	if _, err := client.SendStatusRequest(ctx, refusing.PeerID(), &StatusMessage{HeadSlot: 7}); err != nil {
 		t.Fatal(err)
 	}
-	if !headRecorded(client.peerStore, refusing.PeerID(), 1) {
+	if !headRecorded(client.PeerStore(), refusing.PeerID(), 1) {
 		t.Fatal("outbound status response was not recorded")
 	}
-	if !headRecorded(refusing.peerStore, client.PeerID(), 7) {
+	if !headRecorded(refusing.PeerStore(), client.PeerID(), 7) {
 		t.Fatal("inbound status request was not recorded")
 	}
 }
 
-func headRecorded(ps *PeerStore, id peer.ID, head uint64) bool {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
-	e, ok := ps.peers[id]
-	return ok && e.hasStatus && e.headSlot == head
+func peerScore(ps *peers.Store, id peer.ID) int {
+	score, _ := ps.Score(id)
+	return score
 }
 
-func TestLoadBootnodesEmpty(t *testing.T) {
-	tmpFile := t.TempDir() + "/nodes.yaml"
-	os.WriteFile(tmpFile, []byte("# empty\n"), 0644)
-
-	addrs, err := LoadBootnodes(tmpFile)
-	if err != nil {
-		t.Fatalf("should not error on empty: %v", err)
-	}
-	if len(addrs) != 0 {
-		t.Fatalf("expected 0 addrs, got %d", len(addrs))
-	}
-}
-
-func TestLoadBootnodesWithYAMLList(t *testing.T) {
-	content := `- "/ip4/127.0.0.1/udp/9000/quic-v1/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
-- "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/12D3KooWLc4yBi3vYo4udihGu2HFxCWMWCdJoXYMFNp2CX9otY5A"
-`
-	tmpFile := t.TempDir() + "/nodes.yaml"
-	os.WriteFile(tmpFile, []byte(content), 0644)
-
-	addrs, err := LoadBootnodes(tmpFile)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if len(addrs) != 2 {
-		t.Fatalf("expected 2 addrs, got %d", len(addrs))
-	}
-}
-
-func TestLoadBootnodesRejectsInvalidLine(t *testing.T) {
-	tmpFile := t.TempDir() + "/nodes.yaml"
-	if err := os.WriteFile(tmpFile, []byte("not-a-bootnode\n"), 0644); err != nil {
-		t.Fatalf("write bootnodes: %v", err)
-	}
-
-	addrs, err := LoadBootnodes(tmpFile)
-	if err == nil {
-		t.Fatalf("expected invalid line error, got addrs=%v", addrs)
-	}
-	if !strings.Contains(err.Error(), "invalid bootnode line 1") {
-		t.Fatalf("error=%v, want invalid line with number", err)
-	}
+func headRecorded(ps *peers.Store, id peer.ID, head uint64) bool {
+	got, ok := ps.HeadSlot(id)
+	return ok && got == head
 }
 
 // newTestHost starts a host on a random localhost port with a fresh key.

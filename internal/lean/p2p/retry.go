@@ -49,7 +49,7 @@ func (h *Host) FetchBlocksByRootBatchWithRetry(ctx context.Context, roots [][32]
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.SelectPeer(excluded, 0)
+		peerID := h.PeerStore().SelectPeer(excluded, 0)
 		if peerID == "" {
 			return nil, roots, fmt.Errorf("no peers available for batch block fetch")
 		}
@@ -90,7 +90,7 @@ func (h *Host) FetchBlocksByRangeWithRetry(
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.SelectPeer(excluded, startSlot+count-1)
+		peerID := h.PeerStore().SelectPeer(excluded, startSlot+count-1)
 		if peerID == "" {
 			return nil, "", fmt.Errorf("no peers available for blocks_by_range fetch")
 		}
@@ -119,7 +119,7 @@ func (h *Host) fetchSingleBlockWithRetry(ctx context.Context, root [32]byte) ([]
 	backoff := time.Duration(InitialBackoffMs) * time.Millisecond
 
 	for attempt := range MaxFetchRetries {
-		peerID := h.peerStore.SelectPeer(excluded, 0)
+		peerID := h.PeerStore().SelectPeer(excluded, 0)
 		if peerID == "" {
 			return nil, fmt.Errorf("no peers available for block fetch")
 		}

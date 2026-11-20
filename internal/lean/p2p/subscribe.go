@@ -6,47 +6,6 @@ import (
 	"github.com/geanlabs/gean/internal/core/logger"
 )
 
-func (h *Host) JoinTopic(topic string) error {
-	if err := h.pubsub.RegisterTopicValidator(topic, h.validateGossip); err != nil {
-		return fmt.Errorf("register validator for %s: %w", topic, err)
-	}
-	t, err := h.pubsub.Join(topic)
-	if err != nil {
-		_ = h.pubsub.UnregisterTopicValidator(topic)
-		return fmt.Errorf("join topic %s: %w", topic, err)
-	}
-	sub, err := t.Subscribe()
-	if err != nil {
-		_ = h.pubsub.UnregisterTopicValidator(topic)
-		return fmt.Errorf("subscribe to %s: %w", topic, err)
-	}
-	h.topics[topic] = t
-	h.subs[topic] = sub
-	return nil
-}
-
-func (h *Host) ReannounceSubscriptions() error {
-	handler := h.gossipHandler.Load()
-	if handler == nil {
-		return fmt.Errorf("reannounce: gossip listeners not started yet")
-	}
-	for topic, oldSub := range h.subs {
-		oldSub.Cancel()
-		t, ok := h.topics[topic]
-		if !ok {
-			return fmt.Errorf("reannounce: topic %s missing", topic)
-		}
-		newSub, err := t.Subscribe()
-		if err != nil {
-			return fmt.Errorf("reannounce: subscribe %s: %w", topic, err)
-		}
-		h.subs[topic] = newSub
-		h.tasks.Go(func() { h.listenTopic(h.ctx, topic, newSub, *handler) })
-		logger.Info(logger.Network, "re-announced subscription topic=%s", topic)
-	}
-	return nil
-}
-
 func (h *Host) subscribeStartupTopics(
 	committeeCount uint64,
 	validatorIDs []uint64,
@@ -54,20 +13,20 @@ func (h *Host) subscribeStartupTopics(
 	aggregateSubnetIDs []uint64,
 ) error {
 	logger.Info(logger.Network, "joining gossipsub topics")
-	if err := h.JoinTopic(BlockTopic()); err != nil {
+	if err := h.JoinTopic(BlockTopic(), h.validateGossip); err != nil {
 		return fmt.Errorf("join block topic: %w", err)
 	}
-	if err := h.JoinTopic(AggregationTopic()); err != nil {
+	if err := h.JoinTopic(AggregationTopic(), h.validateGossip); err != nil {
 		return fmt.Errorf("join aggregation topic: %w", err)
 	}
 
 	for subnetID := range initialAttestationSubnets(committeeCount, validatorIDs, isAggregator, aggregateSubnetIDs) {
-		if err := h.JoinTopic(AttestationSubnetTopic(subnetID)); err != nil {
+		if err := h.JoinTopic(AttestationSubnetTopic(subnetID), h.validateGossip); err != nil {
 			return fmt.Errorf("join attestation subnet %d: %w", subnetID, err)
 		}
 	}
 
-	for topic := range h.topics {
+	for _, topic := range h.Topics() {
 		logger.Info(logger.Network, "subscribed topic=%s", topic)
 	}
 	return nil

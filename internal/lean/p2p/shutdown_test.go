@@ -7,7 +7,6 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pb "github.com/libp2p/go-libp2p-pubsub/pb"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -31,7 +30,7 @@ func TestCloseWaitsForHeldReqRespHandler(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	if err := client.host.Connect(ctx, peer.AddrInfo{ID: server.PeerID(), Addrs: server.Addrs()}); err != nil {
+	if err := client.LibP2PHost().Connect(ctx, peer.AddrInfo{ID: server.PeerID(), Addrs: server.Addrs()}); err != nil {
 		t.Fatal(err)
 	}
 	go client.SendStatusRequest(ctx, server.PeerID(), &StatusMessage{})
@@ -92,27 +91,5 @@ func TestCloseWaitsForHeldGossipValidator(t *testing.T) {
 
 	if got := h.validateGossip(context.Background(), peer.ID("remote"), msg); got != pubsub.ValidationIgnore {
 		t.Fatalf("verdict after Close=%v, want ignore", got)
-	}
-}
-
-type resetStream struct {
-	network.Stream
-	reset bool
-}
-
-func (s *resetStream) Reset() error {
-	s.reset = true
-	return nil
-}
-
-// A stream arriving once Close has begun is reset without being handled.
-func TestTrackedHandlerAfterCloseResetsStream(t *testing.T) {
-	h := &Host{}
-	h.tasks.Close()
-
-	s := &resetStream{}
-	h.tracked(func(network.Stream) { t.Error("handler ran after Close") })(s)
-	if !s.reset {
-		t.Fatal("stream not reset")
 	}
 }
