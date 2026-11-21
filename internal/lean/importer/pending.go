@@ -51,11 +51,15 @@ func (i *Importer) bufferMissingParentBlock(
 	logger.Warn(logger.Chain, "block parent missing slot=%d block_root=0x%x parent_root=0x%x depth=%d, storing as pending",
 		block.Slot, blockRoot, parentRoot, depth)
 
+	// The pending set must only name blocks that are on disk. StorePendingBlock
+	// logs its own failure.
+	if err := i.store.StorePendingBlock(blockRoot, signedBlock); err != nil {
+		return
+	}
 	i.Pending.SetDepth(blockRoot, depth)
 	i.Pending.SetSlot(blockRoot, block.Slot)
 	missingRoot := i.Pending.ResolveAncestor(parentRoot)
 	i.Pending.SetParent(blockRoot, parentRoot)
-	i.store.StorePendingBlock(blockRoot, signedBlock)
 	i.Pending.MarkStored(blockRoot)
 	i.Pending.AddChild(parentRoot, blockRoot)
 
