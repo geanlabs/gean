@@ -4,13 +4,8 @@ package lean
 
 import (
 	"bytes"
-	"encoding/json"
-	"io"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/core/logger"
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/attestation"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
@@ -20,7 +15,15 @@ import (
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-type fcFixture map[string]fcTest
+type forkChoiceFixture struct {
+	specfixtures.Header
+	AnchorState specfixtures.TestState        `json:"anchorState"`
+	AnchorBlock specfixtures.TestBlock        `json:"anchorBlock"`
+	Steps       []specfixtures.ForkChoiceStep `json:"steps"`
+	// MaxSlot is the highest slot the fixture's XMSS keys cover.
+	MaxSlot         uint64                 `json:"maxSlot"`
+	RejectionReason specfixtures.Unchecked `json:"rejectionReason"`
+}
 
 // mockedProofSentinel opens every placeholder aggregation proof the upstream
 // filler emits in its default (non-real-crypto) mode, where the recursive SNARK
@@ -48,73 +51,14 @@ func earliestAdmissibleInterval(slot uint64) uint64 {
 	return start - types.GossipDisparityIntervals
 }
 
-type fcTest struct {
-	AnchorState specfixtures.TestState        `json:"anchorState"`
-	AnchorBlock specfixtures.TestBlock        `json:"anchorBlock"`
-	Steps       []specfixtures.ForkChoiceStep `json:"steps"`
-}
-
-func TestSpecForkChoice(t *testing.T) {
-	logger.SetOutput(io.Discard)
-	defer logger.SetOutput(os.Stderr)
-
-	fixtureDir := "../../../leanSpec/fixtures/consensus/fork_choice"
-
-	if _, err := os.Stat(fixtureDir); os.IsNotExist(err) {
-		t.Skipf("fixtures not present at %s; skipping", fixtureDir)
-	}
-
-	var files []string
-	err := filepath.Walk(fixtureDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && filepath.Ext(path) == ".json" {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking fixture dir %s: %v", fixtureDir, err)
-	}
-
-	if len(files) == 0 {
-		t.Fatalf("no fixture files found in %s", fixtureDir)
-	}
-
-	for _, file := range files {
-		file := file
-		relPath, _ := filepath.Rel(fixtureDir, file)
-		t.Run(relPath, func(t *testing.T) {
-			data, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatalf("reading %s: %v", file, err)
-			}
-
-			var fixture fcFixture
-			if err := json.Unmarshal(data, &fixture); err != nil {
-				t.Fatalf("unmarshalling %s: %v", file, err)
-			}
-
-			for testName, tt := range fixture {
-				tt := tt
-				t.Run(testName, func(t *testing.T) {
-					runForkChoiceTest(t, &tt)
-				})
-			}
-		})
-	}
-}
-
-func runForkChoiceTest(t *testing.T, tt *fcTest) {
-	t.Helper()
-
-	skipPoseidonState(t, &tt.AnchorState)
-	anchorState, err := tt.AnchorState.ToState()
+// runForkChoice replays a fixture's steps against gean's store and fork
+// choice, checking the store after each step that carries checks.
+func runForkChoice(t *testing.T, fixture *forkChoiceFixture) {
+	anchorState, err := fixture.AnchorState.ToState()
 	if err != nil {
 		t.Fatalf("anchor state: %v", err)
 	}
-	anchorBlock, err := tt.AnchorBlock.ToBlock()
+	anchorBlock, err := fixture.AnchorBlock.ToBlock()
 	if err != nil {
 		t.Fatalf("anchor block: %v", err)
 	}
@@ -148,7 +92,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 		t.Fatalf("hashing anchor state: %v", err)
 	}
 	if computedStateRoot != anchorBlock.StateRoot {
-		if len(tt.Steps) == 0 {
+		if len(fixture.Steps) == 0 {
 			t.Logf("anchor init rejected (expected): block=%x state=%x",
 				anchorBlock.StateRoot, computedStateRoot)
 			return
@@ -176,7 +120,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	// Label -> root map for resolving blockRootLabel references.
 	labelRoots := make(map[string][32]byte)
 
-	for i, step := range tt.Steps {
+	for i, step := range fixture.Steps {
 		switch step.StepType {
 		case "block":
 			if step.Block == nil {
@@ -266,9 +210,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 
 			// Validate checks if present.
-			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
-			}
+			validateChecks(t, i, step.Checks, s, fc, labelRoots)
 
 		case "attestation":
 			if step.Attestation == nil {
@@ -310,9 +252,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			if !step.Valid {
 				// Validation correctly rejected — no state mutation, just
 				// assert any checks the fixture carried then continue.
-				if step.Checks != nil {
-					validateChecks(t, i, step.Checks, s, fc, labelRoots)
-				}
+				validateChecks(t, i, step.Checks, s, fc, labelRoots)
 				continue
 			}
 
@@ -340,9 +280,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 			simulateUpdateHead(s, fc, justifiedRoot)
 
-			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
-			}
+			validateChecks(t, i, step.Checks, s, fc, labelRoots)
 
 		case "gossipAggregatedAttestation":
 			if step.Attestation == nil {
@@ -389,9 +327,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				t.Fatalf("step %d: expected invalid aggregated attestation, got accepted", i)
 			}
 			if !step.Valid {
-				if step.Checks != nil {
-					validateChecks(t, i, step.Checks, s, fc, labelRoots)
-				}
+				validateChecks(t, i, step.Checks, s, fc, labelRoots)
 				continue
 			}
 
@@ -411,9 +347,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			}
 			simulateUpdateHead(s, fc, justifiedRoot)
 
-			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
-			}
+			validateChecks(t, i, step.Checks, s, fc, labelRoots)
 
 		case "tick":
 			// step.Time is wall-clock seconds since the UNIX epoch; step.Interval
@@ -421,11 +355,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 			var target uint64
 			switch {
 			case step.Time != nil:
-				genesisMs := s.Config().GenesisTime * 1000
-				timestampMs := *step.Time * 1000
-				if timestampMs >= genesisMs {
-					target = (timestampMs - genesisMs) / types.MillisecondsPerInterval
-				}
+				target = types.TotalIntervals(s.Config().GenesisTime, *step.Time*1000)
 			case step.Interval != nil:
 				target = *step.Interval
 			default:
@@ -461,9 +391,7 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 				s.SetTime(target)
 			}
 
-			if step.Checks != nil {
-				validateChecks(t, i, step.Checks, s, fc, labelRoots)
-			}
+			validateChecks(t, i, step.Checks, s, fc, labelRoots)
 
 		default:
 			t.Fatalf("step %d: unknown step type %q", i, step.StepType)
@@ -473,6 +401,19 @@ func runForkChoiceTest(t *testing.T, tt *fcTest) {
 
 func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s *store.ConsensusStore, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
 	t.Helper()
+	if checks == nil {
+		return
+	}
+	// A label the replay never registered fails the check rather than skipping
+	// it, so a renamed label or a block that failed to import cannot pass.
+	labelRoot := func(label string) [32]byte {
+		t.Helper()
+		root, ok := labelRoots[label]
+		if !ok {
+			t.Fatalf("step %d check: unknown block label %q", stepIdx, label)
+		}
+		return root
+	}
 
 	headRoot := s.Head()
 
@@ -494,11 +435,9 @@ func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s 
 	}
 
 	if checks.HeadRootLabel != nil {
-		if labelRoot, ok := labelRoots[*checks.HeadRootLabel]; ok {
-			if headRoot != labelRoot {
-				t.Fatalf("step %d check: headRootLabel %q got 0x%x, want 0x%x",
-					stepIdx, *checks.HeadRootLabel, headRoot, labelRoot)
-			}
+		if want := labelRoot(*checks.HeadRootLabel); headRoot != want {
+			t.Fatalf("step %d check: headRootLabel %q got 0x%x, want 0x%x",
+				stepIdx, *checks.HeadRootLabel, headRoot, want)
 		}
 	}
 
@@ -521,9 +460,9 @@ func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s 
 		}
 	}
 	if checks.LatestJustifiedRootLabel != nil {
-		if labelRoot, ok := labelRoots[*checks.LatestJustifiedRootLabel]; ok && lj.Root != labelRoot {
+		if want := labelRoot(*checks.LatestJustifiedRootLabel); lj.Root != want {
 			t.Fatalf("step %d check: latestJustifiedRootLabel %q got 0x%x, want 0x%x",
-				stepIdx, *checks.LatestJustifiedRootLabel, lj.Root, labelRoot)
+				stepIdx, *checks.LatestJustifiedRootLabel, lj.Root, want)
 		}
 	}
 
@@ -540,9 +479,9 @@ func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s 
 		}
 	}
 	if checks.LatestFinalizedRootLabel != nil {
-		if labelRoot, ok := labelRoots[*checks.LatestFinalizedRootLabel]; ok && lf.Root != labelRoot {
+		if want := labelRoot(*checks.LatestFinalizedRootLabel); lf.Root != want {
 			t.Fatalf("step %d check: latestFinalizedRootLabel %q got 0x%x, want 0x%x",
-				stepIdx, *checks.LatestFinalizedRootLabel, lf.Root, labelRoot)
+				stepIdx, *checks.LatestFinalizedRootLabel, lf.Root, want)
 		}
 	}
 
@@ -560,9 +499,9 @@ func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s 
 		}
 	}
 	if checks.SafeTargetRootLabel != nil {
-		if labelRoot, ok := labelRoots[*checks.SafeTargetRootLabel]; ok && st != labelRoot {
+		if want := labelRoot(*checks.SafeTargetRootLabel); st != want {
 			t.Fatalf("step %d check: safeTargetRootLabel %q got 0x%x, want 0x%x",
-				stepIdx, *checks.SafeTargetRootLabel, st, labelRoot)
+				stepIdx, *checks.SafeTargetRootLabel, st, want)
 		}
 	}
 	if checks.SafeTargetSlot != nil {
@@ -705,17 +644,24 @@ func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore
 		}
 		return
 	}
-	if ac.HeadSlot != nil && target.Data.Head != nil && target.Data.Head.Slot != *ac.HeadSlot {
-		t.Errorf("step %d: attestationCheck v=%d %s: headSlot got %d, want %d",
-			stepIdx, ac.Validator, ac.Location, target.Data.Head.Slot, *ac.HeadSlot)
-	}
-	if ac.SourceSlot != nil && target.Data.Source != nil && target.Data.Source.Slot != *ac.SourceSlot {
-		t.Errorf("step %d: attestationCheck v=%d %s: sourceSlot got %d, want %d",
-			stepIdx, ac.Validator, ac.Location, target.Data.Source.Slot, *ac.SourceSlot)
-	}
-	if ac.TargetSlot != nil && target.Data.Target != nil && target.Data.Target.Slot != *ac.TargetSlot {
-		t.Errorf("step %d: attestationCheck v=%d %s: targetSlot got %d, want %d",
-			stepIdx, ac.Validator, ac.Location, target.Data.Target.Slot, *ac.TargetSlot)
+	for _, slotCheck := range []struct {
+		name       string
+		want       *uint64
+		checkpoint *types.Checkpoint
+	}{
+		{"headSlot", ac.HeadSlot, target.Data.Head},
+		{"sourceSlot", ac.SourceSlot, target.Data.Source},
+		{"targetSlot", ac.TargetSlot, target.Data.Target},
+	} {
+		switch {
+		case slotCheck.want == nil:
+		case slotCheck.checkpoint == nil:
+			t.Errorf("step %d: attestationCheck v=%d %s: %s wanted but the attestation has no checkpoint",
+				stepIdx, ac.Validator, ac.Location, slotCheck.name)
+		case slotCheck.checkpoint.Slot != *slotCheck.want:
+			t.Errorf("step %d: attestationCheck v=%d %s: %s got %d, want %d",
+				stepIdx, ac.Validator, ac.Location, slotCheck.name, slotCheck.checkpoint.Slot, *slotCheck.want)
+		}
 	}
 }
 

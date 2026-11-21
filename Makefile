@@ -78,7 +78,7 @@ lean-test-ffi: lean-ffi ## Run the XMSS FFI tests (slow)
 	go test ./internal/core/crypto/xmss/ -v -count=1
 
 lean-spectest: lean-ffi leanSpec/fixtures ## Run the leanSpec fixture tests
-	go test ./testing/spectest/lean/ -count=1 -tags=spectests
+	cd testing/spectest/lean && go test -count=1 -tags=spectests
 
 lean-e2e: ## Run the end-to-end multi-node test with fake XMSS (no Rust needed)
 	go test ./testing/sim/ -v -count=1 -tags=fakecrypto

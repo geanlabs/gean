@@ -12,31 +12,37 @@ find out which one is wrong, and fix gean only when gean is.
 ## Phase 1: Run the failing test alone
 
 Fixtures live in `leanSpec/fixtures/`, downloaded and checked by `make leanSpec/fixtures`, which
-`make lean-spectest` runs first. Every test **skips** when its fixtures are missing, so a run without
-them passes while testing nothing: check for `SKIP` lines before trusting a pass. Fixtures carrying
-leanSpec's Poseidon XMSS keys also skip, naming leanSpec#1210: gean runs leanVM's BLAKE2s XMSS.
+`make lean-spectest` runs first. `TestSpec` runs every fixture directory through the runner
+registered for it in `spec_test.go`, one file per directory (`state_transition_test.go` runs
+`state_transition`), or leaves the directory out with a reason listed in `excludedDirectories`.
+Every run ends with a summary: cases passed, failed and skipped per directory, why each case skipped
+(Poseidon XMSS, leanSpec#1210, or not implemented in gean), the excluded directories, and any
+fixture expectations gean does not evaluate yet. The run fails when a directory has neither a runner
+nor an exclusion, a runner or exclusion has no fixtures, a case skips without a listed reason, or a
+fixture has a field gean does not declare.
 
 ```bash
-make lean-spectest                                            # everything; fetches fixtures if needed
-go test ./testing/spectest/lean/ -tags=spectests -count=1 -v -run 'TestSpecStateTransition/<case>'
+make lean-spectest                                                  # everything, with the summary
+cd testing/spectest/lean && go test -tags=spectests -count=1 -v -run 'TestSpec/state_transition/<case>'
 ```
 
-| Test | Fixtures under `leanSpec/fixtures/consensus/` | gean code |
-|---|---|---|
-| `TestSpecStateTransition` | `state_transition` | `internal/lean/transition` |
-| `TestSpecForkChoice` | `fork_choice` | `internal/lean/forkchoice`, `internal/core/protoarray`, `internal/lean/store` |
-| `TestSpecJustifiability` | `justifiability` | `internal/lean/transition` |
-| `TestSpecSSZ` | `ssz` | `internal/lean/types` (generated `*_encoding.go`) |
-| `TestSpecSignatures`, `TestSpecVerify*Proofs` | `verify_signatures`, `verify_*_message_proofs` | `internal/lean/attestation`, `internal/core/crypto/xmss` |
-| `TestSpecNetworkingCodec` | `networking_codec` | `internal/core/p2p`, `internal/lean/p2p` |
-| `TestSpecSync` | `sync` | `internal/lean/syncer` |
-| `TestSpecAPI` | `api_endpoint` | `internal/lean/api` |
-| `TestSpecSlotClock` | `slot_clock` | `internal/lean/types` (slot and interval math) |
+| Fixture directory, under `leanSpec/fixtures/consensus/` | gean code |
+|---|---|
+| `state_transition`, `justifiability` | `internal/lean/transition` |
+| `fork_choice` | `internal/lean/forkchoice`, `internal/core/protoarray`, `internal/lean/store` |
+| `ssz` | `internal/lean/types` (generated `*_encoding.go`) |
+| `verify_signatures`, `verify_single_message_proofs` | `internal/lean/attestation`, `internal/core/crypto/xmss` |
+| `networking_codec` | `internal/core/p2p`, `internal/lean/p2p` |
+| `sync` | the spec's structural checkpoint check, `verifyCheckpointStructure` in `sync_test.go`, which is narrower than `internal/lean/syncer/checkpoint` |
+| `api_endpoint` | `internal/lean/api` |
+| `slot_clock` | `internal/lean/types` (slot and interval math) |
 
 ## Phase 2: Classify the failure
 
-- **Fixture fails to load or decode:** the fixture format changed with the spec. Fix the harness in
-  `testing/spectest/lean/` (or `internal/lean/specfixtures`), not consensus code.
+- **Fixture fails to load or decode:** the fixture format changed with the spec; an unknown field
+  names exactly what. Fix the harness in `testing/spectest/lean/` (or `internal/lean/specfixtures`),
+  not consensus code. Declare a new expectation gean cannot check yet as `specfixtures.Unchecked`,
+  so the summary keeps reporting it.
 - **State root or post-state mismatch:** the state transition diverges. Compare field by field to
   find the first differing field; it names the rule.
 - **Block accepted that should be rejected, or the reverse:** a validity check is missing or wrong.
@@ -68,7 +74,7 @@ go test ./testing/spectest/lean/ -tags=spectests -count=1 -v -run 'TestSpecState
 2. Run the failing case, then the whole test, then everything:
 
    ```bash
-   go test ./testing/spectest/lean/ -tags=spectests -count=1 -run '<Test>/<case>'
+   cd testing/spectest/lean && go test -tags=spectests -count=1 -run 'TestSpec/<directory>/<case>'
    make lean-spectest
    make test
    ```

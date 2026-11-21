@@ -3,143 +3,86 @@
 package lean
 
 import (
-	"encoding/hex"
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
+	"encoding/binary"
 	"testing"
 
+	"github.com/geanlabs/gean/internal/lean/specfixtures"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-// Sync fixtures cover the spec's verify_checkpoint_state operation. Each
-// .json carries one SSZ-encoded State plus a boolean indicating whether the
-// structural rules accept it.
-const syncFixturesRoot = "../../../leanSpec/fixtures/consensus/sync/lstar/sync"
-
-type syncFixtureOuter map[string]syncFixture
-
+// syncFixture covers the spec's verify_checkpoint_state: an SSZ-encoded state
+// and whether its structure is acceptable as a checkpoint.
 type syncFixture struct {
-	Network   string                 `json:"network"`
-	LeanEnv   string                 `json:"leanEnv"`
-	Operation syncOperation          `json:"operation"`
-	Output    syncOutput             `json:"output"`
-	Info      map[string]interface{} `json:"_info"`
+	specfixtures.Header
+	Operation struct {
+		Kind          string `json:"kind"`
+		NumValidators uint64 `json:"numValidators"`
+		AnchorSlot    uint64 `json:"anchorSlot"`
+	} `json:"operation"`
+	Output struct {
+		Valid          bool   `json:"valid"`
+		StateBytes     string `json:"stateBytes"`
+		ValidatorCount uint64 `json:"validatorCount"`
+		AnchorSlot     uint64 `json:"anchorSlot"`
+	} `json:"output"`
 }
 
-// operation carries the kind and its inputs inline (lstar fixture shape).
-type syncOperation struct {
-	Kind          string `json:"kind"`
-	NumValidators uint64 `json:"numValidators"`
-	AnchorSlot    uint64 `json:"anchorSlot"`
-}
-
-type syncOutput struct {
-	Valid          bool   `json:"valid"`
-	StateBytes     string `json:"stateBytes"`
-	ValidatorCount uint64 `json:"validatorCount"`
-	AnchorSlot     uint64 `json:"anchorSlot"`
-}
-
-// verifyCheckpointStructural mirrors the spec's verify_checkpoint_state:
-// a state passes if it has at least one validator, the count stays inside
-// VALIDATOR_REGISTRY_LIMIT,
-// and its SSZ tree root can be computed (covers structural decode sanity).
-//
-// Production gean uses checkpoint.VerifyCheckpointState, which additionally
-// cross-checks genesis time and the expected validator set against the
-// caller-supplied configuration and rejects slot 0 outright. That broader
-// policy is stricter than the spec's structural-only definition, so the
-// spec test exercises the narrower contract here.
-func verifyCheckpointStructural(state *types.State) bool {
-	if len(state.Validators) == 0 {
-		return false
-	}
-	if uint64(len(state.Validators)) > types.ValidatorRegistryLimit {
-		return false
-	}
-	if _, err := state.HashTreeRoot(); err != nil {
-		return false
-	}
-	return true
-}
-
-// TestSpecSync walks the sync fixture directory and, for each verify_checkpoint
-// case, decodes the canonical stateBytes via gean's SSZ and asserts the
-// structural verdict matches the spec-generated boolean. Also pins the
-// extracted validator count and anchor slot.
-func TestSpecSync(t *testing.T) {
-	if _, err := os.Stat(syncFixturesRoot); os.IsNotExist(err) {
-		t.Skipf("fixtures not present at %s; run 'make leanSpec/fixtures'", syncFixturesRoot)
+func runSync(t *testing.T, fixture *syncFixture) {
+	if fixture.Operation.Kind != "verify_checkpoint" {
+		t.Fatalf("unknown sync operation %q", fixture.Operation.Kind)
 	}
 
-	err := filepath.Walk(syncFixturesRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".json") {
-			return err
-		}
-
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Errorf("%s: read: %v", path, err)
-			return nil
-		}
-
-		var outer syncFixtureOuter
-		if err := json.Unmarshal(raw, &outer); err != nil {
-			t.Errorf("%s: parse: %v", path, err)
-			return nil
-		}
-
-		base := strings.TrimSuffix(filepath.Base(path), ".json")
-		for _, fx := range outer {
-			fx := fx
-			t.Run(base, func(t *testing.T) {
-				if fx.Operation.Kind != "verify_checkpoint" {
-					t.Skipf("unsupported sync operation %q", fx.Operation.Kind)
-				}
-
-				stateBytes, err := hex.DecodeString(strings.TrimPrefix(fx.Output.StateBytes, "0x"))
-				if err != nil {
-					t.Fatalf("decode stateBytes hex: %v", err)
-				}
-
-				state := &types.State{}
-				ssz_err := state.UnmarshalSSZ(stateBytes)
-				skipPoseidonDecode(t, "State", ssz_err)
-				// A successful decode is a prerequisite for any structural check;
-				// if the spec said valid=true, decode must succeed.
-				if fx.Output.Valid && ssz_err != nil {
-					t.Fatalf("expected SSZ decode to succeed for valid=true case: %v", ssz_err)
-				}
-				if ssz_err != nil {
-					// Decode failure is itself a structural rejection; nothing
-					// further to assert beyond the expected valid=false.
-					if fx.Output.Valid {
-						t.Fatalf("decode failed but spec marks valid=true: %v", ssz_err)
-					}
-					return
-				}
-
-				got := verifyCheckpointStructural(state)
-				if got != fx.Output.Valid {
-					t.Errorf("verifyCheckpointStructural = %v, want %v (validators=%d anchor_slot=%d)",
-						got, fx.Output.Valid, len(state.Validators), state.Slot)
-				}
-
-				if uint64(len(state.Validators)) != fx.Output.ValidatorCount {
-					t.Errorf("validator count from SSZ = %d, fixture says %d",
-						len(state.Validators), fx.Output.ValidatorCount)
-				}
-				if state.Slot != fx.Output.AnchorSlot {
-					t.Errorf("anchor slot from SSZ = %d, fixture says %d",
-						state.Slot, fx.Output.AnchorSlot)
-				}
-			})
-		}
-		return nil
-	})
+	stateBytes := mustParse(t, specfixtures.ParseHexBytes, fixture.Output.StateBytes)
+	state := &types.State{}
+	err := state.UnmarshalSSZ(stateBytes)
+	// The state ships as raw SSZ, so no key shows up as hex for the shared
+	// check: a state that only decodes at Poseidon validator sizes is one.
+	if err != nil && poseidonValidatorList(stateBytes, fixture.Output.ValidatorCount) {
+		skip(t, skipPoseidonXMSS, "state holds Poseidon validator keys")
+	}
 	if err != nil {
-		t.Fatalf("walk fixtures: %v", err)
+		if fixture.Output.Valid {
+			t.Fatalf("decode a valid checkpoint state: %v", err)
+		}
+		return
 	}
+
+	if got := verifyCheckpointStructure(state); got != fixture.Output.Valid {
+		t.Errorf("checkpoint state accepted = %v, want %v (validators=%d slot=%d)",
+			got, fixture.Output.Valid, len(state.Validators), state.Slot)
+	}
+	if uint64(len(state.Validators)) != fixture.Output.ValidatorCount {
+		t.Errorf("validator count %d, want %d", len(state.Validators), fixture.Output.ValidatorCount)
+	}
+	if state.Slot != fixture.Output.AnchorSlot {
+		t.Errorf("anchor slot %d, want %d", state.Slot, fixture.Output.AnchorSlot)
+	}
+}
+
+// verifyCheckpointStructure is the spec's verify_checkpoint_state: at least
+// one validator, no more than the registry limit, and a computable root.
+// gean's checkpoint.VerifyCheckpointState is stricter: it also checks the
+// genesis time and validator set against the node's config and rejects slot
+// 0, so the narrower spec contract is checked here.
+func verifyCheckpointStructure(state *types.State) bool {
+	if len(state.Validators) == 0 || uint64(len(state.Validators)) > types.ValidatorRegistryLimit {
+		return false
+	}
+	_, err := state.HashTreeRoot()
+	return err == nil
+}
+
+// poseidonValidatorList reports whether an SSZ state's validator list is sized
+// for Poseidon keys: 112 bytes a validator (two 52-byte keys and an index)
+// where BLAKE2s keys make it 72.
+func poseidonValidatorList(state []byte, validatorCount uint64) bool {
+	// The state's fixed fields take 208 bytes; the offsets of its variable
+	// fields follow, the validator list's third, then the field after it.
+	const validatorsOffset, nextFieldOffset = 216, 220
+	if validatorCount == 0 || len(state) < nextFieldOffset+4 {
+		return false
+	}
+	start := binary.LittleEndian.Uint32(state[validatorsOffset:])
+	end := binary.LittleEndian.Uint32(state[nextFieldOffset:])
+	return end >= start && uint64(end-start) == validatorCount*(2*poseidonPublicKeySize+8)
 }

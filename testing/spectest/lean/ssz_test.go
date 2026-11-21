@@ -4,217 +4,154 @@ package lean
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
+	ssz "github.com/ferranbt/fastssz"
+
+	"github.com/geanlabs/gean/internal/lean/p2p"
+	"github.com/geanlabs/gean/internal/lean/specfixtures"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-// Spec fixture roots for SSZ conformance tests. Each directory holds fixtures
-// that carry typeName / serialized (SSZ hex) / root (hash_tree_root hex).
-var sszFixtureRoots = []string{
-	"../../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_consensus_containers",
-	"../../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_networking_containers",
-	"../../../leanSpec/fixtures/consensus/ssz/lstar/ssz/test_xmss_containers",
-}
-
-type sszFixtureOuter map[string]sszFixture
-
 type sszFixture struct {
-	Network         string          `json:"network"`
-	LeanEnv         string          `json:"leanEnv"`
-	TypeName        string          `json:"typeName"`
+	specfixtures.Header
+	TypeName string `json:"typeName"`
+	// Value is the decoded form, for readers; serialized and root are what the
+	// codec is checked against.
 	Value           json.RawMessage `json:"value"`
 	Serialized      string          `json:"serialized"`
 	Root            string          `json:"root"`
-	ExpectException string          `json:"expectException"`
+	RejectionReason string          `json:"rejectionReason"`
 	RawBytes        string          `json:"rawBytes"`
 }
 
-// sszCodec is the uniform contract every gean SSZ type satisfies (sszgen
-// output). The value JSON is intentionally ignored — `serialized` and `root`
-// are the canonical spec outputs, and exercising the gean codec against them
-// covers the decoder, the encoder (via round-trip), and the hasher.
+// sszCodec is what sszgen generates for every gean SSZ type.
 type sszCodec interface {
 	UnmarshalSSZ(buf []byte) error
 	MarshalSSZ() ([]byte, error)
 	HashTreeRoot() ([32]byte, error)
 }
 
-var hashSkipTypes = map[string]bool{"SignedAttestation": true}
-
-// sszFactories maps the spec typeName to a zero-value gean struct.
-//
-// Status is registered via a thin adapter in networking_ssz_adapters_test.go
-// because its gean implementation lives in internal/lean/p2p with hand-rolled
-// SSZ that doesn't match the fastssz-generated sszCodec contract.
-//
-// XMSS containers (PublicKey, Signature, HashTreeLayer, HashTreeOpening) are
-// registered via xmss_ssz_adapters_test.go. Gean stores XMSS payloads as
-// opaque byte arrays — the inner spec structure exists only in the Rust FFI
-// — so the adapters reconstruct the field layout for hash_tree_root.
-var sszFactories = map[string]func() sszCodec{
+// sszTypes maps a spec type name to a new gean value of that type.
+var sszTypes = map[string]func() sszCodec{
+	"AggregatedAttestation":       func() sszCodec { return new(types.AggregatedAttestation) },
+	"Attestation":                 func() sszCodec { return new(types.Attestation) },
+	"AttestationData":             func() sszCodec { return new(types.AttestationData) },
+	"Block":                       func() sszCodec { return new(types.Block) },
+	"BlockBody":                   func() sszCodec { return new(types.BlockBody) },
+	"BlockHeader":                 func() sszCodec { return new(types.BlockHeader) },
+	"BlocksByRootRequest":         func() sszCodec { return new(types.BlocksByRootRequest) },
 	"Checkpoint":                  func() sszCodec { return new(types.Checkpoint) },
 	"Config":                      func() sszCodec { return new(types.ChainConfig) },
-	"Validator":                   func() sszCodec { return new(types.Validator) },
-	"BlockHeader":                 func() sszCodec { return new(types.BlockHeader) },
-	"BlockBody":                   func() sszCodec { return new(types.BlockBody) },
-	"Block":                       func() sszCodec { return new(types.Block) },
-	"SignedBlock":                 func() sszCodec { return new(types.SignedBlock) },
-	"AttestationData":             func() sszCodec { return new(types.AttestationData) },
-	"Attestation":                 func() sszCodec { return new(types.Attestation) },
-	"SignedAttestation":           func() sszCodec { return new(types.SignedAttestation) },
-	"AggregatedAttestation":       func() sszCodec { return new(types.AggregatedAttestation) },
-	"SignedAggregatedAttestation": func() sszCodec { return new(types.SignedAggregatedAttestation) },
-	"SingleMessageAggregate":      func() sszCodec { return new(types.SingleMessageAggregate) },
 	"MultiMessageAggregate":       func() sszCodec { return new(types.MultiMessageAggregate) },
+	"SignedAggregatedAttestation": func() sszCodec { return new(types.SignedAggregatedAttestation) },
+	"SignedAttestation":           func() sszCodec { return new(types.SignedAttestation) },
+	"SignedBlock":                 func() sszCodec { return new(types.SignedBlock) },
+	"SingleMessageAggregate":      func() sszCodec { return new(types.SingleMessageAggregate) },
 	"State":                       func() sszCodec { return new(types.State) },
 	"Status":                      func() sszCodec { return new(sszStatusAdapter) },
-	"BlocksByRootRequest":         func() sszCodec { return new(types.BlocksByRootRequest) },
-	"PublicKey":                   func() sszCodec { return new(sszPublicKeyAdapter) },
-	"Signature":                   func() sszCodec { return new(sszSignatureAdapter) },
-	"HashTreeLayer":               func() sszCodec { return new(sszHashTreeLayerAdapter) },
-	"HashTreeOpening":             func() sszCodec { return new(sszHashTreeOpeningAdapter) },
+	"Validator":                   func() sszCodec { return new(types.Validator) },
 }
 
-// sszDecodeFailureFactories maps a fixture type name to a decoder for fixtures
-// that assert malformed input is rejected. It is empty: no rejection fixture
-// targets a type gean decodes standalone, and the harness skips unregistered
-// types.
-var sszDecodeFailureFactories = map[string]func([]byte) error{}
-
-// TestSpecSSZ walks the ssz container fixture directories and, for each
-// fixture, exercises the gean codec end-to-end:
-//
-//  1. hex-decode `serialized` into bytes.
-//  2. UnmarshalSSZ(bytes) into a zero-value gean struct — exercises the decoder.
-//  3. MarshalSSZ() the struct again and assert byte-for-byte equal to (1) —
-//     exercises the encoder via round-trip.
-//  4. HashTreeRoot() and assert equal to the fixture's `root` — exercises
-//     merkleization independently of encode/decode.
-func TestSpecSSZ(t *testing.T) {
-	var walked int
-	for _, root := range sszFixtureRoots {
-		if _, err := os.Stat(root); os.IsNotExist(err) {
-			t.Logf("skipping %s: not present", root)
-			continue
-		}
-		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".json") {
-				return err
-			}
-			walked++
-
-			raw, err := os.ReadFile(path)
-			if err != nil {
-				t.Errorf("%s: read: %v", path, err)
-				return nil
-			}
-
-			var outer sszFixtureOuter
-			if err := json.Unmarshal(raw, &outer); err != nil {
-				t.Errorf("%s: unmarshal: %v", path, err)
-				return nil
-			}
-
-			for testID, fx := range outer {
-				name := shortName(testID, path)
-				fx := fx
-				t.Run(name, func(t *testing.T) {
-					runSSZFixture(t, fx)
-				})
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walk %s: %v", root, err)
-		}
-	}
-
-	if walked == 0 {
-		t.Skip("no ssz fixtures found; run 'make leanSpec/fixtures'")
-	}
+// sszRejectionDecoders decode the malformed input of a rejection case. gean's
+// SSZ is generated code, so only rules it calls into the SSZ library for
+// have a decoder to check.
+var sszRejectionDecoders = map[string]func([]byte) error{
+	"DecodeBitlist8": func(buf []byte) error { return ssz.ValidateBitlist(buf, 8) },
 }
 
-func runSSZFixture(t *testing.T, fx sszFixture) {
-	t.Helper()
-
-	if fx.ExpectException != "" {
-		runSSZDecodeFailure(t, fx)
+// runSSZ decodes the spec's encoding into gean's type, re-encodes it, and
+// checks both the bytes and the hash tree root.
+func runSSZ(t *testing.T, fixture *sszFixture) {
+	if poseidonStructureTypes[fixture.TypeName] {
+		skip(t, skipPoseidonXMSS, fixture.TypeName+" is a Poseidon XMSS structure")
+	}
+	if fixture.RejectionReason != "" {
+		runSSZRejection(t, fixture)
 		return
 	}
-
-	factory, ok := sszFactories[fx.TypeName]
+	newValue, ok := sszTypes[fixture.TypeName]
 	if !ok {
-		t.Skipf("type %q not wired into ssz harness", fx.TypeName)
-		return
+		skip(t, skipNotImplemented, "SSZ type "+fixture.TypeName)
 	}
 
-	want, err := hex.DecodeString(strings.TrimPrefix(fx.Serialized, "0x"))
+	encoding := mustParse(t, specfixtures.ParseHexBytes, fixture.Serialized)
+	value := newValue()
+	if err := value.UnmarshalSSZ(encoding); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	reencoded, err := value.MarshalSSZ()
 	if err != nil {
-		t.Fatalf("decode serialized hex: %v", err)
+		t.Fatalf("encode: %v", err)
 	}
-
-	// (2) Decode spec-canonical bytes into a gean struct.
-	obj := factory()
-	if err := obj.UnmarshalSSZ(want); err != nil {
-		skipPoseidonDecode(t, fx.TypeName, err)
-		t.Fatalf("UnmarshalSSZ: %v", err)
+	if !bytes.Equal(reencoded, encoding) {
+		t.Errorf("re-encoding: got %x, want %x", reencoded, encoding)
 	}
-
-	// (3) Re-encode and assert byte-for-byte equality with the input.
-	got, err := obj.MarshalSSZ()
+	root, err := value.HashTreeRoot()
 	if err != nil {
-		t.Fatalf("MarshalSSZ: %v", err)
+		t.Fatalf("hash tree root: %v", err)
 	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("ssz round-trip mismatch:\n got:  %s\n want: %s",
-			hex.EncodeToString(got), hex.EncodeToString(want))
-	}
-
-	// (4) Independently hash and compare to the fixture's expected root.
-	// Skip known spec-ecosystem divergences — see hashSkipTypes for rationale.
-	if hashSkipTypes[fx.TypeName] {
-		return
-	}
-	hash, err := obj.HashTreeRoot()
-	if err != nil {
-		t.Fatalf("HashTreeRoot: %v", err)
-	}
-	gotRoot := "0x" + hex.EncodeToString(hash[:])
-	wantRoot := strings.ToLower(fx.Root)
-	if !strings.HasPrefix(wantRoot, "0x") {
-		wantRoot = "0x" + wantRoot
-	}
-	if gotRoot != wantRoot {
-		t.Errorf("hash_tree_root mismatch:\n got:  %s\n want: %s", gotRoot, wantRoot)
+	if want := mustParse(t, specfixtures.ParseHexRoot, fixture.Root); root != want {
+		t.Errorf("hash tree root: got 0x%x, want 0x%x", root, want)
 	}
 }
 
-// runSSZDecodeFailure handles fixtures with expectException set: the rawBytes
-// payload is decoded against the registered decoder for typeName, and the
-// decode MUST fail. Skips cleanly when typeName isn't registered so future
-// fixtures auto-work as types are wired in.
-func runSSZDecodeFailure(t *testing.T, fx sszFixture) {
-	t.Helper()
-
-	decoder, ok := sszDecodeFailureFactories[fx.TypeName]
+// runSSZRejection checks that a malformed encoding fails to decode.
+func runSSZRejection(t *testing.T, fixture *sszFixture) {
+	decode, ok := sszRejectionDecoders[fixture.TypeName]
 	if !ok {
-		t.Skipf("decode-failure type %q not wired into ssz harness", fx.TypeName)
-		return
+		skip(t, skipNotImplemented, "standalone decoder for "+fixture.TypeName)
 	}
+	if err := decode(mustParse(t, specfixtures.ParseHexBytes, fixture.RawBytes)); err == nil {
+		t.Errorf("decoded malformed %s; want %s", fixture.TypeName, fixture.RejectionReason)
+	}
+}
 
-	raw, err := hex.DecodeString(strings.TrimPrefix(fx.RawBytes, "0x"))
-	if err != nil {
-		t.Fatalf("decode rawBytes hex: %v", err)
-	}
+// sszStatusAdapter runs p2p.StatusMessage, whose SSZ is hand-written and has
+// no hash tree root, through sszCodec. The root is composed here from Status's
+// layout, a container of two checkpoints.
+type sszStatusAdapter struct {
+	Finalized types.Checkpoint
+	Head      types.Checkpoint
+}
 
-	if err := decoder(raw); err == nil {
-		t.Errorf("expected decode of typeName=%q to fail with %s, but it succeeded",
-			fx.TypeName, fx.ExpectException)
+func (s *sszStatusAdapter) MarshalSSZ() ([]byte, error) {
+	msg := p2p.StatusMessage{
+		FinalizedRoot: s.Finalized.Root,
+		FinalizedSlot: s.Finalized.Slot,
+		HeadRoot:      s.Head.Root,
+		HeadSlot:      s.Head.Slot,
 	}
+	return msg.MarshalSSZ(), nil
+}
+
+func (s *sszStatusAdapter) UnmarshalSSZ(buf []byte) error {
+	var msg p2p.StatusMessage
+	if err := msg.UnmarshalSSZ(buf); err != nil {
+		return err
+	}
+	s.Finalized = types.Checkpoint{Root: msg.FinalizedRoot, Slot: msg.FinalizedSlot}
+	s.Head = types.Checkpoint{Root: msg.HeadRoot, Slot: msg.HeadSlot}
+	return nil
+}
+
+func (s *sszStatusAdapter) HashTreeRoot() ([32]byte, error) {
+	return ssz.HashWithDefaultHasher(s)
+}
+
+func (s *sszStatusAdapter) GetTree() (*ssz.Node, error) {
+	return ssz.ProofTree(s)
+}
+
+func (s *sszStatusAdapter) HashTreeRootWith(hh ssz.HashWalker) error {
+	indx := hh.Index()
+	if err := s.Finalized.HashTreeRootWith(hh); err != nil {
+		return err
+	}
+	if err := s.Head.HashTreeRootWith(hh); err != nil {
+		return err
+	}
+	hh.Merkleize(indx)
+	return nil
 }
