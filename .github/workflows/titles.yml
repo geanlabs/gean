@@ -1,0 +1,38 @@
+# Checks AGENTS.md's `<type>: <subject>` rule. A squash merge puts the PR title on main and
+# a merge or rebase puts every commit subject there, so both are checked. It is its own
+# workflow so that editing a title re-runs it without re-running CI.
+name: titles
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  titles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The checked-out merge commit has main as its first parent and the PR as its second.
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          subjects=$(git log --no-merges --format=%s HEAD^1..HEAD^2)
+          bad=$(printf '%s\n%s\n' "$subjects" "$TITLE" |
+            grep -vE '^(Revert ")?(feat|fix|perf|refactor|test|docs|build|deps|chore): [a-z0-9]' || true)
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            echo "::error::Titles and commit subjects must be '<type>: <lowercase subject>' with type feat, fix, perf, refactor, test, docs, build, deps or chore (AGENTS.md)."
+            exit 1
+          fi
