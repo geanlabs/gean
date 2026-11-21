@@ -18,7 +18,7 @@ only what you can point to in the code; a finding you can't tie to a line is not
 
 ## Phase 2: Review, one file at a time
 
-Skip what `make lint` already enforces: formatting, vet findings, and the import rules.
+Skip what precheck already enforces: formatting and anything `make lint` reports.
 
 ### Consensus correctness (critical)
 

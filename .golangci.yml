@@ -1,7 +1,6 @@
 # golangci-lint v2 configuration.
 #
-# Run with `make lint`. The depguard import rules fail the build; other
-# findings are reported without failing it.
+# Run with `make lint`. Any finding fails it.
 
 version: "2"
 
