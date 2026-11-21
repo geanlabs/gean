@@ -37,8 +37,9 @@ docker-build: ## Build the Docker image DOCKER_IMAGE:DOCKER_TAG
 
 ##@ Test
 
-test: lean-ffi ## Run unit tests (no FFI tests, spec fixtures or simulations)
+test: lean-ffi ## Run unit tests and the XMSS scheme vector (no other FFI tests, spec fixtures or simulations)
 	go test $$(go list ./... | grep -v '/crypto/xmss$$') -v -count=1
+	go test ./internal/core/crypto/xmss/ -run '^TestSchemeKnownAnswer$$' -v -count=1
 
 test-all: lean-ffi leanSpec/fixtures ## Run every test but lean-e2e: unit, FFI, spec fixtures, simulations (slow)
 	go test ./... -v -count=1 -tags=spectests,sim
