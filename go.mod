@@ -124,3 +124,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
+
+tool github.com/ferranbt/fastssz/sszgen

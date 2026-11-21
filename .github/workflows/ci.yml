@@ -43,6 +43,9 @@ jobs:
           install-only: true
       # make lint leaves formatting to gofmt.
       - run: "! gofmt -l . | grep ."
+      - run: go mod tidy -diff
+      # add -N makes a newly generated file part of the diff.
+      - run: make lean-sszgen && git add -N internal/lean/types && git diff --exit-code
       - run: make lint
       # make lint and make test build only the default variant.
       - run: go vet -tags fakecrypto ./... && go vet -tags spectests,sim ./testing/...
