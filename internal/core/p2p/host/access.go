@@ -51,9 +51,11 @@ func (h *Host) Close() {
 	for _, sub := range h.subs {
 		sub.Cancel()
 	}
+	h.enrMu.Lock()
 	if h.discovery != nil {
 		h.discovery.Close()
 	}
+	h.enrMu.Unlock()
 	h.host.Close()
 	h.tasks.Close()
 }

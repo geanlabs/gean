@@ -20,7 +20,9 @@ func (h *Host) subscribeStartupTopics(
 		return fmt.Errorf("join aggregation topic: %w", err)
 	}
 
-	for subnetID := range initialAttestationSubnets(committeeCount, validatorIDs, isAggregator, aggregateSubnetIDs) {
+	subnets := initialAttestationSubnets(committeeCount, validatorIDs, isAggregator, aggregateSubnetIDs)
+	h.SetENREntry(encodeAttnets(subnets, committeeCount))
+	for subnetID := range subnets {
 		if err := h.JoinTopic(AttestationSubnetTopic(subnetID), h.validateGossip); err != nil {
 			return fmt.Errorf("join attestation subnet %d: %w", subnetID, err)
 		}

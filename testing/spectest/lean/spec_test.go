@@ -63,7 +63,8 @@ const (
 	// leanSpec specifies BLAKE2s.
 	skipPoseidonXMSS skipReason = "Poseidon XMSS fixture; gean runs leanVM's BLAKE2s XMSS " +
 		"(https://github.com/leanEthereum/leanSpec/issues/1210)"
-	skipNotImplemented skipReason = "not implemented in gean"
+	skipNotImplemented   skipReason = "not implemented in gean"
+	skipFollowsEthlambda skipReason = "gean follows ethlambda where it diverges from leanSpec"
 )
 
 // skip ends the case, recording why.

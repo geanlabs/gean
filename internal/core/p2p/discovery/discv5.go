@@ -38,12 +38,15 @@ type Config struct {
 	// QUICPort is the libp2p QUIC port advertised in the ENR's quic entry.
 	QUICPort  int
 	Bootnodes []*enode.Node
+	// Entries are the chain's own ENR entries, such as its subnets.
+	Entries []enr.Entry
 }
 
 // Service runs discv5 on its own UDP socket.
 type Service struct {
-	db  *enode.DB
-	udp *discover.UDPv5
+	db    *enode.DB
+	local *enode.LocalNode
+	udp   *discover.UDPv5
 }
 
 // Start opens the discv5 socket and joins the network through cfg.Bootnodes.
@@ -54,6 +57,9 @@ func Start(cfg Config) (*Service, error) {
 	}
 	local := enode.NewLocalNode(db, cfg.PrivateKey)
 	local.Set(enr.QUIC(cfg.QUICPort))
+	for _, entry := range cfg.Entries {
+		local.Set(entry)
+	}
 	if cfg.AdvertiseIP != nil {
 		local.SetStaticIP(cfg.AdvertiseIP)
 	}
@@ -74,7 +80,18 @@ func Start(cfg Config) (*Service, error) {
 		db.Close()
 		return nil, fmt.Errorf("start discv5: %w", err)
 	}
-	return &Service{db: db, udp: udp}, nil
+	return &Service{db: db, local: local, udp: udp}, nil
+}
+
+// Set puts entry in this node's record, replacing any entry under its key.
+// The record's sequence number rises, so peers fetch the new record.
+func (s *Service) Set(entry enr.Entry) {
+	s.local.Set(entry)
+}
+
+// Delete is the inverse of Set.
+func (s *Service) Delete(entry enr.Entry) {
+	s.local.Delete(entry)
 }
 
 // Self returns this node's current record.

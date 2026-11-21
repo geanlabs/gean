@@ -7,8 +7,10 @@ package host
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum/p2p/enr"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	libp2phost "github.com/libp2p/go-libp2p/core/host"
@@ -40,9 +42,12 @@ type Host struct {
 	// deliver is set once, when the listeners start, and read again when
 	// subscriptions are re-announced.
 	deliver atomic.Pointer[Deliver]
-	// discovery is discv5, when StartDiscovery has run.
-	discovery *discovery.Service
-	Hooks     Hooks
+	// discovery is discv5, when StartDiscovery has run. enrMu guards it and
+	// enrEntries, the entries set before it started.
+	enrMu      sync.Mutex
+	discovery  *discovery.Service
+	enrEntries map[string]enr.Entry
+	Hooks      Hooks
 
 	// tasks tracks the goroutines the host starts, the req/resp handlers it
 	// runs and the gossip validators pubsub calls, which read the store, so

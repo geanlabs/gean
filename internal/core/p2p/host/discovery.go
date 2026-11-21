@@ -2,11 +2,14 @@ package host
 
 import (
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"strconv"
 
 	gethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/geanlabs/gean/internal/core/logger"
@@ -14,8 +17,8 @@ import (
 )
 
 // StartDiscovery runs discv5 on udpPort with the host's key, advertising its
-// QUIC address (at advertiseIP, when set), and dials the peers it finds until
-// Close.
+// QUIC address (at advertiseIP, when set) and the entries set so far, and
+// dials the peers it finds until Close.
 func (h *Host) StartDiscovery(udpPort int, advertiseIP net.IP, bootnodes []*enode.Node) error {
 	raw, err := h.host.Peerstore().PrivKey(h.host.ID()).Raw()
 	if err != nil {
@@ -30,17 +33,20 @@ func (h *Host) StartDiscovery(udpPort int, advertiseIP net.IP, bootnodes []*enod
 		return err
 	}
 
+	h.enrMu.Lock()
+	defer h.enrMu.Unlock()
 	svc, err := discovery.Start(discovery.Config{
 		PrivateKey:  key,
 		Port:        udpPort,
 		AdvertiseIP: advertiseIP,
 		QUICPort:    quicPort,
 		Bootnodes:   bootnodes,
+		Entries:     slices.Collect(maps.Values(h.enrEntries)),
 	})
 	if err != nil {
 		return err
 	}
-	h.discovery = svc
+	h.discovery, h.enrEntries = svc, nil
 	h.tasks.Go(func() { svc.Dial(h.ctx, h.ConnectedPeers, h.ConnectPeer) })
 	logger.Info(logger.Network, "discv5 started bootnodes=%d enr=%s", len(bootnodes), svc.Self())
 	return nil
@@ -48,10 +54,38 @@ func (h *Host) StartDiscovery(udpPort int, advertiseIP net.IP, bootnodes []*enod
 
 // Node returns this host's discv5 record, or nil when discovery is not running.
 func (h *Host) Node() *enode.Node {
+	h.enrMu.Lock()
+	defer h.enrMu.Unlock()
 	if h.discovery == nil {
 		return nil
 	}
 	return h.discovery.Self()
+}
+
+// SetENREntry puts entry in this host's discv5 record, or holds it for the
+// record StartDiscovery creates.
+func (h *Host) SetENREntry(entry enr.Entry) {
+	h.enrMu.Lock()
+	defer h.enrMu.Unlock()
+	if h.discovery != nil {
+		h.discovery.Set(entry)
+		return
+	}
+	if h.enrEntries == nil {
+		h.enrEntries = make(map[string]enr.Entry)
+	}
+	h.enrEntries[entry.ENRKey()] = entry
+}
+
+// DeleteENREntry is the inverse of SetENREntry.
+func (h *Host) DeleteENREntry(entry enr.Entry) {
+	h.enrMu.Lock()
+	defer h.enrMu.Unlock()
+	if h.discovery != nil {
+		h.discovery.Delete(entry)
+		return
+	}
+	delete(h.enrEntries, entry.ENRKey())
 }
 
 // quicPort returns the UDP port the host's QUIC listener is bound to.

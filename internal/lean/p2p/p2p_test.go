@@ -290,6 +290,18 @@ func headRecorded(ps *peers.Store, id peer.ID, head uint64) bool {
 // the in-memory network n.
 func newTestHost(t *testing.T, n *memnet.Network) *Host {
 	t.Helper()
+	h, err := NewHost(context.Background(), testHostConfig(t, n), 1, nil, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.Close)
+	return h
+}
+
+// testHostConfig gives a host a fresh identity, on n when it is set and on
+// QUIC otherwise.
+func testHostConfig(t *testing.T, n *memnet.Network) host.Config {
+	t.Helper()
 	priv, _, err := libp2pcrypto.GenerateSecp256k1Key(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -306,12 +318,7 @@ func newTestHost(t *testing.T, n *memnet.Network) *Host {
 	if n != nil {
 		cfg.Network = n
 	}
-	h, err := NewHost(context.Background(), cfg, 1, nil, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(h.Close)
-	return h
+	return cfg
 }
 
 // connectTestHosts connects client to each server and waits until the client

@@ -71,6 +71,9 @@ func runSSZ(t *testing.T, fixture *sszFixture) {
 		runSSZRejection(t, fixture)
 		return
 	}
+	if fixture.TypeName == "AttestationSubnets" {
+		skip(t, skipFollowsEthlambda, "gean sizes attnets by the committee count, not as a 64-bit Bitvector")
+	}
 	newValue, ok := sszTypes[fixture.TypeName]
 	if !ok {
 		skip(t, skipNotImplemented, "SSZ type "+fixture.TypeName)

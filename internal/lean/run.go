@@ -92,7 +92,10 @@ func Run(ctx context.Context, cfg Config) error {
 	default:
 	}
 
-	aggCtl := role.New(cfg.IsAggregator, metrics.SetIsAggregator)
+	aggCtl := role.New(cfg.IsAggregator, func(isAggregator bool) {
+		metrics.SetIsAggregator(isAggregator)
+		p2pHost.AdvertiseAggregator(isAggregator)
+	})
 	shadowRates := shadow.Rates{
 		AggregateSignatures:        cfg.ShadowAggregateSignaturesRate,
 		VerifySignature:            cfg.ShadowVerifySignatureRate,
