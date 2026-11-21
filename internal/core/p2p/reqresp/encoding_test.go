@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -210,24 +211,42 @@ func TestDecodeResponseDoesNotAllocateDeclaredLength(t *testing.T) {
 	}
 }
 
-func TestDecodeResponseConcatenatedChunks(t *testing.T) {
-	encoded := append(EncodeResponse(RespSuccess, []byte("one")), EncodeResponse(RespSuccess, []byte("two"))...)
-	reader := bytes.NewReader(encoded)
-
-	code, data, err := DecodeResponse(reader, MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode first: %v", err)
+// A response chunk is read to exactly its declared length: frames decoding
+// past it are refused rather than cut short, and an empty chunk, written with
+// or without a stream identifier, leaves the next chunk in the stream.
+func TestDecodeResponseChunkBoundaries(t *testing.T) {
+	next := EncodeResponse(RespSuccess, []byte("next"))
+	pastDeclared := EncodeResponse(RespSuccess, []byte("ab"))
+	pastDeclared[1] = 1
+	tests := []struct {
+		name   string
+		stream []byte
+		want   []string // nil when decoding must fail
+	}{
+		{"two chunks", append(EncodeResponse(RespSuccess, []byte("one")), next...), []string{"one", "next"}},
+		{"frames past the declared length", append(pastDeclared, next...), nil},
+		{"empty chunk without a stream identifier", append([]byte{RespSuccess, 0}, next...), []string{"", "next"}},
+		{"empty chunk with a stream identifier", slices.Concat([]byte{RespSuccess, 0}, []byte(streamIdentifier), next), []string{"", "next"}},
+		{"empty chunk with a malformed stream identifier", slices.Concat([]byte{RespSuccess, 0}, []byte(streamIdentifier[:4]), next), nil},
 	}
-	if code != RespSuccess || string(data) != "one" {
-		t.Fatalf("first response: code=%d data=%q", code, data)
-	}
-
-	code, data, err = DecodeResponse(reader, MaxPayloadSize)
-	if err != nil {
-		t.Fatalf("decode second: %v", err)
-	}
-	if code != RespSuccess || string(data) != "two" {
-		t.Fatalf("second response: code=%d data=%q", code, data)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := bytes.NewReader(tc.stream)
+			var got []string
+			for r.Len() > 0 {
+				_, data, err := DecodeResponse(r, MaxPayloadSize)
+				if err != nil {
+					if tc.want != nil {
+						t.Fatalf("chunk %d: %v", len(got), err)
+					}
+					return
+				}
+				got = append(got, string(data))
+			}
+			if !slices.Equal(got, tc.want) || tc.want == nil {
+				t.Fatalf("decoded %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

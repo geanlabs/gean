@@ -42,12 +42,13 @@ func EncodePayload(data []byte) []byte {
 // DecodePayload decodes a request: a single frame that is the whole stream, so
 // nothing may follow the declared length.
 func DecodePayload(buf []byte) ([]byte, error) {
-	decoded, sr, err := decodeFrame(bytes.NewReader(buf), MaxPayloadSize)
+	r := bytes.NewReader(buf)
+	decoded, err := decodeFrame(r, MaxPayloadSize)
 	if err != nil {
 		return nil, err
 	}
-	if err := expectFrameEnd(sr, len(decoded)); err != nil {
-		return nil, err
+	if r.Len() != 0 {
+		return nil, fmt.Errorf("%d bytes after the payload", r.Len())
 	}
 	return decoded, nil
 }
@@ -72,7 +73,7 @@ func EncodeResponse(code byte, data []byte) []byte {
 
 type byteReader interface {
 	io.Reader
-	io.ByteReader
+	io.ByteScanner
 }
 
 func DecodeResponse(r io.Reader, maxLen uint32) (byte, []byte, error) {
@@ -86,16 +87,9 @@ func DecodeResponse(r io.Reader, maxLen uint32) (byte, []byte, error) {
 		return 0, nil, fmt.Errorf("read response code: %w", err)
 	}
 
-	decoded, sr, err := decodeFrame(br, maxLen)
+	decoded, err := decodeFrame(br, maxLen)
 	if err != nil {
 		return code, nil, err
-	}
-	// Reading past a non-empty payload would consume the next chunk, but an
-	// empty one must still be an empty snappy stream.
-	if len(decoded) == 0 {
-		if err := expectFrameEnd(sr, 0); err != nil {
-			return code, nil, err
-		}
 	}
 
 	if code != RespSuccess && len(decoded) > MaxErrorMessageSize {
@@ -105,38 +99,75 @@ func DecodeResponse(r io.Reader, maxLen uint32) (byte, []byte, error) {
 	return code, decoded, nil
 }
 
-// decodeFrame reads a varint length prefix and the snappy-framed payload it
-// declares, of at most maxLen bytes. It returns the snappy reader for callers
-// that check what follows.
-func decodeFrame(br byteReader, maxLen uint32) ([]byte, io.Reader, error) {
+// decodeFrame reads a varint length prefix and the snappy frames carrying the
+// payload it declares, of at most maxLen bytes. snappy.Reader reads one frame
+// at a time, so stopping at the declared length leaves whatever follows, such
+// as the next response chunk, in br. A frame decoding past the declared length
+// is refused rather than cut short.
+func decodeFrame(br byteReader, maxLen uint32) ([]byte, error) {
 	declaredLen, err := decodeVarintFrom(br)
 	if err != nil {
-		return nil, nil, fmt.Errorf("decode payload length: %w", err)
+		return nil, fmt.Errorf("decode payload length: %w", err)
 	}
 	if declaredLen > maxLen {
-		return nil, nil, fmt.Errorf("payload length %d exceeds max %d", declaredLen, maxLen)
+		return nil, fmt.Errorf("payload length %d exceeds max %d", declaredLen, maxLen)
+	}
+	if declaredLen == 0 {
+		return []byte{}, skipStreamIdentifier(br)
 	}
 
-	sr := snappy.NewReader(br)
+	sr := snappy.NewReader(io.LimitReader(br, int64(maxFramedLen(declaredLen))))
 	// Grow with the bytes that arrive rather than trusting the declared
-	// length up front.
-	decoded, err := io.ReadAll(io.LimitReader(sr, int64(declaredLen)))
-	if err != nil {
-		return nil, nil, fmt.Errorf("decode payload: %w", err)
+	// length up front. A read returns at most one frame, which the extra byte
+	// of room exposes when it decodes past the declared length.
+	buf := make([]byte, maxFrameDecodedLen)
+	want := int(declaredLen)
+	var decoded []byte
+	for len(decoded) < want {
+		n, err := sr.Read(buf[:min(len(buf), want-len(decoded)+1)])
+		if err != nil {
+			return nil, fmt.Errorf("decode payload: %w", err)
+		}
+		if len(decoded)+n > want {
+			return nil, fmt.Errorf("length mismatch: declared %d, got at least %d", declaredLen, len(decoded)+n)
+		}
+		decoded = append(decoded, buf[:n]...)
 	}
-	if uint32(len(decoded)) != declaredLen {
-		return nil, nil, fmt.Errorf("length mismatch: declared %d, got %d", declaredLen, len(decoded))
-	}
-	return decoded, sr, nil
+	return decoded, nil
 }
 
-func expectFrameEnd(sr io.Reader, declaredLen int) error {
-	var scratch [1]byte
-	if n, err := sr.Read(scratch[:]); err != io.EOF {
-		if err != nil {
-			return fmt.Errorf("decode payload: %w", err)
-		}
-		return fmt.Errorf("length mismatch: declared %d, got at least %d", declaredLen, declaredLen+n)
+// Snappy framing: https://github.com/google/snappy/blob/main/framing_format.txt
+const (
+	maxFrameDecodedLen = 65536
+	streamIdentifier   = "\xff\x06\x00\x00sNaPpY"
+)
+
+// maxFramedLen bounds the framed bytes a payload of n bytes can take: the
+// stream identifier, then a frame per started 64 KiB, each a 4-byte header, a
+// 4-byte checksum and at most snappy's worst-case encoding of 64 KiB.
+func maxFramedLen(n uint32) int {
+	frames := int(n)/maxFrameDecodedLen + 1
+	return len(streamIdentifier) + frames*(4+4+snappy.MaxEncodedLen(maxFrameDecodedLen))
+}
+
+// skipStreamIdentifier consumes the stream identifier that may follow a zero
+// length: an empty payload is written either as the length alone or with the
+// identifier. A frame starts 0xff where a response code or the end of the
+// stream follows otherwise, so one byte tells them apart.
+func skipStreamIdentifier(br byteReader) error {
+	first, err := br.ReadByte()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("decode payload: %w", err)
+	}
+	if first != streamIdentifier[0] {
+		return br.UnreadByte()
+	}
+	rest := make([]byte, len(streamIdentifier)-1)
+	if _, err := io.ReadFull(br, rest); err != nil || string(rest) != streamIdentifier[1:] {
+		return fmt.Errorf("decode payload: malformed stream identifier after a zero length")
 	}
 	return nil
 }
