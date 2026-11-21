@@ -1,2 +1,0 @@
-# hive tests gean is known to fail, one per line as "<suite>: <test name>".
-# check.py fails CI when a test listed here passes, so the list stays current.

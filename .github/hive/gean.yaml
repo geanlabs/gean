@@ -1,4 +1,0 @@
-# hive's gean client on devnet5. CI tags the image it builds from the commit
-# as the devnet5 image this client is based on, so hive builds on it.
-- client: gean
-  nametag: devnet5
