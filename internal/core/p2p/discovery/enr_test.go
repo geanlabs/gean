@@ -1,15 +1,14 @@
 package discovery
 
 import (
+	"encoding/base64"
 	"net"
 	"strings"
 	"testing"
 )
 
 func TestParseENR(t *testing.T) {
-	enr := "enr:-IW4QGGifTt9ypyMtChDISUNX3z4z5iPdiEPOmBoILvnDuWIKbWVmKXxZERPnw0piQyaBNCENFEPoIi-vxsnsrBig9MBgmlkgnY0gmlwhH8AAAGEcXVpY4IjKYlzZWNwMjU2azGhAhMMnGF1rmIPQ9tWgqfkNmvsG-aIyc9EJU5JFo3Tegys"
-
-	ma, err := ParseENR(enr)
+	ma, err := ParseENR(testENR)
 	if err != nil {
 		t.Fatalf("ParseENR failed: %v", err)
 	}
@@ -60,4 +59,21 @@ func TestParseENR_PrefersIPv4(t *testing.T) {
 	if !strings.HasPrefix(maStr, "/ip4/10.0.0.1/") {
 		t.Errorf("expected /ip4/ preference, got %q", maStr)
 	}
+}
+
+// testENR is a record with an ip4 address and a quic port.
+const testENR = "enr:-IW4QGGifTt9ypyMtChDISUNX3z4z5iPdiEPOmBoILvnDuWIKbWVmKXxZERPnw0piQyaBNCENFEPoIi-vxsnsrBig9MBgmlkgnY0gmlwhH8AAAGEcXVpY4IjKYlzZWNwMjU2azGhAhMMnGF1rmIPQ9tWgqfkNmvsG-aIyc9EJU5JFo3Tegys"
+
+// FuzzParseENR feeds arbitrary records to the bootnode ENR parser, which must
+// not panic on a malformed bootnode file. The fuzzer mutates the record's RLP,
+// so its inputs reach the record decoding past the base64 text.
+func FuzzParseENR(f *testing.F) {
+	record, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(testENR, "enr:"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(record)
+	f.Fuzz(func(t *testing.T, record []byte) {
+		_, _ = ParseENR("enr:" + base64.RawURLEncoding.EncodeToString(record))
+	})
 }

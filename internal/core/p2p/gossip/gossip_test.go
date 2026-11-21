@@ -111,3 +111,13 @@ func TestDecompressBoundsTheDeclaredLength(t *testing.T) {
 		t.Errorf("the most compressible valid payload did not decode: %v", err)
 	}
 }
+
+// FuzzDecompress feeds arbitrary bytes to gossip decompression, which must not
+// panic.
+func FuzzDecompress(f *testing.F) {
+	f.Add(Compress([]byte("a gossip payload")))
+	f.Add([]byte{0xff, 0xff, 0xff, 0xff, 0x0f})
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		_, _ = Decompress(raw)
+	})
+}

@@ -45,7 +45,7 @@ func (h *captureHandler) receivedSlots() []uint64 {
 	return slots
 }
 
-func encodedGossip(t *testing.T, msg interface{ MarshalSSZ() ([]byte, error) }) []byte {
+func encodedGossip(t testing.TB, msg interface{ MarshalSSZ() ([]byte, error) }) []byte {
 	t.Helper()
 	data, err := msg.MarshalSSZ()
 	if err != nil {
@@ -186,4 +186,29 @@ func TestInvalidGossipIsNotRelayed(t *testing.T) {
 			t.Fatalf("invalid payload reached the far host: arrivals %v", arrived)
 		}
 	}
+}
+
+// FuzzDecodeGossip feeds arbitrary topics and payloads to the gossip entry
+// point, which must not panic, must reject every message it fails to decode,
+// and must pass every message it decodes to the node for its verdict.
+func FuzzDecodeGossip(f *testing.F) {
+	f.Add(BlockTopic(), encodedGossip(f, gossipBlock(7)))
+	f.Add(AttestationSubnetTopic(1), encodedGossip(f, gossipAttestation(5)))
+	f.Add(AggregationTopic(), encodedGossip(f, &types.SignedAggregatedAttestation{
+		Data: gossipAttestation(0).Data, Proof: &types.SingleMessageAggregate{Participants: []byte{1}},
+	}))
+
+	h := &Host{committeeCount: 4}
+	handler := &captureHandler{verdict: Ignore}
+	f.Fuzz(func(t *testing.T, topic string, raw []byte) {
+		value, verdict, err := h.decodeAndValidate(topic, raw, handler)
+		switch {
+		case (err == nil) != (value != nil):
+			t.Fatalf("topic %q: decoded %v with error %v", topic, value, err)
+		case err != nil && verdict != Reject:
+			t.Fatalf("topic %q: verdict %v for a message that failed: %v", topic, verdict, err)
+		case err == nil && verdict != handler.verdict:
+			t.Fatalf("topic %q: verdict %v, not the node's %v", topic, verdict, handler.verdict)
+		}
+	})
 }

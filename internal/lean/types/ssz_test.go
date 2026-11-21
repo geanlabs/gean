@@ -183,21 +183,23 @@ func TestChainConfigSSZRoundtrip(t *testing.T) {
 	}
 }
 
-func TestStateSSZRoundtrip(t *testing.T) {
-	s := &State{
-		Config:            &ChainConfig{GenesisTime: 1000},
-		Slot:              10,
-		LatestBlockHeader: &BlockHeader{Slot: 9},
-		LatestJustified:   &Checkpoint{Slot: 5},
-		LatestFinalized:   &Checkpoint{Slot: 3},
-		HistoricalBlockHashes: [][]byte{
-			make([]byte, 32),
-		},
+func testState() *State {
+	return &State{
+		Config:                   &ChainConfig{GenesisTime: 1000},
+		Slot:                     10,
+		LatestBlockHeader:        &BlockHeader{Slot: 9},
+		LatestJustified:          &Checkpoint{Slot: 5},
+		LatestFinalized:          &Checkpoint{Slot: 3},
+		HistoricalBlockHashes:    [][]byte{make([]byte, 32)},
 		JustifiedSlots:           NewBitlistSSZ(10),
 		Validators:               []*Validator{{AttestationPubkey: [32]byte{1}, Index: 0}},
 		JustificationsRoots:      [][]byte{make([]byte, 32)},
 		JustificationsValidators: NewBitlistSSZ(5),
 	}
+}
+
+func TestStateSSZRoundtrip(t *testing.T) {
+	s := testState()
 	data, err := s.MarshalSSZ()
 	if err != nil {
 		t.Fatal(err)
@@ -215,18 +217,7 @@ func TestStateSSZRoundtrip(t *testing.T) {
 }
 
 func TestStateHashTreeRoot(t *testing.T) {
-	s := &State{
-		Config:                   &ChainConfig{GenesisTime: 1000},
-		Slot:                     10,
-		LatestBlockHeader:        &BlockHeader{Slot: 9},
-		LatestJustified:          &Checkpoint{Slot: 5},
-		LatestFinalized:          &Checkpoint{Slot: 3},
-		HistoricalBlockHashes:    [][]byte{make([]byte, 32)},
-		JustifiedSlots:           NewBitlistSSZ(10),
-		Validators:               []*Validator{{AttestationPubkey: [32]byte{1}, Index: 0}},
-		JustificationsRoots:      [][]byte{make([]byte, 32)},
-		JustificationsValidators: NewBitlistSSZ(5),
-	}
+	s := testState()
 	root, err := s.HashTreeRoot()
 	if err != nil {
 		t.Fatal(err)

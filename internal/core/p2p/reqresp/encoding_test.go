@@ -230,3 +230,35 @@ func TestDecodeResponseConcatenatedChunks(t *testing.T) {
 		t.Fatalf("second response: code=%d data=%q", code, data)
 	}
 }
+
+// FuzzDecodePayload feeds arbitrary bytes to the request decoder, which must
+// not panic, and whose output must survive an EncodePayload/DecodePayload
+// round trip.
+func FuzzDecodePayload(f *testing.F) {
+	f.Add(EncodePayload([]byte("a request")))
+	f.Add([]byte{0xff, 0xff, 0xff, 0xff, 0x0f})
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		data, err := DecodePayload(raw)
+		if err != nil {
+			return
+		}
+		if again, err := DecodePayload(EncodePayload(data)); err != nil || !bytes.Equal(again, data) {
+			t.Fatalf("round trip of %x: got %x, %v", data, again, err)
+		}
+	})
+}
+
+// FuzzDecodeResponse feeds an arbitrary stream of response chunks to the
+// response decoder, which must not panic.
+func FuzzDecodeResponse(f *testing.F) {
+	f.Add(append(EncodeResponse(RespSuccess, []byte("a block")), EncodeResponse(RespServerError, []byte("busy"))...))
+	f.Add([]byte{RespSuccess, 0xff, 0xff, 0xff, 0xff, 0x0f})
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		stream := bytes.NewReader(raw)
+		for stream.Len() > 0 {
+			if _, _, err := DecodeResponse(stream, 1<<16); err != nil {
+				return
+			}
+		}
+	})
+}
