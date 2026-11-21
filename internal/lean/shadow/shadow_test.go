@@ -11,7 +11,7 @@ func TestSleepDisabled(t *testing.T) {
 	cases := []struct {
 		name  string
 		rate  float64
-		units int
+		units float64
 	}{
 		{"zero rate", 0, 1_000_000},
 		{"negative rate", -1, 1_000_000},

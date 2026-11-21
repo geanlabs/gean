@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -42,7 +43,7 @@ func Run(args []string, stderr io.Writer) error {
 
 	genesisTime := opts.GenesisTime
 	if genesisTime == 0 {
-		genesisTime = uint64(time.Now().Unix()) + uint64(opts.GenesisDelay)
+		genesisTime = uint64(max(time.Now().Unix(), 0)) + uint64(opts.GenesisDelay)
 	}
 	if err := writeConfigYAML(opts.OutputDir, genesisTime, m.Validators); err != nil {
 		return err
@@ -67,7 +68,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&opts.OutputDir, "output", "testnet", "Output directory")
 	fs.IntVar(&opts.BasePort, "base-port", 9000, "Base P2P port (incremented per node)")
 	fs.Uint64Var(&opts.GenesisTime, "genesis-time", 0, "Absolute genesis Unix time; 0 uses now + --genesis-delay")
-	fs.IntVar(&opts.GenesisDelay, "genesis-delay", 30, "Seconds from now until genesis when --genesis-time is unset")
+	fs.UintVar(&opts.GenesisDelay, "genesis-delay", 30, "Seconds from now until genesis when --genesis-time is unset")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, err
@@ -84,9 +85,6 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	if opts.Nodes > 65535-opts.BasePort+1 {
 		return opts, fmt.Errorf("%w: base port range exceeds 1..65535", errInvalidOptions)
 	}
-	if opts.GenesisDelay < 0 {
-		return opts, fmt.Errorf("%w: genesis delay must be >= 0", errInvalidOptions)
-	}
 	return opts, nil
 }
 
@@ -94,7 +92,7 @@ func logSummary(opts options, genesisTime uint64, m manifest) {
 	log.Println("---")
 	log.Printf("output: %s", opts.OutputDir)
 	log.Printf("genesis time: %d (%s)", genesisTime,
-		time.Unix(int64(genesisTime), 0).Format(time.RFC3339))
+		time.Unix(int64(min(genesisTime, math.MaxInt64)), 0).Format(time.RFC3339))
 	log.Printf("validators: %d, nodes: %d", len(m.Validators), len(m.Nodes))
 	log.Println("")
 	log.Println("run immediately:")

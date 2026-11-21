@@ -29,8 +29,14 @@ func loadBenchFixture(tb testing.TB) {
 }
 
 func buildBenchFixture() {
-	xmss.EnsureProverReady()
-	xmss.EnsureVerifierReady()
+	if err := xmss.EnsureProverReady(); err != nil {
+		benchFixtureErr = err
+		return
+	}
+	if err := xmss.EnsureVerifierReady(); err != nil {
+		benchFixtureErr = err
+		return
+	}
 
 	kp, err := xmss.GenerateKeyPair("bench-validator", 0, 1<<18)
 	if err != nil {
@@ -125,7 +131,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 		return nil, err
 	}
 
-	blockSlot, err := slot32(block.Slot)
+	blockSlot, err := xmss.Slot(block.Slot)
 	if err != nil {
 		return nil, err
 	}

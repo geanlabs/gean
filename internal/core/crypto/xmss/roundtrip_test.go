@@ -33,7 +33,9 @@ func TestSignatureSSZRoundtripThenAggregate(t *testing.T) {
 	}
 	defer FreeSignature(csig)
 
-	EnsureProverReady()
+	if err := EnsureProverReady(); err != nil {
+		t.Fatal(err)
+	}
 	proofBytes, err := AggregateWithChildren(
 		[]CPubKey{cpk},
 		[]CSig{csig},
@@ -46,7 +48,9 @@ func TestSignatureSSZRoundtripThenAggregate(t *testing.T) {
 	}
 	t.Logf("aggregate with SSZ-round-tripped sig succeeded: proof=%d bytes", len(proofBytes))
 
-	EnsureVerifierReady()
+	if err := EnsureVerifierReady(); err != nil {
+		t.Fatal(err)
+	}
 	err = VerifyAggregatedSignature(proofBytes, []CPubKey{cpk}, message, 0)
 	if err != nil {
 		t.Fatalf("verify failed: %v", err)

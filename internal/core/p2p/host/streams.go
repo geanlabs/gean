@@ -22,7 +22,7 @@ func (h *Host) HandleStream(protocolID string, handle network.StreamHandler) {
 func (h *Host) tracked(handle network.StreamHandler) network.StreamHandler {
 	return func(s network.Stream) {
 		if !h.tasks.Enter() {
-			s.Reset()
+			_ = s.Reset()
 			return
 		}
 		defer h.tasks.Leave()

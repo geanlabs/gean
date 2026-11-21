@@ -102,7 +102,7 @@ func (e *Engine) onGossipAggregatedAttestation(agg *types.SignedAggregatedAttest
 	}
 	verifyStart := time.Now()
 	err := attestation.VerifyAggregatedGossipAttestation(e.Store, agg.Data, agg.Proof.Participants, agg.Proof.Proof)
-	e.Shadow.SleepVerifyAggregated(int(types.BitlistCount(agg.Proof.Participants)))
+	e.Shadow.SleepVerifyAggregated(types.BitlistCount(agg.Proof.Participants))
 	metrics.ObservePqSigAggVerificationTime(time.Since(verifyStart).Seconds())
 	if err != nil {
 		metrics.IncPqSigAggregatedInvalid()

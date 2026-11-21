@@ -87,8 +87,12 @@ func TestFFIConcurrentAggregation(t *testing.T) {
 	const parallelism = 4
 
 	pkList, sigList, message := prepareStressInputs(t, numSigs)
-	EnsureProverReady()
-	EnsureVerifierReady()
+	if err := EnsureProverReady(); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureVerifierReady(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Warm one proof so the comparison excludes any first-call lazy init.
 	if _, err := aggregateFresh(pkList, sigList, message); err != nil {

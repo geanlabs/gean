@@ -47,7 +47,7 @@ func verifyBlockSignatures(
 		if err != nil {
 			return fmt.Errorf("hash attestation %d data: %w", i, err)
 		}
-		slot, err := slot32(att.Data.Slot)
+		slot, err := xmss.Slot(att.Data.Slot)
 		if err != nil {
 			return &store.StoreError{Kind: store.ErrSignatureDecodingFailed, Message: fmt.Sprintf("attestation %d slot: %v", i, err)}
 		}
@@ -67,7 +67,7 @@ func verifyBlockSignatures(
 	if err != nil {
 		return fmt.Errorf("compute block root: %w", err)
 	}
-	slot, err := slot32(block.Slot)
+	slot, err := xmss.Slot(block.Slot)
 	if err != nil {
 		return &store.StoreError{Kind: store.ErrProposerSignatureDecodingFailed, Message: fmt.Sprintf("proposer slot: %v", err)}
 	}

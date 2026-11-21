@@ -28,11 +28,17 @@ func makeGenesisState(n int) *types.State {
 	}
 }
 
-func TestProcessSlotsAdvancesSlot(t *testing.T) {
-	state := makeGenesisState(3)
-	if err := ProcessSlots(state, 5); err != nil {
+func genesisAtSlot(t *testing.T, n int, slot uint64) *types.State {
+	t.Helper()
+	state := makeGenesisState(n)
+	if err := ProcessSlots(state, slot); err != nil {
 		t.Fatal(err)
 	}
+	return state
+}
+
+func TestProcessSlotsAdvancesSlot(t *testing.T) {
+	state := genesisAtSlot(t, 3, 5)
 	if state.Slot != 5 {
 		t.Fatalf("expected slot 5, got %d", state.Slot)
 	}
@@ -122,8 +128,7 @@ func TestProcessBlockHeaderRejectsMalformedInputs(t *testing.T) {
 		t.Fatalf("nil block body error=%v, want ErrMalformedBlock", err)
 	}
 
-	state = makeGenesisState(1)
-	ProcessSlots(state, 1)
+	state = genesisAtSlot(t, 1, 1)
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 	block := &types.Block{
 		Slot:          1,
@@ -137,8 +142,7 @@ func TestProcessBlockHeaderRejectsMalformedInputs(t *testing.T) {
 }
 
 func TestProcessBlockHeaderValidatesProposer(t *testing.T) {
-	state := makeGenesisState(3)
-	ProcessSlots(state, 1)
+	state := genesisAtSlot(t, 3, 1)
 
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 	block := &types.Block{
@@ -157,8 +161,7 @@ func TestProcessBlockHeaderValidatesProposer(t *testing.T) {
 }
 
 func TestProcessBlockHeaderValidatesParentRoot(t *testing.T) {
-	state := makeGenesisState(3)
-	ProcessSlots(state, 1)
+	state := genesisAtSlot(t, 3, 1)
 
 	block := &types.Block{
 		Slot:          1,
@@ -176,8 +179,7 @@ func TestProcessBlockHeaderValidatesParentRoot(t *testing.T) {
 }
 
 func TestProcessBlockHeaderUpdatesState(t *testing.T) {
-	state := makeGenesisState(3)
-	ProcessSlots(state, 1)
+	state := genesisAtSlot(t, 3, 1)
 
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 	block := &types.Block{
@@ -203,8 +205,7 @@ func TestProcessBlockHeaderUpdatesState(t *testing.T) {
 }
 
 func TestProcessBlockHeaderDoesNotMutateStateOnBodyRootError(t *testing.T) {
-	state := makeGenesisState(3)
-	ProcessSlots(state, 1)
+	state := genesisAtSlot(t, 3, 1)
 
 	parentHeader := *state.LatestBlockHeader
 	justified := *state.LatestJustified
@@ -305,8 +306,7 @@ func TestProcessBlockHeaderRejectsOverflowSizedSlotGap(t *testing.T) {
 }
 
 func TestProcessBlockHeaderSkippedSlots(t *testing.T) {
-	state := makeGenesisState(3)
-	ProcessSlots(state, 4)
+	state := genesisAtSlot(t, 3, 4)
 
 	parentRoot, _ := state.LatestBlockHeader.HashTreeRoot()
 	block := &types.Block{

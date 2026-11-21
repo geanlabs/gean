@@ -22,8 +22,8 @@ type coverageSet struct {
 	hasSubnet []bool
 }
 
-func newCoverageSet(validatorCount int, committeeCount uint64) *coverageSet {
-	if validatorCount <= 0 || committeeCount == 0 {
+func newCoverageSet(validatorCount, committeeCount uint64) *coverageSet {
+	if validatorCount == 0 || committeeCount == 0 {
 		return nil
 	}
 	return &coverageSet{
@@ -93,12 +93,12 @@ func (c *coverageSet) record(section string) {
 
 // validatorCount reads the head state's registry size, which is what every
 // coverage section is measured against.
-func (e *Engine) coverageValidatorCount() int {
+func (e *Engine) coverageValidatorCount() uint64 {
 	headSummary, ok := e.Store.StateSummary(e.Store.Head())
 	if !ok {
 		return 0
 	}
-	return int(headSummary.NumValidators)
+	return headSummary.NumValidators
 }
 
 // snapshotNewPayloadParticipants captures the participant bits currently in the

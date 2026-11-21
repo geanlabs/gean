@@ -27,7 +27,7 @@ func (i *Importer) bufferMissingParentBlock(
 			block.Slot, blockRoot)
 		return
 	}
-	if !types.IsProposer(block.Slot, block.ProposerIndex, uint64(keys.Len())) {
+	if !types.IsProposer(block.Slot, block.ProposerIndex, keys.Len()) {
 		logger.Warn(logger.Chain, "rejecting pending block with wrong proposer slot=%d proposer=%d block_root=0x%x",
 			block.Slot, block.ProposerIndex, blockRoot)
 		return

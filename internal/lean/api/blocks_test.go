@@ -61,7 +61,9 @@ func TestFinalizedBlockHandler_ReturnsSSZ_WhenPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash_tree_root: %v", err)
 	}
-	s.StorePendingBlock(root, signed)
+	if err := s.StorePendingBlock(root, signed); err != nil {
+		t.Fatal(err)
+	}
 	s.SetLatestFinalized(&types.Checkpoint{Root: root, Slot: 7})
 
 	rec := httptest.NewRecorder()

@@ -27,11 +27,11 @@ type ValidatorKeys struct {
 }
 
 // Len reports the size of the validator registry.
-func (v *ValidatorKeys) Len() int {
+func (v *ValidatorKeys) Len() uint64 {
 	if v == nil {
 		return 0
 	}
-	return len(v.keys)
+	return uint64(len(v.keys))
 }
 
 // AttestationPubkey returns the attestation public key of the validator at

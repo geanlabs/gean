@@ -8,7 +8,9 @@ import (
 
 func TestLoadBootnodesEmpty(t *testing.T) {
 	tmpFile := t.TempDir() + "/nodes.yaml"
-	os.WriteFile(tmpFile, []byte("# empty\n"), 0644)
+	if err := os.WriteFile(tmpFile, []byte("# empty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	addrs, err := LoadBootnodes(tmpFile)
 	if err != nil {
@@ -24,7 +26,9 @@ func TestLoadBootnodesWithYAMLList(t *testing.T) {
 - "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/12D3KooWLc4yBi3vYo4udihGu2HFxCWMWCdJoXYMFNp2CX9otY5A"
 `
 	tmpFile := t.TempDir() + "/nodes.yaml"
-	os.WriteFile(tmpFile, []byte(content), 0644)
+	if err := os.WriteFile(tmpFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	addrs, err := LoadBootnodes(tmpFile)
 	if err != nil {

@@ -1,31 +1,12 @@
 package store_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
-
-type failingReadBackend struct{}
-
-func (failingReadBackend) BeginRead() (storage.ReadView, error) {
-	return nil, errors.New("read failed")
-}
-
-func (failingReadBackend) BeginWrite() (storage.WriteBatch, error) {
-	return nil, errors.New("write failed")
-}
-
-func (failingReadBackend) EstimateTableBytes(storage.Table) uint64 {
-	return 0
-}
-
-func (failingReadBackend) Close() error {
-	return nil
-}
 
 func TestBlockHeaderStorage(t *testing.T) {
 	s := makeTestStore()
@@ -53,13 +34,6 @@ func TestBlockWritesIgnoreMalformedInput(t *testing.T) {
 		t.Fatal("nil header should not be stored")
 	}
 
-	s.StorePendingBlock(root, nil)
-	s.StorePendingBlock(root, &types.SignedBlock{})
-	store.WriteBlockData(s, root, nil)
-
-	if got := s.GetSignedBlock(root); got != nil {
-		t.Fatal("malformed signed block should not be stored")
-	}
 }
 
 func TestPutBlockHeaderReturnsInputAndWriteErrors(t *testing.T) {
@@ -109,6 +83,9 @@ func TestStorePendingBlockReturnsErrors(t *testing.T) {
 	}
 	if err := s.StorePendingBlock(root, &types.SignedBlock{}); err == nil {
 		t.Fatal("expected missing block error")
+	}
+	if got := s.GetSignedBlock(root); got != nil {
+		t.Fatal("malformed signed block should not be stored")
 	}
 
 	s = store.NewConsensusStore(failingWriteBackend{InMemoryBackend: storage.NewInMemoryBackend()})

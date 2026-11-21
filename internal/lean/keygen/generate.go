@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+
+	"github.com/geanlabs/gean/internal/core/crypto/xmss"
 )
 
 func generateKeys(opts options, keysDir string) (manifest, error) {

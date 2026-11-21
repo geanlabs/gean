@@ -35,7 +35,7 @@ func (stubStream) SetWriteDeadline(time.Time) error { return nil }
 func TestVarintRoundtrip(t *testing.T) {
 	tests := []uint32{0, 1, 127, 128, 255, 256, 16383, 16384, 1<<20 - 1}
 	for _, v := range tests {
-		r := bytes.NewReader(EncodeVarint(v))
+		r := bytes.NewReader(EncodeVarint(uint64(v)))
 		decoded, err := decodeVarintFrom(r)
 		if err != nil {
 			t.Fatalf("varint %d: %v", v, err)
@@ -144,7 +144,7 @@ func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
 func TestReqRespPayloadRejectsBlockFormatSnappy(t *testing.T) {
 	raw := []byte("hello world")
 	blockFormat := snappy.Encode(nil, raw)
-	chunk := append(EncodeVarint(uint32(len(raw))), blockFormat...)
+	chunk := append(EncodeVarint(uint64(len(raw))), blockFormat...)
 	_, err := DecodePayload(chunk)
 	if err == nil {
 		t.Fatal("expected error decoding block-format snappy as framed, got nil")

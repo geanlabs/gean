@@ -112,8 +112,8 @@ func checkpointExists(state *types.State, cp *types.Checkpoint) bool {
 	return stored == cp.Root
 }
 
-func countTrue(votes []bool) int {
-	count := 0
+func countTrue(votes []bool) uint64 {
+	var count uint64
 	for _, v := range votes {
 		if v {
 			count++

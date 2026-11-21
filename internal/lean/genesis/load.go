@@ -6,8 +6,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/geanlabs/gean/internal/lean/types"
 	"gopkg.in/yaml.v3"
+
+	"github.com/geanlabs/gean/internal/lean/types"
 )
 
 func LoadGenesisConfig(path string) (*GenesisConfig, error) {

@@ -39,7 +39,7 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 		return &TooManyAttestationDataError{Count: uint64(len(distinct)), Max: uint64(types.MaxAttestationsData)}
 	}
 
-	validatorCount := int(state.NumValidators())
+	validatorCount := state.NumValidators()
 	if validatorCount == 0 {
 		return ErrEmptyValidatorRegistry
 	}
@@ -47,7 +47,7 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 	// The flat vote bitlist segments into one block of validatorCount bits per
 	// tracked root; a mismatched length means the state is malformed and cannot be
 	// interpreted, so reject rather than read past or short of a segment.
-	if int(types.BitlistLen(state.JustificationsValidators)) != len(state.JustificationsRoots)*validatorCount {
+	if types.BitlistLen(state.JustificationsValidators) != uint64(len(state.JustificationsRoots))*validatorCount {
 		return ErrJustificationVotesLengthMismatch
 	}
 
@@ -92,8 +92,8 @@ func ProcessAttestations(state *types.State, attestations []*types.AggregatedAtt
 			return ErrEmptyAggregationBits
 		}
 		for _, voter := range voterIndices {
-			if voter >= uint64(validatorCount) {
-				return &AttesterIndexOutOfRangeError{Index: voter, Validators: uint64(validatorCount)}
+			if voter >= validatorCount {
+				return &AttesterIndexOutOfRangeError{Index: voter, Validators: validatorCount}
 			}
 		}
 

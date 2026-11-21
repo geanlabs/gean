@@ -23,7 +23,9 @@ func makeChainStore(t *testing.T, slots []uint64) (*store.ConsensusStore, map[ui
 				Body:       &types.BlockBody{},
 			},
 		}
-		s.StorePendingBlock(root, signed)
+		if err := s.StorePendingBlock(root, signed); err != nil {
+			t.Fatal(err)
+		}
 		roots[slot] = root
 		prevRoot = root
 	}
