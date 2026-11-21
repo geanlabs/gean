@@ -6,6 +6,7 @@ output.log
 leanSpec
 lean-quickstart
 internal/core/crypto/xmss/rust/target
+internal/core/crypto/xmss/lib
 .claude
 .gocache
 *.log

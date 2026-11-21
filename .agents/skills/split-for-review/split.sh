@@ -15,7 +15,7 @@ mkdir -p "$work"
 die() { echo "split.sh: $*" >&2; exit 1; }
 
 # Repo policy, kept in one place: gitignored directories to link into the extract.
-# leanSpec/ holds the spec fixtures; the Rust target holds the built XMSS library.
+# leanSpec/ holds the spec fixtures.
 FIXTURE_RE='^leanSpec/$'
 
 # SPLIT_EXCLUDE: extended regex of paths that are not part of the change

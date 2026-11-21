@@ -58,7 +58,7 @@ fmt: ## Format Go and Rust code
 	cd $(XMSS_RUST) && cargo fmt
 
 clean: ## Remove build artifacts and node data
-	rm -rf bin data
+	rm -rf bin data $(XMSS_LIB)
 	cd $(XMSS_RUST) && cargo clean
 
 ##@ Lean
@@ -71,8 +71,18 @@ XMSS_RUSTFLAGS := $(strip \
 	$(if $(filter x86_64,$(shell uname -m)),-Ctarget-cpu=haswell) \
 	$(if $(filter aarch64 arm64,$(shell uname -m)),-Ctarget-feature=+aes))
 
+# Go 1.26.11+ rejects any archive under a #cgo -L directory, walked recursively,
+# that carries LLVM bitcode, and Rust's prebuilt compiler_builtins embeds it. The
+# node links a stripped copy from a directory that holds only that copy, so
+# rebuild the library through this target. macOS has no objcopy, so there the
+# copy keeps its bitcode, which Go is likely to reject as well.
+XMSS_LIB := internal/core/crypto/xmss/lib
+XMSS_STRIP := $(if $(filter Darwin,$(shell uname -s)),cp,objcopy --remove-section=.llvmbc --remove-section=.llvmcmd)
+
 lean-ffi: ## Build the XMSS Rust library (lean's signatures) the node links against
 	cd $(XMSS_RUST) && $(if $(XMSS_RUSTFLAGS),CARGO_ENCODED_RUSTFLAGS="$(XMSS_RUSTFLAGS)") cargo build --profile multisig-release --locked
+	@mkdir -p $(XMSS_LIB)
+	$(XMSS_STRIP) $(XMSS_RUST)/target/multisig-release/libcgo_glue.a $(XMSS_LIB)/libcgo_glue.a
 
 lean-test-ffi: lean-ffi ## Run the XMSS FFI tests (slow)
 	go test ./internal/core/crypto/xmss/ -v -count=1

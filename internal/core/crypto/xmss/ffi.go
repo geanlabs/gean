@@ -3,8 +3,8 @@
 package xmss
 
 // #cgo CFLAGS: -I.
-// #cgo linux LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread
-// #cgo darwin LDFLAGS: -L${SRCDIR}/rust/target/multisig-release -lcgo_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
+// #cgo linux LDFLAGS: -L${SRCDIR}/lib -lcgo_glue -lm -ldl -lpthread
+// #cgo darwin LDFLAGS: -L${SRCDIR}/lib -lcgo_glue -lm -ldl -lpthread -framework CoreFoundation -framework SystemConfiguration -framework Security
 //
 // #include <stdint.h>
 // #include <stdlib.h>
