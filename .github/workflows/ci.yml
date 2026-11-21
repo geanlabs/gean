@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  XMSS_RUST: internal/core/crypto/xmss/rust
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # Installs the toolchain rust-toolchain.toml pins.
+      - run: rustup toolchain install --profile minimal --component clippy,rustfmt
+        working-directory: ${{ env.XMSS_RUST }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: ${{ env.XMSS_RUST }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          install-only: true
+      # make lint leaves formatting to gofmt.
+      - run: "! gofmt -l . | grep ."
+      - run: make lint
+      # make lint and make test build only the default variant.
+      - run: go vet -tags fakecrypto ./... && go vet -tags spectests,sim ./testing/...
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - run: rustup toolchain install --profile minimal
+        working-directory: ${{ env.XMSS_RUST }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: ${{ env.XMSS_RUST }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: make test
+        env:
+          GOFLAGS: -race
+
+  # The one check branch protection requires, so adding a job doesn't mean updating the rule.
+  success:
+    if: always()
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
