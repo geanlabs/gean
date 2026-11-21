@@ -14,7 +14,7 @@ codegen-units = 16
 
 # Optimized profile used by `make lean-ffi` / Dockerfile. Inherits release, enables
 # fat LTO and a single codegen unit for whole-program optimization across the
-# leanMultisig backend hot path. Matches zeam's `[profile.multisig-release]`
+# leanVM aggregation hot path. Matches zeam's `[profile.multisig-release]`
 # which delivers ~300 ms committee aggregation vs gean's ~2 s on plain release.
 # Fat (vs thin) LTO inlines across the whole prover/verifier graph — a further
 # cut in the signature-verify CPU that dominates block-import at scale.
