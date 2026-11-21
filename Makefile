@@ -95,14 +95,17 @@ lean-e2e: ## Run the end-to-end multi-node test with fake XMSS (no Rust needed)
 
 lean-sszgen: ## Regenerate the lean SSZ encoding files from struct tags
 	@rm -f internal/lean/types/*_encoding.go
-	sszgen --path internal/lean/types --objs ChainConfig --output internal/lean/types/config_encoding.go
-	sszgen --path internal/lean/types --objs Checkpoint --output internal/lean/types/checkpoint_encoding.go
-	sszgen --path internal/lean/types --objs Validator --output internal/lean/types/validator_encoding.go
-	sszgen --path internal/lean/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/lean/types/attestation_encoding.go
-	sszgen --path internal/lean/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/lean/types/block_encoding.go
-	sszgen --path internal/lean/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/lean/types/state_encoding.go
-	sszgen --path internal/lean/types --objs BlocksByRangeRequest --output internal/lean/types/blocks_by_range_encoding.go
-	sszgen --path internal/lean/types --objs BlocksByRootRequest --output internal/lean/types/blocks_by_root_encoding.go
+	go tool sszgen --path internal/lean/types --objs ChainConfig --output internal/lean/types/config_encoding.go
+	go tool sszgen --path internal/lean/types --objs Checkpoint --output internal/lean/types/checkpoint_encoding.go
+	go tool sszgen --path internal/lean/types --objs Validator --output internal/lean/types/validator_encoding.go
+	go tool sszgen --path internal/lean/types --objs AttestationData,Attestation,SignedAttestation,AggregatedAttestation,SingleMessageAggregate,SignedAggregatedAttestation --exclude-objs Checkpoint --output internal/lean/types/attestation_encoding.go
+	go tool sszgen --path internal/lean/types --objs BlockHeader,BlockBody,Block,MultiMessageAggregate,SignedBlock --exclude-objs Checkpoint,AttestationData,AggregatedAttestation --output internal/lean/types/block_encoding.go
+	go tool sszgen --path internal/lean/types --objs State --exclude-objs ChainConfig,Checkpoint,Validator,BlockHeader --output internal/lean/types/state_encoding.go
+	go tool sszgen --path internal/lean/types --objs BlocksByRangeRequest --output internal/lean/types/blocks_by_range_encoding.go
+	go tool sszgen --path internal/lean/types --objs BlocksByRootRequest --output internal/lean/types/blocks_by_root_encoding.go
+	@# sszgen's Hash header digests every hand-written file in the package, so any
+	@# edit there changes all eight headers without changing the code. Nothing reads it.
+	@perl -ni -e 'print unless /^\/\/ Hash: /' internal/lean/types/*_encoding.go
 
 TESTNET_DIR ?= testnet
 NUM_VALIDATORS ?= 5
