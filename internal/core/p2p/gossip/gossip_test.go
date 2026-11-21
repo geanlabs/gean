@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"runtime"
 	"testing"
+
+	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 )
 
 // Any topic strings do; these have the shape of real ones.
@@ -86,4 +89,25 @@ func messageIDDigest(domain [4]byte, topic string, data []byte) []byte {
 	h.Write(topicBytes)
 	h.Write(data)
 	return h.Sum(nil)[:20]
+}
+
+// A payload declaring more than its bytes could decode to is refused before
+// the declared length is allocated, while the most compressible valid
+// payload, the largest run of zeros, still decodes.
+func TestDecompressBoundsTheDeclaredLength(t *testing.T) {
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := Decompress(reqresp.EncodeVarint(reqresp.MaxPayloadSize))
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Fatal("decoded a bare header declaring MaxPayloadSize")
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > reqresp.MaxPayloadSize/2 {
+		t.Errorf("refusing a bare header allocated %d bytes", allocated)
+	}
+
+	zeros := make([]byte, reqresp.MaxPayloadSize)
+	if decoded, err := Decompress(Compress(zeros)); err != nil || !bytes.Equal(decoded, zeros) {
+		t.Errorf("the most compressible valid payload did not decode: %v", err)
+	}
 }
