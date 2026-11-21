@@ -18,6 +18,9 @@ import (
 // Run runs a lean node with cfg until ctx ends or a server fails, then shuts
 // it down in order.
 func Run(ctx context.Context, cfg Config) error {
+	if cfg.TestDriver {
+		return runTestDriver(ctx, cfg)
+	}
 	logger.Info(logger.Node, "gean consensus client starting")
 	stop := ctx.Done()
 

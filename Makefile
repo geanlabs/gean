@@ -3,7 +3,7 @@
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
 
-# Build tags for `make build`, e.g. GO_TAGS=hive_testdriver (the Docker image uses it).
+# Build tags for `make build`, e.g. GO_TAGS=fakecrypto.
 GO_TAGS ?=
 LDFLAGS := -X github.com/geanlabs/gean/internal/lean/node.gitCommit=$(GIT_COMMIT)
 

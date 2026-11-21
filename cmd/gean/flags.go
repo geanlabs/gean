@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/geanlabs/gean/internal/lean"
+	"github.com/geanlabs/gean/internal/lean/api/testdriver"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -52,7 +53,10 @@ func parseConfig(args []string, stderr io.Writer) (lean.Config, error) {
 		}
 	})
 
-	if cfg.ConfigDir == "" || cfg.NodeKey == "" || cfg.NodeID == "" {
+	// The hive lean simulator sets this to replay fixtures through the test
+	// driver alone, which needs no network config, key or node ID.
+	cfg.TestDriver = testdriver.IsEnabled(os.Getenv(testdriver.EnvVar))
+	if !cfg.TestDriver && (cfg.ConfigDir == "" || cfg.NodeKey == "" || cfg.NodeID == "") {
 		fmt.Fprintln(stderr, "required flags: --custom-network-config-dir, --node-key, --node-id")
 		fs.Usage()
 		return cfg, errInvalidConfig

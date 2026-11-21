@@ -1,5 +1,3 @@
-//go:build hive_testdriver
-
 package api
 
 import (
@@ -7,26 +5,22 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/geanlabs/gean/internal/core/storage"
-	"github.com/geanlabs/gean/internal/lean/role"
-	"github.com/geanlabs/gean/internal/lean/store"
 )
 
-func TestBuildAPIMuxWithTestDriverRegistersRoutes(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
-	mux := buildAPIMuxWithTestDriver(s, nil, role.New(false, nil))
-
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lean/v0/health", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("health status=%d, want 200", rec.Code)
-	}
-
-	rec = httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/lean/v0/test_driver/state_transition/run", strings.NewReader("not json"))
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("testdriver status=%d, want 400", rec.Code)
+func TestTestDriverHandlerServesOnlyTheDriver(t *testing.T) {
+	handler := TestDriverHandler()
+	for _, c := range []struct {
+		method, path, body string
+		wantStatus         int
+	}{
+		{http.MethodGet, "/lean/v0/health", "", http.StatusOK},
+		{http.MethodPost, "/lean/v0/test_driver/state_transition/run", "not json", http.StatusBadRequest},
+		{http.MethodGet, "/lean/v0/checkpoints/justified", "", http.StatusNotFound},
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(c.method, c.path, strings.NewReader(c.body)))
+		if recorder.Code != c.wantStatus {
+			t.Errorf("%s %s: status %d, want %d", c.method, c.path, recorder.Code, c.wantStatus)
+		}
 	}
 }

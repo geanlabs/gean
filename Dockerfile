@@ -30,7 +30,7 @@ COPY . .
 # Build Go binaries
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
-RUN make build GO_TAGS=hive_testdriver GIT_COMMIT=$GIT_COMMIT
+RUN make build GIT_COMMIT=$GIT_COMMIT
 
 # Runtime stage
 FROM ubuntu:24.04 AS runtime

@@ -11,6 +11,9 @@ import (
 
 // Config is what a lean node runs with.
 type Config struct {
+	// TestDriver starts only the hive test driver on the API address; no
+	// other field but the HTTP address and API port applies.
+	TestDriver     bool
 	ConfigDir      string
 	GossipPort     int
 	HTTPAddr       string

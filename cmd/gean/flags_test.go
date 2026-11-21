@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/geanlabs/gean/internal/lean/api/testdriver"
 )
 
 func validFlagArgs() []string {
@@ -107,6 +109,20 @@ func TestParseConfig_MissingRequiredFlags(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "required flags: --custom-network-config-dir, --node-key, --node-id") {
 		t.Fatalf("missing required flags message not found:\n%s", stderr.String())
+	}
+}
+
+// The hive simulator starts gean with only the test driver, which needs none
+// of the node's network flags.
+func TestParseConfig_TestDriverNeedsNoNetworkFlags(t *testing.T) {
+	t.Setenv(testdriver.EnvVar, "1")
+	var stderr bytes.Buffer
+	cfg, err := parseConfig(nil, &stderr)
+	if err != nil {
+		t.Fatalf("parseConfig: %v\n%s", err, stderr.String())
+	}
+	if !cfg.TestDriver {
+		t.Fatal("TestDriver not set")
 	}
 }
 

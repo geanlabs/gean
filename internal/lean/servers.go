@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/core/httpapi"
+	"github.com/geanlabs/gean/internal/lean/api"
 	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/role"
 	"github.com/geanlabs/gean/internal/lean/store"
@@ -17,7 +18,7 @@ const metricsDrainTimeout = time.Second
 // startup instead of being logged after "gean started".
 func listenHTTP(cfg Config, s *store.ConsensusStore, fc *forkchoice.ForkChoice, aggCtl *role.Controller) ([]*httpapi.Server, error) {
 	servers := []*httpapi.Server{
-		httpapi.New("api", cfg.apiAddress(), newAPIHandler(s, fc, aggCtl), 0),
+		httpapi.New("api", cfg.apiAddress(), api.Handler(s, fc, aggCtl), 0),
 		httpapi.New("metrics", cfg.metricsAddress(), httpapi.MetricsHandler(), metricsDrainTimeout),
 	}
 	if err := httpapi.Listen(servers); err != nil {
