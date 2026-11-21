@@ -37,7 +37,7 @@ func TestHostsConnectAndStream(t *testing.T) {
 	const proto = "/test/echo/1"
 	b.SetStreamHandler(proto, func(s network.Stream) {
 		defer s.Close()
-		io.Copy(s, s)
+		_, _ = io.Copy(s, s)
 	})
 
 	ctx := context.Background()
@@ -51,7 +51,9 @@ func TestHostsConnectAndStream(t *testing.T) {
 	if _, err := s.Write([]byte("ping")); err != nil {
 		t.Fatal(err)
 	}
-	s.CloseWrite()
+	if err := s.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
 	got, err := io.ReadAll(s)
 	if err != nil {
 		t.Fatal(err)

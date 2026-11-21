@@ -30,7 +30,7 @@ func alignedTicks(ctx context.Context, clk clock.Clock, genesisTime uint64) <-ch
 			// on the wall clock. Re-check after every wake so a slewed or stepped
 			// wall clock can never release a tick early.
 			for {
-				wait := time.UnixMilli(int64(targetMs)).Sub(clk.Now())
+				wait := clock.FromUnixMilli(targetMs).Sub(clk.Now())
 				if wait <= 0 {
 					break
 				}

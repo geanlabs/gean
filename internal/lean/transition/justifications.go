@@ -6,17 +6,17 @@ import (
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-func reconstructJustifications(state *types.State, validatorCount int) map[[32]byte][]bool {
+func reconstructJustifications(state *types.State, validatorCount uint64) map[[32]byte][]bool {
 	justifications := make(map[[32]byte][]bool)
-	if state == nil || validatorCount <= 0 {
+	if state == nil || validatorCount == 0 {
 		return justifications
 	}
-	for i, rootBytes := range state.JustificationsRoots {
+	for row := range uint64(len(state.JustificationsRoots)) {
 		var root [32]byte
-		copy(root[:], rootBytes)
+		copy(root[:], state.JustificationsRoots[row])
 		votes := make([]bool, validatorCount)
 		for v := range validatorCount {
-			if types.BitlistGet(state.JustificationsValidators, uint64(i*validatorCount+v)) {
+			if types.BitlistGet(state.JustificationsValidators, row*validatorCount+v) {
 				votes[v] = true
 			}
 		}
@@ -33,24 +33,24 @@ func JustificationVotes(state *types.State, root [32]byte) []bool {
 	if state == nil {
 		return nil
 	}
-	validatorCount := len(state.Validators)
-	if validatorCount == 0 || int(types.BitlistLen(state.JustificationsValidators)) != len(state.JustificationsRoots)*validatorCount {
+	validatorCount := uint64(len(state.Validators))
+	if validatorCount == 0 || types.BitlistLen(state.JustificationsValidators) != uint64(len(state.JustificationsRoots))*validatorCount {
 		return nil
 	}
-	for i, rootBytes := range state.JustificationsRoots {
-		if [32]byte(rootBytes) != root {
+	for row := range uint64(len(state.JustificationsRoots)) {
+		if [32]byte(state.JustificationsRoots[row]) != root {
 			continue
 		}
 		votes := make([]bool, validatorCount)
 		for v := range validatorCount {
-			votes[v] = types.BitlistGet(state.JustificationsValidators, uint64(i*validatorCount+v))
+			votes[v] = types.BitlistGet(state.JustificationsValidators, row*validatorCount+v)
 		}
 		return votes
 	}
 	return nil
 }
 
-func serializeJustifications(state *types.State, justifications map[[32]byte][]bool, validatorCount int) {
+func serializeJustifications(state *types.State, justifications map[[32]byte][]bool, validatorCount uint64) {
 	roots := sortedJustificationRoots(justifications)
 	sszRoots := make([][]byte, len(roots))
 	for i, root := range roots {
@@ -60,18 +60,18 @@ func serializeJustifications(state *types.State, justifications map[[32]byte][]b
 	}
 	state.JustificationsRoots = sszRoots
 
-	totalBits := uint64(len(roots)) * uint64(validatorCount)
+	totalBits := uint64(len(roots)) * validatorCount
 	if totalBits == 0 {
 		state.JustificationsValidators = types.NewBitlistSSZ(0)
 		return
 	}
 
 	bits := types.NewBitlistSSZ(totalBits)
-	for i, root := range roots {
-		votes := justifications[root]
+	for row := range uint64(len(roots)) {
+		votes := justifications[roots[row]]
 		for v := range validatorCount {
-			if v < len(votes) && votes[v] {
-				types.BitlistSet(bits, uint64(i*validatorCount+v))
+			if v < uint64(len(votes)) && votes[v] {
+				types.BitlistSet(bits, row*validatorCount+v)
 			}
 		}
 	}

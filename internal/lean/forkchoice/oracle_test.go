@@ -42,7 +42,7 @@ func SpecComputeLMDGhostHead(
 	}
 
 	if startRoot == [32]byte{} {
-		var minSlot uint64 = ^uint64(0)
+		minSlot := ^uint64(0)
 		for root, info := range blocks {
 			if info.Slot < minSlot {
 				minSlot = info.Slot

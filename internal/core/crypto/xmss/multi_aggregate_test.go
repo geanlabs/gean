@@ -19,8 +19,12 @@ func TestMultipleAggregationsSequential(t *testing.T) {
 		t.Fatalf("pubkey 1: %v", err)
 	}
 
-	EnsureProverReady()
-	EnsureVerifierReady()
+	if err := EnsureProverReady(); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureVerifierReady(); err != nil {
+		t.Fatal(err)
+	}
 
 	for slot := range uint32(5) {
 		var message [32]byte

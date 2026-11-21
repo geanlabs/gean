@@ -100,8 +100,8 @@ func selectChildProofs(
 		proof := entry.Proofs[best]
 
 		bitsLen := types.BitlistLen(proof.Participants)
-		pubkeys := make([]xmss.CPubKey, 0, int(bitsLen))
-		participants := make([]uint64, 0, int(bitsLen))
+		pubkeys := make([]xmss.CPubKey, 0, bitsLen)
+		participants := make([]uint64, 0, bitsLen)
 		valid := true
 
 		for vid := range bitsLen {

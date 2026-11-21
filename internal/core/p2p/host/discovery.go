@@ -89,7 +89,7 @@ func (h *Host) DeleteENREntry(entry enr.Entry) {
 }
 
 // quicPort returns the UDP port the host's QUIC listener is bound to.
-func (h *Host) quicPort() (int, error) {
+func (h *Host) quicPort() (uint16, error) {
 	for _, addr := range h.host.Network().ListenAddresses() {
 		if _, err := addr.ValueForProtocol(multiaddr.P_QUIC_V1); err != nil {
 			continue
@@ -98,7 +98,8 @@ func (h *Host) quicPort() (int, error) {
 		if err != nil {
 			continue
 		}
-		return strconv.Atoi(port)
+		n, err := strconv.ParseUint(port, 10, 16)
+		return uint16(n), err
 	}
 	return 0, fmt.Errorf("host has no QUIC listener")
 }

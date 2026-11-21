@@ -21,7 +21,7 @@ func validatorRegistry(n int) []*types.Validator {
 func TestCoverageSetCountsDistinctValidatorsAndSubnets(t *testing.T) {
 	tests := []struct {
 		name           string
-		validatorCount int
+		validatorCount uint64
 		committeeCount uint64
 		participants   [][]uint64
 		wantValidators int
@@ -175,13 +175,15 @@ func TestReportPostBlockCoverageComputesSections(t *testing.T) {
 	e.Store.SetHead(headRoot)
 
 	// Head block carries votes for the round from validators 0,1,2.
-	e.Store.StorePendingBlock(headRoot, &types.SignedBlock{Block: &types.Block{
+	if err := e.Store.StorePendingBlock(headRoot, &types.SignedBlock{Block: &types.Block{
 		Slot: reportingSlot + 1,
 		Body: &types.BlockBody{Attestations: []*types.AggregatedAttestation{{
 			Data:            &types.AttestationData{Slot: reportingSlot, Target: &types.Checkpoint{}},
 			AggregationBits: types.BitlistFromIndices([]uint64{0, 1, 2}),
 		}}},
-	}})
+	}}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Timely snapshot saw validators 2,3 for the same round.
 	e.coveragePreMerge = map[uint64][][]byte{

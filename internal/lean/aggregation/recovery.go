@@ -33,7 +33,8 @@ const (
 // recovery exists to help. Recovery is best-effort and the aggregate is duty work, so
 // recovery yields the window rather than racing for it.
 func (a *Aggregator) splitFitsBeforeAggregation(nowMs uint64) bool {
-	intoSlot := time.Duration(a.msIntoSlot(nowMs)) * time.Millisecond
+	// A position within the slot never reaches a slot's length.
+	intoSlot := time.Duration(min(a.msIntoSlot(nowMs), types.MillisecondsPerSlot)) * time.Millisecond
 	windowEnd := aggregationDispatchOffset + SessionBudget
 	if intoSlot >= aggregationDispatchOffset && intoSlot < windowEnd {
 		return false
@@ -247,8 +248,12 @@ func (a *Aggregator) blockProofClaims(block *types.Block, state *types.State) ([
 		if err != nil {
 			return nil, nil, err
 		}
+		slot, err := xmss.Slot(att.Data.Slot)
+		if err != nil {
+			return nil, nil, err
+		}
 		groups = append(groups, keys)
-		bindings = append(bindings, xmss.MessageBinding{Message: root, Slot: uint32(att.Data.Slot)})
+		bindings = append(bindings, xmss.MessageBinding{Message: root, Slot: slot})
 	}
 	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
 		return nil, nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
@@ -261,8 +266,12 @@ func (a *Aggregator) blockProofClaims(block *types.Block, state *types.State) ([
 	if err != nil {
 		return nil, nil, err
 	}
+	blockSlot, err := xmss.Slot(block.Slot)
+	if err != nil {
+		return nil, nil, err
+	}
 	groups = append(groups, []xmss.CPubKey{key})
-	bindings = append(bindings, xmss.MessageBinding{Message: blockRoot, Slot: uint32(block.Slot)})
+	bindings = append(bindings, xmss.MessageBinding{Message: blockRoot, Slot: blockSlot})
 	return groups, bindings, nil
 }
 

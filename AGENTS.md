@@ -23,7 +23,7 @@ testing/sim/           multi-node tests in one process on an in-memory network
 ```bash
 make build            # Rust XMSS library, then bin/gean
 make test             # unit tests
-make lint             # go vet, import rules, golangci-lint, cargo fmt and clippy
+make lint             # go vet, golangci-lint, cargo fmt and clippy
 make fmt              # gofmt and cargo fmt
 make lean-e2e         # three nodes finalize; a restarted node catches up (fake XMSS)
 make lean-spectest    # leanSpec fixtures (a pinned download on first run)

@@ -3,6 +3,7 @@ package importer
 import (
 	"testing"
 
+	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -171,6 +172,32 @@ func TestBufferMissingParentKeepsImmediateParentLink(t *testing.T) {
 	}
 	if imp.Pending.Count() != 1 {
 		t.Fatalf("pending count=%d, want only parentRoot waiting on missingRoot", imp.Pending.Count())
+	}
+}
+
+// A block that cannot be written is not buffered, so the pending set never
+// names a block missing from disk.
+func TestBufferMissingParentSkipsUnstoredBlock(t *testing.T) {
+	imp := makeTestImporter()
+	admitPendingBlocks(imp, 1)
+	imp.store.Backend = failingProcessorWriteBackend{InMemoryBackend: imp.store.Backend.(*storage.InMemoryBackend)}
+
+	var parentRoot, blockRoot [32]byte
+	parentRoot[0] = 0xBB
+	blockRoot[0] = 0xCC
+	signedBlock := &types.SignedBlock{
+		Block: &types.Block{Slot: 1, ParentRoot: parentRoot, Body: &types.BlockBody{}},
+		Proof: &types.MultiMessageAggregate{},
+	}
+
+	var queue []*types.SignedBlock
+	imp.bufferMissingParentBlock(signedBlock, blockRoot, parentRoot, &queue)
+
+	if imp.Pending.Count() != 0 || imp.Pending.ChildCount(parentRoot) != 0 {
+		t.Fatalf("unstored block was buffered: pending=%d children=%d", imp.Pending.Count(), imp.Pending.ChildCount(parentRoot))
+	}
+	if len(queue) != 0 {
+		t.Fatalf("unstored block queued %d fetches", len(queue))
 	}
 }
 

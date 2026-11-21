@@ -6,7 +6,7 @@ type options struct {
 	OutputDir    string
 	BasePort     int
 	GenesisTime  uint64
-	GenesisDelay int
+	GenesisDelay uint
 }
 
 type manifest struct {

@@ -24,7 +24,7 @@ type Rates struct {
 
 // SleepAggregate charges virtual time for aggregating units input signatures.
 func (r Rates) SleepAggregate(units int) {
-	sleep(r.AggregateSignatures, units)
+	sleep(r.AggregateSignatures, float64(units))
 }
 
 // SleepVerify charges virtual time for verifying a single signature.
@@ -34,14 +34,14 @@ func (r Rates) SleepVerify() {
 
 // SleepVerifyAggregated charges virtual time for verifying an aggregated
 // signature over units participants.
-func (r Rates) SleepVerifyAggregated(units int) {
-	sleep(r.VerifyAggregatedSignatures, units)
+func (r Rates) SleepVerifyAggregated(units uint64) {
+	sleep(r.VerifyAggregatedSignatures, float64(units))
 }
 
-func sleep(rate float64, units int) {
+func sleep(rate, units float64) {
 	if rate <= 0 || units <= 0 {
 		return
 	}
 	// rate is signature-units per second, so an n-unit op costs n/rate seconds.
-	time.Sleep(time.Duration(float64(units) / rate * float64(time.Second)))
+	time.Sleep(time.Duration(units / rate * float64(time.Second)))
 }

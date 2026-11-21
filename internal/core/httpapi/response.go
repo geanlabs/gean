@@ -15,11 +15,12 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(data)
+	// The status is already sent, so a failed write has nowhere to be reported.
+	_, _ = w.Write(data)
 }
 
 // WriteSSZ writes SSZ-encoded data as an octet-stream response.
 func WriteSSZ(w http.ResponseWriter, data []byte) {
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Write(data)
+	_, _ = w.Write(data)
 }

@@ -19,20 +19,21 @@ const (
 	MaxErrorMessageSize      = 256
 )
 
-func EncodeVarint(value uint32) []byte {
-	buf := make([]byte, binary.MaxVarintLen32)
-	n := binary.PutUvarint(buf, uint64(value))
+func EncodeVarint(value uint64) []byte {
+	buf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(buf, value)
 	return buf[:n]
 }
 
 func EncodePayload(data []byte) []byte {
 	var buf bytes.Buffer
 	w := snappy.NewBufferedWriter(&buf)
-	w.Write(data)
-	w.Close()
+	// Writing to a bytes.Buffer cannot fail.
+	_, _ = w.Write(data)
+	_ = w.Close()
 	framed := buf.Bytes()
 
-	varint := EncodeVarint(uint32(len(data)))
+	varint := EncodeVarint(uint64(len(data)))
 	result := make([]byte, len(varint)+len(framed))
 	copy(result, varint)
 	copy(result[len(varint):], framed)

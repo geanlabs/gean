@@ -29,7 +29,7 @@ func TestHTTPShutdownDrainsActiveRequest(t *testing.T) {
 		server: &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			close(entered)
 			<-release
-			io.WriteString(w, "ok")
+			_, _ = io.WriteString(w, "ok")
 		})},
 		listener: listenLocal(t),
 	}

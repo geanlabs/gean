@@ -36,7 +36,7 @@ type Config struct {
 	// which learns it from what its peers see.
 	AdvertiseIP net.IP
 	// QUICPort is the libp2p QUIC port advertised in the ENR's quic entry.
-	QUICPort  int
+	QUICPort  uint16
 	Bootnodes []*enode.Node
 	// Entries are the chain's own ENR entries, such as its subnets.
 	Entries []enr.Entry

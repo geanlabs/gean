@@ -20,8 +20,7 @@ failing step again. Report what ran and what passed.
    gofmt -l $(git ls-files '*.go')
    ```
 
-3. **Lint.** Formatting aside, import-rule violations and Rust `fmt`/`clippy` failures fail it; read
-   the other golangci-lint findings and fix those in lines you changed:
+3. **Lint.** Any finding fails it:
 
    ```bash
    make lint

@@ -64,7 +64,9 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 	}
 	defer FreeSignature(csig2)
 
-	EnsureProverReady()
+	if err := EnsureProverReady(); err != nil {
+		t.Fatal(err)
+	}
 
 	proofBytes, err := AggregateWithChildren(
 		[]CPubKey{cpk1, cpk2},
@@ -82,7 +84,9 @@ func TestAggregateSignaturesRoundtrip(t *testing.T) {
 
 	t.Logf("aggregation succeeded: proof size = %d bytes", len(proofBytes))
 
-	EnsureVerifierReady()
+	if err := EnsureVerifierReady(); err != nil {
+		t.Fatal(err)
+	}
 
 	err = VerifyAggregatedSignature(proofBytes, []CPubKey{cpk1, cpk2}, message, 0)
 	if err != nil {
@@ -113,7 +117,9 @@ func TestAggregateRejectsChildProofWithWrongMessage(t *testing.T) {
 	msgA[0] = 0xaa
 	msgB[0] = 0xbb
 
-	EnsureProverReady()
+	if err := EnsureProverReady(); err != nil {
+		t.Fatal(err)
+	}
 
 	// A valid single-signer child proof bound to msgA.
 	childSig, err := kpChild.Sign(0, msgA)

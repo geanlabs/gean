@@ -119,7 +119,8 @@ func (h *Host) FetchBlocksByRange(
 	var prevHeaderRoot [32]byte
 	var hasPrev bool
 
-	reader := bufio.NewReader(io.LimitReader(stream, int64(reqresp.MaxCompressedPayloadSize)*int64(count)))
+	// validateRangeRequest has held count to MaxRequestBlocks.
+	reader := bufio.NewReader(io.LimitReader(stream, int64(reqresp.MaxCompressedPayloadSize)*int64(min(count, types.MaxRequestBlocks))))
 	for {
 		code, blockData, err := reqresp.ReadChunk(stream, reader, "blocks_by_range", MaxSignedBlockSize)
 		if err != nil {

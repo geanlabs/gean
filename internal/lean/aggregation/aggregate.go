@@ -543,9 +543,9 @@ func aggregationMessage(attData *types.AttestationData) ([32]byte, uint32, error
 	if err != nil {
 		return [32]byte{}, 0, fmt.Errorf("attestation data root: %w", err)
 	}
-	slot := uint32(attData.Slot)
-	if uint64(slot) != attData.Slot {
-		return [32]byte{}, 0, fmt.Errorf("slot %d overflows uint32", attData.Slot)
+	slot, err := xmss.Slot(attData.Slot)
+	if err != nil {
+		return [32]byte{}, 0, err
 	}
 	return dataRoot, slot, nil
 }

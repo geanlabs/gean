@@ -33,7 +33,7 @@ func TestCloseWaitsForHeldReqRespHandler(t *testing.T) {
 	if err := client.LibP2PHost().Connect(ctx, peer.AddrInfo{ID: server.PeerID(), Addrs: server.Addrs()}); err != nil {
 		t.Fatal(err)
 	}
-	go client.SendStatusRequest(ctx, server.PeerID(), &StatusMessage{})
+	go func() { _, _ = client.SendStatusRequest(ctx, server.PeerID(), &StatusMessage{}) }()
 	<-entered
 
 	closed := make(chan struct{})

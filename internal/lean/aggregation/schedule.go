@@ -1,8 +1,10 @@
 package aggregation
 
 import (
+	"math"
 	"time"
 
+	"github.com/geanlabs/gean/internal/core/clock"
 	"github.com/geanlabs/gean/internal/lean/metrics"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -98,13 +100,13 @@ func (a *Aggregator) deadline(nowMs uint64) time.Time {
 	// negative. Hand back a usable window instead of an expired deadline, which
 	// the worker reads as "stop before the first group".
 	if intoSlot >= aggregationDeadlineOffset {
-		return time.UnixMilli(int64(nowMs)).Add(types.MillisecondsPerInterval * time.Millisecond)
+		return clock.FromUnixMilli(nowMs).Add(types.MillisecondsPerInterval * time.Millisecond)
 	}
 	window := time.Duration(aggregationDeadlineOffset-intoSlot) * time.Millisecond
 	// Anchored to the tick's own timestamp rather than a fresh clock read, so
 	// the deadline is the slot boundary itself and does not drift by however
 	// long the tick took to reach here.
-	return time.UnixMilli(int64(nowMs)).Add(window)
+	return clock.FromUnixMilli(nowMs).Add(window)
 }
 
 // MaybeEarly starts the aggregation session in late interval 1, once this
@@ -155,7 +157,8 @@ func (a *Aggregator) MaybeEarly(nowMs uint64) {
 // aggregate already carries finalizing weight, so proving it ahead of interval 2
 // is worthwhile.
 func earlyAggregationQuorum(voters uint64) int {
-	return int((2*voters + 2) / 3)
+	// The validator registry is far smaller than math.MaxInt.
+	return int(min((2*voters+2)/3, math.MaxInt))
 }
 
 // expectedVotersPerSlot is how many validators this node can expect to hear from

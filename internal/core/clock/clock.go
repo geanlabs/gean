@@ -7,7 +7,10 @@
 // Clock; time.Now and time.Since are fine there.
 package clock
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // Clock reads the current time and creates timers on the same timeline.
 type Clock interface {
@@ -48,4 +51,10 @@ func (r realTimer) Stop() bool                 { return r.t.Stop() }
 // uses.
 func UnixMilli(c Clock) uint64 {
 	return uint64(c.Now().UnixMilli())
+}
+
+// FromUnixMilli is the inverse of UnixMilli.
+// Any time gean handles is far below math.MaxInt64 milliseconds.
+func FromUnixMilli(ms uint64) time.Time {
+	return time.UnixMilli(int64(min(ms, math.MaxInt64)))
 }

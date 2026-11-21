@@ -46,11 +46,10 @@ test-all: lean-ffi leanSpec/fixtures ## Run every test but lean-e2e: unit, FFI, 
 
 ##@ Code
 
-lint: ## Run linters (import rules fail; other golangci-lint findings are reported)
+lint: ## Run linters; any finding fails
 	@command -v golangci-lint >/dev/null || { echo "golangci-lint not found: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; exit 1; }
 	go vet ./...
-	golangci-lint run --enable-only depguard ./...
-	golangci-lint run --issues-exit-code=0 ./...
+	golangci-lint run ./...
 	cd $(XMSS_RUST) && cargo fmt --check
 	cd $(XMSS_RUST) && cargo clippy -- -D warnings -A clippy::missing_safety_doc
 

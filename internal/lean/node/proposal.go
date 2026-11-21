@@ -73,7 +73,7 @@ func (e *Engine) maybeProposeEarly() {
 // waitForSlotStart holds a proposal that finished early until its slot begins,
 // and reports false if ctx ends first.
 func (e *Engine) waitForSlotStart(ctx context.Context, slot uint64) bool {
-	start := time.UnixMilli(int64(e.slotStartMs(slot)))
+	start := clock.FromUnixMilli(e.slotStartMs(slot))
 	timer := e.Clock.NewTimer(time.Hour)
 	defer timer.Stop()
 	// Timers measure a duration on the monotonic clock; the slot start is on the
@@ -148,7 +148,7 @@ func (e *Engine) proveProposal(ctx context.Context, duty proposalDuty) *proposal
 	// The gate wait ends at the same point in the slot however early the
 	// proposal started.
 	deadlineMs := e.slotStartMs(duty.slot) + 3*types.MillisecondsPerInterval
-	deadline, cancel := context.WithDeadline(ctx, time.UnixMilli(int64(deadlineMs)))
+	deadline, cancel := context.WithDeadline(ctx, clock.FromUnixMilli(deadlineMs))
 	defer cancel()
 	if e.ProvingGate != nil {
 		waitStart := time.Now()
@@ -200,7 +200,12 @@ func (e *Engine) buildProposal(duty proposalDuty) *proposalResult {
 	}
 	// A signing error must not permit another candidate to use this duty.
 	result.retryable = false
-	blockSig, err := propKey.Sign(uint32(slot), blockRoot)
+	signingSlot, err := xmss.Slot(slot)
+	if err != nil {
+		logger.Error(logger.Validator, "sign block failed: %v", err)
+		return result
+	}
+	blockSig, err := propKey.Sign(signingSlot, blockRoot)
 	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
 		logger.Error(logger.Validator, "sign block failed: %v", err)
@@ -324,7 +329,11 @@ func (e *Engine) mergeBlockProofWithProver(
 		if err != nil {
 			return nil, fmt.Errorf("attestation %d data root: %w", i, err)
 		}
-		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof, Message: root, Slot: uint32(data.Slot)})
+		dataSlot, err := xmss.Slot(data.Slot)
+		if err != nil {
+			return nil, fmt.Errorf("attestation %d: %w", i, err)
+		}
+		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof, Message: root, Slot: dataSlot})
 	}
 
 	signature, err := xmss.ParseSignature(proposerSignature[:])
@@ -336,6 +345,10 @@ func (e *Engine) mergeBlockProofWithProver(
 	if err != nil {
 		return nil, err
 	}
+	blockSlot, err := xmss.Slot(block.Slot)
+	if err != nil {
+		return nil, err
+	}
 	// The proposer's signature goes into the merge raw. Proving it alone first and
 	// merging that proof costs a whole extra proof, the most expensive part of a
 	// proposal after the merge itself.
@@ -343,7 +356,7 @@ func (e *Engine) mergeBlockProofWithProver(
 		Pubkey:    proposerKey.PublicKey(),
 		Signature: signature,
 		Message:   blockRoot,
-		Slot:      uint32(block.Slot),
+		Slot:      blockSlot,
 	}
 	mergeStart := time.Now()
 	proof, err := merge(inputs, []xmss.RawSignature{proposer})

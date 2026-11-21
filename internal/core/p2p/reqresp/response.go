@@ -15,8 +15,7 @@ func WriteRequest(s network.Stream, label string, data []byte) error {
 	if _, err := s.Write(encoded); err != nil {
 		return err
 	}
-	s.CloseWrite()
-	return nil
+	return s.CloseWrite()
 }
 
 // WriteResponse arms the idle write deadline before every response frame so a peer

@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"reflect"
 	"testing"
 
@@ -103,12 +102,7 @@ type varintOutput struct {
 }
 
 func checkVarint(t *testing.T, codec *varintCodec, output *varintOutput) {
-	// gean's varint only encodes request/response length prefixes, which fit
-	// in 32 bits.
-	if codec.Value > math.MaxUint32 {
-		skip(t, skipNotImplemented, "varints above 32 bits")
-	}
-	got := reqresp.EncodeVarint(uint32(codec.Value))
+	got := reqresp.EncodeVarint(codec.Value)
 	want := mustParse(t, specfixtures.ParseHexBytes, output.Encoded)
 	if !bytes.Equal(got, want) || len(got) != output.ByteLength {
 		t.Errorf("varint %d: got %x (%d bytes), want %x (%d bytes)",
@@ -265,7 +259,7 @@ type requestChunkCodec struct {
 
 func checkRequestChunk(t *testing.T, codec *requestChunkCodec, output *encodedOutput) {
 	payload, reference := hexBytes(t, codec.SSZData), hexBytes(t, output.Encoded)
-	checkPrefix(t, reqresp.EncodeVarint(uint32(len(payload))), reference, "length prefix")
+	checkPrefix(t, reqresp.EncodeVarint(uint64(len(payload))), reference, "length prefix")
 	for name, encoded := range map[string][]byte{"leanSpec's": reference, "gean's": reqresp.EncodePayload(payload)} {
 		if got, err := reqresp.DecodePayload(encoded); err != nil || !bytes.Equal(got, payload) {
 			t.Errorf("decode %s request: got %x (%v), want %x", name, got, err, payload)
@@ -312,7 +306,7 @@ func checkResponseChunks(t *testing.T, chunks []responseChunk, reference []byte)
 	for _, chunk := range chunks {
 		geanEncoding = append(geanEncoding, reqresp.EncodeResponse(chunk.ResponseCode, hexBytes(t, chunk.SSZData))...)
 	}
-	checkPrefix(t, geanEncoding[:1+len(reqresp.EncodeVarint(uint32(len(hexBytes(t, chunks[0].SSZData)))))], reference,
+	checkPrefix(t, geanEncoding[:1+len(reqresp.EncodeVarint(uint64(len(hexBytes(t, chunks[0].SSZData)))))], reference,
 		"first response code and length prefix")
 	for name, encoded := range map[string][]byte{"leanSpec's": reference, "gean's": geanEncoding} {
 		stream := bytes.NewReader(encoded)
@@ -376,7 +370,7 @@ func checkSnappyFrame(t *testing.T, codec *snappyCodec, output *snappyFrameOutpu
 		t.Fatalf("fixture lengths disagree with its data: %d and %d, want %d and %d",
 			len(data), len(reference), output.UncompressedLength, output.FramedLength)
 	}
-	prefix := reqresp.EncodeVarint(uint32(len(data)))
+	prefix := reqresp.EncodeVarint(uint64(len(data)))
 	for name, chunk := range map[string][]byte{"leanSpec's": append(prefix, reference...), "gean's": reqresp.EncodePayload(data)} {
 		if got, err := reqresp.DecodePayload(chunk); err != nil || !bytes.Equal(got, data) {
 			t.Errorf("decode %s frames: got %x (%v), want %x", name, got, err, data)

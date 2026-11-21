@@ -39,9 +39,9 @@ func (m *Merger) Merge(
 	if attData == nil {
 		return nil, fmt.Errorf("%w: attestation data is nil", ErrMergeUnavailable)
 	}
-	slot := uint32(attData.Slot)
-	if uint64(slot) != attData.Slot {
-		return nil, fmt.Errorf("%w: slot %d overflows uint32", ErrMergeUnavailable, attData.Slot)
+	slot, err := xmss.Slot(attData.Slot)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrMergeUnavailable, err)
 	}
 	if state == nil {
 		return nil, fmt.Errorf("%w: state is nil", ErrMergeUnavailable)
