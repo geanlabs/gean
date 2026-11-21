@@ -66,6 +66,16 @@ jobs:
       - run: make test
         env:
           GOFLAGS: -race
+      # Keyed on the fixtures' pinned hash rather than the whole Makefile, so only a new pin
+      # downloads them again. The restored directory holds make's .sha256-<hash> stamp, so
+      # make skips the download.
+      - id: fixtures
+        run: echo "sha256=$(sed -n 's/^LEAN_SPEC_FIXTURES_SHA256 := //p' Makefile)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: leanSpec/fixtures
+          key: leanspec-fixtures-${{ steps.fixtures.outputs.sha256 }}
+      - run: make lean-spectest
 
   # The one check branch protection requires, so adding a job doesn't mean updating the rule.
   success:
