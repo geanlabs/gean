@@ -1,0 +1,16 @@
+--- a/clients/gean/gean.sh
++++ b/clients/gean/gean.sh
+@@ -140,4 +140,12 @@
+ 
+ export GOLOG_LOG_LEVEL="${GOLOG_LOG_LEVEL:-info}"
+ 
+-exec "$GEAN_BIN" "${FLAGS[@]}"
++# Newer gean runs the node as "gean lean"; older releases take the node flags
++# directly. --help tells them apart without starting a node.
++COMMAND=()
++USAGE="$("$GEAN_BIN" --help 2>&1 || true)"
++if [[ "$USAGE" == *"gean lean"* ]]; then
++    COMMAND=(lean)
++fi
++
++exec "$GEAN_BIN" "${COMMAND[@]}" "${FLAGS[@]}"

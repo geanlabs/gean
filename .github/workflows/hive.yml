@@ -1,0 +1,84 @@
+# Runs hive's lean simulator against gean built from this commit. hive's
+# suites start containers and take a while, so this runs nightly and on
+# demand rather than on every push.
+name: hive
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: gean
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ethereum/hive
+          path: hive
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: hive/go.mod
+          cache-dependency-path: hive/go.sum
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Tagged as the published devnet5 image hive's gean client builds on.
+      # hive does not pull base images by default, so it uses this one.
+      - name: Build gean
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: gean
+          load: true
+          tags: ghcr.io/geanlabs/gean:devnet5
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # hive's wrapper starts gean without the lean subcommand. Until hive
+      # carries the fix, apply it here; once it does, the patch no longer
+      # applies and is skipped.
+      - name: Patch hive's gean wrapper
+        run: |
+          if git -C hive apply --check ../gean/.github/hive/gean-wrapper.patch; then
+            git -C hive apply ../gean/.github/hive/gean-wrapper.patch
+          fi
+
+      - name: Build hive
+        working-directory: hive
+        run: go build -o hive .
+
+      # hive exits non-zero when any test fails, and check.py decides which
+      # failures are new. hive's last line says whether the simulation itself
+      # ran to the end, with or without failing tests.
+      - name: Run the lean simulator
+        working-directory: hive
+        run: |
+          ./hive --sim lean --client-file ../gean/.github/hive/gean.yaml \
+            --sim.timelimit 100m --results-root ../results 2>&1 | tee ../hive.log || true
+          tail -n 1 ../hive.log | grep -Eq 'finished|tests? failed'
+
+      - name: Check results
+        if: success() || failure()
+        run: python3 gean/.github/hive/check.py results gean/.github/hive/expected_failures.txt
+
+      - name: Print simulator output
+        if: failure()
+        run: cat results/*simulator*.log
+
+      - name: Print gean logs
+        if: failure()
+        run: gean/.github/hive/print_client_logs.sh results
