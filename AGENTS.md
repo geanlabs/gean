@@ -57,7 +57,8 @@ go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
 
 - Run the [`precheck`](.agents/skills/precheck/SKILL.md) skill before every commit.
 - Commit and PR titles are `<type>: <subject>` with a lowercase subject: `feat`, `fix`, `perf`,
-  `refactor`, `test`, `docs`, `build`, `deps` or `chore`. The body says what changed and why.
+  `refactor`, `test`, `docs`, `build`, `deps` or `chore`; the `titles` workflow checks them. The
+  body says what changed and why.
 - Commits must be signed.
 - When reviewing, comment; never block a PR with "request changes".
 
