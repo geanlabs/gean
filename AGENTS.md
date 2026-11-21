@@ -59,8 +59,6 @@ go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
 - Commit and PR titles are `<type>: <subject>` with a lowercase subject: `feat`, `fix`, `perf`,
   `refactor`, `test`, `docs`, `build`, `deps` or `chore`. The body says what changed and why.
 - Commits must be signed.
-- A PR or GitHub comment written by an agent under a human's account says so, naming the harness
-  and model, e.g. `🤖 AI agent (Claude Code / <model>) on behalf of @user`.
 - When reviewing, comment; never block a PR with "request changes".
 
 ## Skills
