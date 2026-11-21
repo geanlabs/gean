@@ -79,10 +79,28 @@ jobs:
           key: leanspec-fixtures-${{ steps.fixtures.outputs.sha256 }}
       - run: make lean-spectest
 
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # The one run with several nodes in a process, so where -race finds the most;
+      # its time is slot waits, so the detector costs almost nothing.
+      - run: make lean-e2e
+        env:
+          GOFLAGS: -race
+
   # The one check branch protection requires, so adding a job doesn't mean updating the rule.
   success:
     if: always()
-    needs: [lint, test]
+    needs: [lint, test, e2e]
     runs-on: ubuntu-latest
     permissions: {}
     steps:

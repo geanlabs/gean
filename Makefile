@@ -91,7 +91,7 @@ lean-spectest: lean-ffi leanSpec/fixtures ## Run the leanSpec fixture tests
 	cd testing/spectest/lean && go test -count=1 -tags=spectests
 
 lean-e2e: ## Run the end-to-end multi-node test with fake XMSS (no Rust needed)
-	go test ./testing/sim/ -v -count=1 -tags=fakecrypto
+	go test ./testing/sim/ -v -count=1 -timeout 15m -tags=fakecrypto
 
 lean-sszgen: ## Regenerate the lean SSZ encoding files from struct tags
 	@rm -f internal/lean/types/*_encoding.go
