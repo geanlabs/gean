@@ -180,7 +180,7 @@ func TestForkChoiceInit_RejectsMismatchedAnchor(t *testing.T) {
 	if resp.Error == nil || !strings.Contains(*resp.Error, "state-root mismatch") {
 		t.Errorf("expected error mentioning state-root mismatch, got %v", resp.Error)
 	}
-	if sess.store != nil || sess.fc != nil {
+	if sess.replay != nil {
 		t.Error("rejected init must not populate session store/fc")
 	}
 }
@@ -235,7 +235,7 @@ func TestForkChoiceInitThenStep(t *testing.T) {
 		}
 		t.Fatalf("init: expected 204, got %d (reason: %s)", rec.Result().StatusCode, reason)
 	}
-	if sess.store == nil || sess.fc == nil {
+	if sess.replay == nil {
 		t.Fatal("init success must populate session store + fc")
 	}
 

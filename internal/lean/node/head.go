@@ -8,7 +8,6 @@ import (
 )
 
 func (e *Engine) updateHead() {
-	attestations := e.Store.ExtractLatestKnownAttestations()
 	justifiedRoot := e.Store.LatestJustified().Root
 
 	// FindHead echoes back a justified root it doesn't know, freezing the
@@ -18,12 +17,8 @@ func (e *Engine) updateHead() {
 		logger.Warn(logger.Forkchoice, "justified root 0x%x unknown to fork choice; head cannot advance past it", justifiedRoot)
 	}
 
-	for vid, data := range attestations {
-		e.FC.SetKnownVote(vid, data.Head.Root, data.Slot, data)
-	}
-
 	oldHead := e.Store.Head()
-	newHead := e.FC.UpdateHead(justifiedRoot)
+	newHead := store.ComputeHead(e.Store, e.FC)
 
 	e.updateFinalizedFromHead(newHead)
 
@@ -137,17 +132,10 @@ func (e *Engine) persistHead(root [32]byte) error {
 }
 
 func (e *Engine) updateSafeTarget() {
-	justifiedRoot := e.Store.LatestJustified().Root
-
-	headSummary, ok := e.Store.StateSummary(e.Store.Head())
+	safeTarget, ok := store.UpdateSafeTarget(e.Store, e.FC)
 	if !ok {
 		return
 	}
-	numValidators := headSummary.NumValidators
-
-	safeTarget := e.FC.UpdateSafeTarget(justifiedRoot, numValidators, e.Store.ExtractLatestNewAttestations())
-	e.Store.SetSafeTarget(safeTarget)
-
 	if safeSlot, _, ok := e.Store.BlockSlotAndParent(safeTarget); ok {
 		metrics.SetSafeTargetSlot(safeSlot)
 	}
