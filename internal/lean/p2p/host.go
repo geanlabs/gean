@@ -27,11 +27,13 @@ func NewHost(
 	isAggregator bool,
 	aggregateSubnetIDs []uint64,
 ) (*Host, error) {
+	hostCfg.DiscoveryAdmit = SameFork
 	base, err := host.New(ctx, hostCfg)
 	if err != nil {
 		return nil, err
 	}
 	p2pHost := &Host{Host: base, committeeCount: committeeCount}
+	p2pHost.SetENREntry(localEth2)
 
 	if err := p2pHost.subscribeStartupTopics(committeeCount, validatorIDs, isAggregator, aggregateSubnetIDs); err != nil {
 		p2pHost.Close()

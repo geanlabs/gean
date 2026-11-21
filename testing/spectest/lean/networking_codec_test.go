@@ -4,6 +4,7 @@ package lean
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io"
 
@@ -14,6 +15,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/golang/snappy"
 	pubsubpb "github.com/libp2p/go-libp2p-pubsub/pb"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -191,6 +193,11 @@ type enrOutput struct {
 	Multiaddr string `json:"multiaddr"`
 
 	PublicKey string `json:"publicKey"`
+	Eth2Data  *struct {
+		ForkDigest      string                 `json:"forkDigest"`
+		NextForkVersion specfixtures.Unchecked `json:"nextForkVersion"`
+		NextForkEpoch   specfixtures.Unchecked `json:"nextForkEpoch"`
+	} `json:"eth2Data"`
 
 	RLP                specfixtures.Unchecked `json:"rlp"`
 	NodeID             specfixtures.Unchecked `json:"nodeId"`
@@ -201,7 +208,6 @@ type enrOutput struct {
 	QUICPort           specfixtures.Unchecked `json:"quicPort"`
 	IsAggregator       specfixtures.Unchecked `json:"isAggregator"`
 	AttestationSubnets specfixtures.Unchecked `json:"attestationSubnets"`
-	Eth2Data           specfixtures.Unchecked `json:"eth2Data"`
 }
 
 func checkENR(t *testing.T, codec *enrCodec, output *enrOutput) {
@@ -219,6 +225,13 @@ func checkENR(t *testing.T, codec *enrCodec, output *enrOutput) {
 	}
 	if output.Multiaddr != "" && fields.Multiaddr != output.Multiaddr {
 		t.Errorf("multiaddr: got %q, want %q", fields.Multiaddr, output.Multiaddr)
+	}
+	// gean dials a discovered node only when it is on gean's fork, which it
+	// reads from the record's eth2 entry.
+	sameFork := output.Eth2Data != nil &&
+		bytes.Equal(hexBytes(t, output.Eth2Data.ForkDigest), mustParse(t, hex.DecodeString, p2p.ForkDigest))
+	if got := p2p.SameFork(enode.SignNull(fields.Record, enode.ID{})); got != sameFork {
+		t.Errorf("same fork: got %v, want %v", got, sameFork)
 	}
 	// gean derives a peer's libp2p ID from the record's secp256k1 key.
 	publicKey, err := libp2pcrypto.UnmarshalSecp256k1PublicKey(hexBytes(t, output.PublicKey))

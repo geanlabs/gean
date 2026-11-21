@@ -22,9 +22,12 @@ type ENRFields struct {
 	Seq       uint64
 	PeerID    peer.ID
 	Multiaddr string
+	// Record is the decoded record, from which a chain reads its own entries.
+	Record *enr.Record
 }
 
 type enrRecord struct {
+	record    *enr.Record
 	seq       uint64
 	peerID    peer.ID
 	ip4       net.IP
@@ -44,6 +47,7 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 		Seq:       rec.seq,
 		PeerID:    rec.peerID,
 		Multiaddr: rec.transportMultiaddr(),
+		Record:    rec.record,
 	}, nil
 }
 
@@ -86,7 +90,7 @@ func parseENRRecord(enrStr string) (*enrRecord, error) {
 		return nil, fmt.Errorf("decode ENR RLP: %w", err)
 	}
 
-	rec := enrRecord{seq: r.Seq()}
+	rec := enrRecord{record: &r, seq: r.Seq()}
 	var ip4 enr.IPv4
 	if r.Load(&ip4) == nil {
 		rec.ip4 = net.IP(ip4)

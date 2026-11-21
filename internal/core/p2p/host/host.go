@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -49,6 +50,8 @@ type Host struct {
 	enrEntries map[string]enr.Entry
 	Hooks      Hooks
 
+	discoveryAdmit func(*enode.Node) bool
+
 	// tasks tracks the goroutines the host starts, the req/resp handlers it
 	// runs and the gossip validators pubsub calls, which read the store, so
 	// Close can join them.
@@ -69,6 +72,9 @@ type Config struct {
 	ListenPort int
 	// Network, when set, builds the host on it instead of on QUIC.
 	Network Network
+	// DiscoveryAdmit, when set, decides which nodes discv5 finds are dialed:
+	// those on the chain's network.
+	DiscoveryAdmit func(*enode.Node) bool
 }
 
 // New starts a host with the identity in cfg.NodeKeyPath, listening for QUIC
@@ -108,6 +114,8 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		ctx:       ctx,
 		cancel:    cancel,
 		peerStore: peers.NewStore(),
+
+		discoveryAdmit: cfg.DiscoveryAdmit,
 	}
 	h.installPeerNotifier()
 	return h, nil

@@ -1,5 +1,13 @@
 package p2p
 
+import (
+	"encoding/binary"
+	"encoding/hex"
+	"math"
+
+	"github.com/ethereum/go-ethereum/p2p/enode"
+)
+
 // attnetsEntry is the ENR attnets bitfield, bit i for subnet i. leanSpec
 // specifies a 64-bit Bitvector; gean sizes it by the committee count, as
 // ethlambda does, so the two read each other's records.
@@ -35,4 +43,31 @@ func (h *Host) AdvertiseAggregator(isAggregator bool) {
 	} else {
 		h.DeleteENREntry(isAggregatorEntry)
 	}
+}
+
+// eth2Entry is the ENR eth2 entry, the beacon chain's SSZ ENRForkID: fork
+// digest, next fork version, next fork epoch. Lean has no fork schedule, so
+// gean writes what ethlambda does: its topic fork digest, then a zero version
+// at the far-future epoch.
+type eth2Entry [16]byte
+
+func (eth2Entry) ENRKey() string { return "eth2" }
+
+// localEth2 takes its digest from ForkDigest, so the ENR and the topic names
+// cannot disagree.
+var localEth2 = func() eth2Entry {
+	var e eth2Entry
+	if _, err := hex.Decode(e[:4], []byte(ForkDigest)); err != nil {
+		panic(err)
+	}
+	binary.LittleEndian.PutUint64(e[8:], math.MaxUint64)
+	return e
+}()
+
+// SameFork admits a discovered node whose eth2 entry carries gean's fork
+// digest. As in ethlambda, a node without the entry is refused and its next
+// fork is ignored.
+func SameFork(node *enode.Node) bool {
+	var e eth2Entry
+	return node.Load(&e) == nil && [4]byte(e[:4]) == [4]byte(localEth2[:4])
 }

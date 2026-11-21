@@ -105,11 +105,14 @@ func (s *Service) Close() {
 	s.db.Close()
 }
 
-// Dial walks the network and dials each peer it finds with a QUIC address,
-// while connected reports fewer than TargetPeers, until ctx ends or the
-// service closes.
-func (s *Service) Dial(ctx context.Context, connected func() int, dial func(context.Context, multiaddr.Multiaddr) error) {
+// Dial walks the network and dials each peer it finds with a QUIC address and,
+// when admit is set, that admit accepts, while connected reports fewer than
+// TargetPeers, until ctx ends or the service closes.
+func (s *Service) Dial(ctx context.Context, admit func(*enode.Node) bool, connected func() int, dial func(context.Context, multiaddr.Multiaddr) error) {
 	it := s.udp.RandomNodes()
+	if admit != nil {
+		it = enode.Filter(it, admit)
+	}
 	defer it.Close()
 	stop := context.AfterFunc(ctx, it.Close)
 	defer stop()

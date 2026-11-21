@@ -47,7 +47,7 @@ func (h *Host) StartDiscovery(udpPort int, advertiseIP net.IP, bootnodes []*enod
 		return err
 	}
 	h.discovery, h.enrEntries = svc, nil
-	h.tasks.Go(func() { svc.Dial(h.ctx, h.ConnectedPeers, h.ConnectPeer) })
+	h.tasks.Go(func() { svc.Dial(h.ctx, h.discoveryAdmit, h.ConnectedPeers, h.ConnectPeer) })
 	logger.Info(logger.Network, "discv5 started bootnodes=%d enr=%s", len(bootnodes), svc.Self())
 	return nil
 }
