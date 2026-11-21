@@ -80,6 +80,7 @@ func runStateTransitionTest(t *testing.T, tt *specfixtures.StateTransitionFixtur
 		return
 	}
 
+	skipPoseidonState(t, &tt.Pre)
 	state, err := tt.Pre.ToState()
 	if err != nil {
 		t.Fatalf("pre state: %v", err)

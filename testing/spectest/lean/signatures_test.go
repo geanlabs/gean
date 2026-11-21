@@ -74,6 +74,7 @@ func TestSpecSignatures(t *testing.T) {
 func runSignatureTest(t *testing.T, tt *specfixtures.VerifySignaturesFixture) {
 	t.Helper()
 
+	skipPoseidonState(t, &tt.AnchorState)
 	anchorState, err := tt.AnchorState.ToState()
 	if err != nil {
 		t.Fatalf("anchor state: %v", err)

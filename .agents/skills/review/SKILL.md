@@ -13,8 +13,8 @@ only what you can point to in the code; a finding you can't tie to a line is not
 1. Get the change: `git diff <base>...HEAD`, or `gh pr diff <number>` and `gh pr view <number>`.
 2. Read the description and any linked issue: what is the change for?
 3. List the touched packages and read each changed file in full, not just the hunks. For consensus
-   changes, read the leanSpec function the code implements (pinned commit:
-   `LEAN_SPEC_COMMIT_HASH` in the Makefile).
+   changes, read the leanSpec function the code implements, at the commit named beside
+   `LEAN_SPEC_FIXTURES_SHA256` in the Makefile.
 
 ## Phase 2: Review, one file at a time
 

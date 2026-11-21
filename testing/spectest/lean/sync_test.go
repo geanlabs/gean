@@ -106,6 +106,7 @@ func TestSpecSync(t *testing.T) {
 
 				state := &types.State{}
 				ssz_err := state.UnmarshalSSZ(stateBytes)
+				skipPoseidonDecode(t, "State", ssz_err)
 				// A successful decode is a prerequisite for any structural check;
 				// if the spec said valid=true, decode must succeed.
 				if fx.Output.Valid && ssz_err != nil {

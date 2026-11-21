@@ -109,6 +109,7 @@ func TestSpecForkChoice(t *testing.T) {
 func runForkChoiceTest(t *testing.T, tt *fcTest) {
 	t.Helper()
 
+	skipPoseidonState(t, &tt.AnchorState)
 	anchorState, err := tt.AnchorState.ToState()
 	if err != nil {
 		t.Fatalf("anchor state: %v", err)

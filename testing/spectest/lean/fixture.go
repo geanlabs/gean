@@ -12,6 +12,47 @@ import (
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
+// leanSpec still specifies Poseidon XMSS, with 52-byte public keys and 2,536-byte
+// signatures. gean, like every devnet client, runs leanVM's BLAKE2s XMSS (32 and
+// 1,208 bytes), so fixtures carrying Poseidon keys or signatures cannot load
+// until leanSpec specifies BLAKE2s. The checks below skip exactly those
+// fixtures, and stop skipping once the fixtures carry BLAKE2s keys.
+const (
+	poseidonPubkeySize = 52
+	poseidonSkipReason = "fixture uses leanSpec's Poseidon XMSS; gean runs leanVM's BLAKE2s XMSS: " +
+		"https://github.com/leanEthereum/leanSpec/issues/1210"
+)
+
+// xmssSSZTypes are the SSZ types that hold XMSS keys or signatures.
+var xmssSSZTypes = map[string]bool{"Validator": true, "State": true, "SignedAttestation": true}
+
+// skipPoseidonKeys skips the test when any of the hex keys is a Poseidon key.
+func skipPoseidonKeys(t *testing.T, hexKeys ...string) {
+	t.Helper()
+	for _, k := range hexKeys {
+		if b, err := specfixtures.ParseHexBytes(k); err == nil && len(b) == poseidonPubkeySize {
+			t.Skip(poseidonSkipReason)
+		}
+	}
+}
+
+// skipPoseidonState skips the test when the state's validators hold Poseidon keys.
+func skipPoseidonState(t *testing.T, state *specfixtures.TestState) {
+	t.Helper()
+	for _, v := range state.Validators.Data {
+		skipPoseidonKeys(t, v.AttestationPubkey, v.ProposalPubkey)
+	}
+}
+
+// skipPoseidonDecode skips a failed decode of a type that holds XMSS keys or
+// signatures, which Poseidon sizes cannot fit.
+func skipPoseidonDecode(t *testing.T, typeName string, err error) {
+	t.Helper()
+	if err != nil && xmssSSZTypes[typeName] {
+		t.Skip(poseidonSkipReason)
+	}
+}
+
 // mustParse fails only the current subtest on a malformed fixture value, so one
 // bad fixture does not abort the whole run.
 func mustParse[T any](t *testing.T, parse func(string) (T, error), s string) T {

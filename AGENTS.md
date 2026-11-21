@@ -26,7 +26,7 @@ make test             # unit tests
 make lint             # go vet, import rules, golangci-lint, cargo fmt and clippy
 make fmt              # gofmt and cargo fmt
 make lean-e2e         # three nodes finalize; a restarted node catches up (fake XMSS)
-make lean-spectest    # leanSpec fixtures (generated with uv on first run)
+make lean-spectest    # leanSpec fixtures (a pinned download on first run)
 go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
 ```
 

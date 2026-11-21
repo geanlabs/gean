@@ -33,6 +33,7 @@ type verifyProofsMultiCase struct {
 func parsePubkeyHandles(t *testing.T, hexKeys []string) []xmss.CPubKey {
 	t.Helper()
 	keys := make([]xmss.CPubKey, 0, len(hexKeys))
+	skipPoseidonKeys(t, hexKeys...)
 	for _, h := range hexKeys {
 		pk, err := xmss.ParsePublicKey(mustParse(t, specfixtures.ParseHexPubkey, h))
 		if err != nil {

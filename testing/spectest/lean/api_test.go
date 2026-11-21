@@ -107,7 +107,9 @@ func runAPIFixture(t *testing.T, fx apiFixture) {
 	// the fixture byte-for-byte.
 	validators, err := loadSpecValidators(fx.LeanEnv, fx.GenesisParams.NumValidators)
 	if err != nil {
-		t.Skipf("load spec validator keys: %v", err)
+		// The keys ship with a leanSpec checkout, not the fixture download, and
+		// are Poseidon keys besides.
+		t.Skipf("%s (load spec validator keys: %v)", poseidonSkipReason, err)
 		return
 	}
 	gc := &genesis.GenesisConfig{

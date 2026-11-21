@@ -1,4 +1,4 @@
-.PHONY: build clean docker-build fmt help lean-devnet lean-e2e lean-ffi lean-node lean-spectest lean-sszgen lean-test-ffi lean-testnet lint test test-all
+.PHONY: build clean docker-build fmt help leanSpec/fixtures lean-devnet lean-e2e lean-ffi lean-node lean-spectest lean-sszgen lean-test-ffi lean-testnet lint test test-all
 
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
@@ -9,10 +9,13 @@ LDFLAGS := -X github.com/geanlabs/gean/internal/lean/node.gitCommit=$(GIT_COMMIT
 
 XMSS_RUST := internal/core/crypto/xmss/rust
 
-# Pinned leanSpec revision for spec fixtures. Must be defined before the lean-spectest/test-all
-# rules that reference it: Make expands a rule's prerequisites when it reads the rule, so a
-# definition placed after those rules would expand to empty in their prerequisites.
-LEAN_SPEC_COMMIT_HASH := eca701efeb5931010fe63925cd203c9ee55b2dbc
+# leanSpec publishes its generated fixtures as one release file, rebuilt from its main branch.
+# The hash pins the exact file gean is tested against, so a new release fails the download
+# until this hash is updated on purpose. This file was built from leanSpec commit
+# 0b7d33ecbc9ee2435759c92de4da4d08d7faf1c8 (its release notes name it): read the spec there. Defined
+# before the lean-spectest/test-all rules: Make expands a rule's prerequisites when it reads the rule.
+LEAN_SPEC_FIXTURES_URL := https://github.com/leanEthereum/leanSpec/releases/download/latest/fixtures-prod-scheme.tar.gz
+LEAN_SPEC_FIXTURES_SHA256 := 21d9de7056b4e658031dc09e50c0e9dc1b0206089253258ce69ecff01154d4bd
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z0-9_-]+:.*##/ { printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
@@ -37,7 +40,7 @@ docker-build: ## Build the Docker image DOCKER_IMAGE:DOCKER_TAG
 test: lean-ffi ## Run unit tests (no FFI tests, spec fixtures or simulations)
 	go test $$(go list ./... | grep -v '/crypto/xmss$$') -v -count=1
 
-test-all: lean-ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run every test but lean-e2e: unit, FFI, spec fixtures, simulations (slow)
+test-all: lean-ffi leanSpec/fixtures ## Run every test but lean-e2e: unit, FFI, spec fixtures, simulations (slow)
 	go test ./... -v -count=1 -tags=spectests,sim
 
 ##@ Code
@@ -74,7 +77,7 @@ lean-ffi: ## Build the XMSS Rust library (lean's signatures) the node links agai
 lean-test-ffi: lean-ffi ## Run the XMSS FFI tests (slow)
 	go test ./internal/core/crypto/xmss/ -v -count=1
 
-lean-spectest: lean-ffi leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH) ## Run the leanSpec fixture tests
+lean-spectest: lean-ffi leanSpec/fixtures ## Run the leanSpec fixture tests
 	go test ./testing/spectest/lean/ -count=1 -tags=spectests
 
 lean-e2e: ## Run the end-to-end multi-node test with fake XMSS (no Rust needed)
@@ -132,18 +135,12 @@ lean-devnet: docker-build lean-quickstart ## Run a local multi-client lean devne
 
 # --- leanSpec fixtures, fetched by lean-spectest and test-all ---
 
-leanSpec/.git:
-	git clone https://github.com/leanEthereum/leanSpec.git --single-branch
+leanSpec/fixtures: leanSpec/fixtures/.sha256-$(LEAN_SPEC_FIXTURES_SHA256) ## Download the pinned leanSpec fixtures
 
-leanSpec/.pinned-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.git
-	cd leanSpec && git fetch origin $(LEAN_SPEC_COMMIT_HASH) && git checkout --detach $(LEAN_SPEC_COMMIT_HASH)
-	touch $@
-
-leanSpec/fixtures/.generated-$(LEAN_SPEC_COMMIT_HASH): leanSpec/.pinned-$(LEAN_SPEC_COMMIT_HASH)
-	@cd leanSpec && for attempt in 1 2 3; do \
-		uv run keys --download --scheme=prod && break; \
-		test $$attempt -eq 3 && exit 1; \
-		sleep $$((attempt * 5)); \
-	done
-	cd leanSpec && uv run fill --clean --fork=lstar --scheme=prod --output=fixtures
+leanSpec/fixtures/.sha256-$(LEAN_SPEC_FIXTURES_SHA256):
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	curl -fL --retry 5 --retry-all-errors --connect-timeout 30 --speed-limit 10000 --speed-time 60 -o "$$tmp/fixtures.tar.gz" $(LEAN_SPEC_FIXTURES_URL) && \
+	echo "$(LEAN_SPEC_FIXTURES_SHA256)  $$tmp/fixtures.tar.gz" | shasum -a 256 -c - && \
+	rm -rf leanSpec/fixtures && mkdir -p leanSpec/fixtures && \
+	tar -xzf "$$tmp/fixtures.tar.gz" -C leanSpec/fixtures --strip-components=1 && \
 	touch $@
