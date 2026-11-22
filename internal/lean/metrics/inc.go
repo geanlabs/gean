@@ -44,8 +44,10 @@ func IncProofOperation(operation, result string) {
 	metricProofOperations.WithLabelValues(labelOrUnknown(operation), labelOrUnknown(result)).Inc()
 }
 
-func IncPeerConnection(direction, result string) {
-	metricPeerConnectionEvents.WithLabelValues(labelOrUnknown(direction), labelOrUnknown(result)).Inc()
+// IncPeerConnection counts an established connection. Only connections that
+// succeed are reported, so its result label is always success.
+func IncPeerConnection(direction string) {
+	metricPeerConnectionEvents.WithLabelValues(labelOrUnknown(direction), "success").Inc()
 }
 
 func IncPeerDisconnection(direction, reason string) {

@@ -48,12 +48,12 @@ type Type1Input struct {
 	Pubkeys []CPubKey
 	Proof   []byte
 	Message [MessageLength]byte
-	Slot    uint32
+	Slot    uint64
 }
 
 type MessageBinding struct {
 	Message [MessageLength]byte
-	Slot    uint32
+	Slot    uint64
 }
 
 // RawSignature is a signature merged into a Type-2 as it is, without first being proved
@@ -62,7 +62,7 @@ type RawSignature struct {
 	Pubkey    CPubKey
 	Signature CSig
 	Message   [MessageLength]byte
-	Slot      uint32
+	Slot      uint64
 }
 
 func validateRawInputs(pubkeys []CPubKey, sigs []CSig) error {

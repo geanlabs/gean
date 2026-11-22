@@ -39,7 +39,7 @@ func TestAggregateFromSnapshotCapsGroupsPerSession(t *testing.T) {
 			defer cache.Close()
 
 			calls := 0
-			prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+			prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint64) ([]byte, error) {
 				calls++
 				return []byte{1}, nil
 			}

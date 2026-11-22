@@ -32,9 +32,9 @@ func setupP2P(ctx context.Context, cfg Config, keyManager *keys.Manager) (*p2p.H
 		ListenPort:  cfg.GossipPort,
 		Network:     cfg.Network,
 		Hooks: host.Hooks{
-			PeerConnected:    func(direction string) { metrics.IncPeerConnection(direction, "success") },
+			PeerConnected:    metrics.IncPeerConnection,
 			PeerDisconnected: metrics.IncPeerDisconnection,
-			PeerCount:        func(count int) { metrics.SetConnectedPeers("unknown", count) },
+			PeerCount:        metrics.SetConnectedPeers,
 		},
 	}
 	p2pHost, err := p2p.NewHost(ctx, hostCfg, cfg.CommitteeCount, validatorIDs, cfg.IsAggregator, cfg.AggregateSubnetIDs)

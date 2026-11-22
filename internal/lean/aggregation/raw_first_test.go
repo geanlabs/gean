@@ -56,7 +56,7 @@ func TestRawFirstSelection(t *testing.T) {
 			defer cache.Close()
 			estimator := newUnitCostEstimator()
 			calls := 0
-			prove := func(pks []xmss.CPubKey, sigs []xmss.CSig, children []xmss.ChildProof, _ [32]byte, _ uint32) ([]byte, error) {
+			prove := func(pks []xmss.CPubKey, sigs []xmss.CSig, children []xmss.ChildProof, _ [32]byte, _ uint64) ([]byte, error) {
 				calls++
 				if len(pks) != tc.wantRaw || len(sigs) != tc.wantRaw || len(children) != tc.wantChildren {
 					t.Fatalf("raw=%d children=%d", len(sigs), len(children))

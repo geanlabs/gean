@@ -1,15 +1,19 @@
 package xmss
 
 import (
+	"errors"
 	"fmt"
 	"math"
 )
 
-// Slot is the 32-bit slot an XMSS signature is bound to. A slot of 2^32 or more
-// has no signature, and truncating it would bind a different slot.
-func Slot(slot uint64) (uint32, error) {
+// ErrSlotOverflow is a slot past the 32 bits an XMSS signature binds.
+var ErrSlotOverflow = errors.New("slot overflows uint32")
+
+// slot32 narrows a slot to the 32 bits an XMSS signature binds. A slot of 2^32
+// or more has no signature, and truncating it would bind a different slot.
+func slot32(slot uint64) (uint32, error) {
 	if slot > math.MaxUint32 {
-		return 0, fmt.Errorf("slot %d overflows uint32", slot)
+		return 0, fmt.Errorf("%w: slot %d", ErrSlotOverflow, slot)
 	}
 	return uint32(slot), nil
 }

@@ -267,7 +267,7 @@ func aggregateFromSnapshot(clk clock.Clock, shouldYield func() bool, snap *Snaps
 	return aggregateFromSnapshotWithProver(clk, shouldYield, snap, cache, deadline, maxGroups, shadowRates, estimator, xmss.AggregateWithChildren)
 }
 
-func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
+func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, snap *Snapshot, cache *xmss.PubKeyCache, deadline time.Time, maxGroups int, shadowRates shadow.Rates, estimator *unitCostEstimator, prove func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint64) ([]byte, error)) ([]*types.SignedAggregatedAttestation, []store.PayloadKV, []store.AttestationDeleteKey, bool, groupSkips) {
 	skips := groupSkips{}
 	if maxGroups <= 0 {
 		maxGroups = MaxGroupsPerSession
@@ -430,7 +430,7 @@ func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, s
 				return
 			}
 
-			dataRootHash, slot, err := aggregationMessage(attData)
+			dataRootHash, err := attData.HashTreeRoot()
 			if err != nil {
 				logger.Error(logger.Signature, "aggregate: prepare message failed slot=%d: %v", attData.Slot, err)
 				skips.add(metrics.AggGroupSkipError)
@@ -454,7 +454,7 @@ func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, s
 			attempted = true
 			attempts++
 			aggStart := time.Now()
-			proofBytes, err := prove(*rawPubkeysBuf, *rawSigsBuf, *childProofsBuf, dataRootHash, slot)
+			proofBytes, err := prove(*rawPubkeysBuf, *rawSigsBuf, *childProofsBuf, dataRootHash, attData.Slot)
 			// Charge virtual time for the proving cost Shadow would otherwise not
 			// account; the capacity-1 dispatch channel then drops the next slot's
 			// work if proving can't keep up, exactly as on real hardware.
@@ -462,7 +462,7 @@ func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, s
 			aggDuration := time.Since(aggStart)
 			if err != nil {
 				logger.Error(logger.Signature, "aggregate: failed slot=%d raw=%d children=%d duration=%v: %v",
-					slot, len(*rawIDsBuf), len(*childProofsBuf), aggDuration, err)
+					attData.Slot, len(*rawIDsBuf), len(*childProofsBuf), aggDuration, err)
 				skips.add(metrics.AggGroupSkipError)
 				return
 			}
@@ -478,7 +478,7 @@ func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, s
 			}
 
 			logger.Info(logger.Signature, "aggregate: slot=%d raw=%d children=%d total=%d proof=%d bytes duration=%v",
-				slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
+				attData.Slot, len(*rawIDsBuf), len(*childProofsBuf), len(allIDs), len(proofBytes), aggDuration)
 
 			metrics.IncAggregationProofValue(proofValue(votes, attData, allIDs, heldVoters(snap, dataRoot)))
 			metrics.ObservePqSigAggBuildingTime(aggDuration.Seconds())
@@ -533,19 +533,4 @@ func aggregateFromSnapshotWithProver(clk clock.Clock, shouldYield func() bool, s
 	}
 
 	return newAggregates, payloadEntries, keysToDelete, truncated, skips
-}
-
-func aggregationMessage(attData *types.AttestationData) ([32]byte, uint32, error) {
-	if attData == nil {
-		return [32]byte{}, 0, fmt.Errorf("attestation data is nil")
-	}
-	dataRoot, err := attData.HashTreeRoot()
-	if err != nil {
-		return [32]byte{}, 0, fmt.Errorf("attestation data root: %w", err)
-	}
-	slot, err := xmss.Slot(attData.Slot)
-	if err != nil {
-		return [32]byte{}, 0, err
-	}
-	return dataRoot, slot, nil
 }

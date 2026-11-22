@@ -179,7 +179,7 @@ func TestSessionCountsProofAndDeferredValues(t *testing.T) {
 	snap := valueTestSnapshot([]uint64{3, 4}, []uint64{2, 3}, []uint64{0, 1}, []uint64{4, 5})
 	cache := xmss.NewPubKeyCache()
 	defer cache.Close()
-	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint64) ([]byte, error) {
 		return []byte{1}, nil
 	}
 	proofsBefore := counterSum(t, "lean_aggregation_proof_value_total")
@@ -212,7 +212,7 @@ func TestSessionClassifiesAgainstTheNextBlocksView(t *testing.T) {
 	delete(snap.newEntries, rootByte(1))
 	cache := xmss.NewPubKeyCache()
 	defer cache.Close()
-	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint64) ([]byte, error) {
 		return []byte{1}, nil
 	}
 	ignoredBefore := counterValue(t, "lean_aggregation_proof_value_total", metrics.ProofValueIgnored)

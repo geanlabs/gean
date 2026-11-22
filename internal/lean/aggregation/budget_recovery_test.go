@@ -46,7 +46,7 @@ func TestAggregationBudgetRecovery(t *testing.T) {
 				for session := 0; session < 5; session++ {
 					before := e.nextGroupDuration()
 					calls := 0
-					prove := func(pks []xmss.CPubKey, sigs []xmss.CSig, children []xmss.ChildProof, root [32]byte, slot uint32) ([]byte, error) {
+					prove := func(pks []xmss.CPubKey, sigs []xmss.CSig, children []xmss.ChildProof, root [32]byte, slot uint64) ([]byte, error) {
 						calls++
 						// All three of the group's signatures, not the two the
 						// old per-signature budget floor allowed: the proof costs
@@ -107,7 +107,7 @@ func TestAggregationBudgetDeadline(t *testing.T) {
 				cache := xmss.NewPubKeyCache()
 				defer cache.Close()
 				calls := 0
-				prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+				prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint64) ([]byte, error) {
 					calls++
 					time.Sleep(tc.proofTime)
 					return []byte{1}, nil

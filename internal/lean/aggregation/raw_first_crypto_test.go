@@ -16,7 +16,8 @@ import (
 func TestRawFirstCrypto(t *testing.T) {
 	snap := aggregateTestSnapshot(6)
 	dr := rootByte(1)
-	message, slot, err := aggregationMessage(snap.attSigs[dr].Data)
+	data := snap.attSigs[dr].Data
+	message, err := data.HashTreeRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +34,7 @@ func TestRawFirstCrypto(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sigBytes, err := kp.Sign(slot, message)
+		sigBytes, err := kp.Sign(data.Slot, message)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +55,7 @@ func TestRawFirstCrypto(t *testing.T) {
 		pks = append(pks, pk)
 		sigs = append(sigs, sig)
 	}
-	child, err := xmss.AggregateWithChildren(pks[:2], sigs[:2], nil, message, slot)
+	child, err := xmss.AggregateWithChildren(pks[:2], sigs[:2], nil, message, data.Slot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +82,7 @@ func TestRawFirstCrypto(t *testing.T) {
 		if types.BitlistCount(aggs[0].Proof.Participants) != 3 || len(deletes) != len(snap.attSigs[dr].Signatures) {
 			t.Fatal("incorrect coverage or deletion")
 		}
-		if err := xmss.VerifyAggregatedSignature(aggs[0].Proof.Proof, pks, message, slot); err != nil {
+		if err := xmss.VerifyAggregatedSignature(aggs[0].Proof.Proof, pks, message, data.Slot); err != nil {
 			t.Fatal(err)
 		}
 		t.Logf("overlap=%v raw=%d children=%d participants=3 verified=true", overlap, wantRaw, wantChild)

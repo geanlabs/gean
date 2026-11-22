@@ -97,7 +97,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		raw, err := benchKeyPair.Sign(uint32(data.Slot), root)
+		raw, err := benchKeyPair.Sign(data.Slot, root)
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +110,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 			[]xmss.CSig{signature},
 			nil,
 			root,
-			uint32(data.Slot),
+			data.Slot,
 		)
 		xmss.FreeSignature(signature)
 		if err != nil {
@@ -118,7 +118,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 		}
 		bits := types.BitlistFromIndices([]uint64{0})
 		atts[i] = &types.AggregatedAttestation{AggregationBits: bits, Data: data}
-		inputs = append(inputs, xmss.Type1Input{Pubkeys: []xmss.CPubKey{benchPubkey}, Proof: proof, Message: root, Slot: uint32(data.Slot)})
+		inputs = append(inputs, xmss.Type1Input{Pubkeys: []xmss.CPubKey{benchPubkey}, Proof: proof, Message: root, Slot: data.Slot})
 	}
 
 	block := &types.Block{
@@ -131,11 +131,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 		return nil, err
 	}
 
-	blockSlot, err := xmss.Slot(block.Slot)
-	if err != nil {
-		return nil, err
-	}
-	proposerSig, err := benchKeyPair.Sign(blockSlot, blockRoot)
+	proposerSig, err := benchKeyPair.Sign(block.Slot, blockRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +140,7 @@ func buildBenchSignedBlock(n int) (*types.SignedBlock, error) {
 		return nil, err
 	}
 	defer xmss.FreeSignature(signature)
-	proposer := xmss.RawSignature{Pubkey: benchPubkey, Signature: signature, Message: blockRoot, Slot: blockSlot}
+	proposer := xmss.RawSignature{Pubkey: benchPubkey, Signature: signature, Message: blockRoot, Slot: block.Slot}
 	proof, err := xmss.MergeType1Proofs(inputs, []xmss.RawSignature{proposer})
 	if err != nil {
 		return nil, err

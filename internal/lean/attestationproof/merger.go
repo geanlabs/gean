@@ -39,10 +39,6 @@ func (m *Merger) Merge(
 	if attData == nil {
 		return nil, fmt.Errorf("%w: attestation data is nil", ErrMergeUnavailable)
 	}
-	slot, err := xmss.Slot(attData.Slot)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrMergeUnavailable, err)
-	}
 	if state == nil {
 		return nil, fmt.Errorf("%w: state is nil", ErrMergeUnavailable)
 	}
@@ -101,7 +97,7 @@ func (m *Merger) Merge(
 	if err != nil {
 		return nil, fmt.Errorf("attestation data root: %w", err)
 	}
-	mergedBytes, err := xmss.AggregateWithChildren(nil, nil, children, dataRoot, slot)
+	mergedBytes, err := xmss.AggregateWithChildren(nil, nil, children, dataRoot, attData.Slot)
 	if err != nil {
 		return nil, fmt.Errorf("aggregate child proofs: %w", err)
 	}

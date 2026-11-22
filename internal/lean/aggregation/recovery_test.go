@@ -1,11 +1,8 @@
 package aggregation
 
 import (
-	"math"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/core/crypto/xmss"
-	"github.com/geanlabs/gean/internal/core/storage"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
@@ -124,49 +121,5 @@ func TestCoversParticipants(t *testing.T) {
 	}
 	if coversParticipants(proof, types.BitlistFromIndices([]uint64{1, 4})) {
 		t.Fatal("proof reported missing participant as covered")
-	}
-}
-
-// A slot that does not fit the 32 bits a leanVM signature binds is refused,
-// for attestations and the block alike, rather than truncated to another slot.
-func TestBlockProofClaimsRefusesSlotsPastUint32(t *testing.T) {
-	kp, err := xmss.GenerateKeyPair("block-proof-claims", 0, 64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer kp.Close()
-	pubkey, err := kp.PublicKeyBytes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	state := &types.State{Validators: []*types.Validator{{AttestationPubkey: pubkey, ProposalPubkey: pubkey}}}
-	agg := &Aggregator{cfg: Config{Store: store.NewConsensusStore(storage.NewInMemoryBackend())}}
-	cp := &types.Checkpoint{}
-	attestationAt := func(slot uint64) *types.AggregatedAttestation {
-		return &types.AggregatedAttestation{
-			AggregationBits: types.NewBitlistSSZ(1),
-			Data:            &types.AttestationData{Slot: slot, Head: cp, Target: cp, Source: cp},
-		}
-	}
-
-	for _, tc := range []struct {
-		name            string
-		blockSlot       uint64
-		attestationSlot uint64
-		wantErr         bool
-	}{
-		{"in range", 7, 6, false},
-		{"attestation slot past uint32", 7, math.MaxUint32 + 1, true},
-		{"block slot past uint32", math.MaxUint32 + 1, 6, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			att := attestationAt(tc.attestationSlot)
-			types.BitlistSet(att.AggregationBits, 0)
-			block := &types.Block{Slot: tc.blockSlot, Body: &types.BlockBody{Attestations: []*types.AggregatedAttestation{att}}}
-			_, bindings, err := agg.blockProofClaims(block, state)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("error %v, want error %v (bindings %+v)", err, tc.wantErr, bindings)
-			}
-		})
 	}
 }

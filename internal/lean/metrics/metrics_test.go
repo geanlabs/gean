@@ -57,12 +57,12 @@ func TestGaugeWrappersClampNegativeCounts(t *testing.T) {
 		t.Fatalf("mesh peers gauge=%v, want 0", got)
 	}
 
-	SetConnectedPeers("", -3)
+	SetConnectedPeers(-3)
 	if got := metricValue(t, metricConnectedPeers.WithLabelValues(unknownLabel)); got != 0 {
 		t.Fatalf("connected peers gauge=%v, want 0", got)
 	}
 
-	SetConnectedPeers("", 4)
+	SetConnectedPeers(4)
 	if got := metricValue(t, metricConnectedPeers.WithLabelValues(unknownLabel)); got != 4 {
 		t.Fatalf("connected peers gauge=%v, want 4", got)
 	}

@@ -13,8 +13,6 @@ const (
 	ErrMissingParentState StoreErrorKind = iota
 	ErrInvalidValidatorIndex
 	ErrPubkeyDecodingFailed
-	ErrSignatureDecodingFailed
-	ErrProposerSignatureDecodingFailed
 	ErrStateTransitionFailed
 	ErrUnknownSourceBlock
 	ErrUnknownTargetBlock

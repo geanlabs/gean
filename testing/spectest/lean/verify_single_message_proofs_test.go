@@ -15,7 +15,7 @@ type singleMessageProofFixture struct {
 	PublicKeys      []string                  `json:"publicKeys"`
 	AggregationBits specfixtures.TestDataList `json:"aggregationBits"`
 	Message         string                    `json:"message"`
-	Slot            uint32                    `json:"slot"`
+	Slot            uint64                    `json:"slot"`
 	Proof           specfixtures.FCProofData  `json:"proof"`
 	RejectionReason string                    `json:"rejectionReason"`
 }
