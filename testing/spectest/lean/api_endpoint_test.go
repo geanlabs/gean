@@ -42,16 +42,26 @@ type apiEndpointFixture struct {
 // runAPIEndpoint serves the fixture's request from a store seeded with the
 // fixture's genesis, and compares the status, content type and body.
 func runAPIEndpoint(t *testing.T, fixture *apiEndpointFixture) {
-	// Every key file holds the scheme's keys, so the first says whether the
-	// rest are Poseidon before any more are read.
-	skipPoseidonKeys(t, specValidator(t, fixture.LeanEnv, 0).AttestationPubkey)
+	if fixture.Endpoint == "/metrics" {
+		skip(t, skipFollowsEthlambda, "gean serves /metrics on its own port, not the API's")
+	}
 	if fixture.GenesisParams.AnchorSlot > 0 {
 		skip(t, skipNotImplemented, "API fixtures anchored after genesis")
+	}
+	// An SSZ body holds the state's keys themselves, which a Poseidon key's
+	// stand-in cannot reproduce. Every key file holds the scheme's keys, so the
+	// first says whether the rest are Poseidon.
+	if fixture.ExpectedContentType == "application/octet-stream" {
+		skipPoseidonKeys(t, specKeys(t, fixture.LeanEnv, 0).attestation)
 	}
 
 	validators := make([]genesis.GenesisValidatorEntry, fixture.GenesisParams.NumValidators)
 	for i := range validators {
-		validators[i] = specValidator(t, fixture.LeanEnv, uint64(i))
+		keys := specKeys(t, fixture.LeanEnv, uint64(i))
+		validators[i] = genesis.GenesisValidatorEntry{
+			AttestationPubkey: stateKeyHex(t, i, keys.attestation),
+			ProposalPubkey:    stateKeyHex(t, i, keys.proposal),
+		}
 	}
 	genesisConfig := &genesis.GenesisConfig{GenesisTime: fixture.GenesisParams.GenesisTime, GenesisValidators: validators}
 	state, err := genesisConfig.GenesisState()
@@ -105,14 +115,15 @@ func runAPIEndpoint(t *testing.T, fixture *apiEndpointFixture) {
 	}
 }
 
-// specValidator reads one of the spec's deterministic test keys, which the
-// fixture download ships under keys/<leanEnv>_scheme. Each key file holds a
-// whole XMSS key pair, tens of megabytes, so every file is read once a run.
-func specValidator(t *testing.T, leanEnv string, index uint64) genesis.GenesisValidatorEntry {
+// specKeys reads the public keys from one of the spec's deterministic test
+// keys, which the fixture download ships under keys/<leanEnv>_scheme. Each key
+// file holds a whole XMSS key pair, tens of megabytes, so every file is read
+// once a run.
+func specKeys(t *testing.T, leanEnv string, index uint64) specKeyPair {
 	t.Helper()
 	path := filepath.Join(fixturesDirectory(), "keys", leanEnv+"_scheme", strconv.FormatUint(index, 10)+".json")
-	if validator, ok := specValidators[path]; ok {
-		return validator
+	if keys, ok := specKeyFiles[path]; ok {
+		return keys
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -129,15 +140,25 @@ func specValidator(t *testing.T, leanEnv string, index uint64) genesis.GenesisVa
 	if err := json.Unmarshal(raw, &keyFile); err != nil {
 		t.Fatalf("spec validator key %s: %v", path, err)
 	}
-	validator := genesis.GenesisValidatorEntry{
-		AttestationPubkey: "0x" + keyFile.AttestationKeypair.PublicKey,
-		ProposalPubkey:    "0x" + keyFile.ProposalKeypair.PublicKey,
-	}
-	specValidators[path] = validator
-	return validator
+	keys := specKeyPair{attestation: "0x" + keyFile.AttestationKeypair.PublicKey, proposal: "0x" + keyFile.ProposalKeypair.PublicKey}
+	specKeyFiles[path] = keys
+	return keys
 }
 
-var specValidators = make(map[string]genesis.GenesisValidatorEntry)
+type specKeyPair struct{ attestation, proposal string }
+
+var specKeyFiles = make(map[string]specKeyPair)
+
+// stateKeyHex is the key a genesis state holds for a spec key, a Poseidon key
+// standing in by its hash tree root.
+func stateKeyHex(t *testing.T, validator int, publicKey string) string {
+	t.Helper()
+	key, err := specfixtures.ParseStateKey(publicKey)
+	if err != nil {
+		t.Fatalf("validator %d key: %v", validator, err)
+	}
+	return "0x" + hex.EncodeToString(key[:])
+}
 
 // checkJSONKeysAndTypes checks that got has every key in want, at every depth,
 // with the same JSON type.

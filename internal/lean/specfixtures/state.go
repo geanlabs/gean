@@ -54,11 +54,11 @@ func (ts *TestState) ToState() (*types.State, error) {
 		if v.ProposalPubkey == "" {
 			return nil, fmt.Errorf("validators[%d].proposalPubkey: missing", i)
 		}
-		attPk, err := parseStateKey(v.AttestationPubkey)
+		attPk, err := ParseStateKey(v.AttestationPubkey)
 		if err != nil {
 			return nil, fmt.Errorf("validators[%d].attestationPubkey: %w", i, err)
 		}
-		propPk, err := parseStateKey(v.ProposalPubkey)
+		propPk, err := ParseStateKey(v.ProposalPubkey)
 		if err != nil {
 			return nil, fmt.Errorf("validators[%d].proposalPubkey: %w", i, err)
 		}
@@ -103,11 +103,11 @@ func parseRootList(field string, data []json.RawMessage) ([][]byte, error) {
 // which its fixtures carry until they ship leanVM's BLAKE2s keys (leanSpec#1210).
 const PoseidonPublicKeySize = 52
 
-// parseStateKey parses a validator key for a state. A state hashes each key by
+// ParseStateKey parses a validator key for a state. A state hashes each key by
 // its hash tree root, and a 32-byte key's root is the key itself, so a Poseidon
 // key's root stands in for it and every state and block root stays equal to
 // leanSpec's. No signature can be checked against it.
-func parseStateKey(s string) ([types.PubkeySize]byte, error) {
+func ParseStateKey(s string) ([types.PubkeySize]byte, error) {
 	if b, err := ParseHexBytes(s); err == nil && len(b) == PoseidonPublicKeySize {
 		var chunks [64]byte
 		copy(chunks[:], b)
