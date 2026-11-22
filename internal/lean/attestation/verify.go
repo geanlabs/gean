@@ -27,13 +27,9 @@ func VerifyGossipAttestation(s *store.ConsensusStore, validatorID uint64, attDat
 	}
 	var sig [types.SignatureSize]byte
 	copy(sig[:], signature)
-	slot, err := xmss.Slot(attData.Slot)
-	if err != nil {
-		return err
-	}
 	valid, err := xmss.VerifySignatureSSZ(
 		pubkey,
-		slot,
+		attData.Slot,
 		dataRoot,
 		sig,
 	)
@@ -83,9 +79,5 @@ func verifyAggregatedProof(
 	if err != nil {
 		return fmt.Errorf("hash tree root: %w", err)
 	}
-	slot, err := xmss.Slot(data.Slot)
-	if err != nil {
-		return err
-	}
-	return xmss.VerifyAggregatedSignature(proofData, parsedPubkeys, dataRoot, slot)
+	return xmss.VerifyAggregatedSignature(proofData, parsedPubkeys, dataRoot, data.Slot)
 }

@@ -47,12 +47,8 @@ func verifyBlockSignatures(
 		if err != nil {
 			return fmt.Errorf("hash attestation %d data: %w", i, err)
 		}
-		slot, err := xmss.Slot(att.Data.Slot)
-		if err != nil {
-			return &store.StoreError{Kind: store.ErrSignatureDecodingFailed, Message: fmt.Sprintf("attestation %d slot: %v", i, err)}
-		}
 		pubkeys = append(pubkeys, keys)
-		bindings = append(bindings, xmss.MessageBinding{Message: root, Slot: slot})
+		bindings = append(bindings, xmss.MessageBinding{Message: root, Slot: att.Data.Slot})
 	}
 
 	proposer, err := validatorAt(state, block.ProposerIndex)
@@ -67,12 +63,8 @@ func verifyBlockSignatures(
 	if err != nil {
 		return fmt.Errorf("compute block root: %w", err)
 	}
-	slot, err := xmss.Slot(block.Slot)
-	if err != nil {
-		return &store.StoreError{Kind: store.ErrProposerSignatureDecodingFailed, Message: fmt.Sprintf("proposer slot: %v", err)}
-	}
 	pubkeys = append(pubkeys, []xmss.CPubKey{proposerKey})
-	bindings = append(bindings, xmss.MessageBinding{Message: blockRoot, Slot: slot})
+	bindings = append(bindings, xmss.MessageBinding{Message: blockRoot, Slot: block.Slot})
 
 	if err := xmss.VerifyType2Proof(signedBlock.Proof.Proof, pubkeys, bindings); err != nil {
 		return &store.StoreError{Kind: store.ErrAggregateVerificationFailed, Message: fmt.Sprintf("block proof: %v", err)}

@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/geanlabs/gean/internal/core/storage"
@@ -32,32 +33,27 @@ func TestVerifyBlockSignaturesRejectsEmptyParticipants(t *testing.T) {
 	}
 }
 
-func TestVerifyBlockSignaturesRejectsAttestationSlotOverflow(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
+// XMSS signs 32-bit slots, so a slot past that, on an attestation or on the
+// block itself, fails the block proof. OnBlock refuses such a block slot as too
+// far in the future first; this checks the proof would too.
+func TestVerifyBlockSignaturesRejectsSlotOverflow(t *testing.T) {
 	att := processorAttestation()
 	att.Data.Slot = ^uint64(0)
 	types.BitlistSet(att.AggregationBits, 0)
-	err := verifyBlockSignatures(s, &types.SignedBlock{
-		Block: processorBlock(att),
-		Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
-	}, &types.State{Validators: []*types.Validator{{}}})
-	se, ok := err.(*store.StoreError)
-	if !ok || se.Kind != store.ErrSignatureDecodingFailed {
-		t.Fatalf("expected slot decoding error, got %v", err)
-	}
-}
-
-func TestVerifyBlockSignaturesRejectsBlockSlotOverflow(t *testing.T) {
-	s := store.NewConsensusStore(storage.NewInMemoryBackend())
 	block := processorBlock()
 	block.Slot = ^uint64(0)
-	err := verifyBlockSignatures(s, &types.SignedBlock{
-		Block: block,
-		Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
-	}, &types.State{Validators: []*types.Validator{{}}})
-	se, ok := err.(*store.StoreError)
-	if !ok || se.Kind != store.ErrProposerSignatureDecodingFailed {
-		t.Fatalf("expected proposer slot decoding error, got %v", err)
+	for name, b := range map[string]*types.Block{"attestation": processorBlock(att), "block": block} {
+		t.Run(name, func(t *testing.T) {
+			s := store.NewConsensusStore(storage.NewInMemoryBackend())
+			err := verifyBlockSignatures(s, &types.SignedBlock{
+				Block: b,
+				Proof: &types.MultiMessageAggregate{Proof: []byte{1}},
+			}, &types.State{Validators: []*types.Validator{{}}})
+			se, ok := err.(*store.StoreError)
+			if !ok || se.Kind != store.ErrAggregateVerificationFailed || !strings.Contains(err.Error(), "overflows uint32") {
+				t.Fatalf("expected a slot overflow rejecting the block proof, got %v", err)
+			}
+		})
 	}
 }
 

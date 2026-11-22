@@ -67,12 +67,7 @@ func (km *Manager) SignAttestationRoot(validatorID uint64, slot uint64, msgRoot 
 		return [xmss.SignatureSize]byte{}, fmt.Errorf("attestation key for validator %d not found", validatorID)
 	}
 
-	s, err := xmss.Slot(slot)
-	if err != nil {
-		return [xmss.SignatureSize]byte{}, err
-	}
-
-	return kp.Sign(s, msgRoot)
+	return kp.Sign(slot, msgRoot)
 }
 
 func (km *Manager) Close() {

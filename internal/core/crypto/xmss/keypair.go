@@ -46,8 +46,12 @@ func (kp *ValidatorKeyPair) PrivateKeyPtr() *C.PrivateKey {
 	return C.hashsig_keypair_get_private_key(kp.handle)
 }
 
-func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([SignatureSize]byte, error) {
+func (kp *ValidatorKeyPair) Sign(slot uint64, message [32]byte) ([SignatureSize]byte, error) {
 	var result [SignatureSize]byte
+	s, err := slot32(slot)
+	if err != nil {
+		return result, err
+	}
 	privateKey := kp.PrivateKeyPtr()
 	if privateKey == nil {
 		return result, fmt.Errorf("%w: keypair is nil or closed", ErrSigningFailed)
@@ -56,7 +60,7 @@ func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([SignatureSize]
 	sigPtr := C.hashsig_sign(
 		privateKey,
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
-		C.uint32_t(slot),
+		C.uint32_t(s),
 	)
 	if sigPtr == nil {
 		return result, fmt.Errorf("%w: validator %d slot %d", ErrSigningFailed, kp.Index, slot)

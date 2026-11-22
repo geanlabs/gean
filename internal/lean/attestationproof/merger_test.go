@@ -95,21 +95,3 @@ func TestMergeRejectsOverlappingParticipants(t *testing.T) {
 		t.Fatalf("error=%v, want overlapping participant rejection", err)
 	}
 }
-
-func TestMergeRejectsSlotOverflow(t *testing.T) {
-	merger := NewMerger(nil)
-	data := testData()
-	data.Slot = uint64(^uint32(0)) + 1
-
-	proof, err := merger.Merge(
-		[]*types.SingleMessageAggregate{testProof(0), testProof(1)},
-		data,
-		&types.State{},
-	)
-	if proof != nil {
-		t.Fatalf("proof=%v, want nil", proof)
-	}
-	if !errors.Is(err, ErrMergeUnavailable) || !strings.Contains(err.Error(), "overflows uint32") {
-		t.Fatalf("error=%v, want slot overflow rejection", err)
-	}
-}

@@ -248,12 +248,8 @@ func (a *Aggregator) blockProofClaims(block *types.Block, state *types.State) ([
 		if err != nil {
 			return nil, nil, err
 		}
-		slot, err := xmss.Slot(att.Data.Slot)
-		if err != nil {
-			return nil, nil, err
-		}
 		groups = append(groups, keys)
-		bindings = append(bindings, xmss.MessageBinding{Message: root, Slot: slot})
+		bindings = append(bindings, xmss.MessageBinding{Message: root, Slot: att.Data.Slot})
 	}
 	if block.ProposerIndex >= uint64(len(state.Validators)) || state.Validators[block.ProposerIndex] == nil {
 		return nil, nil, fmt.Errorf("proposer %d out of range", block.ProposerIndex)
@@ -266,12 +262,8 @@ func (a *Aggregator) blockProofClaims(block *types.Block, state *types.State) ([
 	if err != nil {
 		return nil, nil, err
 	}
-	blockSlot, err := xmss.Slot(block.Slot)
-	if err != nil {
-		return nil, nil, err
-	}
 	groups = append(groups, []xmss.CPubKey{key})
-	bindings = append(bindings, xmss.MessageBinding{Message: blockRoot, Slot: blockSlot})
+	bindings = append(bindings, xmss.MessageBinding{Message: blockRoot, Slot: block.Slot})
 	return groups, bindings, nil
 }
 

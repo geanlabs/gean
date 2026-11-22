@@ -63,13 +63,17 @@ func (kp *ValidatorKeyPair) PrivateKeyBytes() ([]byte, error) {
 
 // Sign returns a placeholder signature that depends on the key, slot and
 // message, so distinct signatures stay distinct.
-func (kp *ValidatorKeyPair) Sign(slot uint32, message [32]byte) ([SignatureSize]byte, error) {
+func (kp *ValidatorKeyPair) Sign(slot uint64, message [32]byte) ([SignatureSize]byte, error) {
 	var sig [SignatureSize]byte
+	s, err := slot32(slot)
+	if err != nil {
+		return sig, err
+	}
 	if !kp.loaded() {
 		return sig, fmt.Errorf("%w: keypair is nil or closed", ErrSigningFailed)
 	}
 	var slotBytes [4]byte
-	binary.LittleEndian.PutUint32(slotBytes[:], slot)
+	binary.LittleEndian.PutUint32(slotBytes[:], s)
 	digest := sha256.Sum256(append(append(kp.public[:], message[:]...), slotBytes[:]...))
 	for i := 0; i < SignatureSize; i += len(digest) {
 		copy(sig[i:], digest[:])
@@ -106,20 +110,24 @@ func ParseSignature(sigBytes []byte) (CSig, error) {
 
 func FreeSignature(sig CSig) {}
 
-func VerifySignatureSSZ(pubkey [PubkeySize]byte, slot uint32, message [32]byte, signature [SignatureSize]byte) (bool, error) {
-	return true, nil
+func VerifySignatureSSZ(pubkey [PubkeySize]byte, slot uint64, message [32]byte, signature [SignatureSize]byte) (bool, error) {
+	_, err := slot32(slot)
+	return err == nil, err
 }
 
 // fakeProof stands in for a proof of message at slot. Callers only need it
 // non-empty.
-func fakeProof(message [MessageLength]byte, slot uint32) []byte {
-	proof := make([]byte, MessageLength+4)
+func fakeProof(message [MessageLength]byte, slot uint64) []byte {
+	proof := make([]byte, MessageLength+8)
 	copy(proof, message[:])
-	binary.LittleEndian.PutUint32(proof[MessageLength:], slot)
+	binary.LittleEndian.PutUint64(proof[MessageLength:], slot)
 	return proof
 }
 
-func AggregateWithChildren(pubkeys []CPubKey, sigs []CSig, children []ChildProof, message [32]byte, slot uint32) ([]byte, error) {
+func AggregateWithChildren(pubkeys []CPubKey, sigs []CSig, children []ChildProof, message [32]byte, slot uint64) ([]byte, error) {
+	if _, err := slot32(slot); err != nil {
+		return nil, err
+	}
 	numRaw, numChildren := len(pubkeys), len(children)
 	if numRaw == 0 && numChildren == 0 {
 		return nil, ErrEmptyInput
@@ -139,7 +147,10 @@ func AggregateWithChildren(pubkeys []CPubKey, sigs []CSig, children []ChildProof
 	return fakeProof(message, slot), nil
 }
 
-func VerifyAggregatedSignature(proofData []byte, pubkeys []CPubKey, message [32]byte, slot uint32) error {
+func VerifyAggregatedSignature(proofData []byte, pubkeys []CPubKey, message [32]byte, slot uint64) error {
+	if _, err := slot32(slot); err != nil {
+		return err
+	}
 	if len(proofData) == 0 || len(pubkeys) == 0 {
 		return ErrEmptyInput
 	}
@@ -169,12 +180,30 @@ func MergeType1Proofs(inputs []Type1Input, raw []RawSignature) ([]byte, error) {
 	if len(inputs) > 0 && keys == 0 {
 		return nil, ErrEmptyInput
 	}
+	for _, input := range inputs {
+		if _, err := slot32(input.Slot); err != nil {
+			return nil, err
+		}
+	}
 	for i, r := range raw {
 		if r.Pubkey == nil || r.Signature == nil {
 			return nil, fmt.Errorf("%w: raw signature %d", ErrMalformedRawInput, i)
 		}
+		if _, err := slot32(r.Slot); err != nil {
+			return nil, err
+		}
 	}
 	return fakeProof([MessageLength]byte{}, 0), nil
+}
+
+// checkSlots refuses the slots the real build could not pass to Rust.
+func checkSlots(bindings []MessageBinding) error {
+	for _, b := range bindings {
+		if _, err := slot32(b.Slot); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func SplitType2Proof(proof []byte, pubkeys [][]CPubKey, bindings []MessageBinding, target [MessageLength]byte) ([]byte, error) {
@@ -186,6 +215,9 @@ func SplitType2Proof(proof []byte, pubkeys [][]CPubKey, bindings []MessageBindin
 	}
 	if len(proof) > MaxProofSize {
 		return nil, ErrProofTooBig
+	}
+	if err := checkSlots(bindings); err != nil {
+		return nil, err
 	}
 	for _, b := range bindings {
 		if b.Message == target {
@@ -202,5 +234,5 @@ func VerifyType2Proof(proof []byte, pubkeys [][]CPubKey, bindings []MessageBindi
 	if len(proof) > MaxProofSize {
 		return ErrProofTooBig
 	}
-	return nil
+	return checkSlots(bindings)
 }

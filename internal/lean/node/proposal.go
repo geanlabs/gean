@@ -200,12 +200,7 @@ func (e *Engine) buildProposal(duty proposalDuty) *proposalResult {
 	}
 	// A signing error must not permit another candidate to use this duty.
 	result.retryable = false
-	signingSlot, err := xmss.Slot(slot)
-	if err != nil {
-		logger.Error(logger.Validator, "sign block failed: %v", err)
-		return result
-	}
-	blockSig, err := propKey.Sign(signingSlot, blockRoot)
+	blockSig, err := propKey.Sign(slot, blockRoot)
 	metrics.ObservePqSigSigningTime(time.Since(signStart).Seconds())
 	if err != nil {
 		logger.Error(logger.Validator, "sign block failed: %v", err)
@@ -329,11 +324,7 @@ func (e *Engine) mergeBlockProofWithProver(
 		if err != nil {
 			return nil, fmt.Errorf("attestation %d data root: %w", i, err)
 		}
-		dataSlot, err := xmss.Slot(data.Slot)
-		if err != nil {
-			return nil, fmt.Errorf("attestation %d: %w", i, err)
-		}
-		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof, Message: root, Slot: dataSlot})
+		inputs = append(inputs, xmss.Type1Input{Pubkeys: keys, Proof: proof.Proof, Message: root, Slot: data.Slot})
 	}
 
 	signature, err := xmss.ParseSignature(proposerSignature[:])
@@ -345,10 +336,6 @@ func (e *Engine) mergeBlockProofWithProver(
 	if err != nil {
 		return nil, err
 	}
-	blockSlot, err := xmss.Slot(block.Slot)
-	if err != nil {
-		return nil, err
-	}
 	// The proposer's signature goes into the merge raw. Proving it alone first and
 	// merging that proof costs a whole extra proof, the most expensive part of a
 	// proposal after the merge itself.
@@ -356,7 +343,7 @@ func (e *Engine) mergeBlockProofWithProver(
 		Pubkey:    proposerKey.PublicKey(),
 		Signature: signature,
 		Message:   blockRoot,
-		Slot:      blockSlot,
+		Slot:      block.Slot,
 	}
 	mergeStart := time.Now()
 	proof, err := merge(inputs, []xmss.RawSignature{proposer})

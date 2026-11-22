@@ -25,7 +25,7 @@ func TestAggregationYieldsToWaitingProposal(t *testing.T) {
 			cache := xmss.NewPubKeyCache()
 			defer cache.Close()
 			calls := 0
-			prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+			prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint64) ([]byte, error) {
 				calls++
 				go func() {
 					if gate.Acquire(context.Background(), true) {
@@ -83,7 +83,7 @@ func TestAggregationYieldsAfterPreparation(t *testing.T) {
 	defer cache.Close()
 	checks := 0
 	shouldYield := func() bool { checks++; return checks == 2 }
-	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint32) ([]byte, error) {
+	prove := func([]xmss.CPubKey, []xmss.CSig, []xmss.ChildProof, [32]byte, uint64) ([]byte, error) {
 		t.Fatal("started proof after proposal became pending")
 		return nil, nil
 	}

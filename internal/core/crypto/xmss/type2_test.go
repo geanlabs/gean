@@ -23,7 +23,7 @@ func TestType2Roundtrip(t *testing.T) {
 	messages[1][0] = 2
 	inputs := make([]Type1Input, 0, len(messages))
 	for slot, message := range messages {
-		raw, err := key.Sign(uint32(slot), message)
+		raw, err := key.Sign(uint64(slot), message)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -36,13 +36,13 @@ func TestType2Roundtrip(t *testing.T) {
 			[]CSig{signature},
 			nil,
 			message,
-			uint32(slot),
+			uint64(slot),
 		)
 		FreeSignature(signature)
 		if err != nil {
 			t.Fatal(err)
 		}
-		inputs = append(inputs, Type1Input{Pubkeys: []CPubKey{pubkey}, Proof: proof, Message: message, Slot: uint32(slot)})
+		inputs = append(inputs, Type1Input{Pubkeys: []CPubKey{pubkey}, Proof: proof, Message: message, Slot: uint64(slot)})
 	}
 
 	proof, err := MergeType1Proofs(inputs, nil)
@@ -140,7 +140,7 @@ func TestType2MergesRawSignature(t *testing.T) {
 		defer FreePublicKey(pubkey)
 		pubkeys[i] = pubkey
 	}
-	sign := func(i int, slot uint32, message [32]byte) CSig {
+	sign := func(i int, slot uint64, message [32]byte) CSig {
 		raw, err := keys[i].Sign(slot, message)
 		if err != nil {
 			t.Fatal(err)
@@ -155,7 +155,7 @@ func TestType2MergesRawSignature(t *testing.T) {
 
 	var bindings []MessageBinding
 	var inputs []Type1Input
-	for i, slot := range []uint32{1, 2} {
+	for i, slot := range []uint64{1, 2} {
 		var message [32]byte
 		message[0] = byte(slot)
 		proof, err := AggregateWithChildren([]CPubKey{pubkeys[i]}, []CSig{sign(i, slot, message)}, nil, message, slot)

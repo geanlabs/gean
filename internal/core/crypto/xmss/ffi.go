@@ -143,11 +143,15 @@ func EnsureVerifierReady() error {
 	return verifierErr
 }
 
-func VerifySignatureSSZ(pubkey [PubkeySize]byte, slot uint32, message [32]byte, signature [SignatureSize]byte) (bool, error) {
+func VerifySignatureSSZ(pubkey [PubkeySize]byte, slot uint64, message [32]byte, signature [SignatureSize]byte) (bool, error) {
+	s, err := slot32(slot)
+	if err != nil {
+		return false, err
+	}
 	result := C.hashsig_verify_ssz(
 		(*C.uint8_t)(unsafe.Pointer(&pubkey[0])), C.size_t(PubkeySize),
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
-		C.uint32_t(slot),
+		C.uint32_t(s),
 		(*C.uint8_t)(unsafe.Pointer(&signature[0])), C.size_t(SignatureSize),
 	)
 
@@ -166,8 +170,12 @@ func AggregateWithChildren(
 	sigs []CSig,
 	children []ChildProof,
 	message [32]byte,
-	slot uint32,
+	slot uint64,
 ) ([]byte, error) {
+	s, err := slot32(slot)
+	if err != nil {
+		return nil, err
+	}
 	numRaw := len(pubkeys)
 	numChildren := len(children)
 
@@ -260,7 +268,7 @@ func AggregateWithChildren(
 			childProofLensPtr,
 			C.size_t(numChildren),
 			(*C.uint8_t)(unsafe.Pointer(&message[0])),
-			C.uint32_t(slot),
+			C.uint32_t(s),
 			C.size_t(LogInvRate),
 			(*C.uint8_t)(unsafe.Pointer(&buf[0])),
 			C.size_t(len(buf)),
@@ -289,8 +297,12 @@ func VerifyAggregatedSignature(
 	proofData []byte,
 	pubkeys []CPubKey,
 	message [32]byte,
-	slot uint32,
+	slot uint64,
 ) error {
+	s, err := slot32(slot)
+	if err != nil {
+		return err
+	}
 	if len(proofData) == 0 || len(pubkeys) == 0 {
 		return ErrEmptyInput
 	}
@@ -318,7 +330,7 @@ func VerifyAggregatedSignature(
 		(**C.PublicKey)(unsafe.Pointer(&cPubkeys[0])),
 		C.size_t(len(cPubkeys)),
 		(*C.uint8_t)(unsafe.Pointer(&message[0])),
-		C.uint32_t(slot),
+		C.uint32_t(s),
 		(*C.uint8_t)(unsafe.Pointer(&proofData[0])),
 		C.size_t(len(proofData)),
 	)
@@ -334,9 +346,6 @@ func VerifyAggregatedSignature(
 func MergeType1Proofs(inputs []Type1Input, raw []RawSignature) ([]byte, error) {
 	if len(inputs) == 0 && len(raw) == 0 {
 		return nil, ErrEmptyInput
-	}
-	if err := EnsureProverReady(); err != nil {
-		return nil, err
 	}
 
 	var pinner runtime.Pinner
@@ -375,7 +384,10 @@ func MergeType1Proofs(inputs []Type1Input, raw []RawSignature) ([]byte, error) {
 		if len(keys) == 0 {
 			return nil, ErrEmptyInput
 		}
-		hashes, slots := flattenBindings(bindings)
+		hashes, slots, err := flattenBindings(bindings)
+		if err != nil {
+			return nil, err
+		}
 		pinner.Pin(&proofPtrs[0])
 		pinner.Pin(&keys[0])
 		proofPtrsPtr = (**C.uint8_t)(unsafe.Pointer(&proofPtrs[0]))
@@ -404,7 +416,10 @@ func MergeType1Proofs(inputs []Type1Input, raw []RawSignature) ([]byte, error) {
 			rawSigs[i] = (*C.Signature)(r.Signature)
 			bindings[i] = MessageBinding{Message: r.Message, Slot: r.Slot}
 		}
-		hashes, slots := flattenBindings(bindings)
+		hashes, slots, err := flattenBindings(bindings)
+		if err != nil {
+			return nil, err
+		}
 		pinner.Pin(&rawKeys[0])
 		pinner.Pin(&rawSigs[0])
 		rawKeysPtr = (**C.PublicKey)(unsafe.Pointer(&rawKeys[0]))
@@ -413,6 +428,10 @@ func MergeType1Proofs(inputs []Type1Input, raw []RawSignature) ([]byte, error) {
 		rawSlotsPtr = (*C.uint32_t)(unsafe.Pointer(&slots[0]))
 	}
 
+	// Inputs are refused before the prover starts, which can take a minute.
+	if err := EnsureProverReady(); err != nil {
+		return nil, err
+	}
 	bufPtr := getProofBuf()
 	defer putProofBuf(bufPtr)
 	buf := *bufPtr
@@ -451,20 +470,23 @@ func SplitType2Proof(
 	if len(proof) > MaxProofSize {
 		return nil, ErrProofTooBig
 	}
-	if err := EnsureProverReady(); err != nil {
-		return nil, err
-	}
 
 	keys, counts, err := flattenPublicKeys(pubkeys)
 	if err != nil {
 		return nil, err
 	}
-	hashes, slots := flattenBindings(bindings)
+	hashes, slots, err := flattenBindings(bindings)
+	if err != nil {
+		return nil, err
+	}
 	var pinner runtime.Pinner
 	defer pinner.Unpin()
 	pinner.Pin(&proof[0])
 	pinner.Pin(&keys[0])
 
+	if err := EnsureProverReady(); err != nil {
+		return nil, err
+	}
 	bufPtr := getProofBuf()
 	defer putProofBuf(bufPtr)
 	buf := *bufPtr
@@ -508,7 +530,10 @@ func VerifyType2Proof(
 		return err
 	}
 
-	hashes, slots := flattenBindings(bindings)
+	hashes, slots, err := flattenBindings(bindings)
+	if err != nil {
+		return err
+	}
 
 	var pinner runtime.Pinner
 	defer pinner.Unpin()
@@ -550,14 +575,18 @@ func flattenPublicKeys(groups [][]CPubKey) ([]*C.PublicKey, []C.size_t, error) {
 
 // flattenBindings lays bindings out as the C side reads them: consecutive 32-byte
 // messages, and the slots in a parallel array.
-func flattenBindings(bindings []MessageBinding) ([]byte, []C.uint32_t) {
+func flattenBindings(bindings []MessageBinding) ([]byte, []C.uint32_t, error) {
 	hashes := make([]byte, 0, len(bindings)*MessageLength)
 	slots := make([]C.uint32_t, len(bindings))
 	for i, binding := range bindings {
+		slot, err := slot32(binding.Slot)
+		if err != nil {
+			return nil, nil, err
+		}
 		hashes = append(hashes, binding.Message[:]...)
-		slots[i] = C.uint32_t(binding.Slot)
+		slots[i] = C.uint32_t(slot)
 	}
-	return hashes, slots
+	return hashes, slots, nil
 }
 
 // proofFailures names the status codes the proving calls return (Failure in
