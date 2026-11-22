@@ -21,7 +21,7 @@ type Replay struct {
 	Store *store.ConsensusStore
 	FC    *forkchoice.ForkChoice
 	// LabelRoots maps the fixture's block labels to the roots of the blocks
-	// that carried them.
+	// that carried them. leanSpec labels the anchor "genesis" at any slot.
 	LabelRoots map[string][32]byte
 }
 
@@ -53,7 +53,7 @@ func NewReplay(anchorState *types.State, anchorBlock *types.Block) (*Replay, err
 	return &Replay{
 		Store:      s,
 		FC:         forkchoice.New(anchorBlock.Slot, anchorRoot, anchorBlock.ParentRoot),
-		LabelRoots: make(map[string][32]byte),
+		LabelRoots: map[string][32]byte{"genesis": anchorRoot},
 	}, nil
 }
 
@@ -72,12 +72,6 @@ func (r *Replay) Step(step *specfixtures.ForkChoiceStep) error {
 	case "checks":
 	default:
 		err = fmt.Errorf("unknown stepType %q", step.StepType)
-	}
-	// The safe target leaves fork choice's weights at the supermajority
-	// threshold, which would skew the next step's head, so it is computed only
-	// for a step that checks it, after the step's head.
-	if c := step.Checks; c != nil && (c.SafeTarget != nil || c.SafeTargetSlot != nil || c.SafeTargetRootLabel != nil) {
-		store.UpdateSafeTarget(r.Store, r.FC)
 	}
 	return err
 }
@@ -106,11 +100,7 @@ func earliestAdmissibleInterval(slot uint64) uint64 {
 	return start - types.GossipDisparityIntervals
 }
 
-// tick advances the clock to the step's time the way the engine does, one
-// interval at a time: store.OnTick promotes new votes at the interval
-// boundaries, and the head is recomputed at intervals 0 and 4. Stepping keeps
-// every boundary between the clock and the target, as leanSpec's on_tick does;
-// a proposal promotes at interval 0 only on the final interval.
+// tick advances the clock to the step's time or interval.
 func (r *Replay) tick(step *specfixtures.ForkChoiceStep) error {
 	genesisTime := r.Store.Config().GenesisTime
 	var target uint64
@@ -123,20 +113,31 @@ func (r *Replay) tick(step *specfixtures.ForkChoiceStep) error {
 		return fmt.Errorf("tick step missing time and interval")
 	}
 
-	hasProposal := step.HasProposal != nil && *step.HasProposal
-	for r.Store.Time() < target {
-		next := r.Store.Time() + 1
-		store.OnTick(r.Store, genesisTime*1000+next*types.MillisecondsPerInterval, hasProposal && next == target)
-		if interval := next % types.IntervalsPerSlot; interval == 0 || interval == 4 {
-			r.updateHead()
-		}
-	}
+	r.advance(target, step.HasProposal != nil && *step.HasProposal)
 	// A tick to at or behind the clock still pins the time, so a later time
 	// check reads the fixture's value.
 	if target < r.Store.Time() {
 		r.Store.SetTime(target)
 	}
 	return nil
+}
+
+// advance runs each interval up to target as leanSpec's on_tick does, a
+// proposal signalled only on the last: store.OnTick promotes new votes, the head
+// moves at intervals 0 and 4, and the safe target at interval 3. It follows
+// leanSpec's timeline; the engine also prunes at interval 3.
+func (r *Replay) advance(target uint64, hasProposal bool) {
+	genesisTime := r.Store.Config().GenesisTime
+	for r.Store.Time() < target {
+		next := r.Store.Time() + 1
+		store.OnTick(r.Store, genesisTime*1000+next*types.MillisecondsPerInterval, hasProposal && next == target)
+		switch next % types.IntervalsPerSlot {
+		case 0, 4:
+			r.updateHead()
+		case 3:
+			store.UpdateSafeTarget(r.Store, r.FC)
+		}
+	}
 }
 
 func (r *Replay) block(step *specfixtures.ForkChoiceStep) error {
@@ -153,11 +154,9 @@ func (r *Replay) block(step *specfixtures.ForkChoiceStep) error {
 	// Advance the clock to this block's slot unless the fixture delivers it ahead
 	// of the clock (tickToSlot=false). The clock gates attestation future-validation,
 	// so it must reach the slot before subsequent attestations validate.
+	// leanSpec ticks to the slot with the block as its proposal.
 	if step.TickToSlot == nil || *step.TickToSlot {
-		minTime := block.Slot * types.IntervalsPerSlot
-		if r.Store.Time() < minTime {
-			r.Store.SetTime(minTime)
-		}
+		r.advance(block.Slot*types.IntervalsPerSlot, true)
 	}
 
 	if err := importer.OnBlockWithoutVerification(r.Store, signedBlock); err != nil {

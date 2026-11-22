@@ -35,16 +35,16 @@ import (
 )
 
 var runners = map[string]runner{
-	"api_endpoint":                 newRunner(runAPIEndpoint),
-	"fork_choice":                  newRunner(runForkChoice),
-	"justifiability":               newRunner(runJustifiability),
-	"networking_codec":             newRunner(runNetworkingCodec),
-	"slot_clock":                   newRunner(runSlotClock),
-	"ssz":                          newRunner(runSSZ),
-	"state_transition":             newRunner(runStateTransition),
-	"sync":                         newRunner(runSync),
-	"verify_signatures":            newRunner(runVerifySignatures),
-	"verify_single_message_proofs": newRunner(runVerifySingleMessageProof),
+	"api_endpoint":                 newRunner(runAPIEndpoint, hashedKeys),
+	"fork_choice":                  newRunner(runForkChoice, hashedKeys),
+	"justifiability":               newRunner(runJustifiability, hashedKeys),
+	"networking_codec":             newRunner(runNetworkingCodec, hashedKeys),
+	"slot_clock":                   newRunner(runSlotClock, hashedKeys),
+	"ssz":                          newRunner(runSSZ, keyBytes),
+	"state_transition":             newRunner(runStateTransition, hashedKeys),
+	"sync":                         newRunner(runSync, hashedKeys),
+	"verify_signatures":            newRunner(runVerifySignatures, keyBytes),
+	"verify_single_message_proofs": newRunner(runVerifySingleMessageProof, keyBytes),
 }
 
 var excludedDirectories = map[string]string{
@@ -86,10 +86,17 @@ var caseRecords = make(map[*testing.T]*caseRecord)
 // runner runs one fixture case from its raw JSON.
 type runner func(t *testing.T, raw json.RawMessage)
 
+// How a suite uses validator public keys: hashed into states and blocks, which a
+// Poseidon key's hash tree root stands in for, or as the key bytes themselves.
+const (
+	hashedKeys = false
+	keyBytes   = true
+)
+
 // newRunner decodes a case into F, rejecting fields F does not declare: a
 // field leanSpec renames or adds then fails the case instead of reading as
 // zero. Cases carrying Poseidon XMSS material skip once decoded.
-func newRunner[F any](run func(*testing.T, *F)) runner {
+func newRunner[F any](run func(*testing.T, *F), needsKeyBytes bool) runner {
 	return func(t *testing.T, raw json.RawMessage) {
 		t.Helper()
 		var fixture F
@@ -97,7 +104,7 @@ func newRunner[F any](run func(*testing.T, *F)) runner {
 			t.Fatalf("decode fixture: %v", err)
 		}
 		caseRecords[t].unchecked = uncheckedFields(reflect.ValueOf(fixture), "")
-		skipPoseidonMaterial(t, raw)
+		skipPoseidonMaterial(t, raw, needsKeyBytes)
 		run(t, &fixture)
 	}
 }
