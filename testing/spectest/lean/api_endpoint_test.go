@@ -20,6 +20,7 @@ import (
 	"github.com/geanlabs/gean/internal/lean/genesis"
 	"github.com/geanlabs/gean/internal/lean/role"
 	"github.com/geanlabs/gean/internal/lean/specfixtures"
+	"github.com/geanlabs/gean/internal/lean/transition"
 )
 
 type apiEndpointFixture struct {
@@ -45,9 +46,6 @@ func runAPIEndpoint(t *testing.T, fixture *apiEndpointFixture) {
 	if fixture.Endpoint == "/metrics" {
 		skip(t, skipFollowsEthlambda, "gean serves /metrics on its own port, not the API's")
 	}
-	if fixture.GenesisParams.AnchorSlot > 0 {
-		skip(t, skipNotImplemented, "API fixtures anchored after genesis")
-	}
 	// An SSZ body holds the state's keys themselves, which a Poseidon key's
 	// stand-in cannot reproduce. Every key file holds the scheme's keys, so the
 	// first says whether the rest are Poseidon.
@@ -68,8 +66,14 @@ func runAPIEndpoint(t *testing.T, fixture *apiEndpointFixture) {
 	if err != nil {
 		t.Fatalf("genesis state: %v", err)
 	}
+	// leanSpec reaches a later anchor with an empty block at every slot.
+	for state.Slot < fixture.GenesisParams.AnchorSlot {
+		if state, err = transition.ApplyEmptyBlock(state); err != nil {
+			t.Fatalf("anchor block after slot %d: %v", state.Slot, err)
+		}
+	}
 	s, anchorRoot := newAnchoredStore(t, state)
-	fc := forkchoice.New(0, anchorRoot, [32]byte{})
+	fc := forkchoice.New(state.LatestBlockHeader.Slot, anchorRoot, state.LatestBlockHeader.ParentRoot)
 
 	var requestBody io.Reader
 	if len(fixture.RequestBody) > 0 && string(fixture.RequestBody) != "null" {
@@ -94,8 +98,8 @@ func runAPIEndpoint(t *testing.T, fixture *apiEndpointFixture) {
 
 	switch fixture.ExpectedContentType {
 	case "application/json":
-		// Keys and JSON types are compared, not values: roots and weights in the
-		// body depend on the keys and state the spec used.
+		// The stand-in keys hash as leanSpec's do, so state and block roots
+		// compare exactly.
 		var got, want map[string]any
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -103,7 +107,11 @@ func runAPIEndpoint(t *testing.T, fixture *apiEndpointFixture) {
 		if err := json.Unmarshal(fixture.ExpectedBody, &want); err != nil {
 			t.Fatalf("decode expected body: %v", err)
 		}
-		checkJSONKeysAndTypes(t, got, want, "")
+		if !reflect.DeepEqual(got, want) {
+			gotJSON, _ := json.Marshal(got)
+			wantJSON, _ := json.Marshal(want)
+			t.Errorf("body:\n got  %s\n want %s", gotJSON, wantJSON)
+		}
 	case "application/octet-stream":
 		var wantHex string
 		if err := json.Unmarshal(fixture.ExpectedBody, &wantHex); err != nil {
@@ -158,26 +166,4 @@ func stateKeyHex(t *testing.T, validator int, publicKey string) string {
 		t.Fatalf("validator %d key: %v", validator, err)
 	}
 	return "0x" + hex.EncodeToString(key[:])
-}
-
-// checkJSONKeysAndTypes checks that got has every key in want, at every depth,
-// with the same JSON type.
-func checkJSONKeysAndTypes(t *testing.T, got, want map[string]any, prefix string) {
-	t.Helper()
-	for k, wv := range want {
-		gv, ok := got[k]
-		path := prefix + "/" + k
-		if !ok {
-			t.Errorf("missing key %q", path)
-			continue
-		}
-		if reflect.TypeOf(gv) != reflect.TypeOf(wv) {
-			t.Errorf("key %q: type mismatch got %T want %T", path, gv, wv)
-			continue
-		}
-		if wantMap, ok := wv.(map[string]any); ok {
-			gotMap := gv.(map[string]any)
-			checkJSONKeysAndTypes(t, gotMap, wantMap, path)
-		}
-	}
 }

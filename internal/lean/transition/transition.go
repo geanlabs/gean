@@ -53,3 +53,29 @@ func ApplyBlock(state *types.State, block *types.Block) (*types.State, error) {
 	}
 	return post, nil
 }
+
+// ApplyEmptyBlock returns the state an empty block at the next slot leads to,
+// leaving state as it is.
+func ApplyEmptyBlock(state *types.State) (*types.State, error) {
+	// The block's parent is the latest header with the state's root filled in,
+	// as processing the slot fills it.
+	parent := *state.LatestBlockHeader
+	if parent.StateRoot == types.ZeroRoot {
+		root, err := state.HashTreeRoot()
+		if err != nil {
+			return nil, err
+		}
+		parent.StateRoot = root
+	}
+	parentRoot, err := parent.HashTreeRoot()
+	if err != nil {
+		return nil, err
+	}
+	next := state.Slot + 1
+	return ApplyBlock(state, &types.Block{
+		Slot:          next,
+		ProposerIndex: types.ProposerIndex(next, state.NumValidators()),
+		ParentRoot:    parentRoot,
+		Body:          &types.BlockBody{},
+	})
+}
