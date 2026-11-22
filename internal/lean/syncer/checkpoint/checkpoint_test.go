@@ -150,6 +150,21 @@ func TestVerifyCheckpointStateRejects(t *testing.T) {
 		{"malformed historical root", func(s *types.State, _ []*types.Validator) {
 			s.HistoricalBlockHashes = [][]byte{{0x01}}
 		}, "hash_tree_root"},
+		// Every block on such a state fails, so a node anchored on it never
+		// imports another block.
+		{"justification root without votes", func(s *types.State, _ []*types.Validator) {
+			s.JustificationsRoots = [][]byte{append([]byte{1}, make([]byte, 31)...)}
+		}, "justifications_validators length"},
+		{"justification votes without a root", func(s *types.State, _ []*types.Validator) {
+			s.JustificationsValidators = types.NewBitlistSSZ(3)
+		}, "justifications_validators length"},
+		{"zero justification root", func(s *types.State, _ []*types.Validator) {
+			s.JustificationsRoots = [][]byte{make([]byte, 32)}
+			s.JustificationsValidators = types.NewBitlistSSZ(3)
+		}, "zero hash"},
+		{"state too far past its block to record the gap", func(s *types.State, _ []*types.Validator) {
+			s.Slot = 1 << 60
+		}, "slot gap"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -324,7 +339,7 @@ func writeBody(t *testing.T, w http.ResponseWriter, body []byte) {
 	}
 }
 
-func makeAnchorPair(t *testing.T) (*types.State, *types.SignedBlock) {
+func makeAnchorPair(t testing.TB) (*types.State, *types.SignedBlock) {
 	t.Helper()
 	state := makeTestState(100, 1000, 3)
 	body := &types.BlockBody{}

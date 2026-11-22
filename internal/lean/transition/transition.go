@@ -1,6 +1,10 @@
 package transition
 
-import "github.com/geanlabs/gean/internal/lean/types"
+import (
+	"fmt"
+
+	"github.com/geanlabs/gean/internal/lean/types"
+)
 
 func StateTransition(state *types.State, block *types.Block) error {
 	if block == nil {
@@ -31,4 +35,21 @@ func VerifyStateRoot(state *types.State, block *types.Block) error {
 		}
 	}
 	return nil
+}
+
+// ApplyBlock returns the state block leads to from state, leaving state as it
+// is. It skips the state-root check, so it serves trial blocks whose root is not
+// known yet.
+func ApplyBlock(state *types.State, block *types.Block) (*types.State, error) {
+	post, err := state.Clone()
+	if err != nil {
+		return nil, err
+	}
+	if err := ProcessSlots(post, block.Slot); err != nil {
+		return nil, fmt.Errorf("process slots: %w", err)
+	}
+	if err := ProcessBlock(post, block); err != nil {
+		return nil, fmt.Errorf("process block: %w", err)
+	}
+	return post, nil
 }
