@@ -1,0 +1,48 @@
+# Known vulnerabilities in gean's Go and Rust dependencies. It runs when they change, and
+# weekly for advisories published since, so a new advisory does not turn unrelated pull
+# requests red.
+name: audit
+
+on:
+  pull_request:
+    paths: [go.mod, go.sum, "**/Cargo.toml", "**/Cargo.lock", .github/workflows/audit.yml]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # Reports only vulnerabilities in code gean calls.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.23.0
+      - run: command -v cargo-audit || cargo install cargo-audit --locked --version 0.23.0
+      # RUSTSEC-2026-0387 (crypto-bigint 0.5) arrives through leanVM's alloy-primitives, behind
+      # a k256 feature gean does not enable, so it is not compiled; the patched 0.7 is outside
+      # what elliptic-curve accepts, and leanVM is pinned on purpose.
+      - run: cargo audit --file internal/core/crypto/xmss/rust/Cargo.lock --ignore RUSTSEC-2026-0387
