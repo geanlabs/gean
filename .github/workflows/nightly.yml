@@ -83,41 +83,35 @@ jobs:
         with:
           persist-credentials: false
       # Most nights nothing changed, and the job ends here.
-      - id: drift
-        shell: bash
+      - shell: bash
         run: |
           latest=$(curl -fsSL "$(sed -n 's/^LEAN_SPEC_FIXTURES_URL := //p' Makefile).sha256" | cut -d' ' -f1)
           if [[ ! $latest =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::could not read leanSpec's published fixtures hash"
             exit 1
           fi
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
           if [ "$latest" = "$(sed -n 's/^LEAN_SPEC_FIXTURES_SHA256 := //p' Makefile)" ]; then
             echo "leanSpec's fixtures are still the pinned ones"
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "LATEST=$latest" >> "$GITHUB_ENV"
           fi
-      - if: steps.drift.outputs.changed
+      - if: env.LATEST
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-      - if: steps.drift.outputs.changed
+      - if: env.LATEST
         run: rustup toolchain install --profile minimal
         working-directory: internal/core/crypto/xmss/rust
       # Separate from the tests, so a download that fails or races a republish is not
       # reported as gean failing the fixtures.
-      - if: steps.drift.outputs.changed
-        env:
-          LATEST: ${{ steps.drift.outputs.latest }}
+      - if: env.LATEST
         run: |
           if ! make leanSpec/fixtures LEAN_SPEC_FIXTURES_SHA256="$LATEST"; then
             echo "::error::could not download leanSpec's new fixtures ($LATEST)"
             exit 1
           fi
       # Red either way: a fresh checkout now fails the pinned checksum, so the pin must move.
-      - if: steps.drift.outputs.changed
-        env:
-          LATEST: ${{ steps.drift.outputs.latest }}
+      - if: env.LATEST
         run: |
           if make lean-spectest LEAN_SPEC_FIXTURES_SHA256="$LATEST"; then
             echo "::error::leanSpec published new fixtures and gean passes them: pin $LATEST in the Makefile"
