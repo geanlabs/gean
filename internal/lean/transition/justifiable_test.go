@@ -1,6 +1,10 @@
 package transition
 
-import "testing"
+import (
+	"math"
+	"math/big"
+	"testing"
+)
 
 func TestSlotIsJustifiableAfter(t *testing.T) {
 	tests := []struct {
@@ -34,6 +38,10 @@ func TestSlotIsJustifiableAfter(t *testing.T) {
 		{0, 0, true},
 		{10, 10, true},
 		{5, 10, false},
+		// A pronic distance past 2^62, where 4*delta+1 overflows.
+		{(1<<32 - 1) * (1 << 32), 0, true},
+		{(1<<32 - 1) * (1<<32 - 1), 0, true},
+		{math.MaxUint64, 0, false},
 	}
 
 	for _, tt := range tests {
@@ -43,6 +51,23 @@ func TestSlotIsJustifiableAfter(t *testing.T) {
 				tt.slot, tt.finalized, got, tt.want)
 		}
 	}
+}
+
+// Compares against math/big, which has no precision or overflow limits.
+func FuzzSlotIsJustifiableAfter(f *testing.F) {
+	f.Fuzz(func(t *testing.T, slot, finalized uint64) {
+		want := false
+		if slot >= finalized {
+			delta := new(big.Int).SetUint64(slot - finalized)
+			root := new(big.Int).Sqrt(delta)
+			square := new(big.Int).Mul(root, root)
+			pronic := new(big.Int).Add(square, root)
+			want = delta.Cmp(big.NewInt(5)) <= 0 || square.Cmp(delta) == 0 || pronic.Cmp(delta) == 0
+		}
+		if got := SlotIsJustifiableAfter(slot, finalized); got != want {
+			t.Fatalf("SlotIsJustifiableAfter(%d, %d) = %v, want %v", slot, finalized, got, want)
+		}
+	})
 }
 
 func TestIsSlotJustifiedIgnoresBitlistTerminator(t *testing.T) {
