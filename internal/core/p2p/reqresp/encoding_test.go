@@ -2,7 +2,9 @@ package reqresp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
+	"math/rand/v2"
 	"os"
 	"runtime"
 	"slices"
@@ -35,7 +37,7 @@ func (stubStream) SetWriteDeadline(time.Time) error { return nil }
 func TestVarintRoundtrip(t *testing.T) {
 	tests := []uint32{0, 1, 127, 128, 255, 256, 16383, 16384, 1<<20 - 1}
 	for _, v := range tests {
-		r := bytes.NewReader(EncodeVarint(uint64(v)))
+		r := bytes.NewReader(binary.AppendUvarint(nil, uint64(v)))
 		decoded, err := decodeVarintFrom(r)
 		if err != nil {
 			t.Fatalf("varint %d: %v", v, err)
@@ -144,7 +146,7 @@ func TestErrorMessageOversizedRejectedOnDecode(t *testing.T) {
 func TestReqRespPayloadRejectsBlockFormatSnappy(t *testing.T) {
 	raw := []byte("hello world")
 	blockFormat := snappy.Encode(nil, raw)
-	chunk := append(EncodeVarint(uint64(len(raw))), blockFormat...)
+	chunk := append(binary.AppendUvarint(nil, uint64(len(raw))), blockFormat...)
 	_, err := DecodePayload(chunk)
 	if err == nil {
 		t.Fatal("expected error decoding block-format snappy as framed, got nil")
@@ -170,7 +172,7 @@ func TestReqRespPayloadRejectsDecodedBodyPastDeclaredLength(t *testing.T) {
 		t.Fatalf("close snappy writer: %v", err)
 	}
 
-	encoded := append(EncodeVarint(1), framed.Bytes()...)
+	encoded := append(binary.AppendUvarint(nil, 1), framed.Bytes()...)
 	_, err := DecodePayload(encoded)
 	if err == nil {
 		t.Fatal("expected length mismatch for decoded body past declared length")
@@ -196,7 +198,7 @@ func TestSuccessUntouchedByErrorMessageCap(t *testing.T) {
 }
 
 func TestDecodeResponseDoesNotAllocateDeclaredLength(t *testing.T) {
-	header := append([]byte{RespSuccess}, EncodeVarint(MaxPayloadSize)...)
+	header := append([]byte{RespSuccess}, binary.AppendUvarint(nil, MaxPayloadSize)...)
 
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
@@ -280,4 +282,15 @@ func FuzzDecodeResponse(f *testing.F) {
 			}
 		}
 	})
+}
+
+// A response chunk carrying a block, the hot path of serving a range request.
+// Blocks are mostly signatures and proofs, which do not compress.
+func BenchmarkEncodeResponse(b *testing.B) {
+	data := make([]byte, 256<<10)
+	_, _ = rand.NewChaCha8([32]byte{}).Read(data)
+	b.ReportAllocs()
+	for b.Loop() {
+		EncodeResponse(RespSuccess, data)
+	}
 }
