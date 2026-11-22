@@ -71,6 +71,12 @@ jobs:
       - run: make test
         env:
           GOFLAGS: -race
+      # The XMSS package's tests beyond the scheme vector, which make test leaves out to stay
+      # quick locally: real key generation, signing, verification and aggregation, in under a
+      # minute and about 2 GB.
+      - run: make lean-test-ffi
+        env:
+          GOFLAGS: -race
       # Keyed on the fixtures' pinned hash rather than the whole Makefile, so only a new pin
       # downloads them again. The restored directory holds make's .sha256-<hash> stamp, so
       # make skips the download.
