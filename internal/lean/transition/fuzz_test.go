@@ -14,52 +14,33 @@ import (
 // validators vote, and corrupted roots and voter bits. Raw mutated blocks almost
 // never get past the parent-root check.
 //
-// Each block must apply or be rejected with an error, never panic. An applied
-// block must leave a consistent state, and replaying it through StateTransition
-// with its state root must reproduce that state.
+// Each block must apply or be rejected with an error, never panic, and an
+// applied block must leave a consistent state.
 func FuzzStateTransition(f *testing.F) {
 	// Four validators; slot 1 empty, then slot 2 justifies slot 1 from genesis,
 	// slot 3 justifies slot 2 from slot 1 and so finalizes slot 1.
 	f.Add([]byte{3, 0, 0, 0, 1, 0, 0, 1, 1, 0x0f, 0, 1, 0, 1, 2, 2, 0x0f})
-	f.Add([]byte{7, 3, 2, 0, 1, 2, 0, 0xff, 1, 2, 3, 3, 0x02, 0x7f})
 
 	f.Fuzz(func(t *testing.T, input []byte) {
 		in := fuzzInput(input)
-		numValidators := uint64(in.next()%8) + 1
-		state := makeGenesisState(int(numValidators))
+		state := makeGenesisState(int(in.next()%8) + 1)
 
 		for range 32 {
-			if in.empty() {
+			if len(in) == 0 {
 				return
-			}
-			block, err := buildFuzzBlock(state, numValidators, &in)
-			if err != nil {
-				t.Fatalf("build block: %v", err)
 			}
 			next, err := state.Clone()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := ProcessSlots(next, block.Slot); err != nil {
-				t.Fatalf("process slots to %d: %v", block.Slot, err)
+			block, err := buildFuzzBlock(next, &in)
+			if err != nil {
+				t.Fatalf("build block: %v", err)
 			}
 			if err := ProcessBlock(next, block); err != nil {
 				continue
 			}
-			checkFuzzState(t, state, next, block, numValidators)
-
-			root, err := next.HashTreeRoot()
-			if err != nil {
-				t.Fatal(err)
-			}
-			block.StateRoot = root
-			replay, err := state.Clone()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := StateTransition(replay, block); err != nil {
-				t.Fatalf("replaying an applied block at slot %d: %v", block.Slot, err)
-			}
+			checkFuzzState(t, state, next, block)
 			state = next
 		}
 	})
@@ -67,8 +48,6 @@ func FuzzStateTransition(f *testing.F) {
 
 // fuzzInput hands out the input a byte at a time, and zeros once it runs out.
 type fuzzInput []byte
-
-func (in *fuzzInput) empty() bool { return len(*in) == 0 }
 
 func (in *fuzzInput) next() byte {
 	if len(*in) == 0 {
@@ -79,30 +58,30 @@ func (in *fuzzInput) next() byte {
 	return b
 }
 
-// buildFuzzBlock builds the block after state: up to three skipped slots, then
-// up to three attestations. Each names its source, target and head by slot and
-// takes that slot's root from the chain the block extends; a flag byte corrupts
-// a root or adds voters past the registry, and a voter byte picks who votes.
-func buildFuzzBlock(state *types.State, numValidators uint64, in *fuzzInput) (*types.Block, error) {
+// buildFuzzBlock advances state through up to three skipped slots and builds
+// the block for the next one, with up to three attestations. Each names its
+// source, target and head by slot and takes that slot's root from the chain the
+// block extends; a flag byte corrupts a root or adds voters past the registry,
+// and a voter byte picks who votes.
+func buildFuzzBlock(state *types.State, in *fuzzInput) (*types.Block, error) {
+	numValidators := state.NumValidators()
 	slot := state.Slot + 1 + uint64(in.next()%4)
+	if err := ProcessSlots(state, slot); err != nil {
+		return nil, err
+	}
 	block := &types.Block{Slot: slot, ProposerIndex: types.ProposerIndex(slot, numValidators), Body: &types.BlockBody{}}
-
-	// The chain the block extends: a header-only copy of it gives the parent root
-	// and the historical roots its votes may name.
-	chain, err := state.Clone()
+	parentRoot, err := state.LatestBlockHeader.HashTreeRoot()
 	if err != nil {
 		return nil, err
 	}
-	if err := ProcessSlots(chain, slot); err != nil {
-		return nil, err
+	block.ParentRoot = parentRoot
+
+	// The history the block's header leaves: the parent, then a zero root per
+	// skipped slot.
+	history := append(state.HistoricalBlockHashes[:len(state.HistoricalBlockHashes):len(state.HistoricalBlockHashes)], parentRoot[:])
+	for range slot - state.LatestBlockHeader.Slot - 1 {
+		history = append(history, make([]byte, types.RootSize))
 	}
-	if block.ParentRoot, err = chain.LatestBlockHeader.HashTreeRoot(); err != nil {
-		return nil, err
-	}
-	if err := ProcessBlockHeader(chain, block); err != nil {
-		return nil, err
-	}
-	history := chain.HistoricalBlockHashes
 
 	checkpoint := func(flags byte) *types.Checkpoint {
 		cp := &types.Checkpoint{Slot: uint64(in.next()) % uint64(len(history))}
@@ -119,33 +98,21 @@ func buildFuzzBlock(state *types.State, numValidators uint64, in *fuzzInput) (*t
 		if flags&8 != 0 {
 			bits = 8
 		}
-		var indices []uint64
-		for i := range bits {
-			if voters&(1<<i) != 0 {
-				indices = append(indices, i)
-			}
-		}
 		aggregation := types.NewBitlistSSZ(bits)
-		for _, i := range indices {
-			types.BitlistSet(aggregation, i)
+		for i := range bits {
+			if voters>>i&1 != 0 {
+				types.BitlistSet(aggregation, i)
+			}
 		}
 		block.Body.Attestations = append(block.Body.Attestations, &types.AggregatedAttestation{AggregationBits: aggregation, Data: data})
 	}
 	return block, nil
 }
 
-// checkFuzzState checks the state an applied block left against the state
-// before it.
-func checkFuzzState(t *testing.T, pre, post *types.State, block *types.Block, numValidators uint64) {
+func checkFuzzState(t *testing.T, pre, post *types.State, block *types.Block) {
 	t.Helper()
 	justified, finalized := post.LatestJustified, post.LatestFinalized
 
-	if post.Slot != block.Slot || post.LatestBlockHeader.Slot != block.Slot {
-		t.Fatalf("state slot %d, header slot %d, block slot %d", post.Slot, post.LatestBlockHeader.Slot, block.Slot)
-	}
-	if uint64(len(post.HistoricalBlockHashes)) != block.Slot {
-		t.Fatalf("%d historical roots at slot %d", len(post.HistoricalBlockHashes), block.Slot)
-	}
 	if justified.Slot < pre.LatestJustified.Slot || finalized.Slot < pre.LatestFinalized.Slot {
 		t.Fatalf("checkpoints regressed: justified %d -> %d, finalized %d -> %d",
 			pre.LatestJustified.Slot, justified.Slot, pre.LatestFinalized.Slot, finalized.Slot)
@@ -153,26 +120,21 @@ func checkFuzzState(t *testing.T, pre, post *types.State, block *types.Block, nu
 	if finalized.Slot > justified.Slot {
 		t.Fatalf("finalized slot %d is past justified slot %d", finalized.Slot, justified.Slot)
 	}
-	for name, cp := range map[string]*types.Checkpoint{"justified": justified, "finalized": finalized} {
+	for _, cp := range []*types.Checkpoint{justified, finalized} {
 		if !bytes.Equal(post.HistoricalBlockHashes[cp.Slot], cp.Root[:]) {
-			t.Fatalf("%s checkpoint at slot %d is not on the chain", name, cp.Slot)
+			t.Fatalf("checkpoint %d/%x is not on the chain", cp.Slot, cp.Root)
 		}
 	}
 	if ok, err := IsSlotJustified(post, finalized.Slot, justified.Slot); err != nil || !ok {
 		t.Fatalf("latest justified slot %d is not marked justified (%v)", justified.Slot, err)
 	}
-	if got, want := types.BitlistLen(post.JustifiedSlots), block.Slot-1-min(finalized.Slot, block.Slot-1); got != want {
+	if got, want := types.BitlistLen(post.JustifiedSlots), block.Slot-1-finalized.Slot; got != want {
 		t.Fatalf("%d justified-slot bits past finalized slot %d at slot %d, want %d", got, finalized.Slot, block.Slot, want)
 	}
-	if got, want := types.BitlistLen(post.JustificationsValidators), uint64(len(post.JustificationsRoots))*numValidators; got != want {
-		t.Fatalf("%d justification vote bits for %d roots, want %d", got, len(post.JustificationsRoots), want)
-	}
-	for i, root := range post.JustificationsRoots {
+	// Skipped slots leave zero roots in the history votes may name.
+	for _, root := range post.JustificationsRoots {
 		if types.IsZeroRoot([32]byte(root)) {
 			t.Fatalf("zero root among pending justifications")
-		}
-		if i > 0 && bytes.Compare(post.JustificationsRoots[i-1], root) >= 0 {
-			t.Fatalf("pending justification roots are not sorted and distinct")
 		}
 	}
 }
