@@ -80,6 +80,7 @@ func (h *Host) listenTopic(ctx context.Context, topic string, sub *pubsub.Subscr
 }
 
 // ReannounceSubscriptions renews every subscription, so peers hear them again.
+// It writes the subscriptions Close reads, so it must have returned before Close.
 func (h *Host) ReannounceSubscriptions() error {
 	deliver := h.deliver.Load()
 	if deliver == nil {
