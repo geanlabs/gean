@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/geanlabs/gean/internal/lean/keys"
+	"github.com/geanlabs/gean/internal/lean/metrics"
 
 	"github.com/multiformats/go-multiaddr"
 
@@ -26,10 +27,25 @@ func setupP2P(ctx context.Context, cfg Config, keyManager *keys.Manager) (*p2p.H
 		validatorIDs = keyManager.ValidatorIDs()
 	}
 
-	hostCfg := host.Config{NodeKeyPath: cfg.NodeKey, ListenPort: cfg.GossipPort, Network: cfg.Network}
+	hostCfg := host.Config{
+		NodeKeyPath: cfg.NodeKey,
+		ListenPort:  cfg.GossipPort,
+		Network:     cfg.Network,
+		Hooks: host.Hooks{
+			PeerConnected:    func(direction string) { metrics.IncPeerConnection(direction, "success") },
+			PeerDisconnected: metrics.IncPeerDisconnection,
+			PeerCount:        func(count int) { metrics.SetConnectedPeers("unknown", count) },
+		},
+	}
 	p2pHost, err := p2p.NewHost(ctx, hostCfg, cfg.CommitteeCount, validatorIDs, cfg.IsAggregator, cfg.AggregateSubnetIDs)
 	if err != nil {
 		return nil, err
+	}
+	// Gossip is handled only once the listeners start, after this.
+	p2pHost.GossipHooks = p2p.GossipHooks{
+		BlockSize:       metrics.ObserveGossipBlockSize,
+		AttestationSize: metrics.ObserveGossipAttestationSize,
+		AggregationSize: metrics.ObserveGossipAggregationSize,
 	}
 
 	logger.Info(logger.Network, "p2p: peer_id=%s listen_port=%d", p2pHost.PeerID(), cfg.GossipPort)
@@ -86,7 +102,8 @@ func startNodeNetworking(ctx context.Context, n *node.Engine, s *store.Consensus
 	n.Start(ctx)
 
 	syncDriver := syncer.NewSyncDriver(ctx, n, s, p2pHost)
-	p2pHost.Hooks.PeerStatus = syncDriver.OnPeerConnected
+	// Peers that connected before this are reached by the driver's periodic poll.
+	p2pHost.SetPeerStatus(syncDriver.OnPeerConnected)
 	syncDriver.Start()
 
 	p2pHost.ConnectBootnodes(ctx, bootnodes)

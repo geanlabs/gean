@@ -133,7 +133,6 @@ func New(
 	}
 	e.Aggregator = e.newAggregator()
 	e.Importer = e.newImporter()
-	e.configureP2PHooks()
 	return e
 }
 
