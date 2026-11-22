@@ -1,6 +1,8 @@
 package attestation_test
 
 import (
+	"math"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -210,4 +212,22 @@ func TestValidateAttestationDataAncestry(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A vote is admitted while its slot starts no more than GossipDisparityIntervals
+// past the store's clock, compared exactly at every slot and time.
+func FuzzSlotWithinGossipHorizon(f *testing.F) {
+	f.Add(uint64(3), uint64(14))
+	f.Add(uint64(3), uint64(13))
+	f.Add(uint64(math.MaxUint64/types.IntervalsPerSlot+1), uint64(math.MaxUint64))
+	s := makeValidationStore()
+
+	f.Fuzz(func(t *testing.T, slot, now uint64) {
+		s.SetTime(now)
+		start := new(big.Int).Mul(new(big.Int).SetUint64(slot), big.NewInt(types.IntervalsPerSlot))
+		horizon := new(big.Int).Add(new(big.Int).SetUint64(now), big.NewInt(types.GossipDisparityIntervals))
+		if got, want := attestation.SlotWithinGossipHorizon(s, slot), start.Cmp(horizon) <= 0; got != want {
+			t.Fatalf("SlotWithinGossipHorizon(slot %d) at time %d = %v, want %v", slot, now, got, want)
+		}
+	})
 }

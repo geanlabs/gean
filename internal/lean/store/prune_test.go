@@ -10,85 +10,6 @@ import (
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
-// PruneOnFinalization is the only other path that clears these pools, and it
-// runs on finalization alone — so a finality stall is exactly when nothing
-// empties them. The head-relative sweep covers that case.
-func TestPruneStaleAttestationPools(t *testing.T) {
-	newStore := func() *store.ConsensusStore {
-		return store.NewConsensusStore(storage.NewInMemoryBackend())
-	}
-	data := func(target uint64) *types.AttestationData {
-		return &types.AttestationData{
-			Slot:   target,
-			Head:   &types.Checkpoint{},
-			Target: &types.Checkpoint{Slot: target},
-			Source: &types.Checkpoint{},
-		}
-	}
-	root := func(b byte) [32]byte {
-		var r [32]byte
-		r[0] = b
-		return r
-	}
-
-	t.Run("sweeps stale roots while finalization is stalled", func(t *testing.T) {
-		s := newStore()
-		head := uint64(5000)
-		stale, fresh := root(1), root(2)
-		s.AttestationSignatures.Insert(stale, data(100), 0, [types.SignatureSize]byte{})
-		s.AttestationSignatures.Insert(fresh, data(4900), 0, [types.SignatureSize]byte{})
-
-		store.PruneStaleAttestationPools(s, head, 50)
-
-		snap := s.AttestationSignatures.Snapshot()
-		if _, ok := snap[stale]; ok {
-			t.Fatal("stale root survived the sweep")
-		}
-		if _, ok := snap[fresh]; !ok {
-			t.Fatal("root inside the retention window was swept")
-		}
-	})
-
-	t.Run("takes a root's payload with its signatures", func(t *testing.T) {
-		s := newStore()
-		stale := root(3)
-		s.AttestationSignatures.Insert(stale, data(100), 0, [types.SignatureSize]byte{})
-		participants := types.NewBitlistSSZ(1)
-		types.BitlistSet(participants, 0)
-		s.NewPayloads.Push(stale, data(100), &types.SingleMessageAggregate{
-			Participants: participants,
-			Proof:        []byte{1},
-		})
-
-		store.PruneStaleAttestationPools(s, 5000, 50)
-
-		// Signature entry and payload entry share one AttestationData, so they
-		// share a target slot and go stale together. Neither can outlive the
-		// other, which is why the sweep needs no exemption for payload-bearing
-		// roots.
-		if _, ok := s.AttestationSignatures.Snapshot()[stale]; ok {
-			t.Fatal("stale signatures survived")
-		}
-		if s.NewPayloads.Len() != 0 {
-			t.Fatal("stale payload survived alongside its signatures")
-		}
-	})
-
-	t.Run("no-op below the finalized slot", func(t *testing.T) {
-		s := newStore()
-		old := root(4)
-		s.AttestationSignatures.Insert(old, data(100), 0, [types.SignatureSize]byte{})
-
-		// Finalization is healthy and past the cutoff, so PruneOnFinalization
-		// owns this range and repeating it here would be wasted work.
-		store.PruneStaleAttestationPools(s, 5000, 4900)
-
-		if _, ok := s.AttestationSignatures.Snapshot()[old]; !ok {
-			t.Fatal("swept below the finalized slot")
-		}
-	})
-}
-
 func countStates(t *testing.T, s *store.ConsensusStore) int {
 	t.Helper()
 	rv, err := s.Backend.BeginRead()
@@ -331,6 +252,72 @@ func TestPruneOnFinalizationDropsOldProofs(t *testing.T) {
 		want := map[uint64]bool{7300: true, 40000: true}
 		if !reflect.DeepEqual(kept, want) {
 			t.Fatalf("slots with proofs %v, want %v", kept, want)
+		}
+	})
+}
+
+// PruneOnFinalization is the only other path that clears the attestation pools,
+// and it runs on finalization alone, so a finality stall is exactly when nothing
+// empties them; the head-relative sweep covers that case. This checks every
+// entry of all three pools against the sweep's cutoff at random heads, around
+// the boundary.
+func FuzzPruneStaleAttestationPools(f *testing.F) {
+	f.Add(uint64(5000), uint64(50), []byte{0, 127, 128, 255})
+	f.Add(uint64(5000), uint64(4000), []byte{0, 255})
+	f.Add(uint64(store.AttestationRetentionSlots+128), uint64(0), []byte{127, 128})
+
+	f.Fuzz(func(t *testing.T, head, finalized uint64, offsets []byte) {
+		// Below this, the cutoff and the targets around it would wrap.
+		if head < store.AttestationRetentionSlots+128 {
+			return
+		}
+		cutoff := head - store.AttestationRetentionSlots
+		s := store.NewConsensusStore(storage.NewInMemoryBackend())
+		participants := types.NewBitlistSSZ(1)
+		types.BitlistSet(participants, 0)
+		targets := make(map[[32]byte]uint64)
+		// One byte of root per entry, so at most 256 distinct ones.
+		for i, offset := range offsets[:min(len(offsets), 256)] {
+			// Targets cluster around the cutoff, where the boundary is.
+			target := cutoff + uint64(offset) - 128
+			root := [32]byte{byte(i), 1}
+			data := &types.AttestationData{Slot: target, Head: &types.Checkpoint{}, Target: &types.Checkpoint{Slot: target}, Source: &types.Checkpoint{}}
+			proof := &types.SingleMessageAggregate{Participants: participants, Proof: []byte{1}}
+			s.AttestationSignatures.Insert(root, data, 0, [types.SignatureSize]byte{})
+			s.KnownPayloads.Push(root, data, proof)
+			s.NewPayloads.Push(root, data, proof)
+			targets[root] = target
+		}
+
+		// A pool at capacity evicts on insert, so compare with what each held.
+		pools := func() [3]map[[32]byte]bool {
+			var held [3]map[[32]byte]bool
+			for i := range held {
+				held[i] = make(map[[32]byte]bool)
+			}
+			for root := range s.AttestationSignatures.Snapshot() {
+				held[0][root] = true
+			}
+			for root := range s.KnownPayloads.Entries() {
+				held[1][root] = true
+			}
+			for root := range s.NewPayloads.Entries() {
+				held[2][root] = true
+			}
+			return held
+		}
+		before := pools()
+		store.PruneStaleAttestationPools(s, head, finalized)
+		after := pools()
+
+		sweeps := cutoff > finalized
+		for root, target := range targets {
+			for i, name := range []string{"signatures", "known", "new"} {
+				if want := before[i][root] && (!sweeps || target >= cutoff); after[i][root] != want {
+					t.Fatalf("target %d with head %d, finalized %d: kept in %s=%v, want %v",
+						target, head, finalized, name, after[i][root], want)
+				}
+			}
 		}
 	})
 }
