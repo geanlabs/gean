@@ -97,7 +97,7 @@ func messageIDDigest(domain [4]byte, topic string, data []byte) []byte {
 func TestDecompressBoundsTheDeclaredLength(t *testing.T) {
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	_, err := Decompress(reqresp.EncodeVarint(reqresp.MaxPayloadSize))
+	_, err := Decompress(binary.AppendUvarint(nil, reqresp.MaxPayloadSize))
 	runtime.ReadMemStats(&after)
 	if err == nil {
 		t.Fatal("decoded a bare header declaring MaxPayloadSize")

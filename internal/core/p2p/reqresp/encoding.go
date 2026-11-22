@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/golang/snappy"
 )
@@ -19,25 +20,32 @@ const (
 	MaxErrorMessageSize      = 256
 )
 
-func EncodeVarint(value uint64) []byte {
-	buf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(buf, value)
-	return buf[:n]
+func EncodePayload(data []byte) []byte {
+	return appendPayload(make([]byte, 0, payloadCap(len(data))), data)
 }
 
-func EncodePayload(data []byte) []byte {
-	var buf bytes.Buffer
-	w := snappy.NewBufferedWriter(&buf)
+// payloadCap bounds the encoding of n bytes: a varint length, the snappy stream
+// identifier, and per 64 KiB block a chunk header and at most the block itself,
+// since snappy stores a block raw when compressing would not shrink it.
+func payloadCap(n int) int {
+	return binary.MaxVarintLen64 + 10 + n + 8*(n>>16+1)
+}
+
+// snappyWriters reuses framed snappy writers: each holds about 140 KB of
+// buffers, which dominated the cost of encoding a chunk.
+var snappyWriters = sync.Pool{New: func() any { return snappy.NewBufferedWriter(nil) }}
+
+// appendPayload appends data's length prefix and snappy frames to dst.
+func appendPayload(dst, data []byte) []byte {
+	buf := bytes.NewBuffer(binary.AppendUvarint(dst, uint64(len(data))))
+	w := snappyWriters.Get().(*snappy.Writer)
+	w.Reset(buf)
 	// Writing to a bytes.Buffer cannot fail.
 	_, _ = w.Write(data)
 	_ = w.Close()
-	framed := buf.Bytes()
-
-	varint := EncodeVarint(uint64(len(data)))
-	result := make([]byte, len(varint)+len(framed))
-	copy(result, varint)
-	copy(result[len(varint):], framed)
-	return result
+	w.Reset(nil)
+	snappyWriters.Put(w)
+	return buf.Bytes()
 }
 
 // DecodePayload decodes a request: a single frame that is the whole stream, so
@@ -65,11 +73,7 @@ func EncodeResponse(code byte, data []byte) []byte {
 	if code != RespSuccess && len(data) > MaxErrorMessageSize {
 		data = data[:MaxErrorMessageSize]
 	}
-	payload := EncodePayload(data)
-	result := make([]byte, 1+len(payload))
-	result[0] = code
-	copy(result[1:], payload)
-	return result
+	return appendPayload(append(make([]byte, 0, 1+payloadCap(len(data))), code), data)
 }
 
 type byteReader interface {
