@@ -1,7 +1,9 @@
 package store_test
 
 import (
+	"bytes"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/geanlabs/gean/internal/core/storage"
@@ -43,6 +45,10 @@ func newStallChain(t *testing.T) *stallChain {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { backend.Close() })
+	return newStallChainOn(backend)
+}
+
+func newStallChainOn(backend storage.Backend) *stallChain {
 	c := &stallChain{s: store.NewConsensusStore(backend), fc: forkchoice.New(0, slotRoot(0), [32]byte{})}
 	c.s.InsertBlockHeader(slotRoot(0), &types.BlockHeader{})
 	c.s.InsertState(slotRoot(0), &types.State{})
@@ -160,26 +166,6 @@ func TestPruneStaleStatesKeepsABranchBeingSynced(t *testing.T) {
 }
 
 // A justified state kept below the window is pruned once justification moves on.
-func TestPruneStaleStatesDropsTheOldJustifiedState(t *testing.T) {
-	c := newStallChain(t)
-	finalized := &types.Checkpoint{Root: slotRoot(0), Slot: 0}
-	justified := &types.Checkpoint{Root: slotRoot(40), Slot: 40}
-	const head = 3000
-	for slot := uint64(1); slot <= head; slot++ {
-		c.importBlock(slot, slotRoot(slot), slotRoot(slot-1))
-		c.sweep(slotRoot(slot), slot, finalized, justified)
-	}
-	if !c.s.HasState(slotRoot(40)) {
-		t.Fatal("justified state was pruned")
-	}
-
-	c.importBlock(head+1, slotRoot(head+1), slotRoot(head))
-	c.sweep(slotRoot(head+1), head+1, finalized, &types.Checkpoint{Root: slotRoot(2990), Slot: 2990})
-	if c.s.HasState(slotRoot(40)) {
-		t.Fatal("old justified state survived after justification moved on")
-	}
-}
-
 func TestPruneStaleStatesLeavesHealthyFinalityAlone(t *testing.T) {
 	c := newStallChain(t)
 	for slot := uint64(1); slot <= 3000; slot++ {
@@ -318,6 +304,133 @@ func FuzzPruneStaleAttestationPools(f *testing.F) {
 						target, head, finalized, name, after[i][root], want)
 				}
 			}
+		}
+	})
+}
+
+// In a long stall periodic pruning drops the forks that branched off below the
+// ancestor PruningIntervalSlots blocks under the head, both blocks and states,
+// and keeps the head's chain and every fork above that ancestor.
+func TestPeriodicPruneDropsOnlyForksBelowItsDepth(t *testing.T) {
+	c := newStallChain(t)
+	const length = store.PruningIntervalSlots + 100
+	for slot := uint64(1); slot <= length; slot++ {
+		c.importBlock(slot, slotRoot(slot), slotRoot(slot-1))
+	}
+	deep, shallow := forkRoot(51), forkRoot(length-49)
+	c.importBlock(51, deep, slotRoot(50))
+	c.importBlock(length-49, shallow, slotRoot(length-50))
+	head := slotRoot(length)
+	c.s.SetHead(head)
+
+	store.PeriodicPrune(c.s, c.fc, 3*store.PruningIntervalSlots, 0)
+
+	if c.s.HasBlockHeader(deep) || c.s.HasState(deep) {
+		t.Fatal("a fork below the pruning depth survived")
+	}
+	if !c.s.HasBlockHeader(shallow) || !c.s.HasState(shallow) {
+		t.Fatal("pruned a fork above the pruning depth")
+	}
+	for slot := uint64(0); slot <= length; slot++ {
+		if !c.s.HasBlockHeader(slotRoot(slot)) || !c.s.HasState(slotRoot(slot)) {
+			t.Fatalf("pruned the head's ancestor at slot %d", slot)
+		}
+	}
+}
+
+// A finality stall, driven by the input: the head grows by gaps of skipped
+// slots, forks off earlier blocks and sometimes moves onto them, and justified
+// moves along the head's chain, with a sweep after each step. A sweep deletes
+// exactly the head-chain states below its cutoff that are neither justified nor
+// the first in their checkpoint bucket, so every block on the head's chain keeps
+// a stored state in its own bucket and a rebuild replays fewer than
+// StateCheckpointSlots slots.
+func FuzzPruneStaleStates(f *testing.F) {
+	dense := func(blocks int) []byte { return bytes.Repeat([]byte{0, 15}, blocks) }
+	// Blocks 31 slots apart share buckets, so sweeps past the window delete.
+	f.Add(dense(80))
+	// Justifies a block below the cutoff that is not first in its bucket,
+	// rebuilds a fork from a pruned base, moves justified on, and moves the head
+	// lower.
+	f.Add(slices.Concat(dense(40), []byte{2, 18}, dense(50), []byte{1, 168, 2, 0, 1, 5, 0, 15}))
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+		c := newStallChainOn(storage.NewInMemoryBackend())
+		genesis := &types.Checkpoint{Root: slotRoot(0)}
+		justified := genesis
+		head, headSlot := slotRoot(0), uint64(0)
+		slots := map[[32]byte]uint64{head: 0}
+		parents := map[[32]byte][32]byte{}
+		var minted uint32
+		mint := func() [32]byte {
+			minted++
+			return [32]byte{byte(minted), byte(minted >> 8), byte(minted >> 16), 0xA5}
+		}
+		// chain runs from the head down to genesis.
+		chain := func() [][32]byte {
+			roots := [][32]byte{head}
+			for r := head; r != genesis.Root; {
+				r = parents[r]
+				roots = append(roots, r)
+			}
+			return roots
+		}
+		bucket := func(slot uint64) uint64 { return slot / store.StateCheckpointSlots }
+		check := func(stored map[[32]byte]bool) {
+			onChain := chain()
+			canonical := make(map[[32]byte]bool, len(onChain))
+			for _, root := range onChain {
+				canonical[root] = true
+			}
+			for root, slot := range slots {
+				kept := !canonical[root] || root == genesis.Root || root == justified.Root ||
+					slot+store.StateRetentionSlots >= headSlot || bucket(slots[parents[root]]) < bucket(slot)
+				if got := c.s.HasState(root); got != (stored[root] && kept) {
+					t.Fatalf("state at slot %d stored=%v after a sweep at head %d with justified %d, want %v",
+						slot, got, headSlot, justified.Slot, stored[root] && kept)
+				}
+			}
+			var lastStored uint64
+			for i := len(onChain) - 1; i >= 0; i-- {
+				if slot := slots[onChain[i]]; c.s.HasState(onChain[i]) {
+					lastStored = slot
+				} else if bucket(lastStored) != bucket(slot) {
+					t.Fatalf("block at slot %d has no stored state in its bucket; the nearest is at %d", slot, lastStored)
+				}
+			}
+		}
+
+		for i := 0; i+1 < len(input) && i < 400; i += 2 {
+			arg := input[i+1]
+			switch input[i] % 3 {
+			case 0:
+				// Extend the head by up to 512 slots.
+				root, slot := mint(), headSlot+1+uint64(arg)*2
+				c.deliver(t, slot, root, head)
+				slots[root], parents[root], head, headSlot = slot, head, root, slot
+			case 1:
+				// Fork off a block on the head's chain; an odd byte moves the head onto it.
+				onChain := chain()
+				base := onChain[int(arg>>1)%len(onChain)]
+				root, slot := mint(), slots[base]+1+uint64(arg)
+				c.deliver(t, slot, root, base)
+				slots[root], parents[root] = slot, base
+				if arg&1 == 1 {
+					head, headSlot = root, slot
+				}
+			case 2:
+				onChain := chain()
+				root := onChain[int(arg)%len(onChain)]
+				justified = &types.Checkpoint{Root: root, Slot: slots[root]}
+			}
+			// A head moved onto a lower fork sees ancestors an earlier sweep
+			// already pruned, so the sweep is judged against what was stored.
+			stored := make(map[[32]byte]bool, len(slots))
+			for root := range slots {
+				stored[root] = c.s.HasState(root)
+			}
+			c.sweep(head, headSlot, genesis, justified)
+			check(stored)
 		}
 	})
 }
