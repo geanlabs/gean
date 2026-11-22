@@ -135,6 +135,14 @@ the skip rather than arguing with it.
 Then run the [`precheck`](../precheck/SKILL.md) skill: the simplified code must still format, lint,
 build and pass its tests.
 
+Last, record the change as reviewed. The Claude Code commit hook (`.claude/settings.json`) denies
+`git commit` until the recorded id matches the current change, so any later edit needs another
+review:
+
+```bash
+.agents/skills/simplify/change-id.sh > "$(git rev-parse --git-dir)/simplify-reviewed"
+```
+
 Finish with a brief summary of what was fixed and what was skipped (or confirm the code was
 already clean), written the way a colleague would say it: plain sentences, the file and line for
 each change, no checklists, no headers, no recap of the rules.
