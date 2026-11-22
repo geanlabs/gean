@@ -16,25 +16,18 @@ func (fc *ForkChoice) GetCanonicalAnalysis(anchorRoot [32]byte) (canonical, nonC
 		}
 	}
 
-	descendantSet := map[[32]byte]bool{anchorRoot: true}
-	for changed := true; changed; {
-		changed = false
-		for i := range fc.array.Len() {
-			root := fc.array.At(i).Root
-			if descendantSet[root] {
-				continue
-			}
-			parent := fc.array.At(i).Parent
-			if parent >= 0 && parent < fc.array.Len() && descendantSet[fc.array.At(parent).Root] {
-				descendantSet[root] = true
-				changed = true
-			}
+	// Parents sit at lower indices, so one pass from the anchor finds its subtree.
+	descendant := make([]bool, fc.array.Len())
+	descendant[anchorIdx] = true
+	for i := anchorIdx + 1; i < fc.array.Len(); i++ {
+		if parent := fc.array.At(i).Parent; parent >= 0 && descendant[parent] {
+			descendant[i] = true
 		}
 	}
 
 	for i := range fc.array.Len() {
 		root := fc.array.At(i).Root
-		if ancestorSet[root] || descendantSet[root] {
+		if ancestorSet[root] || descendant[i] {
 			continue
 		}
 		nonCanonical = append(nonCanonical, root)

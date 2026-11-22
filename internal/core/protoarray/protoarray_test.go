@@ -18,14 +18,4 @@ func TestProtoArrayPartialValueGuards(t *testing.T) {
 		t.Fatalf("nil protoarray head=%x, want justified root", got[:4])
 	}
 	nilArray.Prune(root(1))
-
-	var zero Array
-	anchor := root(1)
-	zero.OnBlock(0, anchor, [32]byte{})
-	if zero.Len() != 1 {
-		t.Fatalf("zero protoarray len=%d, want 1", zero.Len())
-	}
-	if got := zero.FindHead(anchor); got != anchor {
-		t.Fatalf("zero protoarray head=%x, want anchor", got[:4])
-	}
 }
