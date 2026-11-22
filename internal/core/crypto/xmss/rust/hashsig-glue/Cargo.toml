@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 # XMSS comes from leanVM's root `leanvm` crate, which also re-exports the SSZ traits
 # its key and signature types implement. multisig-glue depends on the same crate:
 # keep both on one rev, since keys, signatures and aggregates only verify within it.
