@@ -1,0 +1,28 @@
+# A broken workflow fails only when it runs, which for the nightly is after it merges.
+name: actionlint
+
+on:
+  pull_request:
+    paths: [".github/**"]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # The runner's shellcheck checks each run: script as well.
+      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12

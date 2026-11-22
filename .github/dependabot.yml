@@ -1,0 +1,43 @@
+version: 2
+
+# The deps prefix gives every pull request a title the titles workflow accepts. The cooldown
+# leaves a release a week to be yanked before it is proposed.
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: deps
+    groups:
+      go:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /internal/core/crypto/xmss/rust
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: deps
+    # A leanVM bump can change the XMSS scheme and invalidate every key, so it is made by hand.
+    ignore:
+      - dependency-name: leanvm
+    groups:
+      rust:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: deps
+    groups:
+      actions:
+        patterns: ["*"]
