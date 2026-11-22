@@ -215,8 +215,8 @@ func TestStateKeyStandsInPoseidonKeyByRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := parseStateKey("0x" + hex.EncodeToString(key))
+	got, err := ParseStateKey("0x" + hex.EncodeToString(key))
 	if err != nil || got != want {
-		t.Fatalf("parseStateKey = %x, %v; want the key's hash tree root %x", got, err, want)
+		t.Fatalf("ParseStateKey = %x, %v; want the key's hash tree root %x", got, err, want)
 	}
 }

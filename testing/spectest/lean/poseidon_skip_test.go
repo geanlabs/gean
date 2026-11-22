@@ -43,14 +43,12 @@ func isHexDigit(c byte) bool {
 	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
 }
 
-// skipPoseidonKeys skips the case when any hex public key is a Poseidon key,
-// for keys read from files rather than from the case itself.
-func skipPoseidonKeys(t *testing.T, hexKeys ...string) {
+// skipPoseidonKeys skips the case when hexKey is a Poseidon key, for keys read
+// from files rather than from the case itself.
+func skipPoseidonKeys(t *testing.T, hexKey string) {
 	t.Helper()
-	for _, key := range hexKeys {
-		if b, err := specfixtures.ParseHexBytes(key); err == nil && len(b) == specfixtures.PoseidonPublicKeySize {
-			skip(t, skipPoseidonXMSS, "52-byte public key")
-		}
+	if b, err := specfixtures.ParseHexBytes(hexKey); err == nil && len(b) == specfixtures.PoseidonPublicKeySize {
+		skip(t, skipPoseidonXMSS, "52-byte public key")
 	}
 }
 
