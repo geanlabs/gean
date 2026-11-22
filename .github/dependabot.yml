@@ -11,6 +11,12 @@ updates:
       default-days: 7
     commit-message:
       prefix: deps
+    ignore:
+      # go-libp2p's v6 tags predate its Go module, and every release since is v0.x.
+      - dependency-name: github.com/libp2p/go-libp2p
+        versions: [">= 1.0.0"]
+      # snappy has no release after v1.0.0, so Dependabot would propose untagged commits.
+      - dependency-name: github.com/golang/snappy
     groups:
       go:
         patterns: ["*"]

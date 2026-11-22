@@ -19,6 +19,7 @@ import (
 	pubsubpb "github.com/libp2p/go-libp2p-pubsub/pb"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/geanlabs/gean/internal/core/p2p/discovery"
 	"github.com/geanlabs/gean/internal/core/p2p/gossip"
@@ -470,11 +471,11 @@ func checkGossipsubRPC(t *testing.T, codec *gossipsubRPCCodec, output *encodedOu
 		for _, idontwant := range control.Idontwant {
 			message.Idontwant = append(message.Idontwant, &pubsubpb.ControlIDontWant{MessageIDs: messageIDs(idontwant.MessageIDs)})
 		}
-		if message.Size() > 0 {
+		if proto.Size(message) > 0 {
 			rpc.Control = message
 		}
 	}
-	got, err := rpc.Marshal()
+	got, err := proto.Marshal(&rpc)
 	if err != nil {
 		t.Fatalf("encode RPC: %v", err)
 	}
@@ -554,7 +555,7 @@ func checkDecodeFailure(t *testing.T, codec *decodeFailureCodec, _ *decodeFailur
 			_, err = io.ReadAll(snappy.NewReader(bytes.NewReader(raw)))
 		}
 	case "gossipsub_rpc":
-		err = new(pubsubpb.RPC).Unmarshal(raw)
+		err = proto.Unmarshal(raw, new(pubsubpb.RPC))
 	case "enr":
 		_, err = discovery.DecodeENR("enr:" + base64.RawURLEncoding.EncodeToString(raw))
 	default:
