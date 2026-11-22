@@ -55,7 +55,8 @@ go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
 
 ## Commits and pull requests
 
-- Run the [`precheck`](.agents/skills/precheck/SKILL.md) skill before every commit.
+- Before every commit, run the [`simplify`](.agents/skills/simplify/SKILL.md) skill (skip it when
+  only Markdown changed), then the [`precheck`](.agents/skills/precheck/SKILL.md) skill.
 - Commit and PR titles are `<type>: <subject>` with a lowercase subject: `feat`, `fix`, `perf`,
   `refactor`, `test`, `docs`, `build`, `deps` or `chore`; the `titles` workflow checks them. The
   body says what changed and why.
