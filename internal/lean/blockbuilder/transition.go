@@ -1,9 +1,6 @@
 package blockbuilder
 
 import (
-	"fmt"
-
-	"github.com/geanlabs/gean/internal/lean/transition"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -21,18 +18,4 @@ func validateHeadState(state *types.State) error {
 		return errMalformedHeadState("latest finalized")
 	}
 	return nil
-}
-
-func transitionBlock(headState *types.State, slot uint64, block *types.Block) (*types.State, error) {
-	state, err := headState.Clone()
-	if err != nil {
-		return nil, err
-	}
-	if err := transition.ProcessSlots(state, slot); err != nil {
-		return nil, fmt.Errorf("process slots: %w", err)
-	}
-	if err := transition.ProcessBlock(state, block); err != nil {
-		return nil, fmt.Errorf("process block: %w", err)
-	}
-	return state, nil
 }

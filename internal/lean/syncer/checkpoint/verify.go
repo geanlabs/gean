@@ -3,6 +3,7 @@ package checkpoint
 import (
 	"fmt"
 
+	"github.com/geanlabs/gean/internal/lean/transition"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -91,8 +92,39 @@ func VerifyCheckpointState(
 		return fmt.Errorf("block header at justified slot %d has mismatched root",
 			state.LatestJustified.Slot)
 	}
+	// A node anchored on a state that takes no block would never import another.
+	if err := buildChild(state); err != nil {
+		return fmt.Errorf("checkpoint state takes no child block: %w", err)
+	}
 
 	return nil
+}
+
+// buildChild applies an empty block at the next slot, the easiest child any
+// block could be, to a copy of state.
+func buildChild(state *types.State) error {
+	// The child's parent is the latest header with the state's root filled in, as
+	// processing the slot fills it.
+	parent := *state.LatestBlockHeader
+	if parent.StateRoot == types.ZeroRoot {
+		root, err := state.HashTreeRoot()
+		if err != nil {
+			return err
+		}
+		parent.StateRoot = root
+	}
+	parentRoot, err := parent.HashTreeRoot()
+	if err != nil {
+		return err
+	}
+	next := state.Slot + 1
+	_, err = transition.ApplyBlock(state, &types.Block{
+		Slot:          next,
+		ProposerIndex: types.ProposerIndex(next, state.NumValidators()),
+		ParentRoot:    parentRoot,
+		Body:          &types.BlockBody{},
+	})
+	return err
 }
 
 func validateStateShape(state *types.State) error {

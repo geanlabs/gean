@@ -5,6 +5,7 @@ import (
 
 	"github.com/geanlabs/gean/internal/lean/attestationproof"
 	"github.com/geanlabs/gean/internal/lean/metrics"
+	"github.com/geanlabs/gean/internal/lean/transition"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -33,9 +34,8 @@ type planner struct {
 }
 
 func planAttestations(input Input) (planResult, error) {
-	workingState, err := transitionBlock(
+	workingState, err := transition.ApplyBlock(
 		input.HeadState,
-		input.Slot,
 		newBlock(input.Slot, input.ProposerIndex, input.ParentRoot, nil),
 	)
 	if err != nil {
@@ -131,7 +131,7 @@ func (p *planner) tryPayload(payload AttestationPayload) bool {
 
 func (p *planner) transition() (bool, error) {
 	candidate := newBlock(p.slot, p.proposerIndex, p.parentRoot, p.attestations)
-	trialState, err := transitionBlock(p.headState, p.slot, candidate)
+	trialState, err := transition.ApplyBlock(p.headState, candidate)
 	if err != nil {
 		return false, fmt.Errorf("trial transition: %w", err)
 	}
