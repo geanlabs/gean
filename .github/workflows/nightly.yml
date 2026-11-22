@@ -1,0 +1,127 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  # Every fuzz target in the module, so a new one is fuzzed without editing this file.
+  fuzz-targets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # pipefail, so a package that fails to build fails the job instead of dropping its targets.
+      - id: list
+        shell: bash
+        run: |
+          targets=$(go test -tags fakecrypto -list '^Fuzz' -json ./... |
+            jq -sc --arg mod "$(go list -m)/" '[.[] | select(.Action == "output" and (.Output | startswith("Fuzz")))
+              | {pkg: (.Package | ltrimstr($mod)), import: .Package, target: (.Output | rtrimstr("\n"))}]')
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  # make test replays each target's seeds; this searches beyond them.
+  fuzz:
+    needs: fuzz-targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.fuzz-targets.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - id: corpus
+        run: echo "dir=$(go env GOCACHE)/fuzz/${{ matrix.import }}/${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+      # Each night resumes from the inputs earlier nights found, rather than from the seeds.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-${{ matrix.import }}-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ matrix.import }}-${{ matrix.target }}-
+      # fakecrypto leaves out the XMSS library, which no decoder calls.
+      - run: go test ./${{ matrix.pkg }} -tags fakecrypto -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 10m
+      # Committed under testdata/fuzz, the failing input becomes a seed make test replays.
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-${{ strategy.job-index }}-${{ matrix.target }}
+          path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.target }}
+
+  # leanSpec republishes its fixtures under one moving release. CI restores the pinned ones
+  # from cache, so only a fresh download would notice, by failing its checksum.
+  spec-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Most nights nothing changed, and the job ends here.
+      - id: drift
+        shell: bash
+        run: |
+          latest=$(curl -fsSL "$(sed -n 's/^LEAN_SPEC_FIXTURES_URL := //p' Makefile).sha256" | cut -d' ' -f1)
+          if [[ ! $latest =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::could not read leanSpec's published fixtures hash"
+            exit 1
+          fi
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" = "$(sed -n 's/^LEAN_SPEC_FIXTURES_SHA256 := //p' Makefile)" ]; then
+            echo "leanSpec's fixtures are still the pinned ones"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.drift.outputs.changed
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - if: steps.drift.outputs.changed
+        run: rustup toolchain install --profile minimal
+        working-directory: internal/core/crypto/xmss/rust
+      # Separate from the tests, so a download that fails or races a republish is not
+      # reported as gean failing the fixtures.
+      - if: steps.drift.outputs.changed
+        env:
+          LATEST: ${{ steps.drift.outputs.latest }}
+        run: |
+          if ! make leanSpec/fixtures LEAN_SPEC_FIXTURES_SHA256="$LATEST"; then
+            echo "::error::could not download leanSpec's new fixtures ($LATEST)"
+            exit 1
+          fi
+      # Red either way: a fresh checkout now fails the pinned checksum, so the pin must move.
+      - if: steps.drift.outputs.changed
+        env:
+          LATEST: ${{ steps.drift.outputs.latest }}
+        run: |
+          if make lean-spectest LEAN_SPEC_FIXTURES_SHA256="$LATEST"; then
+            echo "::error::leanSpec published new fixtures and gean passes them: pin $LATEST in the Makefile"
+          else
+            echo "::error::leanSpec published new fixtures ($LATEST) and gean fails them"
+          fi
+          exit 1
