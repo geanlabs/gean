@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -276,6 +277,29 @@ func TestHostScoresRequestsAndRecordsStatus(t *testing.T) {
 	}
 }
 
+// Peers can connect as soon as a host exists, so the peer hooks come with its
+// config; the status hook, set once the node can sync, still reaches each new
+// outbound peer.
+func TestPeerHooksSeeConnectionsFromConstruction(t *testing.T) {
+	var connected, counted atomic.Int32
+	cfg := testHostConfig(t, nil)
+	cfg.Hooks = host.Hooks{
+		PeerConnected: func(string) { connected.Add(1) },
+		PeerCount:     func(int) { counted.Add(1) },
+	}
+	client := newTestHostFrom(t, cfg)
+	var statused atomic.Pointer[peer.ID]
+	client.SetPeerStatus(func(id peer.ID) { statused.Store(&id) })
+	server := newTestHost(t, nil)
+
+	connectTestHosts(t, client, server)
+	waitFor(t, "the peer hooks", func() bool { return connected.Load() == 1 && counted.Load() == 1 })
+	waitFor(t, "status for the outbound peer", func() bool {
+		id := statused.Load()
+		return id != nil && *id == server.PeerID()
+	})
+}
+
 func peerScore(ps *peers.Store, id peer.ID) int {
 	score, _ := ps.Score(id)
 	return score
@@ -290,7 +314,12 @@ func headRecorded(ps *peers.Store, id peer.ID, head uint64) bool {
 // the in-memory network n.
 func newTestHost(t *testing.T, n *memnet.Network) *Host {
 	t.Helper()
-	h, err := NewHost(context.Background(), testHostConfig(t, n), 1, nil, false, nil)
+	return newTestHostFrom(t, testHostConfig(t, n))
+}
+
+func newTestHostFrom(t *testing.T, cfg host.Config) *Host {
+	t.Helper()
+	h, err := NewHost(context.Background(), cfg, 1, nil, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,8 +28,6 @@ type Hooks struct {
 	PeerConnected    func(direction string)
 	PeerDisconnected func(direction, reason string)
 	PeerCount        func(count int)
-	// PeerStatus runs as one of the host's tasks for each new outbound peer.
-	PeerStatus func(peerID peer.ID)
 }
 
 type Host struct {
@@ -48,7 +46,12 @@ type Host struct {
 	enrMu      sync.Mutex
 	discovery  *discovery.Service
 	enrEntries map[string]enr.Entry
-	Hooks      Hooks
+	// hooks are fixed at construction: libp2p calls the peer notifier on its own
+	// goroutines as soon as the host can accept connections.
+	hooks Hooks
+	// peerStatus is set once the node can sync, after the host is accepting
+	// connections, so it is stored atomically.
+	peerStatus atomic.Pointer[func(peer.ID)]
 
 	discoveryAdmit func(*enode.Node) bool
 
@@ -75,6 +78,8 @@ type Config struct {
 	// DiscoveryAdmit, when set, decides which nodes discv5 finds are dialed:
 	// those on the chain's network.
 	DiscoveryAdmit func(*enode.Node) bool
+	// Hooks are fixed for the host's life.
+	Hooks Hooks
 }
 
 // New starts a host with the identity in cfg.NodeKeyPath, listening for QUIC
@@ -116,6 +121,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		peerStore: peers.NewStore(),
 
 		discoveryAdmit: cfg.DiscoveryAdmit,
+		hooks:          cfg.Hooks,
 	}
 	h.installPeerNotifier()
 	return h, nil
