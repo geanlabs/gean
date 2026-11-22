@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	ssz "github.com/ferranbt/fastssz"
+
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -202,5 +204,19 @@ func TestFCChecksMapsCanonicalEquivocationHeadAmong(t *testing.T) {
 	}
 	if len(c.CanonicalEquivocationHeadAmong) != 2 || c.CanonicalEquivocationHeadAmong[1] != "fork_b" {
 		t.Fatalf("canonicalEquivocationHeadAmong not mapped: got %v", c.CanonicalEquivocationHeadAmong)
+	}
+}
+
+func TestStateKeyStandsInPoseidonKeyByRoot(t *testing.T) {
+	key := bytes.Repeat([]byte{0xab}, PoseidonPublicKeySize)
+	hasher := ssz.NewHasher()
+	hasher.PutBytes(key)
+	want, err := hasher.HashRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := parseStateKey("0x" + hex.EncodeToString(key))
+	if err != nil || got != want {
+		t.Fatalf("parseStateKey = %x, %v; want the key's hash tree root %x", got, err, want)
 	}
 }

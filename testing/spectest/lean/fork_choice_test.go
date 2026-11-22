@@ -8,7 +8,6 @@ import (
 
 	"github.com/geanlabs/gean/internal/lean/api/testdriver"
 	"github.com/geanlabs/gean/internal/lean/attestation"
-	"github.com/geanlabs/gean/internal/lean/forkchoice"
 	"github.com/geanlabs/gean/internal/lean/specfixtures"
 	"github.com/geanlabs/gean/internal/lean/store"
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -27,6 +26,15 @@ type forkChoiceFixture struct {
 // runForkChoice replays a fixture's steps through the replay the hive driver
 // serves, checking each step's outcome and the store after it.
 func runForkChoice(t *testing.T, fixture *forkChoiceFixture) {
+	// Unmocked aggregation proofs are leanSpec's Poseidon proofs, which gean
+	// cannot verify.
+	if fixture.ProofSetting != 0 {
+		for _, step := range fixture.Steps {
+			if step.Attestation != nil && step.Attestation.Proof != nil {
+				skip(t, skipPoseidonXMSS, "Poseidon aggregation proof")
+			}
+		}
+	}
 	anchorState, err := fixture.AnchorState.ToState()
 	if err != nil {
 		t.Fatalf("anchor state: %v", err)
@@ -53,11 +61,11 @@ func runForkChoice(t *testing.T, fixture *forkChoiceFixture) {
 		case !step.Valid && err == nil:
 			t.Fatalf("step %d (%s): accepted; want rejection", i, step.StepType)
 		}
-		validateChecks(t, i, step.Checks, replay.Store, replay.FC, replay.LabelRoots)
+		validateChecks(t, i, step.Checks, replay.Store, replay.LabelRoots)
 	}
 }
 
-func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s *store.ConsensusStore, fc *forkchoice.ForkChoice, labelRoots map[string][32]byte) {
+func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s *store.ConsensusStore, labelRoots map[string][32]byte) {
 	t.Helper()
 	if checks == nil {
 		return
@@ -194,7 +202,7 @@ func validateChecks(t *testing.T, stepIdx int, checks *specfixtures.FCChecks, s 
 	}
 
 	for _, ac := range checks.AttestationChecks {
-		validateAttestationCheck(t, stepIdx, s, fc, ac)
+		validateAttestationCheck(t, stepIdx, s, ac)
 	}
 }
 
@@ -261,20 +269,14 @@ func validateCanonicalEquivocationHead(t *testing.T, stepIdx int, forkLabels []s
 	}
 }
 
-func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore, fc *forkchoice.ForkChoice, ac specfixtures.FCAttestationCheck) {
+func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore, ac specfixtures.FCAttestationCheck) {
 	t.Helper()
-	var target *forkchoice.VoteTarget
+	var target *types.AttestationData
 	switch ac.Location {
-	case "new", "known":
-		tracker, ok := fc.VoteTracker(ac.Validator)
-		if !ok {
-			t.Fatalf("step %d: attestationCheck v=%d location=%q: no vote tracker", stepIdx, ac.Validator, ac.Location)
-		}
-		if ac.Location == "new" {
-			target = tracker.LatestNew
-		} else {
-			target = tracker.LatestKnown
-		}
+	case "new":
+		target = latestPoolVote(s.NewPayloads, ac.Validator)
+	case "known":
+		target = latestPoolVote(s.KnownPayloads, ac.Validator)
 	case "signatures":
 		target = latestSignatureVote(s, ac.Validator)
 	default:
@@ -289,21 +291,14 @@ func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore
 		t.Errorf("step %d: attestationCheck v=%d %s: attestationSlot got %d, want %d",
 			stepIdx, ac.Validator, ac.Location, target.Slot, *ac.AttestationSlot)
 	}
-	if target.Data == nil {
-		if ac.HeadSlot != nil || ac.SourceSlot != nil || ac.TargetSlot != nil {
-			t.Fatalf("step %d: attestationCheck v=%d %s: tracker has no AttestationData",
-				stepIdx, ac.Validator, ac.Location)
-		}
-		return
-	}
 	for _, slotCheck := range []struct {
 		name       string
 		want       *uint64
 		checkpoint *types.Checkpoint
 	}{
-		{"headSlot", ac.HeadSlot, target.Data.Head},
-		{"sourceSlot", ac.SourceSlot, target.Data.Source},
-		{"targetSlot", ac.TargetSlot, target.Data.Target},
+		{"headSlot", ac.HeadSlot, target.Head},
+		{"sourceSlot", ac.SourceSlot, target.Source},
+		{"targetSlot", ac.TargetSlot, target.Target},
 	} {
 		switch {
 		case slotCheck.want == nil:
@@ -317,24 +312,42 @@ func validateAttestationCheck(t *testing.T, stepIdx int, s *store.ConsensusStore
 	}
 }
 
-// latestSignatureVote mirrors the spec's "signatures" location: scan the raw
-// attestation-signature pool and return the validator's highest-slot vote
-// (first seen wins on equal slots, matching the fork-choice rule). Returns nil
-// when the validator has no signature recorded.
-func latestSignatureVote(s *store.ConsensusStore, validator uint64) *forkchoice.VoteTarget {
-	var latest *types.AttestationData
-	for _, entry := range s.AttestationSignatures.Snapshot() {
-		for _, sig := range entry.Signatures {
-			if sig.ValidatorID != validator {
-				continue
-			}
-			if latest == nil || latest.Slot < entry.Data.Slot {
-				latest = entry.Data
+// latestPoolVote is validator's winning vote in an aggregated-payload pool.
+func latestPoolVote(pool *store.PayloadBuffer, validator uint64) *types.AttestationData {
+	var vote winningVote
+	for root, entry := range pool.Entries() {
+		for _, proof := range entry.Proofs {
+			if types.BitlistGet(proof.Participants, validator) {
+				vote.consider(root, entry.Data)
 			}
 		}
 	}
-	if latest == nil {
-		return nil
+	return vote.data
+}
+
+// latestSignatureVote is validator's winning vote in the raw signature pool.
+func latestSignatureVote(s *store.ConsensusStore, validator uint64) *types.AttestationData {
+	var vote winningVote
+	for root, entry := range s.AttestationSignatures.Snapshot() {
+		for _, sig := range entry.Signatures {
+			if sig.ValidatorID == validator {
+				vote.consider(root, entry.Data)
+			}
+		}
 	}
-	return &forkchoice.VoteTarget{Slot: latest.Slot, Data: latest}
+	return vote.data
+}
+
+// winningVote picks a validator's vote as leanSpec's attestation checks do: the
+// highest slot, then the larger data root. Unlike fork choice's extraction, it
+// drops no vote at or below the finalized slot.
+type winningVote struct {
+	root [32]byte
+	data *types.AttestationData
+}
+
+func (w *winningVote) consider(root [32]byte, data *types.AttestationData) {
+	if w.data == nil || data.Slot > w.data.Slot || data.Slot == w.data.Slot && bytes.Compare(root[:], w.root[:]) > 0 {
+		w.root, w.data = root, data
+	}
 }

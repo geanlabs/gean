@@ -84,5 +84,5 @@ func poseidonValidatorList(state []byte, validatorCount uint64) bool {
 	}
 	start := binary.LittleEndian.Uint32(state[validatorsOffset:])
 	end := binary.LittleEndian.Uint32(state[nextFieldOffset:])
-	return end >= start && uint64(end-start) == validatorCount*(2*poseidonPublicKeySize+8)
+	return end >= start && uint64(end-start) == validatorCount*(2*specfixtures.PoseidonPublicKeySize+8)
 }

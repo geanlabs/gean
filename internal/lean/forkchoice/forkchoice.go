@@ -97,11 +97,3 @@ func (fc *ForkChoice) SetKnownVote(validatorID uint64, headRoot [32]byte, slot u
 	fc.votes.SetKnown(validatorID, idx, slot, data)
 	return true
 }
-
-func (fc *ForkChoice) VoteTracker(validatorID uint64) (*VoteTracker, bool) {
-	tracker, ok := fc.votes.Votes[validatorID]
-	if !ok {
-		return nil, false
-	}
-	return copyVoteTracker(tracker), true
-}

@@ -407,30 +407,6 @@ func TestForkChoicePublicAccessors(t *testing.T) {
 	if fc.SetKnownVote(2, root(99), 1, nil) {
 		t.Fatal("known vote for unknown root should be rejected")
 	}
-
-	tracker, ok := fc.VoteTracker(0)
-	if !ok || tracker.LatestKnown == nil {
-		t.Fatalf("known tracker missing: %+v", tracker)
-	}
-	tracker.LatestKnown.Index = 99
-	tracker.LatestKnown.Data.Head.Slot = 99
-	tracker, ok = fc.VoteTracker(0)
-	if !ok || tracker.LatestKnown.Index == 99 {
-		t.Fatal("VoteTracker should return a copy of the known target")
-	}
-	if tracker.LatestKnown.Data.Head.Slot == 99 {
-		t.Fatal("VoteTracker should copy nested attestation data")
-	}
-
-	tracker, ok = fc.VoteTracker(1)
-	if !ok || tracker.LatestNew == nil {
-		t.Fatalf("new tracker missing: %+v", tracker)
-	}
-	tracker.LatestNew.Index = 99
-	tracker, ok = fc.VoteTracker(1)
-	if !ok || tracker.LatestNew.Index == 99 {
-		t.Fatal("VoteTracker should return a copy of the new target")
-	}
 }
 
 func TestGenesisAnchorParentRootZero(t *testing.T) {
