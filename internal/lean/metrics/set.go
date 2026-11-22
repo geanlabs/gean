@@ -30,8 +30,10 @@ func SetProvingQueueDepth(operation string, n int) {
 	metricProvingQueueDepth.WithLabelValues(labelOrUnknown(operation)).Set(countValue(n))
 }
 
-func SetConnectedPeers(client string, n int) {
-	metricConnectedPeers.WithLabelValues(labelOrUnknown(client)).Set(countValue(n))
+// SetConnectedPeers sets the connected peer count. gean does not record which
+// client a peer runs, so its client label is always unknown.
+func SetConnectedPeers(n int) {
+	metricConnectedPeers.WithLabelValues(unknownLabel).Set(countValue(n))
 }
 
 func SetSyncStatus(status string) {
