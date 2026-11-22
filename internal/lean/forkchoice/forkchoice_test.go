@@ -4,7 +4,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/geanlabs/gean/internal/core/protoarray"
 	"github.com/geanlabs/gean/internal/lean/types"
 )
 
@@ -111,52 +110,7 @@ func TestHeadSelection(t *testing.T) {
 	}
 }
 
-func TestProtoArrayReparentsOrphanWhenParentArrives(t *testing.T) {
-	anchor, parent, child := root(1), root(2), root(3)
-	fc := New(0, anchor, [32]byte{})
-
-	fc.OnBlock(2, child, parent)
-	childIdx := fc.NodeIndex(child)
-	if childIdx < 0 {
-		t.Fatal("orphan child should be indexed")
-	}
-	if fc.array.At(childIdx).Parent != -1 {
-		t.Fatalf("orphan child parent index=%d, want -1", fc.array.At(childIdx).Parent)
-	}
-
-	fc.OnBlock(1, parent, anchor)
-	childIdx = fc.NodeIndex(child)
-	parentIdx := fc.NodeIndex(parent)
-	if childIdx < 0 || parentIdx < 0 {
-		t.Fatal("parent and child should both be indexed")
-	}
-	if fc.array.At(childIdx).Parent != parentIdx {
-		t.Fatalf("child parent index=%d, want %d", fc.array.At(childIdx).Parent, parentIdx)
-	}
-
-	fc.votes.SetKnown(0, childIdx, 2, makeAttData(child, 2))
-	if head := fc.UpdateHead(anchor); head != child {
-		t.Fatalf("head=%x, want reparented child %x", head[:4], child[:4])
-	}
-}
-
-func TestCanonicalAnalysisIncludesReparentedOrphanDescendant(t *testing.T) {
-	anchor, parent, child, fork := root(1), root(2), root(3), root(4)
-	fc := New(0, anchor, [32]byte{})
-	fc.OnBlock(2, child, parent)
-	fc.OnBlock(1, parent, anchor)
-	fc.OnBlock(1, fork, anchor)
-
-	canonical, nonCanonical := fc.GetCanonicalAnalysis(parent)
-	if !slices.Equal(canonical, [][32]byte{parent, anchor}) {
-		t.Fatalf("canonical=%x, want parent,anchor", canonical)
-	}
-	if !slices.Equal(nonCanonical, [][32]byte{fork}) {
-		t.Fatalf("nonCanonical=%x, want fork only", nonCanonical)
-	}
-}
-
-func TestProtoArrayRejectsInvalidParentSlot(t *testing.T) {
+func TestProtoArrayRejectsInvalidParent(t *testing.T) {
 	anchor, child := root(1), root(2)
 	fc := New(2, anchor, [32]byte{})
 
@@ -169,54 +123,12 @@ func TestProtoArrayRejectsInvalidParentSlot(t *testing.T) {
 	if idx := fc.NodeIndex(child); idx != -1 {
 		t.Fatalf("self-parented child index=%d, want -1", idx)
 	}
-}
 
-func TestProtoArrayDoesNotReparentInvalidOrphanSlot(t *testing.T) {
-	anchor, parent, child := root(1), root(2), root(3)
-	fc := New(0, anchor, [32]byte{})
-
-	fc.OnBlock(1, child, parent)
-	fc.OnBlock(2, parent, anchor)
-
-	childIdx := fc.NodeIndex(child)
-	if childIdx < 0 {
-		t.Fatal("orphan child should remain indexed")
-	}
-	if fc.array.At(childIdx).Parent != -1 {
-		t.Fatalf("invalid orphan parent index=%d, want -1", fc.array.At(childIdx).Parent)
-	}
-}
-
-func TestPruneReparentedOrphanKeepsDescendantAndRemapsVote(t *testing.T) {
-	anchor, parent, child := root(1), root(2), root(3)
-	fc := New(0, anchor, [32]byte{})
-	fc.OnBlock(2, child, parent)
-	fc.OnBlock(1, parent, anchor)
-
-	childIdx := fc.NodeIndex(child)
-	fc.votes.SetKnown(0, childIdx, 2, makeAttData(child, 2))
-	if head := fc.UpdateHead(anchor); head != child {
-		t.Fatalf("head before prune=%x, want child", head[:4])
-	}
-
-	fc.Prune(parent)
-	parentIdx := fc.NodeIndex(parent)
-	childIdx = fc.NodeIndex(child)
-	if parentIdx != 0 || childIdx != 1 {
-		t.Fatalf("post-prune parent/child indexes=%d/%d, want 0/1", parentIdx, childIdx)
-	}
-	if fc.NodeIndex(anchor) != -1 {
-		t.Fatal("anchor should be pruned")
-	}
-	tracker := fc.votes.Votes[0]
-	if tracker.AppliedIndex != childIdx {
-		t.Fatalf("applied index=%d, want child index %d", tracker.AppliedIndex, childIdx)
-	}
-	if tracker.LatestKnown == nil || tracker.LatestKnown.Index != childIdx {
-		t.Fatalf("latest known=%+v, want child index %d", tracker.LatestKnown, childIdx)
-	}
-	if head := fc.UpdateHead(parent); head != child {
-		t.Fatalf("head after prune=%x, want child", head[:4])
+	// The importer holds a block until its parent is imported, so fork choice
+	// never has to link an orphan later; one that reaches it is dropped.
+	fc.OnBlock(3, child, root(9))
+	if idx := fc.NodeIndex(child); idx != -1 {
+		t.Fatalf("child of an unknown parent index=%d, want -1", idx)
 	}
 }
 
@@ -345,86 +257,6 @@ func TestProtoArrayPrune(t *testing.T) {
 	}
 	if fc.NodeIndex(rootB) < 0 {
 		t.Fatal("rootB should still exist")
-	}
-}
-
-// buildLinearChain inserts a linear chain (node k = root(k+1) at slot k, parent
-// root(k), anchored at root(1)). reverse=true inserts children before parents, so
-// orphan linking leaves interior nodes with a parent at a higher array index — the
-// reverse-topological ordering that made the old fixed-point Prune O(N^2).
-func buildLinearChain(depth int, reverse bool) *ForkChoice {
-	fc := New(0, root(1), [32]byte{})
-	insertK := func(k int) {
-		parent := root(1)
-		if k > 1 {
-			parent = root(byte(k))
-		}
-		fc.OnBlock(uint64(k), root(byte(k+1)), parent)
-	}
-	if reverse {
-		for k := depth; k >= 1; k-- {
-			insertK(k)
-		}
-		return fc
-	}
-	for k := 1; k <= depth; k++ {
-		insertK(k)
-	}
-	return fc
-}
-
-func countParentBackEdges(pa *protoarray.Array) int {
-	n := 0
-	for i, node := range pa.Nodes() {
-		if node.Parent > i {
-			n++
-		}
-	}
-	return n
-}
-
-// Prune must depend only on the tree, not on block arrival order: a chain built
-// child-first (heavy parent back-edges) must prune to the exact same layout as the
-// same chain built parent-first.
-func TestPruneIndependentOfArrivalOrder(t *testing.T) {
-	const depth = 10
-	const finalizedAt = 4 // keep nodes 4..10, i.e. root(5)..root(11)
-	finalizedRoot := root(byte(finalizedAt + 1))
-
-	forward := buildLinearChain(depth, false)
-	reverse := buildLinearChain(depth, true)
-
-	// The two orderings must genuinely differ, or the test proves nothing.
-	if got := countParentBackEdges(forward.array); got != 0 {
-		t.Fatalf("forward chain should be topologically ordered, got %d back-edges", got)
-	}
-	if countParentBackEdges(reverse.array) == 0 {
-		t.Fatal("reverse chain should have parent back-edges to exercise the O(N^2) path")
-	}
-
-	forward.Prune(finalizedRoot)
-	reverse.Prune(finalizedRoot)
-
-	fwd, rev := forward.array.Nodes(), reverse.array.Nodes()
-	if len(fwd) != depth-finalizedAt+1 {
-		t.Fatalf("kept %d nodes, want %d", len(fwd), depth-finalizedAt+1)
-	}
-	if len(fwd) != len(rev) {
-		t.Fatalf("forward kept %d nodes, reverse kept %d", len(fwd), len(rev))
-	}
-	for i := range fwd {
-		if fwd[i].Root != rev[i].Root || fwd[i].Parent != rev[i].Parent {
-			t.Fatalf("node %d differs: forward{root=%x parent=%d} reverse{root=%x parent=%d}",
-				i, fwd[i].Root[:1], fwd[i].Parent, rev[i].Root[:1], rev[i].Parent)
-		}
-	}
-
-	// The finalized root anchors the pruned array; pre-finalized nodes are gone.
-	if idx := forward.NodeIndex(finalizedRoot); idx != 0 {
-		t.Fatalf("finalized root index=%d, want 0", idx)
-	}
-	if forward.NodeIndex(root(byte(finalizedAt))) != -1 {
-		t.Fatal("pre-finalized node should be pruned")
 	}
 }
 

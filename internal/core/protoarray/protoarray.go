@@ -4,10 +4,7 @@
 // the chain's own vote accounting; this package knows nothing of a chain's rules.
 package protoarray
 
-import (
-	"bytes"
-	"sort"
-)
+import "bytes"
 
 type Node struct {
 	Slot           uint64
@@ -19,6 +16,9 @@ type Node struct {
 	BestDescendant int
 }
 
+// Array holds a block only once it holds the block's parent, so a node's parent
+// always sits at a lower index. Scoring walks the nodes last to first and pruning
+// first to last on that basis.
 type Array struct {
 	nodes   []Node
 	indices map[[32]byte]int
@@ -51,23 +51,17 @@ func (pa *Array) Nodes() []Node {
 }
 
 func (pa *Array) OnBlock(slot uint64, root, parentRoot [32]byte) {
-	if pa == nil || root == parentRoot {
+	if pa == nil {
 		return
-	}
-	if pa.indices == nil {
-		pa.indices = make(map[[32]byte]int)
 	}
 	if _, exists := pa.indices[root]; exists {
 		return
 	}
-	nodeIndex := len(pa.nodes)
-	parentIdx := -1
-	if idx, ok := pa.indices[parentRoot]; ok {
-		if slot <= pa.nodes[idx].Slot {
-			return
-		}
-		parentIdx = idx
+	parentIdx, ok := pa.indices[parentRoot]
+	if !ok || slot <= pa.nodes[parentIdx].Slot {
+		return
 	}
+	nodeIndex := len(pa.nodes)
 
 	pa.nodes = append(pa.nodes, Node{
 		Slot:           slot,
@@ -79,24 +73,6 @@ func (pa *Array) OnBlock(slot uint64, root, parentRoot [32]byte) {
 		BestDescendant: -1,
 	})
 	pa.indices[root] = nodeIndex
-	pa.linkOrphanChildren(root, nodeIndex)
-}
-
-func (pa *Array) linkOrphanChildren(parentRoot [32]byte, parentIdx int) {
-	if parentIdx < 0 || parentIdx >= len(pa.nodes) {
-		return
-	}
-	parentSlot := pa.nodes[parentIdx].Slot
-	for i := range pa.nodes {
-		node := &pa.nodes[i]
-		if i == parentIdx || node.Parent >= 0 || node.ParentRoot != parentRoot {
-			continue
-		}
-		if node.Slot <= parentSlot {
-			continue
-		}
-		node.Parent = parentIdx
-	}
 }
 
 func (pa *Array) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
@@ -107,8 +83,7 @@ func (pa *Array) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 		return
 	}
 
-	order := pa.descendingSlotOrder()
-	for _, i := range order {
+	for i := len(pa.nodes) - 1; i >= 0; i-- {
 		pa.nodes[i].Weight += deltas[i]
 		if pa.nodes[i].Parent >= 0 {
 			deltas[pa.nodes[i].Parent] += deltas[i]
@@ -120,7 +95,7 @@ func (pa *Array) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 		pa.nodes[i].BestDescendant = -1
 	}
 
-	for _, i := range order {
+	for i := len(pa.nodes) - 1; i >= 0; i-- {
 		parentIdx := pa.nodes[i].Parent
 		if parentIdx < 0 {
 			continue
@@ -162,36 +137,6 @@ func (pa *Array) ApplyScoreChanges(deltas []int64, cutoffWeight int64) {
 	}
 }
 
-func (pa *Array) descendingSlotOrder() []int {
-	order := make([]int, len(pa.nodes))
-	for i := range order {
-		order[i] = i
-	}
-	sort.SliceStable(order, func(i, j int) bool {
-		left, right := pa.nodes[order[i]], pa.nodes[order[j]]
-		if left.Slot != right.Slot {
-			return left.Slot > right.Slot
-		}
-		return order[i] > order[j]
-	})
-	return order
-}
-
-func (pa *Array) ascendingSlotOrder() []int {
-	order := make([]int, len(pa.nodes))
-	for i := range order {
-		order[i] = i
-	}
-	sort.SliceStable(order, func(i, j int) bool {
-		left, right := pa.nodes[order[i]], pa.nodes[order[j]]
-		if left.Slot != right.Slot {
-			return left.Slot < right.Slot
-		}
-		return order[i] < order[j]
-	})
-	return order
-}
-
 func (pa *Array) FindHead(justifiedRoot [32]byte) [32]byte {
 	if pa == nil {
 		return justifiedRoot
@@ -216,19 +161,12 @@ func (pa *Array) Prune(finalizedRoot [32]byte) map[int]int {
 		return nil
 	}
 
-	// Ascending-slot order is a topological order of the parent forest: every parent
-	// edge is strictly slot-increasing (OnBlock and linkOrphanChildren reject a child
-	// whose slot is not above its parent's), so a node's parent is always visited first.
-	// One pass then keeps exactly the finalized subtree — pre-finalized ancestors, sibling
-	// forks, and unlinked orphans fall out. Iterating in this order also leaves kept sorted,
-	// so no separate sort is needed. This replaces a fixed-point iteration that degraded to
-	// O(N^2) when out-of-order arrivals placed a child ahead of its parent in the array.
-	order := pa.ascendingSlotOrder()
+	// One pass keeps exactly the finalized subtree, still parents first.
 	keep := make([]bool, len(pa.nodes))
 	kept := make([]int, 0, len(pa.nodes)-finalizedIdx)
-	for _, i := range order {
+	for i := range pa.nodes {
 		parent := pa.nodes[i].Parent
-		if i == finalizedIdx || (parent >= 0 && parent < len(pa.nodes) && keep[parent]) {
+		if i == finalizedIdx || (parent >= 0 && keep[parent]) {
 			keep[i] = true
 			kept = append(kept, i)
 		}

@@ -13,9 +13,9 @@ import (
 // anchoring at the bare DB head leaves justified as an unknown ancestor and
 // pins the head there permanently. All branches are replayed, not just the
 // head chain: the network may have built on a sibling the previous run never
-// chose as head, and a missing fork point leaves that subtree dangling and
-// weightless. Only imported blocks qualify, read from the live chain — headers
-// are also persisted for pending blocks that were never verified, and an
+// chose as head, and a missing fork point drops that subtree. Only imported
+// blocks qualify, read from the live chain — headers are also persisted for
+// pending blocks that were never verified, and an
 // unverified block must not be able to win head. A stored post-state is not the
 // test: states of old blocks are pruned while finalization stalls, and their
 // descendants would be left dangling.
