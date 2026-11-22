@@ -210,7 +210,7 @@ func TestValidateFetchedBlockRootRejectsUnrequestedAndDuplicateBlocks(t *testing
 	}
 }
 
-func signedBlockForP2PTest(t *testing.T, slot uint64) (*types.SignedBlock, [32]byte) {
+func signedBlockForP2PTest(t testing.TB, slot uint64) (*types.SignedBlock, [32]byte) {
 	t.Helper()
 
 	block := &types.Block{
