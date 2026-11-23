@@ -71,6 +71,8 @@ each one (`../../.agents/skills/<name>`), never a copy.
 - [`precheck`](.agents/skills/precheck/SKILL.md): format, lint, build and test the changed packages
   before a commit.
 - [`review`](.agents/skills/review/SKILL.md): a deep review of a change or pull request.
+- [`recheck`](.agents/skills/recheck/SKILL.md): re-check an earlier answer or review, claim by
+  claim, and correct it.
 - [`simplify`](.agents/skills/simplify/SKILL.md): clean up a change: reuse, over-engineering,
   unused code, test bloat and AI slop, then apply the fixes.
 - [`fix-spectest`](.agents/skills/fix-spectest/SKILL.md): debug and fix failing leanSpec fixture
