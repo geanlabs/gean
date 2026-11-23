@@ -65,8 +65,8 @@ frontmatter.
 
 ## Commits and pull requests
 
-- Before every commit, run the [`simplify`](.agents/skills/simplify/SKILL.md) skill (skip it when
-  only Markdown changed), then the [`precheck`](.agents/skills/precheck/SKILL.md) skill.
+- Before every commit, run the [`prep-commit`](.agents/skills/prep-commit/SKILL.md) skill instead of
+  the built-in `/simplify` (skip it when only Markdown changed).
 - Commit and PR titles are `<type>: <subject>` with a lowercase subject: `feat`, `fix`, `perf`,
   `refactor`, `test`, `docs`, `build`, `deps` or `chore`; the `titles` workflow checks them. The
   body says what changed and why.
@@ -78,13 +78,12 @@ frontmatter.
 Skills live in `.agents/skills/<name>/SKILL.md`. `.claude/skills/<name>` is a relative symlink to
 each one (`../../.agents/skills/<name>`), never a copy.
 
-- [`precheck`](.agents/skills/precheck/SKILL.md): format, lint, build and test the changed packages
-  before a commit.
+- [`prep-commit`](.agents/skills/prep-commit/SKILL.md): before a commit, report cleanups (reuse,
+  over-engineering, unused code, test bloat, AI slop), apply the ones approved, then format, lint,
+  build and test the change.
 - [`review`](.agents/skills/review/SKILL.md): a deep review of a change or pull request.
-- [`recheck`](.agents/skills/recheck/SKILL.md): re-check an earlier answer or review, claim by
-  claim, and correct it.
-- [`simplify`](.agents/skills/simplify/SKILL.md): clean up a change: reuse, over-engineering,
-  unused code, test bloat and AI slop, then apply the fixes.
+- [`verify-report`](.agents/skills/verify-report/SKILL.md): re-check an earlier answer or review,
+  claim by claim, and correct it.
 - [`fix-spectest`](.agents/skills/fix-spectest/SKILL.md): debug and fix failing leanSpec fixture
   tests.
 - [`devnet-runner`](.agents/skills/devnet-runner/SKILL.md): run a local multi-client lean devnet with

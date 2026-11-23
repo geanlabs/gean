@@ -79,7 +79,7 @@ cd testing/spectest/lean && go test -tags=spectests -count=1 -v -run 'TestSpec/s
    make test
    ```
 
-3. Run the [`precheck`](../precheck/SKILL.md) skill before committing. If the fix changes consensus
-   behaviour, also run `make lean-e2e`.
+3. Run the [`prep-commit`](../prep-commit/SKILL.md) skill before committing. If the fix changes
+   consensus behaviour, also run `make lean-e2e`.
 
 Report which phase found the cause, what was wrong (gean, harness or fixture), and the fix.

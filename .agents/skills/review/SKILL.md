@@ -18,7 +18,7 @@ only what you can point to in the code; a finding you can't tie to a line is not
 
 ## Phase 2: Review, one file at a time
 
-Skip what precheck already enforces: formatting and anything `make lint` reports.
+Skip what prep-commit already enforces: formatting and anything `make lint` reports.
 
 Check each file against the `AGENTS.md` rules and the `.agents/rules/` file for each area the diff
 touches, then ask:

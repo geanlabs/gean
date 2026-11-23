@@ -1,11 +1,10 @@
 ---
-name: recheck
-description: Re-verify an earlier answer, review or recommendation claim by claim against the source, then correct it. Use when asked to "recheck", "double-check your answer" or "re-review your review".
-argument-hint: "[what to recheck — defaults to the last substantive answer]"
-disable-model-invocation: true
+name: verify-report
+description: Re-verify an earlier answer, review or recommendation claim by claim against the source, then correct it. Use when asked to "verify your report", "recheck your answer", "double-check your answer" or "re-review your review".
+argument-hint: "[what to verify — defaults to the last substantive answer]"
 ---
 
-# Recheck
+# Verify report
 
 You wrote the answer under review and are anchored on it. Assume every claim is wrong until fresh
 evidence shows it holds; if it holds, say so and move on. Do not apologise.

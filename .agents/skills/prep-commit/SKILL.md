@@ -1,21 +1,17 @@
 ---
-name: simplify
-description: Review gean's changed code for reuse, simplification, efficiency, altitude, unused or speculative code, test bloat and AI slop, then apply the fixes. Quality only — it does not hunt for bugs; use the review skill for that. Use when asked to "simplify", "clean up", "de-slop", check for over-engineering or duplication, or before opening a pull request.
+name: prep-commit
+description: Get a gean change ready to commit — report cleanups, apply the ones the user approves, then format, lint, build and test it. Quality only; use the review skill for bugs. Also use when asked to "clean up", "de-slop" or check a change.
 ---
 
-<!-- Builds on Claude Code's built-in /simplify skill, with gean's own checks added. -->
-
-# Simplify
-
-`/simplify → 7 cleanup agents in parallel → apply the fixes`
+# Prep commit
 
 You are improving the quality of the changed code, not hunting for bugs. Review it for reuse,
-simplification, efficiency, altitude, unused code, test bloat and AI slop, then fix what you find.
-Do not look for correctness bugs — that is what the [`review`](../review/SKILL.md) skill is for.
+simplification, efficiency, altitude, unused code, test bloat and AI slop. Do not look for
+correctness bugs — that is what the [`review`](../review/SKILL.md) skill is for.
 
 The bar is a careful human reviewer on this codebase: every line in the diff should earn its
 place, and the code should read as if a person who knows gean wrote it. When a finding has
-several fixes, prefer the one that leaves less code: a good simplify run usually shrinks the diff.
+several fixes, prefer the one that leaves less code: a good run usually shrinks the diff.
 
 ## Phase 0 — Gather the diff
 
@@ -125,25 +121,67 @@ Flag text a careful human wouldn't have written:
   explaining a name that should be renamed instead.
 - Drive-by reformatting, renames or comment rewrites in code the change doesn't otherwise touch.
 
-## Phase 2 — Apply the fixes
+## Phase 2 — Report and wait
 
-Wait for all seven agents to complete, dedup findings that point at the same line or mechanism,
-and fix each remaining one directly, choosing the fix that removes code over one that adds it.
-Skip any finding whose fix would change intended behavior,
-require changes well outside the reviewed diff, or that you judge to be a false positive — note
-the skip rather than arguing with it.
+Wait for all seven agents to complete and dedup findings that point at the same line or
+mechanism. Check the findings as the [`verify-report`](../verify-report/SKILL.md) skill describes,
+without its separate report, and correct them before the user sees them.
 
-Then run the [`precheck`](../precheck/SKILL.md) skill: the simplified code must still format, lint,
-build and pass its tests.
+Report what remains, numbered, most important first, each with the fix you propose. Mark a finding
+whose fix would change intended behavior or reach well outside the diff with
+"(would skip: <reason>)". Plain sentences, the way a colleague would say it. If there are no
+findings, say the change is already clean and go to Phase 3.
 
-Last, record the change as reviewed. The Claude Code commit hook (`.claude/settings.json`) denies
+Then stop, and apply exactly the findings the user approves.
+
+## Phase 3 — Checks
+
+Run these from the repository root, in order. If a step other than formatting fails, stop, report
+its cause and the fix you propose, and wait for the go-ahead; then run that step again.
+
+1. **Formatting.** If the next command lists any files, run `make fmt` and check again:
+
+   ```bash
+   gofmt -l $(git ls-files '*.go')
+   ```
+
+2. **Lint.** Any finding fails it:
+
+   ```bash
+   make lint
+   ```
+
+3. **Build:**
+
+   ```bash
+   make build
+   ```
+
+4. **Tests for the changed packages.** Turn the changed `.go` files into packages and test them:
+
+   ```bash
+   pkgs=$({ git diff --name-only HEAD -- '*.go'; git ls-files --others --exclude-standard -- '*.go'; } |
+     xargs -r -n1 dirname | sort -u | while read -r d; do [ -d "$d" ] && echo "./$d"; done)
+   if [ -n "$pkgs" ]; then go test $pkgs -count=1; else echo "no Go packages changed"; fi
+   ```
+
+   Then add what the change touches:
+
+   | Changed | Also run |
+   |---|---|
+   | `internal/lean/transition`, `forkchoice`, `types` or `api` | `make lean-spectest` |
+   | `internal/lean/node`, `importer`, `syncer`, `aggregation`, `p2p`, `internal/core/p2p` or `lean.Run` | `make lean-e2e` |
+   | `internal/core/crypto/xmss` or its Rust code | `make lean-test-ffi` (slow) |
+   | Anything shared by many packages | `make test` |
+
+## Phase 4 — Record
+
+Record the change as prepared. The Claude Code commit hook (`.claude/settings.json`) denies
 `git commit` until the recorded id matches the current change, so any later edit needs another
-review:
+run:
 
 ```bash
-.agents/skills/simplify/change-id.sh > "$(git rev-parse --git-dir)/simplify-reviewed"
+.agents/skills/prep-commit/change-id.sh > "$(git rev-parse --git-dir)/prep-commit-done"
 ```
 
-Finish with a brief summary of what was fixed and what was skipped (or confirm the code was
-already clean), written the way a colleague would say it: plain sentences, the file and line for
-each change, no checklists, no headers, no recap of the rules.
+Finish with what was applied, what was left, and which checks ran and passed.
