@@ -1,273 +1,239 @@
 #!/usr/bin/env bash
-# Mechanical parts of the split-for-review skill. Index-only: this script never
-# writes to a tracked file in the worktree.
-# Adapted from silver (github.com/gattaca-com/silver), MIT License, Copyright (c) 2026 Gattaca.
+# Git plumbing for the split-for-review skill. It writes to the index and to its own state
+# directory, never to a tracked file in the user's working tree.
 set -euo pipefail
 
-self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-repo=$(git rev-parse --show-toplevel)
-cd "$repo"
-work="${SPLIT_WORK:-${TMPDIR:-/tmp}/split-for-review/$(basename "$repo")}"
-snap="$work/snapshot"
-idx="$work/idx"
-meta="$work/meta"
-mkdir -p "$work"
+top=$(git rev-parse --show-toplevel)
+cd "$top"
+state=${TMPDIR:-/tmp}/split-for-review/$(basename "$top")
+snap=$state/snapshot
+tree_dir=$state/tree
+mkdir -p "$state"
 
-die() { echo "split.sh: $*" >&2; exit 1; }
+fail() { echo "split.sh: $*" >&2; exit 1; }
 
-# Repo policy, kept in one place: gitignored directories to link into the extract.
-# leanSpec/ holds the spec fixtures.
-FIXTURE_RE='^leanSpec/$'
-
-# SPLIT_EXCLUDE: extended regex of paths that are not part of the change
-# (e.g. an untracked scratch directory).
-changed_files() {
-  { git diff --name-only
-    git diff --cached --name-only
-    git ls-files --others --exclude-standard
-  } | sort -u | { if [ -n "${SPLIT_EXCLUDE:-}" ]; then grep -Ev "$SPLIT_EXCLUDE" || true; else cat; fi; }
+# Every path the change touches, minus SPLIT_EXCLUDE (an extended regex for unrelated paths such
+# as a scratch directory). grep exits 1 when it filters out everything, which is not an error.
+change() {
+    { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u |
+        { grep -Ev "${SPLIT_EXCLUDE:-^$}" || (($? == 1)); }
 }
 
-# A tree as a standalone one-commit repository: the Makefile reads the commit with
-# git. The extract persists and only files that differ are rewritten, so the Rust
-# XMSS library, built inside it by make, is rebuilt only when its sources change.
-sync_tree() {
-  ( cd "$1" && export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null &&
-    { git update-index -q --refresh > /dev/null || true; } &&
-    git read-tree --reset -u "$2" && git clean -fdq &&
-    git update-ref HEAD "$(git -c user.name=split -c user.email=split@local commit-tree "$2" -m index)" )
+need_snapshot() { [[ -f $state/files ]] || fail "no snapshot; run 'split.sh snapshot' first"; }
+
+stage_file() {
+    local mode=100644
+    [[ -x $2 ]] && mode=100755
+    git update-index --add --cacheinfo "$mode,$(git hash-object -w "$2"),$1"
 }
 
-init_extract() {
-  rm -rf "$1"; mkdir -p "$1"
-  git -C "$1" init -q
-  echo "$(git rev-parse --path-format=absolute --git-common-dir)/objects" > "$1/.git/objects/info/alternates"
-}
-
-extract_tree() {
-  [ -d "$1/.git" ] || init_extract "$1"
-  # A failed sync (objects pruned by gc, a build script wrecking the tree)
-  # falls back to a fresh extract: correct, only slower.
-  sync_tree "$1" "$2" 2> /dev/null || { init_extract "$1" && sync_tree "$1" "$2"; } \
-    || die "could not extract tree $2 to $1"
-}
-
-# The worktree's whole change as a tree, built in a scratch index.
-whole_change_tree() {
-  local tmp="$work/.whole-index"
-  rm -f "$tmp"
-  GIT_INDEX_FILE=$tmp git read-tree HEAD
-  changed_files | tr '\n' '\0' | GIT_INDEX_FILE=$tmp git update-index --add --remove -z --stdin
-  GIT_INDEX_FILE=$tmp git write-tree
-}
-
-case "${1:-}" in
-  snapshot)
-    # Re-snapshotting mid-split would clear a staged unit.
-    if [ -d "$snap" ] && ! git diff --cached --quiet; then die "a unit is staged; land or unstage it first"; fi
-    rm -rf "$snap"; mkdir -p "$snap"
-    n=0
-    while read -r f; do
-      [ -f "$f" ] || continue
-      mkdir -p "$snap/$(dirname "$f")"; cp "$f" "$snap/$f"; n=$((n+1))
-    done < <(changed_files)
-    git rev-parse HEAD > "$meta.head"
-    git rev-parse --abbrev-ref HEAD > "$meta.branch"
-    changed_files > "$meta.files"
-    git reset -q
-    echo "snapshot: $n files -> $snap"
-    echo "base:     $(cat "$meta.head") on $(cat "$meta.branch")"
-    echo "index:    cleared"
-    ;;
-
-  drift)
-    [ -f "$meta.head" ] || die "no snapshot; run 'split.sh snapshot' first"
-    base=$(cat "$meta.head"); now=$(git rev-parse HEAD)
-    moved=0
-    if [ "$base" = "$now" ]; then
-      echo "base: unchanged ($now)"
-    elif git merge-base --is-ancestor "$base" "$now"; then
-      # Units the user committed on top of the pin: the expected move.
-      echo "base: advanced by $(git rev-list --count "$base..$now") landed commit(s) to $now"
-    else
-      echo "base: MOVED $base -> $now (not a descendant: pull, rebase or branch switch)"; moved=1
+# Checks out a tree in a detached worktree that persists between runs, so the XMSS library's
+# cargo output inside it survives and make rebuilds only what changed. A worktree checks out
+# commits, not trees, so the tree gets a throwaway commit.
+checkout_tree() {
+    local commit
+    commit=$(git -c user.name=split -c user.email=split@localhost commit-tree "$1" -m split)
+    if [[ ! -f $tree_dir/.git ]]; then
+        rm -rf "$tree_dir"
+        git worktree prune
+        git worktree add -q --detach "$tree_dir" "$commit"
     fi
-    lost=0
-    while read -r f; do
-      if [ -f "$snap/$f" ] && [ -f "$f" ] && ! cmp -s "$snap/$f" "$f"; then
-        echo "  differs from snapshot: $f"; lost=$((lost+1))
-      elif [ -f "$snap/$f" ] && [ ! -f "$f" ]; then
-        echo "  MISSING from worktree:  $f"; lost=$((lost+1))
-      fi
-    done < "$meta.files"
-    # The worktree is read-only for the whole split, so any difference means it
-    # drifted: a base move reverted a modified file, or something edited it.
-    [ "$lost" = 0 ] && echo "worktree: matches snapshot" \
-      || echo "worktree: $lost file(s) drifted — re-snapshot before continuing"
-    [ "$moved" = 0 ] && [ "$lost" = 0 ]
-    ;;
+    git -C "$tree_dir" checkout -q --detach -f "$commit"
+    git -C "$tree_dir" clean -fdq
+}
 
-  stale)
-    # Read-only: reports whether the change should move onto the latest
-    # default branch before splitting. Fetch first; this does not.
-    default=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+# The whole change as a tree, built in a scratch index so the real one is left alone.
+change_tree() {
+    local index=$state/change.index
+    rm -f "$index"
+    GIT_INDEX_FILE=$index git read-tree HEAD
+    change | tr '\n' '\0' | GIT_INDEX_FILE=$index git update-index --add --remove -z --stdin
+    GIT_INDEX_FILE=$index git write-tree
+}
+
+passed() { grep -c '^--- PASS' "$state/test.log" || true; }
+
+cmd_snapshot() {
+    if [[ -d $snap ]] && ! git diff --cached --quiet; then
+        fail "a unit is staged; land or unstage it before taking a new snapshot"
+    fi
+    local files f count=0
+    files=$(change)
+    rm -rf "$snap"
+    echo "$files" | sed "/^$/d" > "$state/files"
+    while read -r f; do
+        [[ -f $f ]] || continue
+        mkdir -p "$snap/$(dirname "$f")"
+        cp -p "$f" "$snap/$f"
+        count=$((count + 1))
+    done < "$state/files"
+    git rev-parse HEAD > "$state/base"
+    git reset -q
+    echo "snapshot: $count files in $snap"
+    echo "base:     $(cat "$state/base") on $(git rev-parse --abbrev-ref HEAD)"
+    echo "index:    empty"
+}
+
+cmd_drift() {
+    need_snapshot
+    local base now bad=0 f
+    base=$(cat "$state/base")
+    now=$(git rev-parse HEAD)
+    if [[ $base == "$now" ]]; then
+        echo "base: unchanged at $now"
+    elif git merge-base --is-ancestor "$base" "$now"; then
+        echo "base: $(git rev-list --count "$base..$now") landed commit(s) on top, now $now"
+    else
+        echo "base: MOVED from $base to $now, which does not descend from it"
+        bad=1
+    fi
+    while read -r f; do
+        [[ -f $snap/$f ]] || continue
+        if [[ ! -f $f ]]; then
+            echo "  gone from the worktree: $f"
+            bad=1
+        elif ! cmp -s "$snap/$f" "$f"; then
+            echo "  differs from the snapshot: $f"
+            bad=1
+        fi
+    done < "$state/files"
+    if ((bad == 0)); then
+        echo "worktree: matches the snapshot"
+    else
+        echo "worktree or base moved: re-snapshot before going on"
+    fi
+    return "$bad"
+}
+
+cmd_stale() {
+    # Doesn't fetch: without a fresh fetch, origin's branch and the PR state are old and the
+    # verdict can be wrong.
+    local main branch pr="" behind overlap prefix bad=0
+    main=$(git symbolic-ref --short refs/remotes/origin/HEAD 2> /dev/null || echo origin/main)
     branch=$(git rev-parse --abbrev-ref HEAD)
-    stale=0
     echo "branch:   $branch at $(git rev-parse --short HEAD)"
     if command -v gh > /dev/null; then
-      pr=$(gh pr list --head "$branch" --state all --json number,state \
-        --jq '.[0] | select(.) | "#\(.number) \(.state)"' 2>/dev/null || true)
-      echo "pr:       ${pr:-none}"
-      case "$pr" in *MERGED*|*CLOSED*) stale=1 ;; esac
+        pr=$(gh pr list --head "$branch" --state all --json number,state \
+            --jq 'first | select(.) | "\(.number) \(.state)"' 2> /dev/null || true)
+        echo "pr:       ${pr:-none}"
+        [[ $pr == *OPEN* || -z $pr ]] || bad=1
     fi
-    behind=$(git rev-list --count "HEAD..$default")
-    echo "default:  $default at $(git rev-parse --short "$default"), $behind commit(s) not in HEAD"
-    [ "$behind" = 0 ] || stale=1
-    overlap=$(comm -12 <(changed_files) \
-      <(git diff --name-only "$(git merge-base HEAD "$default")" "$default" | sort))
-    if [ -n "$overlap" ]; then
-      echo "overlap:  changed files upstream also touched (the move merges these):"
-      printf '  %s\n' $overlap
+    behind=$(git rev-list --count "HEAD..$main")
+    echo "default:  $main is $behind commit(s) ahead of HEAD"
+    ((behind == 0)) || bad=1
+    overlap=$(comm -12 <(change) <(git diff --name-only "$(git merge-base HEAD "$main")" "$main" | sort))
+    echo "overlap:  ${overlap:-none}" | sed '2,$s/^/          /'
+    prefix=$(git branch --sort=-committerdate --format='%(refname:short)' | grep -om1 '^[^/]*/' || true)
+    echo "prefix:   ${prefix:-none}"
+    if ((bad == 0)); then
+        echo "verdict:  current"
     else
-      echo "overlap:  none"
+        echo "verdict:  STALE; propose git checkout --no-track -b ${prefix}<name> $main"
     fi
-    prefix=$(git branch --sort=-committerdate --format='%(refname:short)' | grep -m1 -o '^[^/]*/' || true)
-    echo "prefix:   ${prefix:-none} (from recent branches)"
-    [ "$stale" = 0 ] && echo "verdict:  current" \
-      || echo "verdict:  STALE — propose: git checkout --no-track -b ${prefix}<stem> $default"
-    [ "$stale" = 0 ]
-    ;;
+    return "$bad"
+}
 
-  stage)
-    path="${2:?usage: split.sh stage <path> [<content-file>]}"
-    if [ -f "$meta.files" ] && ! grep -qxF "$path" "$meta.files"; then die "$path is not part of the change"; fi
-    src="${3:-$snap/$path}"
-    [ -f "$src" ] || die "no content for $path (looked at $src)"
-    mode=100644; [ -x "$src" ] && mode=100755
-    sha=$(git hash-object -w "$src")
-    git update-index --add --cacheinfo "$mode,$sha,$path"
-    echo "staged $path <- ${3:-snapshot}"
-    ;;
+cmd_stage() {
+    local path=${1:?usage: split.sh stage <path> [<from>]}
+    local from=${2:-$snap/$path}
+    if [[ -f $state/files ]] && ! grep -qxF "$path" "$state/files"; then
+        fail "$path is not part of the change"
+    fi
+    [[ -f $from ]] || fail "nothing to stage for $path at $from"
+    stage_file "$path" "$from"
+    echo "staged $path from ${2:-the snapshot}"
+}
 
-  rm)
-    path="${2:?usage: split.sh rm <path>}"
-    git rm -q --cached -- "$path"
-    echo "staged removal of $path (worktree untouched)"
-    ;;
-
-  lock)
-    # Resolve go.mod and go.sum for exactly the packages in the index, and stage
-    # them. The diff against the snapshot's versions is the later units' part.
-    [ -f "$snap/go.mod" ] || [ -f "$snap/go.sum" ] || die "the change does not touch go.mod or go.sum"
-    extract_tree "$idx" "$(git write-tree)"
-    ( cd "$idx" && go mod tidy ) || die "go mod tidy failed on the index"
+cmd_lock() {
+    need_snapshot
+    [[ -f $snap/go.mod || -f $snap/go.sum ]] || fail "the change touches neither go.mod nor go.sum"
+    checkout_tree "$(git write-tree)"
+    (cd "$tree_dir" && go mod tidy) || fail "go mod tidy failed on the staged tree"
+    local f
     for f in go.mod go.sum; do
-      sha=$(git hash-object -w "$idx/$f")
-      git update-index --add --cacheinfo "100644,$sha,$f"
-      echo "staged $f <- resolved from the index"
-      echo "--- $f lines later units still own:"
-      if [ -f "$snap/$f" ]; then diff "$idx/$f" "$snap/$f" | grep '^[<>]' || echo "(none)"; else echo "(none)"; fi
+        stage_file "$f" "$tree_dir/$f"
+        echo "staged $f as resolved for the staged tree; lines later units still add:"
+        grep '^>' <(diff "$tree_dir/$f" "$snap/$f" 2> /dev/null) || echo "  (none)"
     done
-    ;;
+}
 
-  unstage)
-    path="${2:?usage: split.sh unstage <path>}"
-    git reset -q -- "$path"
-    echo "unstaged $path (worktree untouched)"
-    ;;
+cmd_check() {
+    (($# > 0)) || fail "check needs packages, e.g. ./internal/lean/forkchoice/..."
+    local bad=0
+    checkout_tree "$(git write-tree)"
+    cd "$tree_dir"
+    go vet "$@" || bad=1
+    go test -count=1 "$@" > "$state/test.log" 2>&1 || bad=1
+    grep -aE '^(ok|FAIL|--- FAIL)' "$state/test.log" | tail -20 || true
+    if ((bad == 0)); then echo "=== check: PASS"; else echo "=== check: FAIL"; fi
+    return "$bad"
+}
 
-  base-version)
-    path="${2:?usage: split.sh base-version <path> [<out>]}"
-    out="${3:-$work/base/$path}"
-    mkdir -p "$(dirname "$out")"
-    git show "HEAD:$path" > "$out"
-    echo "$out"
-    ;;
-
-  verify|check|baseline)
-    mode="$1"; shift
-    if [ "$mode" = baseline ]; then tree=$(whole_change_tree); else tree=$(git write-tree); fi
-    # Same tree, same verdict: the last unit is the whole change, which the
-    # baseline already ran. Only the authoritative run is recorded.
-    verdict="$work/verdicts/$tree"
-    if [ "$mode" != check ] && [ -f "$verdict" ]; then
-      cp "$verdict.log" "$work/test.log"
-      read -r fail failed < "$verdict"
-      echo "=== $mode: $([ "$fail" -eq 0 ] && echo PASS || echo "FAIL:$failed"), $(grep -c '^--- PASS' "$work/test.log") tests passed (recorded for tree $tree; log: $work/test.log)"
-      exit "$fail"
-    fi
-    extract_tree "$idx" "$tree"
-    # Tests that read gitignored fixtures cannot find them in a detached extract;
-    # link them in from the real repo. Default covers leanSpec/; override with
-    # SPLIT_LINK="p1 p2".
-    for rel in ${SPLIT_LINK-$(git status --porcelain --ignored | sed -n 's|^!! \(.*/\)$|\1|p' | grep -E "$FIXTURE_RE" || true)}; do
-      rel="${rel%/}"
-      [ -e "$repo/$rel" ] || continue
-      [ "$(readlink "$idx/$rel")" = "$repo/$rel" ] && continue
-      mkdir -p "$idx/$(dirname "$rel")"
-      ln -sfn "$repo/$rel" "$idx/$rel"
-      echo "linked fixture: $rel"
-    done
-    echo "=== extracted tree $tree -> $idx"
-    cd "$idx"
-    fail=0 failed=""
-    if [ "$mode" != check ]; then
-      # Authoritative: the repo's own recipes at the repo's own strictness. Never
-      # substitute hand-rolled go flags: make test chooses the packages, and make
-      # lint adds the import-rule checks plain go vet lacks. make lint only reports
-      # formatting, so gofmt is checked here directly.
-      # `set -e` must not abort before the failure is reported, so every check
-      # runs under `if !` and the log is always summarised.
-      unformatted=$(gofmt -l $(git ls-files '*.go'))
-      if [ -n "$unformatted" ]; then
-        echo "RECIPE FAILED: gofmt"; echo "$unformatted"; fail=1; failed+=" gofmt"
-      fi
-      if ! make lint > "$work/lint.log" 2>&1; then
-        echo "RECIPE FAILED: lint"; fail=1; failed+=" lint"; tail -20 "$work/lint.log"
-      fi
-      rc=0
-      make test > "$work/test.log" 2>&1 || rc=$?
-      [ $rc -eq 0 ] || { echo "TESTS FAILED (rc=$rc)"; fail=1; failed+=" tests"; }
-      grep -aE "^(--- FAIL|FAIL|panic)" "$work/test.log" | tail -20 || true
+# baseline and verify run the repo's own recipes and record the result per tree, so the same tree
+# is never judged twice.
+cmd_verify() {
+    local mode=$1 tree result failed="" unformatted note=""
+    if [[ $mode == baseline ]]; then tree=$(change_tree); else tree=$(git write-tree); fi
+    result=$state/results/$tree
+    if [[ -f $result ]]; then
+        cp "$result.log" "$state/test.log"
+        failed=$(cat "$result")
+        note="cached for tree $tree; "
     else
-      # Iteration only: scoped and fast, not a substitute for 'verify'.
-      # Pass packages, e.g. split.sh check ./internal/lean/forkchoice/...
-      [ $# -gt 0 ] || die "check needs packages, e.g. ./internal/lean/forkchoice/..."
-      go vet "$@" || { echo "VET FAILED"; fail=1; }
-      rc=0
-      go test -count=1 "$@" > "$work/test.log" 2>&1 || rc=$?
-      [ $rc -eq 0 ] || { echo "TESTS FAILED (rc=$rc)"; fail=1; }
-      grep -aE "^(--- FAIL|FAIL|ok )" "$work/test.log" | tail -20 || true
+        checkout_tree "$tree"
+        echo "=== checked out tree $tree in $tree_dir"
+        cd "$tree_dir"
+        # golangci-lint skips files behind build tags, so gofmt checks every Go file itself.
+        if ! unformatted=$(git ls-files -z '*.go' | xargs -0 gofmt -l 2>&1); then
+            unformatted=${unformatted:-gofmt failed}
+        fi
+        [[ -z $unformatted ]] || { echo "FAILED: gofmt"; echo "$unformatted"; failed+=" gofmt"; }
+        make lint > "$state/lint.log" 2>&1 || { echo "FAILED: make lint"; tail -20 "$state/lint.log"; failed+=" lint"; }
+        make test > "$state/test.log" 2>&1 || { echo "FAILED: make test"; failed+=" tests"; }
+        grep -aE '^(--- FAIL|FAIL|panic)' "$state/test.log" | tail -20 || true
+        failed=${failed:+FAIL:$failed}
+        mkdir -p "$state/results"
+        cp "$state/test.log" "$result.log"
+        echo "$failed" > "$result"
     fi
-    if [ "$mode" != check ]; then
-      mkdir -p "$work/verdicts"
-      cp "$work/test.log" "$verdict.log"
-      echo "$fail$failed" > "$verdict"
-    fi
-    echo "=== $mode: $([ $fail -eq 0 ] && echo PASS || echo FAIL), $(grep -c '^--- PASS' "$work/test.log") tests passed  (log: $work/test.log)"
-    exit $fail
-    ;;
+    echo "=== $mode: ${failed:-PASS}, $(passed) tests passed (${note}log: $state/test.log)"
+    [[ -z $failed ]]
+}
 
-  union-check)
-    [ -d "$snap" ] || die "no snapshot"
-    bad=0
+cmd_union_check() {
+    need_snapshot
+    local f bad=0
     while read -r f; do
-      if [ ! -f "$snap/$f" ]; then
-        # Deleted by the change: the index must not have it either.
-        if git cat-file -e ":$f" 2>/dev/null; then echo "  deletion not staged: $f"; bad=1; fi
-        continue
-      fi
-      if ! git show ":$f" > "$work/.staged" 2>/dev/null; then
-        echo "  not in index: $f"; bad=1; continue
-      fi
-      cmp -s "$work/.staged" "$snap/$f" || { echo "  index != snapshot: $f"; bad=1; }
-    done < "$meta.files"
-    [ "$bad" = 0 ] && echo "union == original change" || echo "union INCOMPLETE (see above)"
-    [ "$bad" = 0 ]
-    ;;
+        if [[ ! -f $snap/$f ]]; then
+            if git cat-file -e ":$f" 2> /dev/null; then echo "  deletion not staged: $f"; bad=1; fi
+        elif ! git cat-file -e ":$f" 2> /dev/null; then
+            echo "  not staged: $f"
+            bad=1
+        elif ! git show ":$f" | cmp -s - "$snap/$f"; then
+            echo "  staged content differs from the snapshot: $f"
+            bad=1
+        fi
+    done < "$state/files"
+    if ((bad == 0)); then echo "the units add up to the original change"; else echo "the units are incomplete"; fi
+    return "$bad"
+}
 
-  *)
-    sed -n '2,3p' "$self"
-    echo "usage: split.sh {baseline|snapshot|drift|stale|stage|rm|unstage|lock|base-version|verify|check|union-check}"
-    ;;
+case ${1:-} in
+    snapshot) cmd_snapshot ;;
+    drift) cmd_drift ;;
+    stale) cmd_stale ;;
+    stage) shift; cmd_stage "$@" ;;
+    rm) git rm -q --cached -- "${2:?usage: split.sh rm <path>}"; echo "staged the removal of $2" ;;
+    unstage) git reset -q -- "${2:?usage: split.sh unstage <path>}"; echo "unstaged $2" ;;
+    lock) cmd_lock ;;
+    base-version)
+        out=$state/base-version/${2:?usage: split.sh base-version <path>}
+        mkdir -p "$(dirname "$out")"
+        git show "HEAD:$2" > "$out"
+        echo "$out"
+        ;;
+    check) shift; cmd_check "$@" ;;
+    baseline | verify) cmd_verify "$1" ;;
+    union-check) cmd_union_check ;;
+    *) echo "usage: split.sh {baseline|snapshot|drift|stale|stage|rm|unstage|lock|base-version|verify|check|union-check}" ;;
 esac

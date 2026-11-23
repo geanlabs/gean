@@ -9,9 +9,10 @@ Turn one large uncommitted change into an ordered series of units. Each unit is 
 verified to build and pass by itself, and handed to the user to review and commit.
 
 The skill never commits, pushes or rewrites existing commits, and never fixes or refactors on its
-own: the units add up to exactly the original change. It writes only to the index. The worktree
-changes in two cases, each only when the user asks: a design change requested mid-review (apply
-it to the worktree, the snapshot and every intermediate still to be staged), and moving the
+own: the units add up to exactly the original change. It writes to the index and to its own state
+directory, where `split.sh` keeps a detached git worktree for testing each unit. The user's files
+change in two cases, each only when the user asks: a design change requested mid-review (apply
+it to the working tree, the snapshot and every intermediate still to be staged), and moving the
 series after a lower PR merges (step 10).
 
 `split.sh` does the git plumbing; run it with no arguments for its usage:
@@ -23,7 +24,7 @@ split.sh stage <path> [<from>] # stage the snapshot's (or <from>'s) content as <
 split.sh rm <path>             # stage the removal of <path>
 split.sh unstage <path>        # drop <path> from the index
 split.sh lock                  # resolve go.mod and go.sum for the index and stage them
-split.sh verify                # authoritative: gofmt, make lint, make test on the extracted index
+split.sh verify                # authoritative: gofmt, make lint, make test on the staged tree
 split.sh check <packages...>   # fast, scoped go vet and go test for iterating — not a verdict
 split.sh union-check           # do the units so far add up to the original change?
 split.sh drift                 # has the base moved, other than by landed units?
@@ -82,7 +83,8 @@ split.sh base-version <path>   # write HEAD's version of <path>, to author an in
    missing; re-cut it. Report what the split revealed (a buried fix, a change with no consumer)
    for the user to decide. Before the next unit, confirm the last one landed and the index is
    empty. After the last, `split.sh union-check` must show the index equal to the snapshot and
-   nothing else changed.
+   nothing else changed; once the series lands, `git worktree remove --force` the worktree that
+   `git worktree list` shows under `split-for-review/`.
 10. **After a lower PR merges** (only when the user asks): fetch; list the changed files the
     merged PR also touched (`split.sh stale`); `git stash push -u`, check out the target,
     `git merge --ff-only`, `git stash pop`, and stop on any conflict. Diff every changed file
