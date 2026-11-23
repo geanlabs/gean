@@ -26,6 +26,14 @@ Or build a Docker image, with no toolchain installed:
 docker build https://github.com/geanlabs/gean.git -t gean
 ```
 
+Or pull one from `ghcr.io/geanlabs/gean`, for amd64 or arm64. `unstable` is the newest `main`,
+`sha-abc1234` is that commit, and `devnet5`-style tags are the builds devnets run. To check which
+commit and run built an image:
+
+```sh
+gh attestation verify oci://ghcr.io/geanlabs/gean:unstable --repo geanlabs/gean
+```
+
 Run `make help` for every target.
 
 ## Lean Ethereum — `gean lean`
