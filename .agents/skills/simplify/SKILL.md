@@ -31,9 +31,10 @@ enforces.
 ## Phase 1 — Review (7 cleanup agents in parallel)
 
 Launch **7 independent review agents** via the Agent tool, all in a single message so they run
-concurrently. Pass each agent the diff, the gean rules below, and one of the seven angles. Each
-returns its findings with `file`, `line`, a one-line `summary`, and the concrete cost (what is
-duplicated, wasted, unused, or harder to maintain).
+concurrently. Pass each agent the diff, `AGENTS.md`, the `.agents/rules/` files for the areas the
+diff touches, and one of the seven angles. Each returns its findings with `file`, `line`, a
+one-line `summary`, and the concrete cost (what is duplicated, wasted, unused, or harder to
+maintain).
 
 ### 1. Reuse
 

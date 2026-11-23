@@ -126,6 +126,7 @@ jobs:
     if: always()
     needs: [lint, test, e2e, docker]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions: {}
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')

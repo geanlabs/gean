@@ -12,5 +12,6 @@ paths:
   encodings are part of the layout, and a layout change means wiping the data directory.
 - **Bounded growth.** Tables, caches and buffers that track chain data are pruned at finality; a
   new one is wired into `lean/store/prune.go`.
+- **Iterators and batches** are closed on every path.
 - **No scans on the hot path.** A full-table or wide prefix scan does not run on the dispatch loop;
   keep an index or move the work to a worker.

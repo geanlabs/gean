@@ -69,7 +69,8 @@ func TestAttestationWorkerBoundsConcurrentVerifies(t *testing.T) {
 func TestRunAttestationWorkerWaitsForInFlightVerify(t *testing.T) {
 	e := makeTestEngine()
 	e.AggCtl = role.New(true, nil)
-	e.Shadow = shadow.Rates{VerifySignature: 5} // 200ms per verify
+	e.Shadow = shadow.Rates{VerifySignature: 5}           // 200ms per verify
+	e.AttestationCh = make(chan *types.SignedAttestation) // the send returns once a worker has it
 	checkpoint := &types.Checkpoint{Root: e.Store.Head()}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -83,7 +84,6 @@ func TestRunAttestationWorkerWaitsForInFlightVerify(t *testing.T) {
 	e.AttestationCh <- &types.SignedAttestation{
 		Data: &types.AttestationData{Head: checkpoint, Target: checkpoint, Source: checkpoint},
 	}
-	time.Sleep(20 * time.Millisecond)
 	cancel()
 	<-done
 	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {

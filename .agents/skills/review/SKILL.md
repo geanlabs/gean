@@ -20,52 +20,13 @@ only what you can point to in the code; a finding you can't tie to a line is not
 
 Skip what precheck already enforces: formatting and anything `make lint` reports.
 
-### Consensus correctness (critical)
+Check each file against the `AGENTS.md` rules and the `.agents/rules/` file for each area the diff
+touches, then ask:
 
-- Does the code do what leanSpec does, including edge cases: slot 0, empty attestations, the
-  finalized boundary, duplicate or out-of-order messages?
-- State transition and fork choice must be deterministic: no map iteration order, wall-clock time
-  or goroutine timing deciding a result.
-- Validity checks: is anything accepted that the spec rejects, or rejected that it accepts?
-- SSZ: struct tags and field order match the spec; generated `*_encoding.go` files were
-  regenerated (`make lean-sszgen`), not edited.
-
-### Concurrency and lifecycle
-
-- The engine is a single-writer dispatch loop. Is state it owns read or written from another
-  goroutine (gossip validators, req/resp handlers, the sync driver, workers)?
-- Every goroutine has a way to stop, and something waits for it: started with `lifecycle.Group`
-  (`tasks.Go`), stopped by the context, joined before the store or keys it uses are closed.
-- Channels: who closes them, can a send block forever, is a full channel dropped on purpose?
-- Locks: held across blocking calls or I/O? Consistent order wherever two are taken?
-
-### Resources
-
-- XMSS FFI: every `ParsePublicKey`/`ParseSignature` has a matching `Free`, or is owned by a cache
-  that frees it; keys are closed only after every proof using them has finished.
-- Timers and tickers stopped; Pebble iterators and batches closed; HTTP response bodies closed.
-- Maps, buffers and caches bounded, and pruned at finality where they track chain data.
-
-### Errors and inputs
-
-- Peer input (gossip, req/resp, the API) is validated before use, with size limits before
-  allocation; a malformed message is rejected, never a panic.
-- Errors are returned or logged with context, not dropped; a peer's fault is not logged as ours.
-
-### Design and project rules
-
-- `internal/core` imports no chain; shared code that knows about lean belongs in `internal/lean`.
-- No backward-compatibility shims, aliases or fallbacks.
-- Comments explain why; no references to plans, phases or the session.
-- The diff stays on its topic: no unrelated renames or rewrites.
-- Could the same result come from less code: removing something, or reusing what exists, instead
-  of adding? Prefer the smaller change, and suggest it.
-
-### Tests
-
-- A bug fix has a regression test that fails without the fix.
-- New behaviour is tested where it lives, written like the tests around it.
-- Tests wait on conditions rather than sleeping, and pass with `-count=1` repeatedly.
+- Where two locks are taken, is the order the same everywhere?
+- Are timers and tickers stopped?
+- Are errors returned or logged with context, not dropped?
+- Is new behaviour tested where it lives?
 - Consensus changes run `make lean-spectest`; node, sync and p2p changes run `make lean-e2e`.
 
 ## Report

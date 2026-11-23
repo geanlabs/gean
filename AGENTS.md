@@ -53,7 +53,8 @@ Rules for each area live in `.agents/rules/`; read the ones a task touches.
 `.claude/rules/<name>.md` is a relative symlink to each, never a copy, loaded by its `paths:`
 frontmatter.
 
-- [`consensus`](.agents/rules/consensus.md): transition, fork choice, attestations, import, store.
+- [`consensus`](.agents/rules/consensus.md): transition, fork choice, attestations, block building,
+  import, store, genesis.
 - [`ssz-types`](.agents/rules/ssz-types.md): `lean/types` and its generated encodings.
 - [`concurrency`](.agents/rules/concurrency.md): the engine's dispatch loop, workers, goroutines.
 - [`p2p`](.agents/rules/p2p.md): networking, the API and hostile peer input.

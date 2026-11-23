@@ -6,6 +6,7 @@ paths:
   - "internal/lean/attestationproof/**"
   - "internal/lean/aggregation/**"
   - "internal/lean/blockbuilder/**"
+  - "internal/lean/genesis/**"
   - "internal/lean/importer/**"
   - "internal/lean/store/**"
   - "internal/core/protoarray/**"

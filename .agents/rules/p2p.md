@@ -18,4 +18,5 @@ paths:
   function, snappy framing and req/resp deadlines. Topics, protocols and message handling live in
   `lean/p2p`.
 - **Req/resp streams** always have a deadline and are closed or reset on every path.
+- **HTTP response bodies** are closed on every path.
 - **Tests** connect hosts over `core/p2p/memnet`, not sockets.
