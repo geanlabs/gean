@@ -24,20 +24,20 @@ func handleBlocksByRangeRequest(
 	reqresp.ArmReadDeadline(stream)
 	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(reqresp.MaxCompressedPayloadSize)))
 	if err != nil {
-		logger.Warn(logger.Network, "blocks_by_range: read request failed: %v", err)
+		logger.Warn(logger.Network, "blocks_by_range: read request failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		return
 	}
 
 	payload, err := reqresp.DecodePayload(reqBuf)
 	if err != nil {
-		logger.Error(logger.Network, "blocks_by_range: decode request failed: %v", err)
+		logger.Warn(logger.Network, "blocks_by_range: decode request failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		reqresp.WriteResponse(stream, "blocks_by_range", reqresp.RespInvalidRequest, []byte("decode failed"))
 		return
 	}
 
 	req := &types.BlocksByRangeRequest{}
 	if err := req.UnmarshalSSZ(payload); err != nil {
-		logger.Error(logger.Network, "blocks_by_range: ssz unmarshal failed: %v", err)
+		logger.Warn(logger.Network, "blocks_by_range: ssz unmarshal failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		reqresp.WriteResponse(stream, "blocks_by_range", reqresp.RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return
 	}

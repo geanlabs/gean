@@ -19,20 +19,20 @@ func handleBlocksByRootRequest(stream network.Stream, blockByRootFn func(root [3
 	reqresp.ArmReadDeadline(stream)
 	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(reqresp.MaxCompressedPayloadSize)))
 	if err != nil {
-		logger.Warn(logger.Network, "blocks_by_root: read request failed: %v", err)
+		logger.Warn(logger.Network, "blocks_by_root: read request failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		return
 	}
 
 	payload, err := reqresp.DecodePayload(reqBuf)
 	if err != nil {
-		logger.Error(logger.Network, "blocks_by_root: decode request failed: %v", err)
+		logger.Warn(logger.Network, "blocks_by_root: decode request failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		reqresp.WriteResponse(stream, "blocks_by_root", reqresp.RespInvalidRequest, []byte("decode failed"))
 		return
 	}
 
 	req := &types.BlocksByRootRequest{}
 	if err := req.UnmarshalSSZ(payload); err != nil {
-		logger.Error(logger.Network, "blocks_by_root: %v", err)
+		logger.Warn(logger.Network, "blocks_by_root: ssz unmarshal failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		reqresp.WriteResponse(stream, "blocks_by_root", reqresp.RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return
 	}

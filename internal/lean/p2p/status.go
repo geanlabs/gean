@@ -48,7 +48,7 @@ func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) 
 	reqresp.ArmReadDeadline(stream)
 	reqBuf, err := io.ReadAll(io.LimitReader(stream, int64(reqresp.MaxCompressedPayloadSize)))
 	if err != nil {
-		logger.Warn(logger.Network, "status: read request failed: %v", err)
+		logger.Warn(logger.Network, "status: read request failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		return nil
 	}
 	if len(reqBuf) == 0 {
@@ -58,14 +58,14 @@ func handleStatusRequest(stream network.Stream, statusFn func() *StatusMessage) 
 
 	payload, err := reqresp.DecodePayload(reqBuf)
 	if err != nil {
-		logger.Warn(logger.Network, "status: decode request failed: %v", err)
+		logger.Warn(logger.Network, "status: decode request failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		reqresp.WriteResponse(stream, "status", reqresp.RespInvalidRequest, []byte("decode failed"))
 		return nil
 	}
 
 	peerStatus := &StatusMessage{}
 	if err := peerStatus.UnmarshalSSZ(payload); err != nil {
-		logger.Warn(logger.Network, "status: ssz unmarshal failed: %v", err)
+		logger.Warn(logger.Network, "status: ssz unmarshal failed peer=%s: %v", stream.Conn().RemotePeer(), err)
 		reqresp.WriteResponse(stream, "status", reqresp.RespInvalidRequest, []byte("ssz unmarshal failed"))
 		return nil
 	}
