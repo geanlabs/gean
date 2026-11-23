@@ -106,8 +106,10 @@ jobs:
         env:
           GOFLAGS: -race
 
-  # Devnets run gean from this image, and its build can break where make build passes.
+  # Devnets run gean from this image, and its build can break where make build passes. On
+  # main the image workflow builds it anyway, and its registry cache is read here.
   docker:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -117,8 +119,7 @@ jobs:
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-amd64
 
   # The one check branch protection requires, so adding a job doesn't mean updating the rule.
   success:
