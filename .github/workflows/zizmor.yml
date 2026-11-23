@@ -1,0 +1,28 @@
+# Security mistakes in the workflows: template injection, broad permissions, persisted
+# credentials, and pins to commits outside an action's repository or to actions with known
+# advisories. It runs weekly too, for advisories published since.
+name: zizmor
+
+on:
+  pull_request:
+    paths: [".github/**"]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The token lets it check pins and advisories on GitHub.
+      - run: pipx run zizmor==1.33.1 --format github .github
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -47,6 +47,10 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.fuzz-targets.outputs.targets) }}
+    env:
+      PKG: ${{ matrix.pkg }}
+      IMPORT: ${{ matrix.import }}
+      TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,7 +59,7 @@ jobs:
         with:
           go-version-file: go.mod
       - id: corpus
-        run: echo "dir=$(go env GOCACHE)/fuzz/${{ matrix.import }}/${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+        run: echo "dir=$(go env GOCACHE)/fuzz/$IMPORT/$TARGET" >> "$GITHUB_OUTPUT"
       # Each night resumes from the inputs earlier nights found, rather than from the seeds.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -63,7 +67,7 @@ jobs:
           key: fuzz-${{ matrix.import }}-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: fuzz-${{ matrix.import }}-${{ matrix.target }}-
       # fakecrypto leaves out the XMSS library, which no decoder calls.
-      - run: go test ./${{ matrix.pkg }} -tags fakecrypto -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 10m
+      - run: go test "./$PKG" -tags fakecrypto -run '^$' -fuzz "^$TARGET\$" -fuzztime 10m
       # Committed under testdata/fuzz, the failing input becomes a seed make test replays.
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
