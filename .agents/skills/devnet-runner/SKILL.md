@@ -1,15 +1,13 @@
 ---
 name: devnet-runner
-description: Run local lean devnets with gean and other lean clients through lean-quickstart. Use when asked to run a devnet, start or stop devnet nodes, choose which nodes or clients run, change client image tags, regenerate genesis, collect node logs, troubleshoot a devnet, or test what happens when nodes go down.
+description: Run local lean devnets of gean nodes through lean-quickstart. Use when asked to run a devnet, start or stop devnet nodes, choose which nodes run, regenerate genesis, collect node logs, troubleshoot a devnet, or test what happens when nodes go down.
 ---
-
-<!-- Adapted from ethlambda's devnet-runner skill (github.com/lambdaclass/ethlambda), MIT License, Copyright (c) 2025 Lambdaclass. -->
 
 # Devnet runner
 
-Run local multi-client lean devnets with this gean build, through
-[lean-quickstart](https://github.com/blockblaz/lean-quickstart). For a quick gean-only network
-without Docker, use `make lean-testnet` and `make lean-node N=...` instead.
+Run local lean devnets of this gean build through
+[lean-quickstart](https://github.com/blockblaz/lean-quickstart). For a quick network without
+Docker, use `make lean-testnet` and `make lean-node N=...` instead.
 
 ## How gean joins the devnet
 
@@ -26,9 +24,7 @@ the `lean` subcommand gean requires. Run devnets through it (or the script below
    that doesn't run misses its proposals; don't use `--node <name>` to pick nodes, it doesn't
    reassign validators. Make sure one node has `isAggregator: true`, or nothing finalizes. See
    [references/validator-config.md](references/validator-config.md).
-2. **Choose image tags** for other clients in `lean-quickstart/client-cmds/<client>-cmd.sh`
-   (`node_docker`). See [references/clients.md](references/clients.md).
-3. **Run for a fixed time**, 20 slots unless asked otherwise:
+2. **Run for a fixed time**, 20 slots unless asked otherwise:
 
    ```bash
    .agents/skills/devnet-runner/scripts/run-devnet-with-timeout.sh 120
@@ -59,27 +55,18 @@ docker logs gean_0 > gean_0.log 2>&1 # dump one node
 ## Troubleshooting
 
 - **Nodes won't start:** containers from an earlier run may still exist:
-  `docker ps -a | grep -E 'gean|zeam|ream|qlean|lantern|grandine|ethlambda'`, then stop them with
+  `docker ps -a | grep gean`, then stop them with
   `spin-node.sh --node all --stop` or `docker rm -f`.
-- **gean exits at once with a usage error:** `gean-cmd.sh` is missing the `lean` subcommand. Run
-  `make lean-devnet` once to patch it.
+- **gean exits at once with a usage error:** `gean-cmd.sh` lacks the `lean` subcommand; run
+  `make lean-devnet` (see above).
 - **No peers, or genesis mismatch** (`UnknownSourceBlock`, deserialization errors): regenerate
   genesis for every node, `spin-node.sh --node all --generateGenesis --forceKeyGen`, and remove
   stale containers first.
 - **Port in use:** `lsof -i :<port>` for the QUIC, API and metrics ports in `validator-config.yaml`.
-- **Nothing finalizes:** check one node has `isAggregator: true` and that two thirds of the
-  validators' nodes are running.
+- **Nothing finalizes:** check that two thirds of the validators' nodes are running.
 - **Docker needs root:** add `--dockerWithSudo`.
 
 ## Testing node failures
 
-`docker pause` stops nodes without losing their state; `docker unpause` resumes them. Pausing
-nodes holding more than a third of the validators stalls finality; the head keeps advancing.
-
-```bash
-docker pause gean_1 gean_2
-docker unpause gean_1 gean_2
-```
-
-See [references/instability-testing.md](references/instability-testing.md) for scenarios and for
-extracting per-block processing times from the logs.
+To pause nodes, stall finality and measure recovery, see
+[references/instability-testing.md](references/instability-testing.md).

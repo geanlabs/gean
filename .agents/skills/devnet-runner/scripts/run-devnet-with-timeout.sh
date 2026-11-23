@@ -3,8 +3,6 @@
 # the repository root, then stop the nodes.
 #
 # Usage: run-devnet-with-timeout.sh <seconds>
-#
-# Adapted from ethlambda (github.com/lambdaclass/ethlambda), MIT License, Copyright (c) 2025 Lambdaclass.
 
 set -uo pipefail
 
@@ -14,7 +12,7 @@ if [ -z "${1:-}" ]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-NODES='^(zeam|ream|qlean|lantern|lighthouse|grandine|ethlambda|gean)_'
+NODES='^gean_'
 
 # Build the image and clone lean-quickstart first, so the timeout covers only the devnet.
 make -C "$REPO_ROOT" docker-build lean-quickstart || exit 1

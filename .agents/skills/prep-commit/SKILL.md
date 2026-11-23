@@ -36,8 +36,7 @@ maintain).
 
 Flag new code that re-implements something the codebase already has — Grep shared/utility
 modules and files adjacent to the change, and name the existing helper to call instead. In gean,
-look first in `internal/core` (clock, lifecycle, logger, metrics, p2p, pending, protoarray,
-storage, httpapi) and in the sibling files of the package being changed.
+look first in `internal/core` and in the sibling files of the package being changed.
 
 ### 2. Simplification
 
@@ -76,31 +75,25 @@ with a fragile bandaid. Special cases layered on shared infrastructure are a sig
 deep enough — prefer the simpler, more general change to the underlying mechanism over adding
 special cases, and name that change.
 
-In gean, a lean-specific special case inside `internal/core` is always the wrong altitude: it
-belongs in `internal/lean`.
-
 ### 5. Unused and speculative code
 
 Flag code the diff adds without a caller in the same change, and code it leaves behind:
 
 - Functions, methods, parameters, struct fields, constants, exported identifiers, CLI flags,
-  config fields, metrics or log lines nothing uses. Remove an unused parameter; don't keep it as `_`.
+  config fields, metrics or log lines nothing uses. Remove an unused parameter; don't keep it as
+  `_`.
 - Code made unused by the change: when something is removed or replaced, what only it used goes
   too.
-- Commented-out code, and compatibility shims, aliases or fallbacks for old flags or formats
-  (gean is devnet-only and keeps no backward compatibility).
+- Commented-out code.
 
 ### 6. Tests
 
 Flag test code that costs more than it checks:
 
-- Tests that differ only in inputs and expected outputs: merge them into one table-driven test.
-  Before a new test, check whether an existing table can take another case.
 - Cases that exercise the same path and would fail for the same reason as another case: keep one.
 - Tests of trivial code (getters, constructors, constant values) or of Go and the standard library.
 - Tests that pin implementation details rather than behaviour, so any refactor breaks them.
 - Setup copied between tests: move it into a helper next to the tests that use it.
-- `time.Sleep` to wait for something: wait on the condition instead.
 - Real XMSS work where `-tags fakecrypto` or an existing fixture would do.
 
 Do not flag a test because it is long; flag it because something in it is duplicated or proves
@@ -115,13 +108,11 @@ Flag text a careful human wouldn't have written:
   code is zero; a comment earns its place by saying why, an invariant, or a spec reference.
 - Uncertainty or generation residue: "not sure", "maybe this should", "AI generated", a bare
   `TODO` with nothing actionable.
-- References to plans, phases or the session in code, comments, commit messages or config.
 - Docs much longer than the code they describe; a preamble that paraphrases the type.
 - Defensive boilerplate: logging and re-returning every error at every level, redundant nil checks,
   validation already done by the caller.
 - Vague names (`data`, `info`, `helper`, `manager`, `util`) where a specific one exists; a comment
   explaining a name that should be renamed instead.
-- Drive-by reformatting, renames or comment rewrites in code the change doesn't otherwise touch.
 
 ### 8. Go idioms
 
@@ -156,13 +147,18 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
 1. **Formatting.** If the next command lists any files, run `make fmt` and check again:
 
    ```bash
-   gofmt -l $(git ls-files '*.go')
+   gofmt -l .
    ```
 
-2. **Lint.** Any finding fails it:
+2. **Lint**, plus the checks CI's lint job adds: modules tidy, the build-tagged code vetted, and
+   the SSZ encodings regenerated with no change. Skip the last three lines if no `.go` file or
+   `go.mod` changed, and the SSZ line unless `internal/lean/types` changed. Any finding fails it:
 
    ```bash
    make lint
+   go mod tidy -diff
+   go vet -tags fakecrypto ./... && go vet -tags spectests,sim ./testing/...
+   before=$(cat internal/lean/types/*_encoding.go); make lean-sszgen && [ "$before" = "$(cat internal/lean/types/*_encoding.go)" ]
    ```
 
 3. **Build:**
@@ -171,11 +167,13 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
    make build
    ```
 
-4. **Tests for the changed packages.** Turn the changed `.go` files into packages and test them:
+4. **Tests for the changed packages.** Turn the changed `.go` files into packages and test them.
+   `testing/` needs build tags and `crypto/xmss` is slow, so the table below covers those:
 
    ```bash
    pkgs=$({ git diff --name-only HEAD -- '*.go'; git ls-files --others --exclude-standard -- '*.go'; } |
-     xargs -r -n1 dirname | sort -u | while read -r d; do [ -d "$d" ] && echo "./$d"; done)
+     xargs -r -n1 dirname | sort -u | grep -v -e '^testing/' -e '^internal/core/crypto/xmss$' |
+     while read -r d; do [ -d "$d" ] && echo "./$d"; done)
    if [ -n "$pkgs" ]; then go test $pkgs -count=1; else echo "no Go packages changed"; fi
    ```
 
@@ -183,8 +181,9 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
 
    | Changed | Also run |
    |---|---|
-   | `internal/lean/transition`, `forkchoice`, `types` or `api` | `make lean-spectest` |
-   | `internal/lean/node`, `importer`, `syncer`, `aggregation`, `p2p`, `internal/core/p2p` or `lean.Run` | `make lean-e2e` |
+   | `internal/lean/`: `transition`, `forkchoice`, `types`, `api`, `store`, `attestation`, `specfixtures`; `internal/core/protoarray`; or `testing/spectest` | `make lean-spectest` |
+   | `internal/lean/`: `node`, `importer`, `syncer`, `aggregation`, `p2p`; `internal/core/p2p`; or `lean.Run` | `make lean-e2e` |
+   | `testing/sim` | `make lean-e2e` and `go test -tags sim ./testing/sim/ -count=1` |
    | `internal/core/crypto/xmss` or its Rust code | `make lean-test-ffi` (slow) |
    | Anything shared by many packages | `make test` |
 

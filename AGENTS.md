@@ -39,8 +39,9 @@ go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
   Deleted code can't break. If a change leaves code unused, delete that too.
 - **leanSpec is the reference.** A divergence from the pinned leanSpec is a bug, even if nothing
   crashes. When a spec test fails, check the fixtures and the spec before changing the client.
-- **`internal/core` never imports a chain**, and `lean` and `beacon` never import each other.
-  `.golangci.yml` enforces this; `make lint` fails on a violation.
+- **`internal/core` holds no chain-specific logic and never imports a chain**, and `lean` and
+  `beacon` never import each other. `.golangci.yml` enforces the imports; `make lint` fails on a
+  violation.
 - **No backward compatibility.** gean is devnet-only: remove old flags, formats and code paths
   instead of keeping aliases, default subcommands or fallbacks.
 - **Every bug fix comes with a regression test**, written like the tests around it.
@@ -86,8 +87,8 @@ each one (`../../.agents/skills/<name>`), never a copy.
   claim by claim, and correct it.
 - [`fix-spectest`](.agents/skills/fix-spectest/SKILL.md): debug and fix failing leanSpec fixture
   tests.
-- [`devnet-runner`](.agents/skills/devnet-runner/SKILL.md): run a local multi-client lean devnet with
-  this build through lean-quickstart, collect the logs, test node failures.
+- [`devnet-runner`](.agents/skills/devnet-runner/SKILL.md): run a local lean devnet of this build
+  through lean-quickstart, collect the logs, test node failures.
 - [`devnet-log-review`](.agents/skills/devnet-log-review/SKILL.md): analyze a devnet run's logs:
   errors, block production, forks, finality.
 - [`split-for-review`](.agents/skills/split-for-review/SKILL.md): split a large uncommitted change

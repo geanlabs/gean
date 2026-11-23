@@ -1,74 +1,59 @@
 #!/bin/bash
-# Adapted from ethlambda (github.com/lambdaclass/ethlambda), MIT License, Copyright (c) 2025 Lambdaclass.
-# analyze-logs.sh - Main entry point for devnet log analysis
+# Summarize a devnet run from gean's node logs: per node, blocks proposed and imported, the head,
+# justified and finalized slots from the last CHAIN STATUS block, and error and warning counts.
 #
-# Usage: analyze-logs.sh [log_dir]
-#   log_dir: Directory containing *.log files (default: current directory)
-#
-# Output: Complete analysis summary in markdown format
-# Exit codes: 0 = healthy, 1 = warnings, 2 = failed
+# Usage: analyze-logs.sh [-e N] [log_dir]
+#   -e N     also print each node's first N error and warning lines
+#   log_dir  directory holding gean_<n>.log files (default: current directory)
 
-set -euo pipefail
+set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-log_dir="${1:-.}"
+show=0
+if [[ "${1:-}" == "-e" ]]; then
+    show=${2:?-e needs a line count}
+    shift 2
+fi
+dir=${1:-.}
 
-# Check if log files exist
+# Normal when occasional: a block for the slot arrived before this node's own proposal.
+benign='discarding proposal slot=[0-9]+: head moved'
+
 shopt -s nullglob
-log_files=("$log_dir"/*.log)
-if [[ ${#log_files[@]} -eq 0 ]]; then
-    echo "No .log files found in $log_dir" >&2
+logs=("$dir"/gean_*.log)
+if [[ ${#logs[@]} -eq 0 ]]; then
+    echo "no gean_*.log files in $dir" >&2
     exit 1
 fi
 
-# Count node log files (excluding devnet.log)
-node_count=0
-for f in "${log_files[@]}"; do
-    node=$(basename "$f" .log)
-    if [[ "$node" != "devnet" ]]; then
-        node_count=$((node_count + 1))
-    fi
+printf '%-10s %8s %8s %6s %9s %9s %6s %8s\n' \
+    Node Proposed Imported Head Justified Finalized Errors Warnings
+total=0
+for f in "${logs[@]}"; do
+    read -r proposed imported head justified finalized errors warnings < <(
+        awk -v benign="$benign" '
+            / \[validator\] proposed block / { p++ }
+            / \[chain\] block slot=/ { i++ }
+            /CHAIN STATUS:/ { match($0, /Head Slot: [0-9]+/); h = substr($0, RSTART + 11, RLENGTH - 11) }
+            /Latest Justified:/ { j = $4 }
+            /Latest Finalized:/ { fin = $4 }
+            / ERROR \[/ && $0 !~ benign { e++ }
+            / WARN \[/ && $0 !~ benign { w++ }
+            END {
+                printf "%d %d %s %s %s %d %d\n", p, i, (h == "" ? "-" : h),
+                    (j == "" ? "-" : j), (fin == "" ? "-" : fin), e, w
+            }' "$f")
+    printf '%-10s %8d %8d %6s %9s %9s %6d %8d\n' "$(basename "$f" .log)" \
+        "$proposed" "$imported" "$head" "$justified" "$finalized" "$errors" "$warnings"
+    total=$((total + errors))
 done
 
-echo "## Devnet Log Analysis"
-echo ""
-echo "**Log directory:** $log_dir"
-echo "**Node logs found:** $node_count"
-echo ""
-
-echo "### Errors and Warnings"
-echo ""
-"$SCRIPT_DIR/count-errors-warnings.sh" "$log_dir"
-echo ""
-
-echo "### Block Production"
-echo ""
-"$SCRIPT_DIR/count-blocks.sh" "$log_dir"
-echo ""
-
-echo "### Consensus Progress"
-echo ""
-"$SCRIPT_DIR/check-consensus-progress.sh" "$log_dir"
-echo ""
-
-# Calculate overall health
-total_errors=0
-for f in "${log_files[@]}"; do
-    node=$(basename "$f" .log)
-    if [[ "$node" != "devnet" ]]; then
-        errors=$(grep -i "error" "$f" 2>/dev/null | grep -cvE "manifest unknown|NoFinalizedStateFound|HandshakeTimedOut" 2>/dev/null) || errors=0
-        total_errors=$((total_errors + errors))
-    fi
-done
-
-echo "---"
-if [[ $total_errors -eq 0 ]]; then
-    echo "**Status: HEALTHY** - No errors detected"
-    exit 0
-elif [[ $total_errors -lt 50 ]]; then
-    echo "**Status: WARNINGS** - $total_errors total errors detected"
-    exit 1
-else
-    echo "**Status: ISSUES** - $total_errors total errors detected (review recommended)"
-    exit 2
+if ((show > 0)); then
+    for f in "${logs[@]}"; do
+        echo
+        echo "=== $(basename "$f" .log)"
+        awk -v benign="$benign" -v n="$show" '/ (ERROR|WARN) \[/ && $0 !~ benign && c++ < n' "$f"
+    done
 fi
+
+echo
+echo "Total errors: $total"

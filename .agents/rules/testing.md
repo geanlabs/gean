@@ -19,5 +19,3 @@ paths:
   - `sim`: in-process simulations (`make test-all`).
   - `aggregation_diagnostic`: a real-crypto aggregation check, run by hand.
 - **What to run:** the `prep-commit` skill's table maps changed packages to make targets.
-- **Spec fixtures.** Every fixture directory has a runner or a listed exclusion with a reason, and a
-  skipped case names a listed skip reason; `TestSpec` fails otherwise.

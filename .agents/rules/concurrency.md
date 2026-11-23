@@ -20,7 +20,8 @@ paths:
   channels and hooks, never directly.
 - **The loop keeps the slot clock.** Every event it handles delays the next tick, and the loop logs
   any that take a whole interval. Expensive work, such as signature and proof verification, runs on
-  a worker (`node/workers.go`).
+  a worker (`node/workers.go`). cgo pins an OS thread per call: bound concurrent verifies with a
+  fixed pool.
 - **Every goroutine is tracked.** Start it on the engine's `lifecycle.Group`, stop it through its
   context, and let the group's `Close` join it before the store, keys or host it uses are closed.
   `Close` doesn't cancel; cancel first.

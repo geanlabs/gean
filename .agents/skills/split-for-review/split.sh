@@ -4,6 +4,7 @@
 # Adapted from silver (github.com/gattaca-com/silver), MIT License, Copyright (c) 2026 Gattaca.
 set -euo pipefail
 
+self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 repo=$(git rev-parse --show-toplevel)
 cd "$repo"
 work="${SPLIT_WORK:-${TMPDIR:-/tmp}/split-for-review/$(basename "$repo")}"
@@ -122,7 +123,7 @@ case "${1:-}" in
     behind=$(git rev-list --count "HEAD..$default")
     echo "default:  $default at $(git rev-parse --short "$default"), $behind commit(s) not in HEAD"
     [ "$behind" = 0 ] || stale=1
-    overlap=$(comm -12 <(changed_files | sort) \
+    overlap=$(comm -12 <(changed_files) \
       <(git diff --name-only "$(git merge-base HEAD "$default")" "$default" | sort))
     if [ -n "$overlap" ]; then
       echo "overlap:  changed files upstream also touched (the move merges these):"
@@ -192,7 +193,7 @@ case "${1:-}" in
     if [ "$mode" != check ] && [ -f "$verdict" ]; then
       cp "$verdict.log" "$work/test.log"
       read -r fail failed < "$verdict"
-      echo "=== $mode: $([ "$fail" -eq 0 ] && echo PASS || echo "FAIL:$failed") (recorded for tree $tree; log: $work/test.log)"
+      echo "=== $mode: $([ "$fail" -eq 0 ] && echo PASS || echo "FAIL:$failed"), $(grep -c '^--- PASS' "$work/test.log") tests passed (recorded for tree $tree; log: $work/test.log)"
       exit "$fail"
     fi
     extract_tree "$idx" "$tree"
@@ -227,7 +228,7 @@ case "${1:-}" in
       rc=0
       make test > "$work/test.log" 2>&1 || rc=$?
       [ $rc -eq 0 ] || { echo "TESTS FAILED (rc=$rc)"; fail=1; failed+=" tests"; }
-      grep -aE "^(--- FAIL|FAIL|ok |panic)" "$work/test.log" | grep -v "^ok " | tail -20 || true
+      grep -aE "^(--- FAIL|FAIL|panic)" "$work/test.log" | tail -20 || true
     else
       # Iteration only: scoped and fast, not a substitute for 'verify'.
       # Pass packages, e.g. split.sh check ./internal/lean/forkchoice/...
@@ -243,7 +244,7 @@ case "${1:-}" in
       cp "$work/test.log" "$verdict.log"
       echo "$fail$failed" > "$verdict"
     fi
-    echo "=== $mode: $([ $fail -eq 0 ] && echo PASS || echo FAIL)  (log: $work/test.log)"
+    echo "=== $mode: $([ $fail -eq 0 ] && echo PASS || echo FAIL), $(grep -c '^--- PASS' "$work/test.log") tests passed  (log: $work/test.log)"
     exit $fail
     ;;
 
@@ -266,7 +267,7 @@ case "${1:-}" in
     ;;
 
   *)
-    sed -n '2,4p' "$0"
+    sed -n '2,3p' "$self"
     echo "usage: split.sh {baseline|snapshot|drift|stale|stage|rm|unstage|lock|base-version|verify|check|union-check}"
     ;;
 esac

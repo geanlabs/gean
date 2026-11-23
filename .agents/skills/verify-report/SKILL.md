@@ -42,8 +42,8 @@ Common failure modes:
 5. **Already covered, or contradicted, by the project.** A recommendation that `.golangci.yml`, the
    Makefile, `.github/workflows/`, `AGENTS.md` or an `.agents/rules/` file already enforces or
    rules out. Grep those for it.
-6. **Severity and scope.** A minor issue presented as major, a three-line fix presented as a pattern,
-   or a guess presented as certain.
+6. **Severity and scope.** A minor issue presented as major, a three-line fix presented as a
+   pattern, or a guess presented as certain.
 7. **Omissions.** Something the user asked that the answer skipped, or a problem found while
    checking the claims above.
 

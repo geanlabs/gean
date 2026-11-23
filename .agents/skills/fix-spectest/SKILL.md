@@ -6,8 +6,9 @@ description: Debug and fix failing leanSpec fixture tests in testing/spectest/le
 # Fix failing leanSpec fixture tests
 
 The fixture tests run gean against leanSpec's published fixture file, pinned by
-`LEAN_SPEC_FIXTURES_SHA256` in the Makefile; the commit it was built from is named beside it. A failure means gean and the spec disagree; the job is to
-find out which one is wrong, and fix gean only when gean is.
+`LEAN_SPEC_FIXTURES_SHA256` in the Makefile; the commit it was built from is named beside it. A
+failure means gean and the spec disagree; the job is to find out which one is wrong, and fix gean
+only when gean is.
 
 ## Phase 1: Run the failing test alone
 
@@ -53,12 +54,10 @@ cd testing/spectest/lean && go test -tags=spectests -count=1 -v -run 'TestSpec/s
 
 ## Phase 3: Rule out the fixtures before changing gean
 
-1. Are the fixtures the pinned file? `leanSpec/fixtures/.sha256-<hash>` must match
-   `LEAN_SPEC_FIXTURES_SHA256`. If not, delete `leanSpec/fixtures` and run `make lean-spectest` again.
-2. Did the spec change on purpose? In a leanSpec clone, read the change for the rule involved:
+1. Did the spec change on purpose? In a leanSpec clone, read the change for the rule involved:
    `git log -p <old>..<new> -- src/lean_spec/` (the spec lives under
    `src/lean_spec/spec/`, fork logic under `forks/<fork>/`).
-3. Is the test itself wrong? Search leanSpec's issues and pull requests for the test's name before
+2. Is the test itself wrong? Search leanSpec's issues and pull requests for the test's name before
    concluding gean is.
 
 ## Phase 4: Find the cause in gean
@@ -71,15 +70,13 @@ cd testing/spectest/lean && go test -tags=spectests -count=1 -v -run 'TestSpec/s
 ## Phase 5: Fix and verify
 
 1. Fix gean so it matches the spec, with a comment only where the reason isn't obvious.
-2. Run the failing case, then the whole test, then everything:
+2. Run the failing case:
 
    ```bash
    cd testing/spectest/lean && go test -tags=spectests -count=1 -run 'TestSpec/<directory>/<case>'
-   make lean-spectest
-   make test
    ```
 
-3. Run the [`prep-commit`](../prep-commit/SKILL.md) skill before committing. If the fix changes
-   consensus behaviour, also run `make lean-e2e`.
+3. Run the [`prep-commit`](../prep-commit/SKILL.md) skill; its checks run the rest. If the fix
+   changes consensus behaviour, also run `make lean-e2e`.
 
 Report which phase found the cause, what was wrong (gean, harness or fixture), and the fix.

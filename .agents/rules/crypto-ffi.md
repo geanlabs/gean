@@ -16,7 +16,6 @@ paths:
   closed only after every proof using it has finished.
 - **XMSS is expensive.** Real keygen takes tens of seconds per key and proving takes gigabytes of
   memory, so `make test` runs no real-crypto work beyond the scheme vector.
-- **cgo pins an OS thread** per call: bound concurrent verifies with a fixed worker pool.
 - **Rust glue** under `internal/core/crypto/xmss/rust` passes `cargo fmt` and `cargo clippy`
   (`make lint`). Rebuild the library with `make lean-ffi`, never `cargo build` alone: the target
   strips LLVM bitcode that Go's linker rejects.
