@@ -46,12 +46,21 @@ go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
 - **Every bug fix comes with a regression test**, written like the tests around it.
 - **Comments explain why**, not what. No references to plans, phases or the current session in code,
   comments, commit messages or config.
-- **Generated code:** don't edit `internal/lean/types/*_encoding.go`; change the struct tags and run
-  `make lean-sszgen`.
-- **Concurrency:** the lean engine is a single-writer dispatch loop. State it owns is touched only
-  on that goroutine; other goroutines reach it through channels and hooks.
-- **XMSS is expensive.** Real keygen takes tens of seconds per key and proving takes gigabytes.
-  Multi-node tests use `-tags fakecrypto`; don't add real-crypto work to `make test`.
+
+## Area rules
+
+Rules for each area live in `.agents/rules/`; read the ones a task touches.
+`.claude/rules/<name>.md` is a relative symlink to each, never a copy, loaded by its `paths:`
+frontmatter.
+
+- [`consensus`](.agents/rules/consensus.md): transition, fork choice, attestations, import, store.
+- [`ssz-types`](.agents/rules/ssz-types.md): `lean/types` and its generated encodings.
+- [`concurrency`](.agents/rules/concurrency.md): the engine's dispatch loop, workers, goroutines.
+- [`p2p`](.agents/rules/p2p.md): networking, the API and hostile peer input.
+- [`crypto-ffi`](.agents/rules/crypto-ffi.md): XMSS and the Rust FFI.
+- [`storage`](.agents/rules/storage.md): Pebble and the lean store.
+- [`testing`](.agents/rules/testing.md): test style, build tags, spec fixtures.
+- [`ci-workflows`](.agents/rules/ci-workflows.md): `.github` workflows.
 
 ## Commits and pull requests
 
