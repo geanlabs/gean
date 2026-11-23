@@ -6,8 +6,8 @@ description: Get a gean change ready to commit — report cleanups, apply the on
 # Prep commit
 
 You are improving the quality of the changed code, not hunting for bugs. Review it for reuse,
-simplification, efficiency, altitude, unused code, test bloat and AI slop. Do not look for
-correctness bugs — that is what the [`review`](../review/SKILL.md) skill is for.
+simplification, efficiency, altitude, unused code, test bloat, AI slop and Go idioms. Do not look
+for correctness bugs — that is what the [`review`](../review/SKILL.md) skill is for.
 
 The bar is a careful human reviewer on this codebase: every line in the diff should earn its
 place, and the code should read as if a person who knows gean wrote it. When a finding has
@@ -24,11 +24,11 @@ review that target instead. Treat this diff as the review scope.
 Skip generated files (`internal/lean/types/*_encoding.go`) and anything `make lint` already
 enforces.
 
-## Phase 1 — Review (7 cleanup agents in parallel)
+## Phase 1 — Review (8 cleanup agents in parallel)
 
-Launch **7 independent review agents** via the Agent tool, all in a single message so they run
+Launch **8 independent review agents** via the Agent tool, all in a single message so they run
 concurrently. Pass each agent the diff, `AGENTS.md`, the `.agents/rules/` files for the areas the
-diff touches, and one of the seven angles. Each returns its findings with `file`, `line`, a
+diff touches, and one of the eight angles. Each returns its findings with `file`, `line`, a
 one-line `summary`, and the concrete cost (what is duplicated, wasted, unused, or harder to
 maintain).
 
@@ -55,6 +55,8 @@ Also flag over-engineering:
   it is enforced, once.
 - A cache, pool, goroutine or channel with no measured need.
 - A layer whose reason can't be stated in one sentence.
+- Code a reader can't follow in one pass: a function mixing levels of detail, control flow that
+  is hard to trace.
 
 ### 3. Efficiency
 
@@ -121,9 +123,21 @@ Flag text a careful human wouldn't have written:
   explaining a name that should be renamed instead.
 - Drive-by reformatting, renames or comment rewrites in code the change doesn't otherwise touch.
 
+### 8. Go idioms
+
+Flag Go a careful Go reviewer would rewrite, skipping what `staticcheck` already reports:
+
+- Errors wrapped without `%w`, or compared with `==` instead of `errors.Is` or `errors.As`.
+- A `context.Context` that isn't the first parameter, or is stored in a struct for one call's work;
+  a long-lived service keeping its lifetime context, like the syncer, is fine.
+- Cleanup not done with `defer`, so an early return skips it.
+- An interface declared by the package that implements it rather than the one that uses it.
+- A field accessor named `GetX`; lookups by key like `GetBlockHeader(root)` are gean's style.
+- Names that stutter with their package (`store.StoreConfig`).
+
 ## Phase 2 — Report and wait
 
-Wait for all seven agents to complete and dedup findings that point at the same line or
+Wait for all eight agents to complete and dedup findings that point at the same line or
 mechanism. Check the findings as the [`verify-report`](../verify-report/SKILL.md) skill describes,
 without its separate report, and correct them before the user sees them.
 

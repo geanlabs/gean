@@ -21,8 +21,24 @@ only what you can point to in the code; a finding you can't tie to a line is not
 Skip what prep-commit already enforces: formatting and anything `make lint` reports.
 
 Check each file against the `AGENTS.md` rules and the `.agents/rules/` file for each area the diff
-touches, then ask:
+touches. Consensus bugs hide in a few places; read changes there hardest:
 
+- Fork choice (LMD GHOST): `lean/forkchoice`, `core/protoarray`.
+- Attestation validation: `lean/attestation`.
+- Justification and finalization: `lean/transition` (`justifiable.go`, `justifications.go`,
+  `finality.go`).
+- State transition: `ProcessSlots`, `ProcessBlock` and `ProcessAttestations` in `lean/transition`.
+- XMSS verification and aggregation: `lean/aggregation`, `lean/attestationproof`,
+  `core/crypto/xmss`.
+- SSZ encoding and decoding: `lean/types`.
+
+Then ask:
+
+- Can a peer make the node do unbounded work, such as signature checks before cheap checks, or
+  crash it?
+- Does it add work to a hot path: gossip validation, block import, the dispatch loop, fork choice?
+- Is secret key material ever logged or exposed through the API?
+- Can slot, index or validator-count arithmetic overflow? `gosec` only catches conversions.
 - Where two locks are taken, is the order the same everywhere?
 - Are timers and tickers stopped?
 - Are errors returned or logged with context, not dropped?
@@ -48,4 +64,6 @@ Order findings by severity. Each one names the file and line, what is wrong, why
 <one or two sentences: safe to merge, or what must change first>
 ```
 
-Leave out empty sections. On GitHub, post the review as a comment, never "request changes".
+Leave out empty sections; if nothing is wrong, say so in the verdict alone. On GitHub, post the
+review as a comment, never "request changes", and never number items as `#1`: GitHub links that to
+issue 1. Use `1.` or "item 1".

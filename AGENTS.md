@@ -79,8 +79,8 @@ Skills live in `.agents/skills/<name>/SKILL.md`. `.claude/skills/<name>` is a re
 each one (`../../.agents/skills/<name>`), never a copy.
 
 - [`prep-commit`](.agents/skills/prep-commit/SKILL.md): before a commit, report cleanups (reuse,
-  over-engineering, unused code, test bloat, AI slop), apply the ones approved, then format, lint,
-  build and test the change.
+  over-engineering, unused code, test bloat, AI slop, Go idioms), apply the ones approved, then
+  format, lint, build and test the change.
 - [`review`](.agents/skills/review/SKILL.md): a deep review of a change or pull request.
 - [`verify-report`](.agents/skills/verify-report/SKILL.md): re-check an earlier answer or review,
   claim by claim, and correct it.
