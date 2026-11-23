@@ -87,5 +87,4 @@ Order findings by severity. Each one names the file and line, what is wrong, why
 <one or two sentences: safe to merge, or what must change first>
 ```
 
-Leave out empty sections. On GitHub, post the review as a comment, never "request changes", and say
-it was written by an AI agent, naming the harness and model.
+Leave out empty sections. On GitHub, post the review as a comment, never "request changes".
