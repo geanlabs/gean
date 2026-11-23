@@ -91,5 +91,5 @@ each one (`../../.agents/skills/<name>`), never a copy.
   through lean-quickstart, collect the logs, test node failures.
 - [`devnet-log-review`](.agents/skills/devnet-log-review/SKILL.md): analyze a devnet run's logs:
   errors, block production, forks, finality.
-- [`split-for-review`](.agents/skills/split-for-review/SKILL.md): split a large uncommitted change
-  into small, independently passing units, staged one at a time.
+- [`split-into-commits`](.agents/skills/split-into-commits/SKILL.md): split a large uncommitted
+  change into small, independently passing units, staged one at a time.

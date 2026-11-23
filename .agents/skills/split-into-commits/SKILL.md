@@ -1,9 +1,9 @@
 ---
-name: split-for-review
+name: split-into-commits
 description: Split an uncommitted change into a sequence of independently reviewable, independently compiling units, staged one at a time for the user to review and commit. Use when a working tree has grown too large to review in one pass, or when the user asks to split changes by parts, stage them one by one, or make a reviewable commit series.
 ---
 
-# Split for review
+# Split into commits
 
 Turn one large uncommitted change into an ordered series of units. Each unit is staged alone,
 verified to build and pass by itself, and handed to the user to review and commit.
@@ -84,7 +84,7 @@ split.sh base-version <path>   # write HEAD's version of <path>, to author an in
    for the user to decide. Before the next unit, confirm the last one landed and the index is
    empty. After the last, `split.sh union-check` must show the index equal to the snapshot and
    nothing else changed; once the series lands, `git worktree remove --force` the worktree that
-   `git worktree list` shows under `split-for-review/`.
+   `git worktree list` shows under `split-into-commits/`.
 10. **After a lower PR merges** (only when the user asks): fetch; list the changed files the
     merged PR also touched (`split.sh stale`); `git stash push -u`, check out the target,
     `git merge --ff-only`, `git stash pop`, and stop on any conflict. Diff every changed file

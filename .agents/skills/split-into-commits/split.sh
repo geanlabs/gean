@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Git plumbing for the split-for-review skill. It writes to the index and to its own state
+# Git plumbing for the split-into-commits skill. It writes to the index and to its own state
 # directory, never to a tracked file in the user's working tree.
 set -euo pipefail
 
 top=$(git rev-parse --show-toplevel)
 cd "$top"
-state=${TMPDIR:-/tmp}/split-for-review/$(basename "$top")
+state=${TMPDIR:-/tmp}/split-into-commits/$(basename "$top")
 snap=$state/snapshot
 tree_dir=$state/tree
 mkdir -p "$state"
