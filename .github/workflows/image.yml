@@ -17,9 +17,11 @@ on:
 
 permissions: {}
 
-# Queued rather than cancelled, so `unstable` always ends on the newest commit.
+# A group keeps one waiting run, and a newer one replaces it, so pushes and dispatches queue
+# apart: a push must not drop a devnet tag's dispatch. Pushes run in order, so `unstable` ends
+# on the newest commit.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
