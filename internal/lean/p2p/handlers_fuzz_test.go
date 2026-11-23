@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/geanlabs/gean/internal/core/p2p/reqresp"
 	"github.com/geanlabs/gean/internal/lean/types"
@@ -31,6 +32,13 @@ func (s *handlerStream) Read(p []byte) (int, error)     { return s.request.Read(
 func (s *handlerStream) Write(p []byte) (int, error)    { return s.response.Write(p) }
 func (*handlerStream) SetReadDeadline(time.Time) error  { return nil }
 func (*handlerStream) SetWriteDeadline(time.Time) error { return nil }
+func (*handlerStream) Conn() network.Conn               { return handlerConn{} }
+
+// handlerConn gives the handlers a peer to log. Only RemotePeer is implemented; any
+// other method panics on the nil embedded Conn.
+type handlerConn struct{ network.Conn }
+
+func (handlerConn) RemotePeer() peer.ID { return "" }
 
 // chunks decodes the response, failing the test on a malformed chunk or code.
 func (s *handlerStream) chunks(t *testing.T) (codes []byte, payloads [][]byte) {
@@ -78,6 +86,8 @@ func FuzzBlocksByRangeHandler(f *testing.F) {
 	f.Add(rangeRequest(3, 5), uint64(10), true)
 	f.Add(rangeRequest(60, 10), uint64(70), false)
 	f.Add(rangeRequest(0, types.MaxRequestBlocks+1), uint64(0), true)
+	f.Add([]byte{0xff}, uint64(0), true)
+	f.Add(reqresp.EncodePayload([]byte{0x01}), uint64(0), true)
 
 	f.Fuzz(func(t *testing.T, request []byte, currentSlot uint64, complete bool) {
 		var asked *types.BlocksByRangeRequest
@@ -135,6 +145,8 @@ func FuzzBlocksByRootHandler(f *testing.F) {
 	}
 	f.Add(rootRequest(roots[1], [32]byte{0xff}, roots[7]))
 	f.Add(rootRequest())
+	f.Add([]byte{0xff})
+	f.Add(reqresp.EncodePayload([]byte{0x01}))
 
 	f.Fuzz(func(t *testing.T, request []byte) {
 		var lookups int
@@ -179,6 +191,8 @@ func FuzzStatusHandler(f *testing.F) {
 	ours := &StatusMessage{FinalizedSlot: 4, HeadSlot: 9}
 	f.Add(reqresp.EncodePayload((&StatusMessage{HeadSlot: 3}).MarshalSSZ()), true)
 	f.Add([]byte{}, true)
+	f.Add([]byte{0xff}, true)
+	f.Add(reqresp.EncodePayload([]byte{0x01}), true)
 
 	f.Fuzz(func(t *testing.T, request []byte, available bool) {
 		stream := newHandlerStream(request)
