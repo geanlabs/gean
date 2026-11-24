@@ -11,7 +11,7 @@ use std::slice;
 // leanVM XMSS over BLAKE2s: one fixed instantiation (V=42, base 8, log-lifetime 32). Keys and
 // signatures from the earlier Poseidon line do not verify here and must be regenerated.
 
-// The Go SSZ types hard-code these sizes (internal/lean/types/constants.go, xmss.MessageLength).
+// The Go side hard-codes these sizes (sizes.go, and MessageLength in types.go).
 const _: () = assert!(PUB_KEY_SSZ_LEN == 32 && SIGNATURE_SSZ_LEN == 1208 && MESSAGE_LEN == 32);
 
 #[repr(C)]

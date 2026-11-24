@@ -34,26 +34,6 @@ linters:
     depguard:
       rules:
         # Package layering.
-        types-imports-nothing:
-          files:
-            - "**/internal/lean/types/**"
-          deny:
-            - pkg: github.com/geanlabs/gean
-              desc: "lean/types is the bottom layer and imports no other gean package"
-
-        # Protocol rules depend only on the standard library, lean/types and,
-        # for fork choice, the chain-agnostic proto-array tree.
-        # Strict mode: anything not in the allow list is rejected.
-        rules-import-only-types:
-          list-mode: strict
-          files:
-            - "**/internal/lean/transition/**"
-            - "**/internal/lean/forkchoice/**"
-          allow:
-            - $gostd
-            - github.com/geanlabs/gean/internal/lean/types
-            - github.com/geanlabs/gean/internal/core/protoarray
-
         storage-imports-nothing:
           files:
             - "**/internal/core/storage/**"
@@ -67,28 +47,15 @@ linters:
           files:
             - "**/internal/core/**"
           deny:
-            - pkg: github.com/geanlabs/gean/internal/lean
-              desc: "core never imports a chain"
             - pkg: github.com/geanlabs/gean/internal/beacon
               desc: "core never imports a chain"
             - pkg: github.com/geanlabs/gean/internal/validator
               desc: "core never imports the validator client"
 
-        lean-stays-lean:
-          files:
-            - "**/internal/lean/**"
-          deny:
-            - pkg: github.com/geanlabs/gean/internal/beacon
-              desc: "lean and beacon never import each other"
-            - pkg: github.com/geanlabs/gean/internal/validator
-              desc: "lean never imports the beacon validator client"
-
         beacon-stays-beacon:
           files:
             - "**/internal/beacon/**"
           deny:
-            - pkg: github.com/geanlabs/gean/internal/lean
-              desc: "lean and beacon never import each other"
             - pkg: github.com/geanlabs/gean/internal/validator
               desc: "the beacon node never imports the validator client"
 
@@ -96,8 +63,6 @@ linters:
           files:
             - "**/internal/validator/**"
           deny:
-            - pkg: github.com/geanlabs/gean/internal/lean
-              desc: "the validator client is beacon-only"
             - pkg: github.com/geanlabs/gean/internal/beacon/importer
               desc: "the validator client talks to the node through the Beacon API"
             - pkg: github.com/geanlabs/gean/internal/beacon/store

@@ -4,30 +4,24 @@ Guidance for AI coding agents working in gean. `CLAUDE.md` is a symlink to this 
 
 ## Project
 
-gean is an Ethereum consensus client in Go: one binary, a subcommand per chain. `gean lean` runs
-Lean Ethereum consensus (post-quantum XMSS signatures, leanVM aggregation); `gean beacon`, for the
-Ethereum Beacon Chain, is planned. It runs on devnets only.
+gean is an Ethereum consensus client in Go, becoming a client for the post-quantum beacon chain
+(XMSS signatures, leanVM aggregation). It has no runnable node yet and runs on devnets only.
 
 ```
 cmd/gean/              CLI: subcommands and flags
 internal/core/         chain-agnostic: clock, crypto/xmss (Go + Rust FFI), httpapi, lifecycle,
                        logger, p2p, pending, protoarray, storage
-internal/lean/         Lean Ethereum: types, transition, forkchoice, store, importer, aggregation,
-                       syncer, p2p, api, metrics, keys, node (the engine), and lean.Run (node startup)
-testing/spectest/      leanSpec fixture tests (build tag spectests)
-testing/sim/           multi-node tests in one process on an in-memory network
 ```
 
 ## Commands
 
 ```bash
-make build            # Rust XMSS library, then bin/gean
+make build            # bin/gean
 make test             # unit tests
 make lint             # go vet, golangci-lint, cargo fmt and clippy
 make fmt              # gofmt and cargo fmt
-make lean-e2e         # three nodes finalize; a restarted node catches up (fake XMSS)
-make lean-spectest    # leanSpec fixtures (a pinned download on first run)
-go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
+make test-ffi         # the XMSS FFI tests (slow)
+go test ./internal/core/protoarray/ -run TestName -count=1   # one test
 ```
 
 ## Rules
@@ -37,11 +31,11 @@ go test ./internal/lean/forkchoice/ -run TestName -count=1   # one test
 - **Reduce rather than add.** When several changes would work, prefer the one that removes code,
   then one that adds code without touching existing code, and only then one that rewrites it.
   Deleted code can't break. If a change leaves code unused, delete that too.
-- **leanSpec is the reference.** A divergence from the pinned leanSpec is a bug, even if nothing
-  crashes. When a spec test fails, check the fixtures and the spec before changing the client.
-- **`internal/core` holds no chain-specific logic and never imports a chain**, and `lean` and
-  `beacon` never import each other. `.golangci.yml` enforces the imports; `make lint` fails on a
-  violation.
+- **The spec is the reference.** A divergence from the pinned consensus spec is a bug, even if
+  nothing crashes. When a spec test fails, check the fixtures and the spec before changing the
+  client.
+- **`internal/core` holds no chain-specific logic and never imports a chain**, and chains never
+  import each other. `.golangci.yml` enforces the imports; `make lint` fails on a violation.
 - **No backward compatibility.** gean is devnet-only: remove old flags, formats and code paths
   instead of keeping aliases, default subcommands or fallbacks.
 - **Every bug fix comes with a regression test**, written like the tests around it.
@@ -85,11 +79,5 @@ each one (`../../.agents/skills/<name>`), never a copy.
 - [`review`](.agents/skills/review/SKILL.md): a deep review of a change or pull request.
 - [`verify-report`](.agents/skills/verify-report/SKILL.md): re-check an earlier answer or review,
   claim by claim, and correct it.
-- [`fix-spectest`](.agents/skills/fix-spectest/SKILL.md): debug and fix failing leanSpec fixture
-  tests.
-- [`devnet-runner`](.agents/skills/devnet-runner/SKILL.md): run a local lean devnet of this build
-  through lean-quickstart, collect the logs, test node failures.
-- [`devnet-log-review`](.agents/skills/devnet-log-review/SKILL.md): analyze a devnet run's logs:
-  errors, block production, forks, finality.
 - [`split-into-commits`](.agents/skills/split-into-commits/SKILL.md): split a large uncommitted
   change into small, independently passing units, staged one at a time.

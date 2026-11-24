@@ -44,11 +44,9 @@ jobs:
       # make lint leaves formatting to gofmt.
       - run: "! gofmt -l . | grep ."
       - run: go mod tidy -diff
-      # add -N makes a newly generated file part of the diff.
-      - run: make lean-sszgen && git add -N internal/lean/types && git diff --exit-code
       - run: make lint
       # make lint and make test build only the default variant.
-      - run: go vet -tags fakecrypto ./... && go vet -tags spectests,sim ./testing/...
+      - run: go vet -tags fakecrypto ./...
 
   test:
     runs-on: ubuntu-latest
@@ -74,40 +72,12 @@ jobs:
       # The XMSS package's tests beyond the scheme vector, which make test leaves out to stay
       # quick locally: real key generation, signing, verification and aggregation, in under a
       # minute and about 2 GB.
-      - run: make lean-test-ffi
-        env:
-          GOFLAGS: -race
-      # Keyed on the fixtures' pinned hash rather than the whole Makefile, so only a new pin
-      # downloads them again. The restored directory holds make's .sha256-<hash> stamp, so
-      # make skips the download.
-      - id: fixtures
-        run: echo "sha256=$(sed -n 's/^LEAN_SPEC_FIXTURES_SHA256 := //p' Makefile)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: leanSpec/fixtures
-          key: leanspec-fixtures-${{ steps.fixtures.outputs.sha256 }}
-      - run: make lean-spectest
-
-  e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-      # The one run with several nodes in a process, so where -race finds the most;
-      # its time is slot waits, so the detector costs almost nothing.
-      - run: make lean-e2e
+      - run: make test-ffi
         env:
           GOFLAGS: -race
 
-  # Devnets run gean from this image, and its build can break where make build passes. On
-  # main the image workflow builds it anyway, and its registry cache is read here.
+  # The image build can break where make build passes. On main the image workflow builds it
+  # anyway, and its registry cache is read here.
   docker:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
@@ -124,7 +94,7 @@ jobs:
   # The one check branch protection requires, so adding a job doesn't mean updating the rule.
   success:
     if: always()
-    needs: [lint, test, e2e, docker]
+    needs: [lint, test, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

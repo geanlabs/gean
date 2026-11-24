@@ -158,7 +158,7 @@ cmd_lock() {
 }
 
 cmd_check() {
-    (($# > 0)) || fail "check needs packages, e.g. ./internal/lean/forkchoice/..."
+    (($# > 0)) || fail "check needs packages, e.g. ./internal/core/protoarray/..."
     local bad=0
     checkout_tree "$(git write-tree)"
     cd "$tree_dir"

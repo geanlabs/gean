@@ -3,8 +3,7 @@
 #   push to main       -> `unstable`, and `sha-<7>`, which never moves.
 #   workflow_dispatch  -> the `tags` input and `sha-<7>`, for the chosen ref.
 #
-# Each architecture builds on its own runner, since an emulated arm64 build of the XMSS
-# library takes several times as long. Each published image is attested.
+# Each published image is attested.
 name: image
 
 on:

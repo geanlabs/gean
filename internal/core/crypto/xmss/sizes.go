@@ -18,9 +18,7 @@ func slot32(slot uint64) (uint32, error) {
 	return uint32(slot), nil
 }
 
-// Wire sizes of the XMSS scheme gean signs and verifies with (leanVM). Code
-// that stores keys or signatures in fixed-size fields, such as lean's SSZ
-// types, must use the same sizes; lean checks this at compile time.
+// Wire sizes of the XMSS scheme gean signs and verifies with (leanVM).
 const (
 	// PubkeySize is the length of a serialized XMSS public key, in bytes.
 	PubkeySize = 32
