@@ -25,7 +25,8 @@ touches. Consensus bugs hide in a few places; read changes there hardest:
 - XMSS signing, verification and aggregation: `core/crypto/xmss`.
 - Wire decoding of peer input: `core/p2p`.
 
-Then ask:
+A consensus change also gets the [`spec-review`](../spec-review/SKILL.md) skill, which checks it
+against the pinned spec. Then ask:
 
 - Can a peer make the node do unbounded work, such as signature checks before cheap checks, or
   crash it?
