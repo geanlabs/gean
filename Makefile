@@ -1,4 +1,4 @@
-.PHONY: build clean docker-build ffi fmt help lint test test-ffi
+.PHONY: build clean docker-build ffi fmt help lint loc test test-ffi
 
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
@@ -45,6 +45,9 @@ fmt: ## Format Go and Rust code
 clean: ## Remove build artifacts
 	rm -rf bin $(XMSS_LIB)
 	cd $(XMSS_RUST) && cargo clean
+
+loc: ## Count lines of code per package; BASE=<ref> compares with that ref
+	@scripts/loc.sh $(BASE)
 
 ##@ XMSS
 
