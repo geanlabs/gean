@@ -27,15 +27,15 @@ func TestLogLevelsWriteFormattedLines(t *testing.T) {
 	var buf bytes.Buffer
 	restoreLogger(t, &buf)
 
-	Info(Chain, "height=%d", 12)
+	Info(Gossip, "peers=%d", 12)
 	Warn(Network, "peer=%s", "abc")
-	Error(Store, "failed=%v", true)
+	Error(Network, "failed=%v", true)
 
 	got := buf.String()
 	for _, want := range []string{
-		" INFO [chain] height=12\n",
+		" INFO [gossip] peers=12\n",
 		" WARN [network] peer=abc\n",
-		" ERROR [store] failed=true\n",
+		" ERROR [network] failed=true\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("log output %q does not contain %q", got, want)
@@ -49,9 +49,9 @@ func TestLogLevelsWriteFormattedLines(t *testing.T) {
 func TestNilOutputSuppressesLogs(t *testing.T) {
 	restoreLogger(t, nil)
 
-	Info(Chain, "hidden")
-	Warn(Chain, "hidden")
-	Error(Chain, "hidden")
+	Info(Network, "hidden")
+	Warn(Network, "hidden")
+	Error(Network, "hidden")
 }
 
 func restoreLogger(t *testing.T, w io.Writer) {

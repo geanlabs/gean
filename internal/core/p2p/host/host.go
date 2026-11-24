@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
@@ -75,6 +76,9 @@ type Config struct {
 	ListenPort int
 	// Network, when set, builds the host on it instead of on QUIC.
 	Network Network
+	// SeenTTL is how long gossip remembers a message id, and must be positive.
+	// The chain derives it from its slot timing: two epochs on the beacon chain.
+	SeenTTL time.Duration
 	// DiscoveryAdmit, when set, decides which nodes discv5 finds are dialed:
 	// those on the chain's network.
 	DiscoveryAdmit func(*enode.Node) bool
@@ -85,6 +89,11 @@ type Config struct {
 // New starts a host with the identity in cfg.NodeKeyPath, listening for QUIC
 // on cfg.ListenPort or joining cfg.Network.
 func New(ctx context.Context, cfg Config) (*Host, error) {
+	// pubsub would accept zero and drop each id at its next minutely sweep,
+	// letting duplicates through.
+	if cfg.SeenTTL <= 0 {
+		return nil, fmt.Errorf("gossip seen TTL must be positive, got %v", cfg.SeenTTL)
+	}
 	ctx, cancel := context.WithCancel(ctx)
 
 	privKey, err := loadNodeKey(cfg.NodeKeyPath)
@@ -104,7 +113,7 @@ func New(ctx context.Context, cfg Config) (*Host, error) {
 		return nil, err
 	}
 
-	ps, err := gossip.NewPubSub(ctx, libp2pHost)
+	ps, err := gossip.NewPubSub(ctx, libp2pHost, cfg.SeenTTL)
 	if err != nil {
 		libp2pHost.Close()
 		cancel()

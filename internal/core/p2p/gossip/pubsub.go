@@ -24,7 +24,6 @@ const (
 	FanoutTTL         = 60 * time.Second
 	HistoryLength     = 6
 	HistoryGossip     = 3
-	DuplicateCache    = 24 * time.Second
 	MaxTransmitSize   = reqresp.MaxCompressedPayloadSize
 	MaxMsgPerRPC      = 500
 	// ValidateQueueSize bounds messages waiting for validation. pubsub's
@@ -33,8 +32,10 @@ const (
 	ValidateQueueSize = 4 * MaxMsgPerRPC
 )
 
-// NewPubSub starts gossipsub on h with the mesh parameters above.
-func NewPubSub(ctx context.Context, h libp2phost.Host) (*pubsub.PubSub, error) {
+// NewPubSub starts gossipsub on h with the mesh parameters above. seenTTL is
+// how long a message id is remembered: a copy arriving within it is dropped as
+// a duplicate.
+func NewPubSub(ctx context.Context, h libp2phost.Host, seenTTL time.Duration) (*pubsub.PubSub, error) {
 	ps, err := pubsub.NewGossipSub(ctx, h,
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
 		pubsub.WithNoAuthor(),
@@ -46,7 +47,7 @@ func NewPubSub(ctx context.Context, h libp2phost.Host) (*pubsub.PubSub, error) {
 			return string(MessageID(topic, msg.Data))
 		}),
 		pubsub.WithGossipSubParams(gossipSubParams()),
-		pubsub.WithSeenMessagesTTL(DuplicateCache),
+		pubsub.WithSeenMessagesTTL(seenTTL),
 		pubsub.WithMaxMessageSize(MaxTransmitSize),
 		pubsub.WithValidateQueueSize(ValidateQueueSize),
 	)

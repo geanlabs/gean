@@ -30,7 +30,7 @@ func peerScore(ps *Store, id peer.ID) int {
 	return ps.peers[id].score
 }
 
-// leanSpec's request reputation: +10 per completed request, -20 per failure,
+// Request reputation: +10 per completed request, -20 per failure,
 // clamped to [0, 200] from a start of 100.
 func TestPeerStoreRecordRequestScores(t *testing.T) {
 	tests := []struct {
