@@ -12,12 +12,12 @@ import (
 
 // Any topic strings do; these have the shape of real ones.
 const (
-	blockTopic       = "/leanconsensus/12345678/block/ssz_snappy"
-	aggregationTopic = "/leanconsensus/12345678/aggregation/ssz_snappy"
+	blockTopic       = "/eth2/12345678/beacon_block/ssz_snappy"
+	aggregationTopic = "/eth2/12345678/beacon_aggregate_and_proof/ssz_snappy"
 )
 
 func TestSnappyRawRoundtrip(t *testing.T) {
-	data := []byte("hello lean consensus world")
+	data := []byte("hello consensus world")
 	compressed := Compress(data)
 	decompressed, err := Decompress(compressed)
 	if err != nil {

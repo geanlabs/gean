@@ -136,15 +136,6 @@ func (b *BlockBuffer) AddChild(parent, child [32]byte) {
 	set[child] = true
 }
 
-func (b *BlockBuffer) RemoveBucket(parent [32]byte) (map[[32]byte]bool, bool) {
-	set, ok := b.children[parent]
-	if !ok {
-		return nil, false
-	}
-	delete(b.children, parent)
-	return set, true
-}
-
 func (b *BlockBuffer) RemoveChild(parent, child [32]byte) {
 	set, ok := b.children[parent]
 	if !ok {
