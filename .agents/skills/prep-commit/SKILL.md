@@ -21,8 +21,7 @@ diff is empty, also run `git diff HEAD` and include the working-tree changes in 
 often runs before the commit. If a PR number, branch name, or file path was passed as an argument,
 review that target instead. Treat this diff as the review scope.
 
-Skip generated files (`internal/lean/types/*_encoding.go`) and anything `make lint` already
-enforces.
+Skip anything `make lint` already enforces.
 
 ## Phase 1 — Review (8 cleanup agents in parallel)
 
@@ -150,15 +149,13 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
    gofmt -l .
    ```
 
-2. **Lint**, plus the checks CI's lint job adds: modules tidy, the build-tagged code vetted, and
-   the SSZ encodings regenerated with no change. Skip the last three lines if no `.go` file or
-   `go.mod` changed, and the SSZ line unless `internal/lean/types` changed. Any finding fails it:
+2. **Lint**, plus the checks CI's lint job adds: modules tidy and the build-tagged code vetted.
+   Skip the last two lines if no `.go` file or `go.mod` changed. Any finding fails it:
 
    ```bash
    make lint
    go mod tidy -diff
-   go vet -tags fakecrypto ./... && go vet -tags spectests,sim ./testing/...
-   before=$(cat internal/lean/types/*_encoding.go); make lean-sszgen && [ "$before" = "$(cat internal/lean/types/*_encoding.go)" ]
+   go vet -tags fakecrypto ./...
    ```
 
 3. **Build:**
@@ -168,11 +165,11 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
    ```
 
 4. **Tests for the changed packages.** Turn the changed `.go` files into packages and test them.
-   `testing/` needs build tags and `crypto/xmss` is slow, so the table below covers those:
+   `crypto/xmss` is slow, so the table below covers it:
 
    ```bash
    pkgs=$({ git diff --name-only HEAD -- '*.go'; git ls-files --others --exclude-standard -- '*.go'; } |
-     xargs -r -n1 dirname | sort -u | grep -v -e '^testing/' -e '^internal/core/crypto/xmss$' |
+     xargs -r -n1 dirname | sort -u | grep -v '^internal/core/crypto/xmss$' |
      while read -r d; do [ -d "$d" ] && echo "./$d"; done)
    if [ -n "$pkgs" ]; then go test $pkgs -count=1; else echo "no Go packages changed"; fi
    ```
@@ -181,10 +178,7 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
 
    | Changed | Also run |
    |---|---|
-   | `internal/lean/`: `transition`, `forkchoice`, `types`, `api`, `store`, `attestation`, `specfixtures`; `internal/core/protoarray`; or `testing/spectest` | `make lean-spectest` |
-   | `internal/lean/`: `node`, `importer`, `syncer`, `aggregation`, `p2p`; `internal/core/p2p`; or `lean.Run` | `make lean-e2e` |
-   | `testing/sim` | `make lean-e2e` and `go test -tags sim ./testing/sim/ -count=1` |
-   | `internal/core/crypto/xmss` or its Rust code | `make lean-test-ffi` (slow) |
+   | `internal/core/crypto/xmss` or its Rust code | `make test-ffi` (slow) |
    | Anything shared by many packages | `make test` |
 
 ## Phase 4 — Record

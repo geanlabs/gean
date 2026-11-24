@@ -14,14 +14,10 @@ func TestRunCommand(t *testing.T) {
 		wantStdout string
 		wantStderr string
 	}{
-		{"help lists subcommands", []string{"--help"}, 0, "gean lean keygen [flags]", ""},
-		{"help word", []string{"help"}, 0, "gean lean [flags]", ""},
-		{"lean node help", []string{"lean", "--help"}, 0, "", "Usage of gean lean:"},
-		{"keygen help", []string{"lean", "keygen", "--help"}, 0, "", "Usage of gean lean keygen:"},
+		{"help", []string{"--help"}, 0, "no commands yet", ""},
+		{"help word", []string{"help"}, 0, "no commands yet", ""},
 		{"unknown command", []string{"beacon"}, 2, "", `unknown command "beacon"`},
-		{"flags without a command", []string{"--data-dir", "x"}, 2, "", `unknown command "--data-dir"`},
-		{"no command", nil, 2, "", "gean lean [flags]"},
-		{"lean node needs its flags", []string{"lean"}, 1, "", "required flags"},
+		{"no command", nil, 2, "", "no commands yet"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
