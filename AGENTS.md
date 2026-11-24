@@ -39,9 +39,11 @@ subpackage (`transition/pq`) and the parent package holds what forks share; the 
 make build            # bin/gean
 make test             # unit tests
 make lint             # go vet, golangci-lint, cargo fmt and clippy
+make vet              # go vet the fakecrypto and spectests builds
 make fmt              # gofmt and cargo fmt
 make test-ffi         # the XMSS FFI tests (slow)
 make loc              # lines of code per package; BASE=origin/pq compares
+make spectest         # consensus-specs reference tests; without them it prints how to generate them
 go test ./internal/core/protoarray/ -run TestName -count=1   # one test
 ```
 

@@ -155,7 +155,7 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
    ```bash
    make lint
    go mod tidy -diff
-   go vet -tags fakecrypto ./...
+   make vet
    ```
 
 3. **Build:**
@@ -179,6 +179,7 @@ its cause and the fix you propose, and wait for the go-ahead; then run that step
    | Changed | Also run |
    |---|---|
    | `internal/core/crypto/xmss` or its Rust code | `make test-ffi` (slow) |
+   | `testing/spectest`, or code its registry runs | `make spectest` |
    | Anything shared by many packages | `make test` |
 
 ## Phase 4 — Record

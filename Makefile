@@ -1,4 +1,4 @@
-.PHONY: build clean docker-build ffi fmt help lint loc test test-ffi
+.PHONY: build clean docker-build ffi fmt help lint loc spectest test test-ffi vet
 
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
@@ -29,6 +29,9 @@ test: ffi ## Run unit tests and the XMSS scheme vector (no other FFI tests)
 	go test $$(go list ./... | grep -v '/crypto/xmss$$') -v -count=1
 	go test ./internal/core/crypto/xmss/ -run '^TestSchemeKnownAnswer$$' -v -count=1
 
+spectest: ## Run the consensus-specs reference tests in spectests/ or GEAN_SPEC_TESTS_DIR; skips without them unless GEAN_REQUIRE_SPEC_TESTS=1
+	go test -tags spectests ./testing/spectest/ -count=1 -v
+
 ##@ Code
 
 lint: ## Run linters; any finding fails
@@ -37,6 +40,10 @@ lint: ## Run linters; any finding fails
 	golangci-lint run ./...
 	cd $(XMSS_RUST) && cargo fmt --check
 	cd $(XMSS_RUST) && cargo clippy -- -D warnings -A clippy::missing_safety_doc
+
+vet: ## Vet the build-tagged variants make lint leaves out
+	go vet -tags fakecrypto ./...
+	go vet -tags spectests ./testing/...
 
 fmt: ## Format Go and Rust code
 	gofmt -w .

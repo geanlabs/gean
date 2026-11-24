@@ -13,7 +13,11 @@ paths:
 - **No timing guesses.** Wait on a condition with a deadline (a polling helper, a channel, a fake
   clock), never a fixed sleep that assumes work has finished. Tests pass with `-count=1`
   repeatedly and under `-race`, as CI runs them.
-- **Build tags:** `fakecrypto` swaps the XMSS library for a fake
-  (`internal/core/crypto/xmss/fake.go`), for tests that need keys and proofs without real keygen
-  and proving.
+- **Build tags:**
+  - `fakecrypto` swaps the XMSS library for a fake (`internal/core/crypto/xmss/fake.go`), for
+    tests that need keys and proofs without real keygen and proving.
+  - `spectests`: the consensus-specs reference tests (`make spectest`). A case runs once
+    `testing/spectest`'s registry maps its runner or handler to code, and skips with its reason
+    until then. Without the reference tests the run skips and prints how to generate them;
+    `GEAN_REQUIRE_SPEC_TESTS=1` makes that a failure.
 - **What to run:** the `prep-commit` skill's table maps changed packages to make targets.

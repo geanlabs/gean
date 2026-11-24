@@ -45,8 +45,7 @@ jobs:
       - run: "! gofmt -l . | grep ."
       - run: go mod tidy -diff
       - run: make lint
-      # make lint and make test build only the default variant.
-      - run: go vet -tags fakecrypto ./...
+      - run: make vet
 
   test:
     runs-on: ubuntu-latest
