@@ -1,5 +1,6 @@
 .git
 bin
+spectests
 internal/core/crypto/xmss/rust/target
 internal/core/crypto/xmss/lib
 .claude

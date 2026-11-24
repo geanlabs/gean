@@ -5,6 +5,9 @@ bin/
 # Logs
 *.log
 
+# consensus-specs reference tests, generated from the commit pins.env pins
+spectests/
+
 # Rust build artifacts
 internal/core/crypto/xmss/rust/target/
 internal/core/crypto/xmss/lib/
