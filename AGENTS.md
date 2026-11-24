@@ -52,9 +52,9 @@ go test ./internal/core/protoarray/ -run TestName -count=1   # one test
 - **Reduce rather than add.** When several changes would work, prefer the one that removes code,
   then one that adds code without touching existing code, and only then one that rewrites it.
   Deleted code can't break. If a change leaves code unused, delete that too.
-- **The spec is the reference.** A divergence from the pinned consensus spec is a bug, even if
-  nothing crashes. When a spec test fails, check the fixtures and the spec before changing the
-  client.
+- **The spec is the reference.** A divergence from the pinned consensus spec (`pins.env`) is a
+  bug, even if nothing crashes. When a spec test fails, check the fixtures and the spec before
+  changing the client.
 - **`internal/core` holds no chain-specific logic** and imports nothing from gean outside core.
   Above it, `types` and `crypto` import only core and each other, and `state`, `transition` and
   `forkchoice` add only each other. `.golangci.yml` enforces the imports; `make lint` fails on a
@@ -102,6 +102,8 @@ each one (`../../.agents/skills/<name>`), never a copy.
   over-engineering, unused code, test bloat, AI slop, Go idioms), apply the ones approved, then
   format, lint, build and test the change.
 - [`review`](.agents/skills/review/SKILL.md): a deep review of a change or pull request.
+- [`spec-review`](.agents/skills/spec-review/SKILL.md): check a consensus change against the pinned
+  consensus-specs, marker by marker.
 - [`verify-report`](.agents/skills/verify-report/SKILL.md): re-check an earlier answer or review,
   claim by claim, and correct it.
 - [`split-into-commits`](.agents/skills/split-into-commits/SKILL.md): split a large uncommitted
