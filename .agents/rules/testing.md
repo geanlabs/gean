@@ -13,9 +13,7 @@ paths:
 - **No timing guesses.** Wait on a condition with a deadline (a polling helper, a channel, a fake
   clock), never a fixed sleep that assumes work has finished. Tests pass with `-count=1`
   repeatedly and under `-race`, as CI runs them.
-- **Build tags:**
-  - `fakecrypto`: fake XMSS, for multi-node tests (`make lean-e2e`).
-  - `spectests`: leanSpec fixtures (`make lean-spectest`).
-  - `sim`: in-process simulations (`make test-all`).
-  - `aggregation_diagnostic`: a real-crypto aggregation check, run by hand.
+- **Build tags:** `fakecrypto` swaps the XMSS library for a fake
+  (`internal/core/crypto/xmss/fake.go`), for tests that need keys and proofs without real keygen
+  and proving.
 - **What to run:** the `prep-commit` skill's table maps changed packages to make targets.

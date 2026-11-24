@@ -76,6 +76,28 @@ jobs:
         env:
           GOFLAGS: -race
 
+  # Lines of code per package against the base branch, in the job summary. It only informs, so
+  # a failure to count fails nothing.
+  loc:
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          git fetch --depth=1 origin -- "$BASE_REF"
+          {
+            echo "### Lines of code against $BASE_REF"
+            make --no-print-directory loc BASE=FETCH_HEAD
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
   # The image build can break where make build passes. On main the image workflow builds it
   # anyway, and its registry cache is read here.
   docker:

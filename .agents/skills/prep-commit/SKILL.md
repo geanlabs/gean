@@ -64,7 +64,7 @@ objects built from closures or captured environments — they keep the entire en
 for the object's lifetime (a memory leak when that scope holds large values); prefer a struct that
 copies only the fields it needs. Name the cheaper alternative.
 
-In gean, hot paths include gossip validation, block import, the engine's dispatch loop, fork
+In gean, hot paths include gossip validation, block import, the node's dispatch loop, fork
 choice and SSZ encoding; blocking or XMSS work does not belong on the dispatch loop.
 
 ### 4. Altitude

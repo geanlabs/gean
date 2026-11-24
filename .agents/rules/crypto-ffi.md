@@ -1,9 +1,6 @@
 ---
 paths:
   - "internal/core/crypto/**"
-  - "internal/lean/keys/**"
-  - "internal/lean/keygen/**"
-  - "internal/lean/proving/**"
 ---
 
 # XMSS and the Rust FFI
