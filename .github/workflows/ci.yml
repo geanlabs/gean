@@ -95,7 +95,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: spectests
-          key: spectests-${{ hashFiles('pins.env') }}
+          key: spectests-${{ hashFiles('pins.env', 'testing/spectest/consensus-specs.patch') }}
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - if: steps.cache.outputs.cache-hit != 'true'

@@ -38,25 +38,36 @@ spectest: ## Run the reference tests in spectests/ (make spec-pq) or GEAN_SPEC_T
 # its Python environment; the clone is left detached at the pin.
 CONSENSUS_SPECS_DIR ?= .consensus-specs
 SPEC_TESTS_STAMP := spectests/.commit-$(CONSENSUS_SPECS_COMMIT)
+# A fix to consensus-specs' test helpers at the pin, applied before generating: their VRF tree
+# cache mixes the ValidatorIndex types of different spec builds, which then refuse to compare.
+SPEC_TESTS_PATCH := testing/spectest/consensus-specs.patch
+SPEC_TESTS_REPORT := $(CONSENSUS_SPECS_DIR)/tests/core/pyspec/test-reports/test_results.xml
 
 spec-pq: $(SPEC_TESTS_STAMP) ## Generate the PQ reference tests into spectests/ (needs uv)
 
-# The stamp names the commit, so a new pin regenerates. The first run downloads about 120 MB of
-# Python dependencies, more than uv's 30 s default timeout allows on a slow link.
+# The stamp names the commit, so a new pin regenerates, and so does a newer patch. The first run
+# downloads about 120 MB of Python dependencies, more than uv's 30 s default timeout allows on a
+# slow link. The patch is taken back out before checking out, so a new pin's checkout isn't
+# blocked by it.
 $(SPEC_TESTS_STAMP): export UV_HTTP_TIMEOUT = 600
-$(SPEC_TESTS_STAMP):
-	@git -C $(CONSENSUS_SPECS_DIR) rev-parse --git-dir >/dev/null 2>&1 || git init -q $(CONSENSUS_SPECS_DIR)
+$(SPEC_TESTS_STAMP): $(SPEC_TESTS_PATCH)
+	@# git looks for a repository in parent directories too, so only a clone rooted here counts.
+	@[ "$$(git -C $(CONSENSUS_SPECS_DIR) rev-parse --show-toplevel 2>/dev/null)" = \
+		"$$(cd $(CONSENSUS_SPECS_DIR) 2>/dev/null && pwd -P)" ] || git init -q $(CONSENSUS_SPECS_DIR)
 	@git -C $(CONSENSUS_SPECS_DIR) cat-file -e $(CONSENSUS_SPECS_COMMIT)^{commit} 2>/dev/null || \
 		git -C $(CONSENSUS_SPECS_DIR) fetch -q --depth=1 https://github.com/ethereum/consensus-specs $(CONSENSUS_SPECS_COMMIT)
+	@! git -C $(CONSENSUS_SPECS_DIR) apply -R --check $(CURDIR)/$(SPEC_TESTS_PATCH) 2>/dev/null || \
+		git -C $(CONSENSUS_SPECS_DIR) apply -R $(CURDIR)/$(SPEC_TESTS_PATCH)
 	git -C $(CONSENSUS_SPECS_DIR) checkout -q --detach $(CONSENSUS_SPECS_COMMIT)
-	rm -rf $(CONSENSUS_SPECS_DIR)/reftests
+	@git -C $(CONSENSUS_SPECS_DIR) apply -R --check $(CURDIR)/$(SPEC_TESTS_PATCH) 2>/dev/null || \
+		git -C $(CONSENSUS_SPECS_DIR) apply $(CURDIR)/$(SPEC_TESTS_PATCH)
+	rm -rf $(CONSENSUS_SPECS_DIR)/reftests $(SPEC_TESTS_REPORT)
 	$(MAKE) -C $(CONSENSUS_SPECS_DIR) sync
 	@# A failing upstream test writes no case and leaves the others valid, so test failures don't
-	@# stop the target; pytest's report stays in the clone's tests/core/pyspec/test-reports. A run
-	@# that wrote no case at all, such as a crash, does stop it.
+	@# stop the target. pytest writes its report only when the run completes, so a run that was
+	@# killed or crashed has none and does stop it.
 	-$(MAKE) -C $(CONSENSUS_SPECS_DIR) test reftests=true fork=pq
-	@find $(CONSENSUS_SPECS_DIR)/reftests -mindepth 6 -maxdepth 6 -type d 2>/dev/null | grep -q . || \
-		{ echo "consensus-specs generated no reference tests" >&2; exit 1; }
+	@[ -f $(SPEC_TESTS_REPORT) ] || { echo "consensus-specs did not finish generating" >&2; exit 1; }
 	rm -rf spectests
 	mv $(CONSENSUS_SPECS_DIR)/reftests spectests
 	touch $@
