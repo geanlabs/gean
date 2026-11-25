@@ -143,7 +143,37 @@ func TestPinnedCommit(t *testing.T) {
 	if _, err := pinnedCommit(filepath.Join(dir, "missing")); err == nil {
 		t.Fatal("pinnedCommit read a missing file")
 	}
-	if msg := missingFixtures("/nowhere", "abc123"); !strings.Contains(msg, "checkout abc123") {
-		t.Fatalf("message does not check out the pin:\n%s", msg)
+}
+
+func TestFixturesProblem(t *testing.T) {
+	current := t.TempDir()
+	if err := os.WriteFile(filepath.Join(current, ".commit-abc123"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale := t.TempDir()
+	missing := filepath.Join(current, "missing")
+	tests := []struct {
+		name, root, stamp string
+		want              string // a part of the problem, or "" for none
+	}{
+		{"missing", missing, "abc123", "make spec-pq"},
+		{"missing, unstamped", missing, "", "make spec-pq"},
+		{"current", current, "abc123", ""},
+		{"stale", stale, "abc123", "were not generated from abc123"},
+		{"unstamped", stale, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fixturesProblem(tt.root, tt.stamp)
+			if tt.want == "" {
+				if got != "" {
+					t.Fatalf("fixturesProblem = %q, want none", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tt.want) {
+				t.Fatalf("fixturesProblem = %q, want one containing %q", got, tt.want)
+			}
+		})
 	}
 }

@@ -18,6 +18,7 @@ paths:
     tests that need keys and proofs without real keygen and proving.
   - `spectests`: the consensus-specs reference tests (`make spectest`). A case runs once
     `testing/spectest`'s registry maps its runner or handler to code, and skips with its reason
-    until then. Without the reference tests the run skips and prints how to generate them;
-    `GEAN_REQUIRE_SPEC_TESTS=1` makes that a failure.
+    until then. `make spec-pq` generates the reference tests into `spectests/`. Without
+    them, or with ones in `spectests/` from an earlier pin, the run skips, and
+    `GEAN_REQUIRE_SPEC_TESTS=1` (as CI sets) makes that a failure.
 - **What to run:** the `prep-commit` skill's table maps changed packages to make targets.

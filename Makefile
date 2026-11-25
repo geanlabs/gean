@@ -1,4 +1,6 @@
-.PHONY: build clean docker-build ffi fmt help lint loc spectest test test-ffi vet
+.PHONY: build clean docker-build ffi fmt help lint loc spec-pq spectest test test-ffi vet
+
+include pins.env
 
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
@@ -29,8 +31,35 @@ test: ffi ## Run unit tests and the XMSS scheme vector (no other FFI tests)
 	go test $$(go list ./... | grep -v '/crypto/xmss$$') -v -count=1
 	go test ./internal/core/crypto/xmss/ -run '^TestSchemeKnownAnswer$$' -v -count=1
 
-spectest: ## Run the consensus-specs reference tests in spectests/ or GEAN_SPEC_TESTS_DIR; skips without them unless GEAN_REQUIRE_SPEC_TESTS=1
+spectest: ## Run the reference tests in spectests/ (make spec-pq) or GEAN_SPEC_TESTS_DIR
 	go test -tags spectests ./testing/spectest/ -count=1 -v
+
+# consensus-specs is checked out here at the pinned commit. Point it at an existing clone to reuse
+# its Python environment; the clone is left detached at the pin.
+CONSENSUS_SPECS_DIR ?= .consensus-specs
+SPEC_TESTS_STAMP := spectests/.commit-$(CONSENSUS_SPECS_COMMIT)
+
+spec-pq: $(SPEC_TESTS_STAMP) ## Generate the PQ reference tests into spectests/ (needs uv)
+
+# The stamp names the commit, so a new pin regenerates. The first run downloads about 120 MB of
+# Python dependencies, more than uv's 30 s default timeout allows on a slow link.
+$(SPEC_TESTS_STAMP): export UV_HTTP_TIMEOUT = 600
+$(SPEC_TESTS_STAMP):
+	@git -C $(CONSENSUS_SPECS_DIR) rev-parse --git-dir >/dev/null 2>&1 || git init -q $(CONSENSUS_SPECS_DIR)
+	@git -C $(CONSENSUS_SPECS_DIR) cat-file -e $(CONSENSUS_SPECS_COMMIT)^{commit} 2>/dev/null || \
+		git -C $(CONSENSUS_SPECS_DIR) fetch -q --depth=1 https://github.com/ethereum/consensus-specs $(CONSENSUS_SPECS_COMMIT)
+	git -C $(CONSENSUS_SPECS_DIR) checkout -q --detach $(CONSENSUS_SPECS_COMMIT)
+	rm -rf $(CONSENSUS_SPECS_DIR)/reftests
+	$(MAKE) -C $(CONSENSUS_SPECS_DIR) sync
+	@# A failing upstream test writes no case and leaves the others valid, so test failures don't
+	@# stop the target; pytest's report stays in the clone's tests/core/pyspec/test-reports. A run
+	@# that wrote no case at all, such as a crash, does stop it.
+	-$(MAKE) -C $(CONSENSUS_SPECS_DIR) test reftests=true fork=pq
+	@find $(CONSENSUS_SPECS_DIR)/reftests -mindepth 6 -maxdepth 6 -type d 2>/dev/null | grep -q . || \
+		{ echo "consensus-specs generated no reference tests" >&2; exit 1; }
+	rm -rf spectests
+	mv $(CONSENSUS_SPECS_DIR)/reftests spectests
+	touch $@
 
 ##@ Code
 

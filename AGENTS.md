@@ -43,7 +43,8 @@ make vet              # go vet the fakecrypto and spectests builds
 make fmt              # gofmt and cargo fmt
 make test-ffi         # the XMSS FFI tests (slow)
 make loc              # lines of code per package; BASE=origin/pq compares
-make spectest         # consensus-specs reference tests; without them it prints how to generate them
+make spec-pq          # generate the reference tests from consensus-specs at the pin (needs uv)
+make spectest         # run them
 go test ./internal/core/protoarray/ -run TestName -count=1   # one test
 ```
 
@@ -55,8 +56,8 @@ go test ./internal/core/protoarray/ -run TestName -count=1   # one test
   then one that adds code without touching existing code, and only then one that rewrites it.
   Deleted code can't break. If a change leaves code unused, delete that too.
 - **The spec is the reference.** A divergence from the pinned consensus spec (`pins.env`) is a
-  bug, even if nothing crashes. When a spec test fails, check the fixtures and the spec before
-  changing the client.
+  bug, even if nothing crashes, unless `docs/spec_deviations.md` lists it with its reason. When a
+  spec test fails, check the fixtures and the spec before changing the client.
 - **`internal/core` holds no chain-specific logic** and imports nothing from gean outside core.
   Above it, `types` and `crypto` import only core and each other, and `state`, `transition` and
   `forkchoice` add only each other. `.golangci.yml` enforces the imports; `make lint` fails on a

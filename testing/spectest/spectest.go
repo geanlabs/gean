@@ -9,6 +9,7 @@
 package spectest
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -222,13 +223,23 @@ func pinnedCommit(path string) (string, error) {
 	return "", fmt.Errorf("no CONSENSUS_SPECS_COMMIT in %s", path)
 }
 
-// missingFixtures says how to generate the reference tests expected at root, from consensus-specs
-// at commit.
-func missingFixtures(root, commit string) string {
-	return fmt.Sprintf(`no reference tests at %s.
-Generate them from consensus-specs at the commit pins.env pins:
-    git -C <consensus-specs> fetch origin %[2]s && git -C <consensus-specs> checkout %[2]s
-    make -C <consensus-specs> test reftests=true fork=pq
-then set GEAN_SPEC_TESTS_DIR=<consensus-specs>/reftests, or move that reftests directory to
-spectests/ at the repository root`, root, commit)
+// fixturesProblem says why root holds no usable reference tests, or returns "". With a non-empty
+// stamp it also checks that make spec-pq generated root from that commit, so tests from an earlier
+// pin don't run as if they were current.
+func fixturesProblem(root, stamp string) string {
+	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
+		return fmt.Sprintf("no reference tests at %s. Run `make spec-pq` to generate them from "+
+			"consensus-specs at the commit pins.env pins, or set GEAN_SPEC_TESTS_DIR to a generated "+
+			"reftests directory.", root)
+	} else if err != nil {
+		return fmt.Sprintf("reference tests at %s: %v", root, err)
+	}
+	if stamp == "" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(root, ".commit-"+stamp)); err != nil {
+		return fmt.Sprintf("the reference tests at %s were not generated from %s, the commit "+
+			"pins.env pins. Run `make spec-pq` to regenerate them.", root, stamp)
+	}
+	return ""
 }

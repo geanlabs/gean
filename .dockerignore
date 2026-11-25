@@ -1,6 +1,7 @@
 .git
 bin
 spectests
+.consensus-specs
 internal/core/crypto/xmss/rust/target
 internal/core/crypto/xmss/lib
 .claude

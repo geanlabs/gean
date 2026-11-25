@@ -8,8 +8,9 @@ description: Check a consensus change against the pinned consensus-specs, marker
 Check that a change implements the pinned spec. Review the change as the
 [`review`](../review/SKILL.md) skill's Phase 1 gathers it, and report in its format; this skill
 adds the spec side. Report only findings you score at least 80 out of 100: real, and tied to
-quoted spec text and a `file:line`. A pre-existing issue, or one in code the change didn't touch,
-scores 0.
+quoted spec text and a `file:line`. A pre-existing issue, one in code the change didn't touch, or
+a deviation `docs/spec_deviations.md` already lists on the base branch scores 0; an entry the
+change adds is reviewed like the code it excuses.
 
 ## 1. Get the spec at the pin
 
