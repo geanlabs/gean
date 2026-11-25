@@ -52,8 +52,9 @@ spec-pq: $(SPEC_TESTS_STAMP) ## Generate the PQ reference tests into spectests/ 
 $(SPEC_TESTS_STAMP): export UV_HTTP_TIMEOUT = 600
 $(SPEC_TESTS_STAMP): $(SPEC_TESTS_PATCH)
 	@# git looks for a repository in parent directories too, so only a clone rooted here counts.
-	@[ "$$(git -C $(CONSENSUS_SPECS_DIR) rev-parse --show-toplevel 2>/dev/null)" = \
-		"$$(cd $(CONSENSUS_SPECS_DIR) 2>/dev/null && pwd -P)" ] || git init -q $(CONSENSUS_SPECS_DIR)
+	@top=$$(git -C $(CONSENSUS_SPECS_DIR) rev-parse --show-toplevel 2>/dev/null); \
+		[ -n "$$top" ] && [ "$$top" = "$$(cd $(CONSENSUS_SPECS_DIR) && pwd -P)" ] || \
+		git init -q $(CONSENSUS_SPECS_DIR)
 	@git -C $(CONSENSUS_SPECS_DIR) cat-file -e $(CONSENSUS_SPECS_COMMIT)^{commit} 2>/dev/null || \
 		git -C $(CONSENSUS_SPECS_DIR) fetch -q --depth=1 https://github.com/ethereum/consensus-specs $(CONSENSUS_SPECS_COMMIT)
 	@! git -C $(CONSENSUS_SPECS_DIR) apply -R --check $(CURDIR)/$(SPEC_TESTS_PATCH) 2>/dev/null || \
