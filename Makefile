@@ -67,7 +67,12 @@ $(SPEC_TESTS_STAMP): $(SPEC_TESTS_PATCH)
 	@# A failing upstream test writes no case and leaves the others valid, so test failures don't
 	@# stop the target. pytest writes its report only when the run completes, so a run that was
 	@# killed or crashed has none and does stop it.
-	-$(MAKE) -C $(CONSENSUS_SPECS_DIR) test reftests=true fork=pq
+	@#
+	@# The fast confirmation rule's tests are left out: they take minutes each, and gean has no
+	@# confirmation rule. The rule also gives get_safe_execution_block_hash, the safe block sent to
+	@# the execution client; the Engine API client either brings these cases back to implement it,
+	@# or uses the justified block and lists that in docs/spec_deviations.md.
+	-$(MAKE) -C $(CONSENSUS_SPECS_DIR) test reftests=true fork=pq k="not fast_confirmation"
 	@[ -f $(SPEC_TESTS_REPORT) ] || { echo "consensus-specs did not finish generating" >&2; exit 1; }
 	rm -rf spectests
 	mv $(CONSENSUS_SPECS_DIR)/reftests spectests
