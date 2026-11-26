@@ -7,6 +7,7 @@ bin/
 
 # consensus-specs reference tests, generated from the commit pins.env pins
 spectests/
+.consensus-specs/
 
 # Rust build artifacts
 internal/core/crypto/xmss/rust/target/
