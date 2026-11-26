@@ -9,9 +9,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// Request reputation, as in leanSpec's sync peer manager: a peer starts mid-range,
-// gains for every completed block request and loses twice as much for every
-// failed one. The score only weights which peer is asked; it never disconnects.
+// A peer's request reputation starts mid-range, gains for every completed
+// block request and loses twice as much for every failed one. The score only
+// weights which peer is asked; it never disconnects.
 const (
 	InitialScore    = 100
 	minScore        = 0

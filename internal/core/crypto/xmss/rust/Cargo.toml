@@ -12,7 +12,7 @@ lto = false
 strip = "symbols"
 codegen-units = 16
 
-# Optimized profile used by `make lean-ffi` / Dockerfile. Inherits release, enables
+# Optimized profile used by `make ffi` / Dockerfile. Inherits release, enables
 # fat LTO and a single codegen unit for whole-program optimization across the
 # leanVM aggregation hot path. Matches zeam's `[profile.multisig-release]`
 # which delivers ~300 ms committee aggregation vs gean's ~2 s on plain release.

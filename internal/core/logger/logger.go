@@ -14,16 +14,8 @@ var (
 )
 
 const (
-	Chain      = "chain"
-	Validator  = "validator"
-	Gossip     = "gossip"
-	Network    = "network"
-	Signature  = "signature"
-	Forkchoice = "forkchoice"
-	Sync       = "sync"
-	Node       = "node"
-	State      = "state"
-	Store      = "store"
+	Gossip  = "gossip"
+	Network = "network"
 )
 
 func timestamp() string {

@@ -1,7 +1,6 @@
 package host
 
 import (
-	libp2phost "github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -20,28 +19,6 @@ func (h *Host) ConnectedPeers() int {
 
 func (h *Host) Peers() []peer.ID {
 	return h.peerStore.AllPeers()
-}
-
-func (h *Host) TopicMeshSizes() map[string]int {
-	sizes := make(map[string]int, len(h.topics))
-	for name, topic := range h.topics {
-		sizes[name] = len(topic.ListPeers())
-	}
-	return sizes
-}
-
-func (h *Host) MeshPeerCount() int {
-	seen := make(map[peer.ID]struct{})
-	for _, topic := range h.topics {
-		for _, p := range topic.ListPeers() {
-			seen[p] = struct{}{}
-		}
-	}
-	return len(seen)
-}
-
-func (h *Host) LibP2PHost() libp2phost.Host {
-	return h.host
 }
 
 // Close shuts the host down and waits for its gossip listeners, req/resp

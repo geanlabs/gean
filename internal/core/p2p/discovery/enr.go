@@ -4,7 +4,6 @@ package discovery
 
 import (
 	"crypto/ecdsa"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	gethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -38,6 +36,8 @@ type enrRecord struct {
 	quic6Port uint16
 }
 
+// DecodeENR decodes a signed ENR text record; one whose signature does not
+// verify is refused.
 func DecodeENR(enrStr string) (*ENRFields, error) {
 	rec, err := parseENRRecord(enrStr)
 	if err != nil {
@@ -51,6 +51,8 @@ func DecodeENR(enrStr string) (*ENRFields, error) {
 	}, nil
 }
 
+// ParseENR returns the QUIC multiaddr of a signed ENR text record; one whose
+// signature does not verify is refused.
 func ParseENR(enrStr string) (multiaddr.Multiaddr, error) {
 	rec, err := parseENRRecord(enrStr)
 	if err != nil {
@@ -78,19 +80,15 @@ func parseENRRecord(enrStr string) (*enrRecord, error) {
 		return nil, fmt.Errorf("not an ENR: %q", enrStr)
 	}
 
-	data, err := base64.RawURLEncoding.DecodeString(enrStr[4:])
+	// enode.Parse verifies the signature: a record that fails it could name
+	// any peer at any address.
+	node, err := enode.Parse(enode.ValidSchemes, enrStr)
 	if err != nil {
-		return nil, fmt.Errorf("decode ENR base64: %w", err)
+		return nil, fmt.Errorf("decode ENR: %w", err)
 	}
 
-	// The signature is left unchecked (no enode.New): leanSpec's fixtures
-	// expect records with invalid signatures to decode.
-	var r enr.Record
-	if err := rlp.DecodeBytes(data, &r); err != nil {
-		return nil, fmt.Errorf("decode ENR RLP: %w", err)
-	}
-
-	rec := enrRecord{record: &r, seq: r.Seq()}
+	r := node.Record()
+	rec := enrRecord{record: r, seq: r.Seq()}
 	var ip4 enr.IPv4
 	if r.Load(&ip4) == nil {
 		rec.ip4 = net.IP(ip4)
@@ -111,11 +109,7 @@ func parseENRRecord(enrStr string) (*enrRecord, error) {
 	rec.udpPort, rec.udp6Port = uint16(udp), uint16(udp6)
 	rec.quicPort, rec.quic6Port = uint16(quic), uint16(quic6)
 
-	var pub enode.Secp256k1
-	if err := r.Load(&pub); err != nil {
-		return nil, fmt.Errorf("ENR secp256k1 key: %w", err)
-	}
-	rec.peerID, err = peerIDFromPubkey((*ecdsa.PublicKey)(&pub))
+	rec.peerID, err = peerIDFromPubkey(node.Pubkey())
 	if err != nil {
 		return nil, err
 	}

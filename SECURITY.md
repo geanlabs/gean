@@ -12,13 +12,11 @@ Gean is pre-production devnet software with no bug bounty program yet. We still 
 
 The areas where bugs are most likely to be consensus- or security-critical:
 
-- State transition (`internal/lean/transition/`) and consensus types/SSZ (`internal/lean/types/`)
-- Fork choice (`internal/lean/forkchoice/`, `internal/core/protoarray/`)
+- Fork choice (`internal/core/protoarray/`)
 - XMSS signatures and the Rust FFI boundary (`internal/core/crypto/xmss/`)
-- Networking and wire decoding (`internal/core/p2p/`, `internal/lean/p2p/`)
-- Block import and attestation validation (`internal/lean/importer/`, `internal/lean/attestation/`, `internal/lean/aggregation/`)
+- Networking and wire decoding (`internal/core/p2p/`)
 
-Divergence from the pinned [leanSpec](https://github.com/leanEthereum/leanSpec) reference is a bug even when nothing crashes — cross-client consensus splits are the failure mode we care most about.
+Divergence from the pinned consensus spec is a bug even when nothing crashes — cross-client consensus splits are the failure mode we care most about.
 
 ## Supported versions
 

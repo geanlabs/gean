@@ -1,6 +1,6 @@
 ---
 name: review
-description: Deep code review of a gean change or pull request - consensus correctness against leanSpec, concurrency and lifecycle, resource leaks, tests and project rules. Use when asked to "review", "check this PR", or to look over a diff before it merges.
+description: Deep code review of a gean change or pull request - consensus correctness against the spec, concurrency and lifecycle, resource leaks, tests and project rules. Use when asked to "review", "check this PR", or to look over a diff before it merges.
 ---
 
 # Code review
@@ -21,16 +21,12 @@ Skip what prep-commit already enforces: formatting and anything `make lint` repo
 Check each file against the `AGENTS.md` rules and the `.agents/rules/` file for each area the diff
 touches. Consensus bugs hide in a few places; read changes there hardest:
 
-- Fork choice (LMD GHOST): `lean/forkchoice`, `core/protoarray`.
-- Attestation validation: `lean/attestation`.
-- Justification and finalization: `lean/transition` (`justifiable.go`, `justifications.go`,
-  `finality.go`).
-- State transition: `ProcessSlots`, `ProcessBlock` and `ProcessAttestations` in `lean/transition`.
-- XMSS verification and aggregation: `lean/aggregation`, `lean/attestationproof`,
-  `core/crypto/xmss`.
-- SSZ encoding and decoding: `lean/types`.
+- Fork choice: `core/protoarray`.
+- XMSS signing, verification and aggregation: `core/crypto/xmss`.
+- Wire decoding of peer input: `core/p2p`.
 
-Then ask:
+A consensus change also gets the [`spec-review`](../spec-review/SKILL.md) skill, which checks it
+against the pinned spec. Then ask:
 
 - Can a peer make the node do unbounded work, such as signature checks before cheap checks, or
   crash it?
@@ -51,7 +47,7 @@ Order findings by severity. Each one names the file and line, what is wrong, why
 ## Review: <title>
 
 ### Critical
-- `internal/lean/forkchoice/votes.go:88` — <what is wrong>. <the failure it causes>. Fix: <fix>.
+- `internal/core/protoarray/protoarray.go:88` — <what is wrong>. <the failure it causes>. Fix: <fix>.
 
 ### Major
 ### Minor

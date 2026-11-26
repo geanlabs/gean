@@ -34,26 +34,6 @@ linters:
     depguard:
       rules:
         # Package layering.
-        types-imports-nothing:
-          files:
-            - "**/internal/lean/types/**"
-          deny:
-            - pkg: github.com/geanlabs/gean
-              desc: "lean/types is the bottom layer and imports no other gean package"
-
-        # Protocol rules depend only on the standard library, lean/types and,
-        # for fork choice, the chain-agnostic proto-array tree.
-        # Strict mode: anything not in the allow list is rejected.
-        rules-import-only-types:
-          list-mode: strict
-          files:
-            - "**/internal/lean/transition/**"
-            - "**/internal/lean/forkchoice/**"
-          allow:
-            - $gostd
-            - github.com/geanlabs/gean/internal/lean/types
-            - github.com/geanlabs/gean/internal/core/protoarray
-
         storage-imports-nothing:
           files:
             - "**/internal/core/storage/**"
@@ -61,51 +41,58 @@ linters:
             - pkg: github.com/geanlabs/gean
               desc: "storage is generic and imports no other gean package"
 
-        # Chain layering: core/ is chain-agnostic, tests included, and each
-        # chain stays independent of the others.
-        core-is-chain-agnostic:
+        # core is chain-agnostic, tests included: from gean it imports only core.
+        # An allow entry is a longer match than the deny, so it wins.
+        core-imports-only-core:
+          list-mode: lax
           files:
             - "**/internal/core/**"
+          allow:
+            - github.com/geanlabs/gean/internal/core
           deny:
-            - pkg: github.com/geanlabs/gean/internal/lean
-              desc: "core never imports a chain"
-            - pkg: github.com/geanlabs/gean/internal/beacon
-              desc: "core never imports a chain"
-            - pkg: github.com/geanlabs/gean/internal/validator
-              desc: "core never imports the validator client"
+            - pkg: github.com/geanlabs/gean
+              desc: "core imports nothing from gean outside core"
 
-        lean-stays-lean:
+        # types and crypto sit just above core.
+        types-and-crypto-import-only-core:
+          list-mode: lax
           files:
-            - "**/internal/lean/**"
+            - "**/internal/types/**"
+            - "**/internal/crypto/**"
+          allow:
+            - github.com/geanlabs/gean/internal/core
+            - github.com/geanlabs/gean/internal/types
+            - github.com/geanlabs/gean/internal/crypto
           deny:
-            - pkg: github.com/geanlabs/gean/internal/beacon
-              desc: "lean and beacon never import each other"
-            - pkg: github.com/geanlabs/gean/internal/validator
-              desc: "lean never imports the beacon validator client"
+            - pkg: github.com/geanlabs/gean
+              desc: "types and crypto import from gean only core, types and crypto"
 
-        beacon-stays-beacon:
+        # The consensus rules import no network, disk or execution client code from gean.
+        consensus-imports-only-lower:
+          list-mode: lax
           files:
-            - "**/internal/beacon/**"
+            - "**/internal/state/**"
+            - "**/internal/transition/**"
+            - "**/internal/forkchoice/**"
+          allow:
+            - github.com/geanlabs/gean/internal/core
+            - github.com/geanlabs/gean/internal/types
+            - github.com/geanlabs/gean/internal/crypto
+            - github.com/geanlabs/gean/internal/state
+            - github.com/geanlabs/gean/internal/transition
+            - github.com/geanlabs/gean/internal/forkchoice
           deny:
-            - pkg: github.com/geanlabs/gean/internal/lean
-              desc: "lean and beacon never import each other"
-            - pkg: github.com/geanlabs/gean/internal/validator
-              desc: "the beacon node never imports the validator client"
+            - pkg: github.com/geanlabs/gean
+              desc: "consensus rules import from gean only core, types, crypto and each other"
 
-        validator-uses-api-only:
+        # node wires everything together: cmd/gean starts it, and so may tests under testing/.
+        only-cmd-imports-node:
           files:
-            - "**/internal/validator/**"
+            - "**/internal/**"
+            - "!**/internal/node/**"
           deny:
-            - pkg: github.com/geanlabs/gean/internal/lean
-              desc: "the validator client is beacon-only"
-            - pkg: github.com/geanlabs/gean/internal/beacon/importer
-              desc: "the validator client talks to the node through the Beacon API"
-            - pkg: github.com/geanlabs/gean/internal/beacon/store
-              desc: "the validator client talks to the node through the Beacon API"
-            - pkg: github.com/geanlabs/gean/internal/beacon/p2p
-              desc: "the validator client talks to the node through the Beacon API"
-            - pkg: github.com/geanlabs/gean/internal/beacon/syncer
-              desc: "the validator client talks to the node through the Beacon API"
+            - pkg: github.com/geanlabs/gean/internal/node
+              desc: "only cmd/gean and testing/ import node"
 
   exclusions:
     generated: lax

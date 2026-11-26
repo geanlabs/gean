@@ -1,24 +1,7 @@
-# Build stage: Rust FFI + Go binary
+# Build stage
 FROM golang:1.26-bookworm AS builder
 
-# Install Rust 1.92.0, the toolchain pinned in internal/core/crypto/xmss/rust/rust-toolchain.toml
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.92.0
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    pkg-config \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
-
-# Copy Rust FFI dependencies first for better caching, and build them with the
-# Makefile's flags for the build-stage architecture.
-COPY Makefile ./
-COPY internal/core/crypto/xmss/rust/ internal/core/crypto/xmss/rust/
-RUN make lean-ffi
 
 # Copy Go module files for dependency caching
 COPY go.mod go.sum ./
@@ -28,16 +11,14 @@ RUN go mod download
 COPY . .
 
 # Build Go binaries
-ARG GIT_COMMIT=unknown
-ARG GIT_BRANCH=unknown
-RUN make build GIT_COMMIT=$GIT_COMMIT
+RUN make build
 
 # Runtime stage
 FROM ubuntu:24.04 AS runtime
 WORKDIR /app
 
 LABEL org.opencontainers.image.source=https://github.com/geanlabs/gean
-LABEL org.opencontainers.image.description="Go Ethereum Lean Consensus Client"
+LABEL org.opencontainers.image.description="Go post-quantum Ethereum consensus client"
 LABEL org.opencontainers.image.licenses="MIT"
 
 ARG GIT_COMMIT=unknown
@@ -47,38 +28,5 @@ LABEL org.opencontainers.image.ref.name=$GIT_BRANCH
 
 # Copy the binary
 COPY --from=builder /app/bin/gean /usr/local/bin/
-
-
-# Prove on jemalloc, not glibc malloc. The prover frees its scratch after every
-# proof, but glibc keeps it: most lands in the main heap, which only shrinks from
-# the top, so one live allocation pins everything below it. jemalloc uses mmap and
-# returns pages on a decay timer. Devnet, same slot: 448 MB against 1,126-1,150 MB
-# on glibc nodes. See #424.
-#
-# Unqualified soname so ld.so resolves it per architecture (this image builds
-# arm64 too). The ldconfig check fails the build rather than letting a missing
-# library become a silent runtime warning.
-RUN apt-get update && apt-get install -y --no-install-recommends libjemalloc2 \
-    && rm -rf /var/lib/apt/lists/* \
-    && ldconfig -p | grep -q 'libjemalloc\.so\.2'
-ENV LD_PRELOAD=libjemalloc.so.2
-
-# jemalloc purges freed pages only when the arena that freed them is used again,
-# unless its background threads are on, and they are off by default. A proof
-# spreads gigabytes across the prover's worker threads and then leaves those
-# arenas idle, so hundreds of megabytes stayed resident between proofs. Devnet,
-# 16 nodes over 10 hours, the only difference being this setting: 268 MB average
-# against 729 MB, with identical proof and verification times.
-ENV MALLOC_CONF=background_thread:true
-
-# Keep the Go heap tight so the XMSS prover's transient multi-GB proving
-# peaks (allocated by the Rust arena, invisible to the Go GC) land on free
-# memory instead of an uncollected heap. Operators can override.
-ENV GOMEMLIMIT=2GiB
-
-# 9000/udp - P2P QUIC
-# 5052 - API
-# 5054 - Prometheus metrics
-EXPOSE 9000/udp 5052 5054
 
 ENTRYPOINT ["/usr/local/bin/gean"]

@@ -1,0 +1,20 @@
+diff --git a/tests/core/pyspec/eth_consensus_specs/test/helpers/keys.py b/tests/core/pyspec/eth_consensus_specs/test/helpers/keys.py
+index 262abf7d4..b40cf3922 100644
+--- a/tests/core/pyspec/eth_consensus_specs/test/helpers/keys.py
++++ b/tests/core/pyspec/eth_consensus_specs/test/helpers/keys.py
+@@ -27,8 +27,14 @@ pubkey_to_privkey.update(zip(xmss_pubkeys, privkeys, strict=True))
+ VRF_TREE_DEPTH = 31
+ 
+ 
+-@cache
+ def get_vrf_tree_nodes(index):
++    # Each spec build has its own ValidatorIndex type, and the SSZ types refuse to compare across
++    # them, so the cache below is keyed on the plain integer.
++    return _get_vrf_tree_nodes(int(index))
++
++
++@cache
++def _get_vrf_tree_nodes(index):
+     """
+     The nodes of the placeholder VRF tree of the validator at ``index``, from its
+     leaf up to its root. Every leaf of the tree is the same, so the node at each

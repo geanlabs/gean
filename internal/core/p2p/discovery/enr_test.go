@@ -1,22 +1,65 @@
 package discovery
 
 import (
+	"bytes"
 	"encoding/base64"
 	"net"
 	"strings"
 	"testing"
+
+	gethcrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 func TestParseENR(t *testing.T) {
-	ma, err := ParseENR(testENR)
-	if err != nil {
-		t.Fatalf("ParseENR failed: %v", err)
+	ip4, ip4ID := testNode(t, enr.IPv4{127, 0, 0, 1}, enr.QUIC(9001))
+	both, bothID := testNode(t, enr.IPv4{10, 0, 0, 1}, enr.IPv6(net.ParseIP("2001:db8::1")), enr.QUIC(9001), enr.QUIC6(9002))
+	tests := []struct {
+		name, enr, want, wantErr string
+	}{
+		{"ip4 and quic", ip4.String(), "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/" + ip4ID.String(), ""},
+		{"prefers ip4 over ip6", both.String(), "/ip4/10.0.0.1/udp/9001/quic-v1/p2p/" + bothID.String(), ""},
+		{"altered signature", withFlippedSignature(t, ip4.String()), "", "invalid signature"},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ma, err := ParseENR(tt.enr)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseENR: %v", err)
+			}
+			if got := ma.String(); got != tt.want {
+				t.Fatalf("multiaddr = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
-	maStr := ma.String()
-	if maStr == "" {
-		t.Fatal("empty multiaddr")
+// withFlippedSignature returns enrStr with one bit of its signature flipped.
+func withFlippedSignature(t *testing.T, enrStr string) string {
+	t.Helper()
+	data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(enrStr, "enr:"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	var elems []rlp.RawValue
+	if err := rlp.DecodeBytes(data, &elems); err != nil {
+		t.Fatal(err)
+	}
+	sig := elems[0]
+	sig[len(sig)-1] ^= 1
+	tampered, err := rlp.EncodeToBytes(elems)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "enr:" + base64.RawURLEncoding.EncodeToString(tampered)
 }
 
 func TestBuildTransportMultiaddr(t *testing.T) {
@@ -49,31 +92,33 @@ func TestBuildTransportMultiaddr(t *testing.T) {
 	}
 }
 
-func TestParseENR_PrefersIPv4(t *testing.T) {
-	enr := "enr:-PK4QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFh2F0dG5ldHOIgQAAAAAAAICEZXRoMpASNFZ4q83vAGQAAAAAAAAAgmlkgnY0gmlwhAoAAAGDaXA2kCABDbgAAAAAAAAAAAAAAAGNaXNfYWdncmVnYXRvcgGEcXVpY4IjKYVxdWljNoIjKolzZWNwMjU2azGhA8pjTK4NSay0Adikxrb-jFW3DRFb9AB2nMFADzJYzTE4iHN5bmNuZXRzCoN1ZHCCdl-EdWRwNoJ2YA"
-	ma, err := ParseENR(enr)
-	if err != nil {
-		t.Fatalf("ParseENR failed: %v", err)
-	}
-	maStr := ma.String()
-	if !strings.HasPrefix(maStr, "/ip4/10.0.0.1/") {
-		t.Errorf("expected /ip4/ preference, got %q", maStr)
-	}
-}
-
 // testENR is a record with an ip4 address and a quic port.
 const testENR = "enr:-IW4QGGifTt9ypyMtChDISUNX3z4z5iPdiEPOmBoILvnDuWIKbWVmKXxZERPnw0piQyaBNCENFEPoIi-vxsnsrBig9MBgmlkgnY0gmlwhH8AAAGEcXVpY4IjKYlzZWNwMjU2azGhAhMMnGF1rmIPQ9tWgqfkNmvsG-aIyc9EJU5JFo3Tegys"
 
 // FuzzParseENR feeds arbitrary records to the bootnode ENR parser, which must
 // not panic on a malformed bootnode file. The fuzzer mutates the record's RLP,
-// so its inputs reach the record decoding past the base64 text.
+// and the body signs what decodes, so mutations reach the entry parsing past
+// the signature check.
 func FuzzParseENR(f *testing.F) {
 	record, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(testENR, "enr:"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	key, err := gethcrypto.ToECDSA(bytes.Repeat([]byte{1}, 32))
 	if err != nil {
 		f.Fatal(err)
 	}
 	f.Add(record)
 	f.Fuzz(func(t *testing.T, record []byte) {
 		_, _ = ParseENR("enr:" + base64.RawURLEncoding.EncodeToString(record))
+		var r enr.Record
+		if rlp.DecodeBytes(record, &r) != nil || enode.SignV4(&r, key) != nil {
+			return
+		}
+		signed, err := rlp.EncodeToBytes(&r)
+		if err != nil {
+			return
+		}
+		_, _ = ParseENR("enr:" + base64.RawURLEncoding.EncodeToString(signed))
 	})
 }

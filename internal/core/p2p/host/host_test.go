@@ -1,6 +1,8 @@
 package host
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -25,5 +27,13 @@ func TestTrackedHandlerAfterCloseResetsStream(t *testing.T) {
 	h.tracked(func(network.Stream) { t.Error("handler ran after Close") })(s)
 	if !s.reset {
 		t.Fatal("stream not reset")
+	}
+}
+
+// A zero seen TTL would let duplicate gossip through, so it is refused.
+func TestNewRefusesZeroSeenTTL(t *testing.T) {
+	_, err := New(context.Background(), Config{})
+	if err == nil || !strings.Contains(err.Error(), "seen TTL") {
+		t.Fatalf("New with no SeenTTL: err = %v, want a seen TTL error", err)
 	}
 }
